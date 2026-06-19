@@ -2,12 +2,13 @@
 const { google } = require('googleapis');
 const path = require('path');
 
-const SA_KEY_PATH = process.env.GOOGLE_SA_KEY || '/run/secrets/google-service-account.json';
+const SA_KEY_PATH = process.env.GOOGLE_SA_KEY;
 const CALENDAR_NAME = 'Wren Nursery Events';
 
 let _auth = null;
 function getAuth() {
   if (_auth) return _auth;
+  if (!SA_KEY_PATH) throw new Error('GOOGLE_SA_KEY is not set — Google Calendar integration is disabled');
   const key = require(SA_KEY_PATH);
   _auth = new google.auth.JWT({
     email: key.client_email,

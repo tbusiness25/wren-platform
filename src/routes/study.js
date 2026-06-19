@@ -624,7 +624,7 @@ async function generateRewardPDF(reward) {
        .text('Your Nursery', hasLogo ? 200 : 30, 22)
        .fillColor(ORANGE).text(' Day Nursery', { continued: false });
     doc.fillColor(MUTED).font('Helvetica').fontSize(9)
-       .text('123 Example Lane, Your Town, AB1 2CD', hasLogo ? 200 : 30, 52);
+       .text('1A Example Lane, Ealing, W13 9LU', hasLogo ? 200 : 30, 52);
     doc.y = 110;
 
     const d = reward.reward_data || {};
@@ -721,7 +721,7 @@ async function generateRewardPDF(reward) {
     // Footer
     doc.rect(0, doc.page.height - 40, doc.page.width, 40).fill(DARK);
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
-       .text('Your Nursery | 123 Example Lane, Ealing W13 9LU | 01234 567890 | example.com',
+       .text('Your Nursery | 1A Example Lane, Ealing W13 9LU | 01234 567890 | example.com',
              30, doc.page.height - 28, { align: 'center' });
 
     doc.end();

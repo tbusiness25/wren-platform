@@ -254,7 +254,7 @@ function renderNewsletter(newsletter, sections) {
         </td></tr>
         <tr><td align="center">
           <p style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;color:#64748b;line-height:2;margin:0">
-            123 Example Lane, Your Town, AB1 2CD<br>
+            1A Example Lane, Ealing, London W13 9LU<br>
             <a href="tel:01234567890" style="color:#4a9abf;text-decoration:none">01234 567890</a>
             &nbsp;·&nbsp;
             <a href="mailto:admissions@example.com" style="color:#4a9abf;text-decoration:none">admissions@example.com</a><br>

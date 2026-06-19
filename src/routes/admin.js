@@ -703,4 +703,40 @@ router.get('/invoices-summary', managerOnly, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GDPR "wipe everything & sign out" (private instances ONLY) ────────────────
+// Enabled solely when ALLOW_WIPE=true in the environment. Never set on LADN prod
+// or the public product — so the button cannot exist or fire there. Truncates all
+// personal-data + log tables in the current schema (keeps staff logins, settings,
+// frameworks) so a private instance can be wiped clean between report runs.
+const WIPE_TABLES = [
+  'messages','message_threads','message_audit','parent_message_blocks',
+  'observations','observation_next_steps','next_steps','first_words','phonics_tracker','framework_tracker',
+  'daily_diary','food_intake_log','nappy_changes','sleep_checks','attendance','behaviour_log',
+  'medicine_records','incidents','safeguarding_concerns','safeguarding_actions','safeguarding_concern_persons',
+  'children','child_about_me','child_tags','child_funding','parent_portal_access',
+  'waiting_list','enquiries','contacts','threads','thread_messages','contact_status_history',
+  'newsletters','newsletter_sections','surveys','survey_responses','permission_slips','permission_slip_responses',
+  'invoices','payments','voice_notes','vapi_calls','outings','reports','parent_reports',
+  'action_plans','action_plan_items','action_plan_comments','supervisions','supervision_targets','cpd_records','absence_requests',
+  'audit_log','email_audit','email_triage','notifications','notification_deliveries','decision_log',
+];
+
+router.get('/wipe-status', (req, res) => res.json({ enabled: process.env.ALLOW_WIPE === 'true' }));
+
+router.post('/wipe-everything', managerOnly, async (req, res) => {
+  if (process.env.ALLOW_WIPE !== 'true') return res.status(403).json({ error: 'Wipe is disabled on this instance' });
+  if (!req.body || req.body.confirm !== 'WIPE') return res.status(400).json({ error: 'Type WIPE to confirm' });
+  try {
+    const db = getPool();
+    const { rows } = await db.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ANY($1)`,
+      [WIPE_TABLES]);
+    const present = rows.map(r => r.table_name);
+    if (present.length) {
+      await db.query(`TRUNCATE ${present.map(t => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
+    }
+    res.json({ ok: true, wiped: present.length, tables: present });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

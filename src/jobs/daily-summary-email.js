@@ -112,7 +112,7 @@ async function sendDailySummary() {
 
   <!-- Footer -->
   <div style="background:#f8fafc;padding:16px 28px;border-top:1px solid #e2e8f0">
-    <div style="font-size:0.75rem;color:#94a3b8">Your Nursery · 123 Example Lane, W13 9LU · Mon–Fri 8am–6pm</div>
+    <div style="font-size:0.75rem;color:#94a3b8">Your Nursery · 1A Example Lane, W13 9LU · Mon–Fri 8am–6pm</div>
     <div style="font-size:0.72rem;color:#cbd5e1;margin-top:4px">Automated daily summary from Wren. To adjust, visit Admin → System → Notifications.</div>
   </div>
 

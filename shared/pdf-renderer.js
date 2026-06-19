@@ -84,7 +84,7 @@ function drawHeader(doc, subtitle) {
 
   // Address sub-line — position at y=44 inside header
   doc.fillColor('#94a3b8').font('Helvetica').fontSize(8)
-     .text('123 Example Lane, Your Town, AB1 2CD  ·  01234 567890  ·  Mon–Fri 8am–6pm',
+     .text('1A Example Lane, Ealing, W13 9LU  ·  01234 567890  ·  Mon–Fri 8am–6pm',
            textX, 43, { width: PAGE_W - textX - MARGIN });
 
   // Generated timestamp — right-aligned inside header
@@ -116,7 +116,7 @@ function drawFooter(doc) {
      .restore();
   doc.fillColor(C_MUTED).font('Helvetica').fontSize(7)
      .text(
-       'Your Nursery  ·  123 Example Lane, Your Town, AB1 2CD  ·  Established 1990',
+       'Your Nursery  ·  1A Example Lane, Ealing, W13 9LU  ·  Established 1990',
        MARGIN, fy + 6, { width: CONTENT_W, align: 'center' }
      );
 }

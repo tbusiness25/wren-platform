@@ -303,7 +303,7 @@ async function sendReceiptEmail(payment, amountPence, toEmail, method) {
           <tr><td style="padding:6px 12px;color:#666">Date</td>
               <td style="padding:6px 12px">${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</td></tr>
         </table>
-        <p style="margin-top:16px;font-size:12px;color:#999">Your Nursery, 123 Example Lane, London W13 9LU</p>
+        <p style="margin-top:16px;font-size:12px;color:#999">Your Nursery, 1A Example Lane, London W13 9LU</p>
       `,
       text: `Thank you for your payment of ${fmt(amountPence)} for ${payment.description || 'nursery fees'}. Paid by ${method}.`,
     });

@@ -207,7 +207,7 @@ async function generateHandbookPDF(outPath, contentMd, version, title) {
     doc.fillColor('#e07820').fontSize(14).font('Helvetica-Bold')
        .text(title, { align: 'center' });
     doc.fillColor('#94a3b8').fontSize(10).font('Helvetica')
-       .text(`Version ${version}  |  123 Example Lane, Your Town, AB1 2CD`, { align: 'center' });
+       .text(`Version ${version}  |  1A Example Lane, Ealing, London W13 9LU`, { align: 'center' });
     doc.moveDown(2);
 
     const lines = contentMd.split('\n');

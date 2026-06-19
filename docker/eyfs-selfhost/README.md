@@ -22,11 +22,11 @@ LAN in a couple of minutes.
 
 Wren runs on Windows with **no changes** — it's plain Docker Compose:
 
-1. Install **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)**. During install, keep **"Use the WSL 2 based engine"** ticked (the default). Docker Desktop sets up WSL2 for you.
-2. Open **PowerShell** (or a WSL2 Ubuntu terminal) and run the same Quick start commands below. `localhost:8080` works from the Windows browser.
-3. **Optional AI on a GPU box:** if the machine has an NVIDIA GPU, install [Ollama for Windows](https://ollama.com/download) (or run it inside WSL2 with CUDA), then set `AI_PROVIDER=ollama` and `OLLAMA_HOST` in `.env`. No GPU? Use the free Groq option instead — see the AI section in `.env.example`.
+1. Install **[Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/)** and keep **"Use the WSL 2 based engine"** ticked (the default).
+2. Open **PowerShell** (or a WSL2 Ubuntu terminal) and run the Quick start commands below. `localhost:8080` works from the Windows browser.
+3. **Optional AI on a GPU box:** install [Ollama for Windows](https://ollama.com/download) (or run it in WSL2 with CUDA) and set `AI_PROVIDER=ollama` + `OLLAMA_HOST`. No GPU? Use the free Groq option in `.env.example`.
 
-That's the whole story: if you can install Docker Desktop, you can run Wren on Windows.
+If you can install Docker Desktop, you can run Wren on Windows.
 
 ---
 

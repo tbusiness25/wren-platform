@@ -330,7 +330,7 @@ function buildRotaEmail(name, shifts, weekLabel) {
   </td></tr>
   <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e5e7eb;text-align:center">
     <div style="font-size:12px;color:#9ca3af;line-height:1.6">
-      Your Nursery | 123 Example Lane, Your Town, AB1 2CD<br>
+      Your Nursery | 1A Example Lane, Ealing, W13 9LU<br>
       Office: 01234 567890 | admissions@example.com<br>
       Mon–Fri 8:00am–6:00pm | Established 1990
     </div>
@@ -749,7 +749,7 @@ router.get('/calendar.ics', async (req, res) => {
         `DTEND;TZID=Europe/London:${dtStamp}T${endHH}00`,
         `SUMMARY:Shift${roomNote}`,
         `DESCRIPTION:Your Nursery\\nRoom: ${s.room_name || 'Any'}\\nBreak: ${s.break_mins || 30} mins`,
-        `LOCATION:123 Example Lane\\, Ealing\\, W13 9LU`,
+        `LOCATION:1A Example Lane\\, Ealing\\, W13 9LU`,
         'END:VEVENT'
       );
     }

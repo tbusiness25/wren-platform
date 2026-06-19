@@ -211,7 +211,7 @@ router.post('/:id/finalise', async (req, res) => {
       doc.moveDown(0.5);
       doc.fontSize(14).font('Helvetica')
          .text('Your Nursery', { align: 'center' });
-      doc.text('123 Example Lane, Your Town, AB1 2CD', { align: 'center' });
+      doc.text('1A Example Lane, Ealing, W13 9LU', { align: 'center' });
       if (book.leaving_date) {
         doc.moveDown(0.5);
         doc.text(`Leaving: ${book.leaving_date}`, { align: 'center' });

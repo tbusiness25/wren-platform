@@ -756,7 +756,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border:1px solid #dd
 .footer{margin-top:40px;font-size:0.8em;color:#666;border-top:1px solid #ddd;padding-top:10px}
 </style></head><body>
 <h1>Inspection Readiness Report</h1>
-<p><strong>Setting:</strong> Your Nursery, 123 Example Lane, W13 9LU</p>
+<p><strong>Setting:</strong> Your Nursery, 1A Example Lane, W13 9LU</p>
 <p><strong>Date generated:</strong> ${new Date().toLocaleString('en-GB')}</p>
 <p><strong>Readiness score:</strong> <strong>${readiness.pct}%</strong> (${readiness.score}/${readiness.max})</p>
 <h2>Compliance Categories</h2>

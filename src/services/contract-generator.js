@@ -10,7 +10,7 @@ const { getPool } = require('../db/pool');
 const DATA_DIR       = process.env.CONTRACT_DATA_DIR || path.join(__dirname, '../../data/contracts');
 const LOGO_PATH      = '/app/little-angels-logo.png';
 const NURSERY_NAME   = 'Your Nursery';
-const NURSERY_ADDR   = '123 Example Lane, Your Town, AB1 2CD';
+const NURSERY_ADDR   = '1A Example Lane, Ealing, London W13 9LU';
 const NURSERY_TEL    = '01234 567890';
 const NURSERY_EMAIL  = 'admissions@example.com';
 

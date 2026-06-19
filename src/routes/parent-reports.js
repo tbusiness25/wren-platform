@@ -338,7 +338,7 @@ router.post('/:id/send', async (req, res) => {
       doc.fontSize(18).font('Helvetica-Bold')
          .text('Your Nursery', { align: 'center' });
       doc.fontSize(11).font('Helvetica')
-         .text('123 Example Lane, Your Town, AB1 2CD', { align: 'center' });
+         .text('1A Example Lane, Ealing, W13 9LU', { align: 'center' });
       doc.moveDown();
       doc.fontSize(14).font('Helvetica-Bold')
          .text(`${report.report_type} — ${childName}`, { align: 'center' });

@@ -365,7 +365,7 @@ router.get('/riddor/:incidentId/export', async (req, res) => {
       riddor_export: {
         report_type: 'F2508 equivalent',
         setting_name: 'Your Nursery',
-        setting_address: '123 Example Lane, Your Town, AB1 2CD',
+        setting_address: '1A Example Lane, Ealing, W13 9LU',
         date_of_incident: i.incident_date,
         time_of_incident: i.incident_time,
         injured_person: i.child_name,

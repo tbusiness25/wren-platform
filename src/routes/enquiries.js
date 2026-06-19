@@ -729,4 +729,84 @@ router.post('/score-all', async (req, res) => {
   }
 });
 
+// ── POST /import-waiting-list — bulk import from an EyLog enquiry/waitlist CSV ──
+// Body = raw CSV (Content-Type text/csv). Maps EyLog export headers -> ladn.waiting_list.
+// Idempotent: skips rows already present (same child name + DOB). Manager-only.
+function _wlParseCSV(text) {
+  const rows = []; let row = [], field = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], n = text[i + 1];
+    if (q) { if (c === '"' && n === '"') { field += '"'; i++; } else if (c === '"') q = false; else field += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\r' && n === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; }
+    else if (c === '\n' || c === '\r') { row.push(field); rows.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  row.push(field); if (row.some(f => f !== '')) rows.push(row);
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+function _wlDate(s) {
+  if (!s) return null; s = String(s).trim(); if (!s) return null;
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) { let y = m[3]; if (y.length === 2) y = '20' + y; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  const d = new Date(s); return isNaN(d) ? null : d.toISOString().slice(0, 10);
+}
+function _wlStatus(statusRaw, waitlistedRaw) {
+  const s = (statusRaw || '').toLowerCase(), w = (waitlistedRaw || '').toLowerCase();
+  if (/enrol|register|placed|accepted/.test(s)) return 'placed';
+  if (/lost|declin|cancel|withdraw/.test(s)) return 'lost';
+  if (/wait/.test(s) || /yes|true|^1$/.test(w)) return 'waiting';
+  return s || 'waiting';
+}
+router.post('/import-waiting-list', authenticate, express.text({ type: () => true, limit: '20mb' }), async (req, res) => {
+  if (!['manager', 'deputy_manager', 'admin'].includes(req.user?.role)) return res.status(403).json({ error: 'Manager only' });
+  const text = typeof req.body === 'string' ? req.body : ((req.body && req.body.csv) || '');
+  if (!text || text.length < 10) return res.status(400).json({ error: 'No CSV provided' });
+  try {
+    const rows = _wlParseCSV(text);
+    if (rows.length < 2) return res.status(400).json({ error: 'CSV has no data rows' });
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const idx = nm => headers.indexOf(nm.toLowerCase());
+    const cell = (r, ...names) => { for (const nm of names) { const i = idx(nm); if (i >= 0 && r[i] != null && String(r[i]).trim() !== '') return String(r[i]).trim(); } return null; };
+    const db = getPool();
+    let imported = 0, skipped = 0;
+    for (let k = 1; k < rows.length; k++) {
+      const r = rows[k];
+      const fn = cell(r, 'Child First Name'), ln = cell(r, 'Child Last Name');
+      if (!fn && !ln) { skipped++; continue; }
+      const dob = _wlDate(cell(r, 'Child Date of Birth/Expected Date of Birth', 'Child Date of Birth', 'Child DOB'));
+      const { rows: ex } = await db.query(
+        `SELECT 1 FROM waiting_list WHERE lower(child_first_name)=lower($1)
+           AND lower(coalesce(child_last_name,''))=lower(coalesce($2,''))
+           AND coalesce(child_dob::text,'')=coalesce($3::text,'') LIMIT 1`, [fn, ln, dob]);
+      if (ex.length) { skipped++; continue; }
+      const parent = [cell(r, 'Parent First Name'), cell(r, 'Parent Last Name')].filter(Boolean).join(' ') || null;
+      const notes = [
+        cell(r, 'Stage') && `Stage: ${cell(r, 'Stage')}`,
+        cell(r, 'Reason') && `Reason: ${cell(r, 'Reason')}`,
+        cell(r, 'Requested Hours') && `Hours: ${cell(r, 'Requested Hours')}`,
+        cell(r, 'Booking Type') && `Booking: ${cell(r, 'Booking Type')}`,
+        cell(r, 'Attendance Schedule') && `Schedule: ${cell(r, 'Attendance Schedule')}`,
+        cell(r, 'Preferred Session') && `Session: ${cell(r, 'Preferred Session')}`,
+        cell(r, 'Tags') && `Tags: ${cell(r, 'Tags')}`,
+        cell(r, 'Notes'),
+      ].filter(Boolean).join(' · ') || null;
+      await db.query(
+        `INSERT INTO waiting_list (child_first_name, child_last_name, child_dob, room_needed,
+           expected_start_date, parent_name, parent_email, parent_phone, source, status, notes, date_added, added_at, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($12,NOW()),NOW())`,
+        [fn, ln, dob, cell(r, 'Waitlisted Room', 'Room'), _wlDate(cell(r, 'Preferred Start Date')),
+         parent, cell(r, 'Parent Email'), cell(r, 'Parent Phone', 'Home Phone'),
+         cell(r, 'Where did Parent hear about us? (Source)', 'Source', 'Utm Source'),
+         _wlStatus(cell(r, 'Status'), cell(r, 'Waitlisted')), notes,
+         _wlDate(cell(r, 'Waitlisted Date', 'Enquiry Date'))]);
+      imported++;
+    }
+    res.json({ ok: true, imported, skipped, total: rows.length - 1 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

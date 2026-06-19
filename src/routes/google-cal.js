@@ -12,8 +12,14 @@ function _gcal() {
   return gcal;
 }
 
+// Google Calendar is an OPTIONAL integration. When GOOGLE_SA_KEY is unset it's
+// simply disabled — endpoints degrade gracefully (no events, calm status) rather
+// than erroring, so the staff calendar still loads its DB-sourced events.
+const _gcalEnabled = () => !!process.env.GOOGLE_SA_KEY;
+
 // GET /api/google-cal/status
 router.get('/status', async (req, res) => {
+  if (!_gcalEnabled()) return res.json({ ok: false, connected: false, configured: false, reason: 'Google Calendar not configured (optional)' });
   try {
     const db = getPool();
     const status = await _gcal().testConnection(db);
@@ -23,6 +29,7 @@ router.get('/status', async (req, res) => {
 
 // GET /api/google-cal/events?from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/events', async (req, res) => {
+  if (!_gcalEnabled()) return res.json([]); // optional integration disabled — no events, no error
   const { from, to, days } = req.query;
   const fromDate = from || new Date().toISOString().slice(0, 10);
   const toDate   = to   || (() => {

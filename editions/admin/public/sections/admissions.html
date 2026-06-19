@@ -168,6 +168,8 @@
         </select>
         <span id="li-count" style="color:#94a3b8;font-size:.78rem;white-space:nowrap;align-self:center"></span>
         <button class="btn btn-ghost btn-sm" id="btn-adm-export-csv" style="margin-left:auto">Export CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('adm-import-file').click()" title="Import waiting list from an EyLog CSV export">⬆ Import waiting list</button>
+        <input type="file" id="adm-import-file" accept=".csv,text/csv" style="display:none" onchange="_admImportWaitlist(this)">
       </div>
       <div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;overflow:hidden">
         <div style="overflow-x:auto">
@@ -1080,6 +1082,27 @@ window.wrenLoadTab_admissions_pipeline = async function(){
 
 window.wrenLoadTab_admissions_list = async function(){
   await admLoadList();
+};
+
+// Import waiting list from an EyLog enquiry/waitlist CSV export
+window._admImportWaitlist = async function(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  if(!confirm(`Import waiting-list entries from "${file.name}"?\n\nExisting entries (same child name + DOB) are skipped, so it's safe to re-run.`)){ input.value=''; return; }
+  try{
+    const text = await file.text();
+    const token = (window.Wren && Wren.getToken && Wren.getToken()) || sessionStorage.getItem('wrenToken') || '';
+    const res = await fetch('/api/enquiries/import-waiting-list', {
+      method:'POST',
+      headers:{ 'Content-Type':'text/csv', ...(token?{Authorization:'Bearer '+token}:{}) },
+      body: text,
+    });
+    const d = await res.json();
+    if(!res.ok) throw new Error(d.error||('HTTP '+res.status));
+    Wren.toast(`Imported ${d.imported} · skipped ${d.skipped} (already present) of ${d.total}`, 'success');
+    if(typeof admLoadList==='function') await admLoadList();
+  }catch(e){ Wren.toast('Import failed: '+(e.message||e), 'error'); }
+  finally{ input.value=''; }
 };
 
 window.wrenLoadTab_admissions_trends = async function(){

@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🦅 Wren
+<img src="assets/wren-logo.svg" alt="Wren" width="84">
+
+# Wren
 
 **A self-hosted, privacy-first management system for nurseries and schools — with sovereign, on-device AI.**
 

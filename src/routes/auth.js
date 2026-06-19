@@ -283,7 +283,7 @@ router.get('/me', authenticate, async (req, res) => {
 router.get('/cf-auto-login', loginLimiter, async (req, res) => {
   const cfEmail = (req.headers['cf-access-authenticated-user-email'] || '').toLowerCase().trim();
   if (!cfEmail) {
-    return res.status(403).json({ error: 'No Cloudflare Access session. Access this portal via parents.example.com' });
+    return res.status(403).json({ error: 'No Cloudflare Access session. Access this portal via parents.littleangelsealing.co.uk' });
   }
   try {
     const db = getPool();
@@ -319,7 +319,7 @@ router.post('/parent-login', loginLimiter, async (req, res) => {
   // CF Access verification — mandatory, no fallback
   const cfEmail = (req.headers['cf-access-authenticated-user-email'] || '').toLowerCase().trim();
   if (!cfEmail) {
-    return res.status(403).json({ error: 'This portal requires Cloudflare Access verification. Please access via parents.example.com' });
+    return res.status(403).json({ error: 'This portal requires Cloudflare Access verification. Please access via parents.littleangelsealing.co.uk' });
   }
   if (cfEmail !== email.toLowerCase().trim()) {
     return res.status(403).json({ error: 'Email does not match your verified session. Please use the email you signed in with.' });
@@ -706,12 +706,12 @@ router.post('/demo-login', loginLimiter, async (req, res) => {
 
   // Staff roles
   const roleMap = {
-    admin:        { dbRole: 'manager',      redirect: '/admin.html' },
-    manager:      { dbRole: 'manager',      redirect: '/admin.html' },
-    practitioner: { dbRole: 'practitioner', redirect: '/index.html' },
-    teacher:      { dbRole: 'practitioner', redirect: '/index.html' },
-    hr:           { dbRole: 'manager',      redirect: '/hr.html' },
-    student:      { dbRole: 'student',      redirect: '/student.html' },
+    admin:        { dbRoles: ['admin','manager','deputy_manager'],     redirect: '/admin.html' },
+    manager:      { dbRoles: ['manager','deputy_manager','admin'],     redirect: '/admin.html' },
+    practitioner: { dbRoles: ['practitioner','room_leader'],           redirect: '/index.html' },
+    teacher:      { dbRoles: ['teacher','practitioner','room_leader'], redirect: '/index.html' },
+    hr:           { dbRoles: ['manager','deputy_manager','admin'],     redirect: '/hr.html' },
+    student:      { dbRoles: ['student'],                              redirect: '/student.html' },
   };
   const mapping = roleMap[role];
   if (!mapping) return res.status(400).json({ error: 'Unknown role: ' + role });
@@ -720,11 +720,12 @@ router.post('/demo-login', loginLimiter, async (req, res) => {
     // Prefer the canonical demo account (role@demo.wren), fall back to any active staff with that DB role
     const { rows } = await db.query(
       `SELECT * FROM staff
-       WHERE is_active = true AND id != 1
-         AND (lower(email) = lower($1 || '@demo.wren') OR role = $2)
-       ORDER BY (lower(email) = lower($1 || '@demo.wren')) DESC, id ASC
+       WHERE is_active = true
+         AND (lower(email) = lower($1 || '@demo.wren') OR role = ANY($2::text[]))
+       ORDER BY (lower(email) = lower($1 || '@demo.wren')) DESC,
+                (role = $3) DESC, id ASC
        LIMIT 1`,
-      [role, mapping.dbRole]
+      [role, mapping.dbRoles, mapping.dbRoles[0]]
     );
     if (!rows.length) return res.status(404).json({ error: 'No demo staff for role: ' + role });
     const staff = rows[0];

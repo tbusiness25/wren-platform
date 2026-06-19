@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="primary">
+<title>EHCP Tracker — Wren Primary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.ehcp-status { display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:8px;font-size:.75rem;font-weight:700; }
+.st-active    { background:rgba(34,197,94,.12); color:#22c55e; }
+.st-pending   { background:rgba(245,158,11,.12); color:#f59e0b; }
+.st-review    { background:rgba(74,154,191,.12); color:#4a9abf; }
+.st-ceased    { background:rgba(100,116,139,.12); color:#64748b; }
+.st-awaiting  { background:rgba(139,92,246,.12); color:#8b5cf6; }
+.overdue { color:#ef4444 !important; }
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">EHCP Tracker</div>
+      <div class="page-subtitle" id="subtitle">Education, Health and Care Plans</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-primary" onclick="openAdd()">+ Add EHCP</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px">
+    <div class="stat-card green"><span class="stat-value" id="s-active">—</span><span class="stat-label">Active EHCPs</span></div>
+    <div class="stat-card amber"><span class="stat-value" id="s-review">—</span><span class="stat-label">Reviews due</span></div>
+    <div class="stat-card red"><span class="stat-value" id="s-overdue">—</span><span class="stat-label">Overdue reviews</span></div>
+    <div class="stat-card blue"><span class="stat-value" id="s-pending">—</span><span class="stat-label">Pending/awaiting</span></div>
+  </div>
+
+  <!-- Tabs -->
+  <div style="display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid var(--c-border)">
+    <button class="tab-btn active" id="tab-all" onclick="showTab('all',this)">All EHCPs</button>
+    <button class="tab-btn" id="tab-review" onclick="showTab('review',this)">Reviews due</button>
+    <button class="tab-btn" id="tab-awaiting" onclick="showTab('awaiting',this)">Awaiting assessment</button>
+  </div>
+
+  <div id="ehcp-area">
+    <div class="loading-state"><div class="spinner"></div><span>Loading EHCPs…</span></div>
+  </div>
+</div>
+
+<!-- Add/Edit modal -->
+<div id="add-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeAdd()"></div>
+  <div class="modal-content" style="max-width:580px">
+    <div class="modal-header"><div class="modal-title" id="modal-title">Add EHCP</div><button class="modal-close" onclick="closeAdd()">×</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Pupil *</label>
+          <select class="form-control" id="ehcp-pupil"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-control" id="ehcp-status">
+            <option value="active">Active</option>
+            <option value="pending">Pending (EHC needs assessment)</option>
+            <option value="awaiting">Awaiting decision</option>
+            <option value="review">Annual review due</option>
+            <option value="ceased">Ceased</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Issue date</label>
+          <input class="form-control" id="ehcp-issued" type="date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Next review date</label>
+          <input class="form-control" id="ehcp-review" type="date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Primary need</label>
+          <select class="form-control" id="ehcp-need">
+            <option value="">Select need…</option>
+            <option value="SLCN">SLCN — Speech, language, comm.</option>
+            <option value="ASD">ASD — Autism spectrum</option>
+            <option value="MLD">MLD — Moderate learning difficulty</option>
+            <option value="SLD">SLD — Severe learning difficulty</option>
+            <option value="PMLD">PMLD — Profound / multiple</option>
+            <option value="SEMH">SEMH — Social, emotional, mental health</option>
+            <option value="SpLD">SpLD — Specific learning difficulty (dyslexia/dyspraxia)</option>
+            <option value="HI">HI — Hearing impairment</option>
+            <option value="VI">VI — Visual impairment</option>
+            <option value="PD">PD — Physical disability</option>
+            <option value="MSI">MSI — Multi-sensory impairment</option>
+            <option value="OTH">OTH — Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Key worker / SENCO lead</label>
+          <input class="form-control" id="ehcp-lead" placeholder="Staff member name">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Outcomes / current focus</label>
+          <textarea class="form-control" id="ehcp-outcomes" rows="3" placeholder="Key EHCP outcomes and current provision…"></textarea>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Provision in place</label>
+          <textarea class="form-control" id="ehcp-provision" rows="2" placeholder="TA hours, specialist support, interventions…"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAdd()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEHCP()" id="save-btn">Save EHCP</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allEHCP = [], allPupils = [], editId = null;
+const statusLabels = { active:'Active', pending:'Pending', awaiting:'Awaiting', review:'Review due', ceased:'Ceased' };
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  await Promise.all([loadPupils(), loadEHCP()]);
+}
+
+async function loadPupils() {
+  try {
+    allPupils = await Wren.api('/api/children');
+    const sel = document.getElementById('ehcp-pupil');
+    sel.innerHTML = '<option value="">Select pupil…</option>' +
+      allPupils.map(p => `<option value="${p.id}">${p.first_name} ${p.last_name} (${p.year_group==='R'?'Reception':'Y'+p.year_group})</option>`).join('');
+  } catch {}
+}
+
+async function loadEHCP() {
+  try {
+    const data = await Wren.api('/api/sen/ehcp').catch(() => Wren.api('/api/sen'));
+    allEHCP = (Array.isArray(data) ? data : (data.ehcps || [])).filter(s => s.ehcp_id || s.sen_status === 'ehcp' || s.status);
+    updateStats(); render('all');
+    document.getElementById('subtitle').textContent = allEHCP.length + ' EHCP record' + (allEHCP.length !== 1 ? 's' : '');
+  } catch {
+    document.getElementById('ehcp-area').innerHTML = '<div class="empty-state">Failed to load EHCP records</div>';
+  }
+}
+
+function updateStats() {
+  const now = new Date();
+  const active   = allEHCP.filter(e => e.status === 'active' || e.sen_status === 'ehcp');
+  const reviews  = allEHCP.filter(e => e.review_date && new Date(e.review_date) <= new Date(now.getTime() + 30*24*60*60*1000));
+  const overdue  = allEHCP.filter(e => e.review_date && new Date(e.review_date) < now);
+  const pending  = allEHCP.filter(e => e.status === 'pending' || e.status === 'awaiting');
+  document.getElementById('s-active').textContent  = active.length;
+  document.getElementById('s-review').textContent  = reviews.length;
+  document.getElementById('s-overdue').textContent = overdue.length;
+  document.getElementById('s-pending').textContent = pending.length;
+}
+
+function showTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  render(tab);
+}
+
+function render(tab) {
+  const now = new Date();
+  let rows = allEHCP;
+  if (tab === 'review') rows = allEHCP.filter(e => e.review_date && new Date(e.review_date) <= new Date(now.getTime() + 30*24*60*60*1000));
+  if (tab === 'awaiting') rows = allEHCP.filter(e => e.status === 'pending' || e.status === 'awaiting');
+
+  const area = document.getElementById('ehcp-area');
+  if (!rows.length) {
+    area.innerHTML = `<div class="empty-state">${tab==='review'?'No reviews due in the next 30 days':tab==='awaiting'?'No pending assessments':'No EHCP records yet'}</div>`;
+    return;
+  }
+  area.innerHTML = `<div class="table-wrapper"><table class="data-table">
+    <thead><tr><th>Pupil</th><th>Year</th><th>Need</th><th>Status</th><th>Review date</th><th>Lead</th><th></th></tr></thead>
+    <tbody>${rows.map(e => {
+      const st     = e.status || (e.sen_status === 'ehcp' ? 'active' : 'pending');
+      const review = e.review_date ? new Date(e.review_date) : null;
+      const overdue = review && review < now;
+      const soon    = review && review <= new Date(now.getTime() + 30*24*60*60*1000);
+      return `<tr>
+        <td><strong>${e.first_name||e.pupil_name||''} ${e.last_name||''}</strong></td>
+        <td>${(e.year_group||'')==='' ? '—' : e.year_group==='R'?'R':'Y'+e.year_group}</td>
+        <td><span class="badge badge-purple">${e.primary_need||e.need||'—'}</span></td>
+        <td><span class="ehcp-status st-${st}">${statusLabels[st]||st}</span></td>
+        <td class="${overdue?'overdue':''}">${review ? review.toLocaleDateString('en-GB') + (overdue?' ⚠️':soon?' 🔔':'') : '—'}</td>
+        <td style="font-size:.82rem;color:var(--c-muted)">${e.lead||e.key_worker||'—'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="editEHCP(${e.id})">Edit</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function openAdd() {
+  editId = null;
+  document.getElementById('modal-title').textContent = 'Add EHCP';
+  document.getElementById('save-btn').textContent = 'Save EHCP';
+  ['ehcp-status','ehcp-issued','ehcp-review','ehcp-need','ehcp-lead','ehcp-outcomes','ehcp-provision'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = '';
+  });
+  document.getElementById('add-modal').style.display = 'flex';
+}
+
+function editEHCP(id) {
+  const e = allEHCP.find(x => x.id === id);
+  if (!e) return;
+  editId = id;
+  document.getElementById('modal-title').textContent = 'Edit EHCP';
+  document.getElementById('save-btn').textContent = 'Update EHCP';
+  document.getElementById('ehcp-pupil').value    = e.child_id || '';
+  document.getElementById('ehcp-status').value   = e.status || 'active';
+  document.getElementById('ehcp-issued').value   = e.issue_date ? e.issue_date.slice(0,10) : '';
+  document.getElementById('ehcp-review').value   = e.review_date ? e.review_date.slice(0,10) : '';
+  document.getElementById('ehcp-need').value     = e.primary_need || e.need || '';
+  document.getElementById('ehcp-lead').value     = e.lead || e.key_worker || '';
+  document.getElementById('ehcp-outcomes').value = e.outcomes || '';
+  document.getElementById('ehcp-provision').value= e.provision || '';
+  document.getElementById('add-modal').style.display = 'flex';
+}
+
+function closeAdd() { document.getElementById('add-modal').style.display = 'none'; }
+
+async function saveEHCP() {
+  const body = {
+    child_id:     parseInt(document.getElementById('ehcp-pupil').value),
+    status:       document.getElementById('ehcp-status').value,
+    issue_date:   document.getElementById('ehcp-issued').value || null,
+    review_date:  document.getElementById('ehcp-review').value || null,
+    primary_need: document.getElementById('ehcp-need').value,
+    lead:         document.getElementById('ehcp-lead').value,
+    outcomes:     document.getElementById('ehcp-outcomes').value,
+    provision:    document.getElementById('ehcp-provision').value,
+    sen_status:   'ehcp',
+  };
+  if (!body.child_id) { Wren.toast('Select a pupil', 'warning'); return; }
+  try {
+    const url    = editId ? `/api/sen/ehcp/${editId}` : '/api/sen/ehcp';
+    const method = editId ? 'PUT' : 'POST';
+    await Wren.api(url, { method, body });
+    Wren.toast('EHCP saved', 'success');
+    closeAdd();
+    loadEHCP();
+  } catch(e) { Wren.toast('Error: '+(e.error||e.message), 'error'); }
+}
+
+function exportCSV() {
+  const h = ['Pupil','Year','Need','Status','Review date','Lead'];
+  const rows = allEHCP.map(e => [
+    (e.first_name||'')+(e.last_name?' '+e.last_name:''),
+    e.year_group||'', e.primary_need||e.need||'',
+    e.status||'', e.review_date||'', e.lead||''
+  ]);
+  const csv = [h,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'ehcp-'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
+}
+</script>
+</body>
+</html>

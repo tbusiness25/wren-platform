@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Module Records — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <script src="/js/wren-module-renderer.js" defer></script>
+  <style>
+    .mr-toolbar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 12px 0 14px;
+    }
+    .mr-view-select {
+      padding: 7px 11px; background: var(--c-surface);
+      border: 1px solid var(--c-border); border-radius: 8px;
+      color: var(--c-text); font-size: .84rem; font-family: var(--font);
+      min-width: 140px; cursor: pointer;
+    }
+    .mr-view-select:focus { outline: none; border-color: var(--c-blue); }
+
+    .mr-filter-bar {
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+      padding: 10px 14px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 10px; margin-bottom: 12px;
+    }
+    .mr-filter-bar label {
+      font-size: .7rem; font-weight: 700; color: var(--c-muted);
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .mr-filter-field { display: flex; flex-direction: column; gap: 3px; min-width: 120px; }
+    .mr-filter-input {
+      padding: 5px 9px; background: rgba(255,255,255,.05);
+      border: 1px solid var(--c-border); border-radius: 7px;
+      color: var(--c-text); font-size: .82rem; font-family: var(--font);
+      min-height: 34px;
+    }
+    .mr-filter-input:focus { outline: none; border-color: var(--c-blue); }
+    .mr-filter-actions { display: flex; gap: 6px; align-items: flex-end; margin-left: auto; }
+
+    /* Table */
+    .mr-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--c-border); }
+    .mr-table {
+      width: 100%; border-collapse: collapse;
+      font-size: .83rem;
+    }
+    .mr-table thead tr {
+      background: var(--c-surface); border-bottom: 1px solid var(--c-border);
+    }
+    .mr-table th {
+      padding: 9px 12px; text-align: left; font-size: .7rem; font-weight: 800;
+      color: var(--c-muted); text-transform: uppercase; letter-spacing: .06em;
+      white-space: nowrap; cursor: pointer; user-select: none;
+    }
+    .mr-table th:hover { color: var(--c-blue); }
+    .mr-table th .sort-icon { margin-left: 4px; opacity: .4; }
+    .mr-table th.sorted-asc .sort-icon::after  { content: '▲'; opacity: 1; }
+    .mr-table th.sorted-desc .sort-icon::after { content: '▼'; opacity: 1; }
+    .mr-table td {
+      padding: 9px 12px; border-bottom: 1px solid var(--c-border);
+      color: var(--c-text); max-width: 280px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .mr-table tr:last-child td { border-bottom: none; }
+    .mr-table tr:hover td { background: rgba(255,255,255,.025); }
+    .mr-table td.mr-action { width: 1%; white-space: nowrap; text-align: right; }
+
+    .mr-summary-badge {
+      display: inline-block; font-size: .67rem; padding: 2px 6px;
+      border-radius: 4px; background: rgba(74,154,191,.18); color: #4a9abf;
+      border: 1px solid rgba(74,154,191,.25); cursor: pointer;
+    }
+
+    /* Empty state */
+    .mr-empty {
+      text-align: center; padding: 48px 20px;
+      color: var(--c-muted); font-size: .88rem; line-height: 1.8;
+    }
+
+    /* Save view modal inner */
+    .sv-form { display: flex; flex-direction: column; gap: 10px; }
+    .sv-form label { font-size: .72rem; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: .05em; display: block; margin-bottom: 3px; }
+    .sv-form input, .sv-form select {
+      width: 100%; padding: 7px 10px;
+      background: rgba(255,255,255,.05); border: 1px solid var(--c-border);
+      border-radius: 8px; color: var(--c-text); font-family: var(--font); font-size: .85rem;
+    }
+
+    /* Pagination */
+    .mr-pager {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 2px; font-size: .8rem; color: var(--c-muted);
+    }
+    .mr-pager-btns { display: flex; gap: 6px; }
+
+    /* Record drawer */
+    .mr-drawer-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 600; display: flex; align-items: stretch; justify-content: flex-end;
+    }
+    .mr-drawer {
+      width: min(480px, 100vw); background: var(--c-bg);
+      border-left: 1px solid var(--c-border);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .mr-drawer-hdr {
+      padding: 14px 16px; border-bottom: 1px solid var(--c-border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .mr-drawer-title { font-size: .95rem; font-weight: 700; color: var(--c-text); }
+    .mr-drawer-body { flex: 1; overflow-y: auto; padding: 14px; }
+    .mr-drawer-ai {
+      margin: 12px 0; padding: 11px 13px;
+      background: rgba(74,154,191,.08); border: 1px solid rgba(74,154,191,.2);
+      border-radius: 8px; font-size: .82rem; color: var(--c-text); line-height: 1.6;
+    }
+    .mr-drawer-ai-label { font-size: .67rem; font-weight: 800; color: #4a9abf; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div style="padding: 0 0 4px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <a href="/modules.html" style="color:var(--c-muted);font-size:.82rem;text-decoration:none">← Modules</a>
+    </div>
+    <h1 id="page-title" class="page-title" style="margin:0 0 2px">Records</h1>
+    <p id="page-sub" style="margin:0;font-size:.8rem;color:var(--c-muted)"></p>
+  </div>
+
+  <div class="mr-toolbar">
+    <select class="mr-view-select" id="view-select">
+      <option value="">— No saved view —</option>
+    </select>
+    <button class="btn btn-sm btn-ghost" id="btn-save-view">💾 Save view</button>
+    <button class="btn btn-sm btn-ghost" id="btn-delete-view" style="display:none">🗑 Delete view</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-sm btn-ghost" id="btn-export-csv">⬇ CSV</button>
+    <button class="btn btn-sm btn-ghost" id="btn-bulk-pdf" style="display:none">⬇ PDF (selected)</button>
+    <button class="btn btn-sm btn-orange" id="btn-edit-module">✏ Edit module</button>
+  </div>
+
+  <div class="mr-filter-bar" id="filter-bar">
+    <span style="font-size:.75rem;color:var(--c-muted)">Loading filters…</span>
+  </div>
+
+  <div id="records-container">
+    <div class="mr-empty">Loading records…</div>
+  </div>
+
+  <div class="mr-pager" id="pager" style="display:none">
+    <span id="pager-info"></span>
+    <div class="mr-pager-btns">
+      <button class="btn btn-sm btn-ghost" id="btn-prev" disabled>← Prev</button>
+      <button class="btn btn-sm btn-ghost" id="btn-next">Next →</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const PAGE_LIMIT = 50;
+
+let moduleId = null;
+let moduleMeta = null;
+let currentRecords = [];
+let currentOffset = 0;
+let totalCount = 0;
+let savedViews = [];
+let activeViewId = null;
+let currentFilters = {};
+let currentSort = null;
+let sortDir = {};
+
+// ── Init ────────────────────────────────────────────────────────────────────
+
+async function loadPage() {
+  const params = new URLSearchParams(location.search);
+  moduleId = params.get('id') || params.get('module_id');
+
+  if (!moduleId) {
+    // Try by slug
+    const slug = params.get('slug');
+    if (slug) {
+      try {
+        const m = await Wren.api(`/api/modules/by-slug/${encodeURIComponent(slug)}`);
+        moduleId = String(m.id);
+        moduleMeta = m;
+      } catch { showError('Module not found'); return; }
+    } else {
+      showError('No module specified. Use ?id=<id> or ?slug=<slug>.');
+      return;
+    }
+  }
+
+  if (!moduleMeta) {
+    try {
+      moduleMeta = await Wren.api(`/api/modules/${moduleId}`);
+    } catch { showError('Module not found'); return; }
+  }
+
+  document.getElementById('page-title').textContent = moduleMeta.name + ' — Records';
+  document.getElementById('page-sub').textContent = moduleMeta.description || '';
+  document.title = moduleMeta.name + ' Records — Wren Admin';
+
+  // Load saved views
+  await loadSavedViews();
+  // Build filter bar
+  buildFilterBar();
+  // Load initial records
+  await loadRecords();
+}
+
+async function loadSavedViews() {
+  try {
+    savedViews = await Wren.api(`/api/modules/${moduleId}/views`);
+    const sel = document.getElementById('view-select');
+    savedViews.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.name + (v.is_shared ? ' (shared)' : '');
+      sel.appendChild(opt);
+    });
+  } catch { savedViews = []; }
+}
+
+// ── Filter bar ───────────────────────────────────────────────────────────────
+
+function buildFilterBar() {
+  const bar = document.getElementById('filter-bar');
+  const fields = parseFields(moduleMeta);
+  const filterableFields = fields.filter(f => ['text','dropdown','radio','yes_no','date','number'].includes(f.type));
+
+  if (!filterableFields.length) {
+    bar.innerHTML = '<span style="font-size:.75rem;color:var(--c-muted)">No filterable fields</span>';
+    const applyBtn = buildApplyBtn();
+    bar.appendChild(applyBtn);
+    return;
+  }
+
+  bar.innerHTML = '';
+  filterableFields.slice(0, 6).forEach(f => {
+    const wrap = document.createElement('div');
+    wrap.className = 'mr-filter-field';
+    const lbl = document.createElement('label');
+    lbl.textContent = f.label || f.key;
+
+    let input;
+    if (f.type === 'dropdown' || f.type === 'radio') {
+      input = document.createElement('select');
+      input.className = 'mr-filter-input';
+      const blank = document.createElement('option'); blank.value = ''; blank.textContent = 'Any';
+      input.appendChild(blank);
+      (f.options || []).forEach(o => {
+        const opt = document.createElement('option'); opt.value = o; opt.textContent = o;
+        input.appendChild(opt);
+      });
+    } else if (f.type === 'yes_no') {
+      input = document.createElement('select');
+      input.className = 'mr-filter-input';
+      ['','true','false'].forEach((v, i) => {
+        const opt = document.createElement('option'); opt.value = v;
+        opt.textContent = ['Any','Yes','No'][i]; input.appendChild(opt);
+      });
+    } else if (f.type === 'date') {
+      input = document.createElement('input');
+      input.type = 'date'; input.className = 'mr-filter-input';
+    } else {
+      input = document.createElement('input');
+      input.type = f.type === 'number' ? 'number' : 'text';
+      input.placeholder = 'Filter…';
+      input.className = 'mr-filter-input';
+    }
+
+    input.dataset.fieldKey = f.key;
+    input.addEventListener('change', () => applyFilters());
+    if (f.type === 'text') input.addEventListener('keydown', e => { if (e.key === 'Enter') applyFilters(); });
+
+    wrap.appendChild(lbl);
+    wrap.appendChild(input);
+    bar.appendChild(wrap);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'mr-filter-actions';
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn btn-sm btn-primary';
+  applyBtn.textContent = 'Apply';
+  applyBtn.onclick = applyFilters;
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'btn btn-sm btn-ghost';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = clearFilters;
+  actions.appendChild(applyBtn);
+  actions.appendChild(clearBtn);
+  bar.appendChild(actions);
+}
+
+function buildApplyBtn() {
+  const actions = document.createElement('div');
+  actions.className = 'mr-filter-actions';
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-sm btn-primary';
+  btn.textContent = 'Refresh';
+  btn.onclick = loadRecords;
+  actions.appendChild(btn);
+  return actions;
+}
+
+function collectFilters() {
+  const filters = {};
+  document.querySelectorAll('#filter-bar [data-field-key]').forEach(inp => {
+    const val = inp.value.trim();
+    if (val) filters[inp.dataset.fieldKey] = val;
+  });
+  return filters;
+}
+
+function applyFilters() {
+  currentFilters = collectFilters();
+  currentOffset = 0;
+  loadRecords();
+}
+
+function clearFilters() {
+  document.querySelectorAll('#filter-bar [data-field-key]').forEach(inp => { inp.value = ''; });
+  currentFilters = {};
+  currentOffset = 0;
+  loadRecords();
+}
+
+// ── View selector ────────────────────────────────────────────────────────────
+
+function onViewChange(viewId) {
+  activeViewId = viewId || null;
+  document.getElementById('btn-delete-view').style.display = viewId ? '' : 'none';
+
+  if (viewId) {
+    const view = savedViews.find(v => String(v.id) === String(viewId));
+    if (view) {
+      // Apply view filters to filter bar inputs
+      const filterJson = parseJson(view.filter_json, {});
+      document.querySelectorAll('#filter-bar [data-field-key]').forEach(inp => {
+        const v = filterJson[inp.dataset.fieldKey];
+        inp.value = v !== undefined ? v : '';
+      });
+      currentFilters = filterJson;
+
+      // Apply view sort
+      const sortArr = parseJson(view.sort, []);
+      if (sortArr.length) {
+        const [sortStr] = sortArr;
+        const [field, dir] = String(sortStr).split(':');
+        currentSort = field;
+        sortDir[field] = dir || 'desc';
+      }
+    }
+  } else {
+    currentFilters = {};
+    currentSort = null;
+    sortDir = {};
+    document.querySelectorAll('#filter-bar [data-field-key]').forEach(inp => { inp.value = ''; });
+  }
+
+  currentOffset = 0;
+  loadRecords();
+}
+
+async function deleteCurrentView() {
+  if (!activeViewId) return;
+  if (!confirm('Delete this saved view?')) return;
+  try {
+    await Wren.api(`/api/modules/${moduleId}/views/${activeViewId}`, { method: 'DELETE' });
+    savedViews = savedViews.filter(v => String(v.id) !== String(activeViewId));
+    const sel = document.getElementById('view-select');
+    const opt = sel.querySelector(`option[value="${activeViewId}"]`);
+    if (opt) opt.remove();
+    activeViewId = null;
+    sel.value = '';
+    document.getElementById('btn-delete-view').style.display = 'none';
+    Wren.toast('View deleted', 'success');
+    loadRecords();
+  } catch { Wren.toast('Failed to delete view', 'error'); }
+}
+
+// ── Load records ─────────────────────────────────────────────────────────────
+
+async function loadRecords() {
+  const container = document.getElementById('records-container');
+  container.innerHTML = '<div class="mr-empty" style="padding:24px 20px">Loading…</div>';
+
+  const params = new URLSearchParams();
+  params.set('limit', PAGE_LIMIT);
+  params.set('offset', currentOffset);
+
+  // Filters
+  Object.entries(currentFilters).forEach(([k, v]) => {
+    if (v) params.append(`filter[${k}]`, v);
+  });
+
+  // Sort
+  if (currentSort) {
+    const dir = sortDir[currentSort] || 'desc';
+    params.set('sort', `${currentSort}:${dir}`);
+  }
+
+  try {
+    const records = await Wren.api(`/api/modules/${moduleId}/records?${params}`);
+    currentRecords = records;
+    renderTable(records);
+    updatePager(records.length);
+  } catch (e) {
+    container.innerHTML = `<div class="mr-empty">Failed to load records: ${e.error || e.message}</div>`;
+  }
+}
+
+// ── Table rendering ──────────────────────────────────────────────────────────
+
+function renderTable(records) {
+  const container = document.getElementById('records-container');
+  if (!records.length && currentOffset === 0) {
+    container.innerHTML = '<div class="mr-empty">No records found.<br>Try clearing filters or submitting the first record.</div>';
+    document.getElementById('pager').style.display = 'none';
+    return;
+  }
+
+  const fields = parseFields(moduleMeta);
+  // Visible columns: exclude photo/signature/long_text for table brevity
+  const tableCols = fields.filter(f => !['photo','photo_multi','signature','long_text','timestamp_auto'].includes(f.type)).slice(0, 8);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mr-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'mr-table';
+
+  // Header
+  const thead = document.createElement('thead');
+  const hrow = document.createElement('tr');
+  tableCols.forEach(col => {
+    const th = document.createElement('th');
+    const isSorted = currentSort === col.key;
+    const dir = sortDir[col.key] || 'desc';
+    th.className = isSorted ? `sorted-${dir}` : '';
+    th.innerHTML = `${esc(col.label || col.key)} <span class="sort-icon"></span>`;
+    th.onclick = () => toggleSort(col.key);
+    hrow.appendChild(th);
+  });
+  const thDate = document.createElement('th');
+  thDate.innerHTML = `Submitted <span class="sort-icon"></span>`;
+  thDate.className = currentSort === 'submitted_at' ? `sorted-${sortDir.submitted_at || 'desc'}` : '';
+  thDate.onclick = () => toggleSort('submitted_at');
+  hrow.appendChild(thDate);
+  const thAI = document.createElement('th'); thAI.textContent = 'AI'; hrow.appendChild(thAI);
+  const thAct = document.createElement('th'); thAct.textContent = ''; hrow.appendChild(thAct);
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  // Body
+  const tbody = document.createElement('tbody');
+  records.forEach(rec => {
+    const tr = document.createElement('tr');
+    const data = parseJson(rec.data, {});
+    tableCols.forEach(col => {
+      const td = document.createElement('td');
+      const raw = data[col.key];
+      td.textContent = formatFieldValue(col, raw);
+      td.title = td.textContent;
+      tr.appendChild(td);
+    });
+    // Date cell
+    const tdDate = document.createElement('td');
+    tdDate.textContent = fmtDate(rec.submitted_at);
+    tdDate.title = rec.submitted_by_name || '';
+    tr.appendChild(tdDate);
+    // AI summary badge
+    const tdAI = document.createElement('td');
+    if (rec.ai_summary) {
+      const badge = document.createElement('span');
+      badge.className = 'mr-summary-badge';
+      badge.textContent = '✦ AI';
+      badge.title = rec.ai_summary;
+      badge.onclick = (e) => { e.stopPropagation(); showAISummary(rec); };
+      tdAI.appendChild(badge);
+    }
+    tr.appendChild(tdAI);
+    // Actions
+    const tdAct = document.createElement('td');
+    tdAct.className = 'mr-action';
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'btn btn-sm btn-ghost';
+    viewBtn.textContent = 'View';
+    viewBtn.onclick = () => openDrawer(rec);
+    tdAct.appendChild(viewBtn);
+    tr.appendChild(tdAct);
+
+    tr.style.cursor = 'pointer';
+    tr.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'SPAN') openDrawer(rec); };
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  container.innerHTML = '';
+  container.appendChild(wrap);
+}
+
+function toggleSort(field) {
+  if (currentSort === field) {
+    sortDir[field] = (sortDir[field] === 'asc') ? 'desc' : 'asc';
+  } else {
+    currentSort = field;
+    sortDir[field] = 'desc';
+  }
+  currentOffset = 0;
+  loadRecords();
+}
+
+function updatePager(count) {
+  const pager = document.getElementById('pager');
+  const total = currentOffset + count;
+  const hasMore = count >= PAGE_LIMIT;
+
+  pager.style.display = (currentOffset > 0 || hasMore) ? 'flex' : 'none';
+  document.getElementById('pager-info').textContent =
+    `Showing ${currentOffset + 1}–${currentOffset + count}${hasMore ? '+' : ''}`;
+  document.getElementById('btn-prev').disabled = currentOffset === 0;
+  document.getElementById('btn-next').disabled = !hasMore;
+}
+
+function changePage(dir) {
+  currentOffset = Math.max(0, currentOffset + dir * PAGE_LIMIT);
+  loadRecords();
+}
+
+// ── Record drawer ────────────────────────────────────────────────────────────
+
+function openDrawer(rec) {
+  const overlay = document.createElement('div');
+  overlay.className = 'mr-drawer-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeDrawer(overlay); };
+
+  const drawer = document.createElement('div');
+  drawer.className = 'mr-drawer';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'mr-drawer-hdr';
+  const title = document.createElement('div');
+  title.className = 'mr-drawer-title';
+  title.textContent = `Record #${rec.id}`;
+  const pdfBtn = document.createElement('button');
+  pdfBtn.className = 'btn btn-sm btn-ghost';
+  pdfBtn.textContent = '⬇ PDF';
+  pdfBtn.title = 'Export this record as PDF';
+  pdfBtn.onclick = () => exportRecordPDF(rec.id);
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-sm btn-ghost';
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = () => closeDrawer(overlay);
+  hdr.appendChild(title);
+  hdr.appendChild(pdfBtn);
+  hdr.appendChild(closeBtn);
+
+  const body = document.createElement('div');
+  body.className = 'mr-drawer-body';
+
+  if (rec.ai_summary) {
+    const aiBox = document.createElement('div');
+    aiBox.className = 'mr-drawer-ai';
+    const aiLabel = document.createElement('div');
+    aiLabel.className = 'mr-drawer-ai-label';
+    aiLabel.textContent = '✦ AI Summary';
+    aiBox.appendChild(aiLabel);
+    aiBox.appendChild(document.createTextNode(rec.ai_summary));
+    body.appendChild(aiBox);
+  }
+
+  const recContainer = document.createElement('div');
+  body.appendChild(recContainer);
+
+  if (typeof WrenModuleRenderer !== 'undefined') {
+    WrenModuleRenderer.renderRecord(moduleMeta, rec, recContainer, {
+      portal: 'admin', role: 'manager',
+      canEdit: true, canDelete: true,
+      onSave: async (data) => {
+        const result = await Wren.api(`/api/modules/${moduleId}/records/${rec.id}`, {
+          method: 'PUT', body: { data }
+        });
+        Wren.toast('Record updated ✓', 'success');
+        closeDrawer(overlay);
+        loadRecords();
+        return result;
+      },
+      onDelete: async () => {
+        if (!confirm('Delete this record?')) return;
+        await Wren.api(`/api/modules/${moduleId}/records/${rec.id}`, { method: 'DELETE' });
+        Wren.toast('Record deleted', 'success');
+        closeDrawer(overlay);
+        loadRecords();
+      }
+    });
+  } else {
+    // Fallback: render raw data
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'font-size:.78rem;color:var(--c-muted);white-space:pre-wrap;word-break:break-all';
+    pre.textContent = JSON.stringify(parseJson(rec.data, {}), null, 2);
+    recContainer.appendChild(pre);
+  }
+
+  drawer.appendChild(hdr);
+  drawer.appendChild(body);
+  overlay.appendChild(drawer);
+  document.body.appendChild(overlay);
+}
+
+function closeDrawer(overlay) {
+  overlay.remove();
+}
+
+function showAISummary(rec) {
+  Wren.modal('AI Summary', `
+    <div style="font-size:.88rem;line-height:1.7;color:var(--c-text);padding:4px 0">
+      ${esc(rec.ai_summary)}
+    </div>`, [{ label: 'Close', class: 'btn-ghost' }]);
+}
+
+// ── Save view modal ───────────────────────────────────────────────────────────
+
+function openSaveViewModal() {
+  Wren.modal('Save View', `
+    <div class="sv-form">
+      <div>
+        <label>View name</label>
+        <input id="sv-name" placeholder="e.g. Minor accidents this month" class="form-control">
+      </div>
+      <div>
+        <label>Visibility</label>
+        <select id="sv-shared" class="form-control">
+          <option value="false">Private (just me)</option>
+          <option value="true">Shared (all admins)</option>
+        </select>
+      </div>
+    </div>
+  `, [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      const name = document.getElementById('sv-name').value.trim();
+      if (!name) { Wren.toast('Name required', 'warning'); return; }
+      const is_shared = document.getElementById('sv-shared').value === 'true';
+
+      const filter_json = currentFilters;
+      const sort = currentSort ? [`${currentSort}:${sortDir[currentSort] || 'desc'}`] : [];
+
+      try {
+        const view = await Wren.api(`/api/modules/${moduleId}/views`, {
+          method: 'POST',
+          body: { name, filter_json, sort, is_shared }
+        });
+        savedViews.push(view);
+        const sel = document.getElementById('view-select');
+        const opt = document.createElement('option');
+        opt.value = view.id;
+        opt.textContent = view.name + (view.is_shared ? ' (shared)' : '');
+        sel.appendChild(opt);
+        sel.value = view.id;
+        activeViewId = view.id;
+        document.getElementById('btn-delete-view').style.display = '';
+        Wren.toast('View saved ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+      } catch(e) {
+        Wren.toast(e.error || 'Save failed', 'error');
+      }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+// ── CSV Export ───────────────────────────────────────────────────────────────
+
+function exportCSV() {
+  if (!currentRecords.length) { Wren.toast('No records to export', 'warning'); return; }
+  const fields = parseFields(moduleMeta);
+
+  const headers = [...fields.map(f => f.label || f.key), 'Submitted At', 'Submitted By'];
+  const rows = currentRecords.map(rec => {
+    const data = parseJson(rec.data, {});
+    const vals = fields.map(f => {
+      const v = data[f.key];
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'object') return JSON.stringify(v);
+      return String(v).replace(/"/g, '""');
+    });
+    vals.push(rec.submitted_at ? new Date(rec.submitted_at).toLocaleString('en-GB') : '');
+    vals.push(rec.submitted_by_name || '');
+    return vals;
+  });
+
+  const csv = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${(moduleMeta.slug || 'records')}-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  Wren.toast(`Exported ${rows.length} record${rows.length === 1 ? '' : 's'}`, 'success');
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+
+function parseFields(mod) {
+  const f = mod.fields;
+  if (Array.isArray(f)) return f;
+  try { return JSON.parse(f); } catch { return []; }
+}
+
+function parseJson(v, fallback) {
+  if (!v) return fallback;
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return fallback; }
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+    ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatFieldValue(field, value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (field.type === 'yes_no') return (value === true || value === 'true') ? 'Yes' : 'No';
+  if (field.type === 'date') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  if (field.type === 'datetime' || field.type === 'timestamp_auto') return fmtDate(value);
+  if (typeof value === 'object') return JSON.stringify(value);
+  const s = String(value);
+  return s.length > 60 ? s.slice(0, 57) + '…' : s;
+}
+
+function showError(msg) {
+  document.getElementById('records-container').innerHTML = `<div class="mr-empty">${esc(msg)}</div>`;
+}
+
+// ── PDF Export ───────────────────────────────────────────────────────────────
+
+function exportRecordPDF(recordId) {
+  const token = sessionStorage.getItem('wrenToken') || localStorage.getItem('wrenToken') || '';
+  const url   = `/api/export/pdf/module_record/${recordId}`;
+  fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    })
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `record-${recordId}-${new Date().toISOString().slice(0,10)}.pdf`;
+      a.click();
+      Wren.toast('PDF downloaded ✓', 'success');
+    })
+    .catch(() => Wren.toast('PDF export failed', 'error'));
+}
+
+let selectedRecordIds = new Set();
+
+function toggleRecordSelect(id, checked) {
+  if (checked) selectedRecordIds.add(id);
+  else selectedRecordIds.delete(id);
+  document.getElementById('btn-bulk-pdf').style.display = selectedRecordIds.size ? '' : 'none';
+}
+
+function exportBulkPDF() {
+  if (!selectedRecordIds.size) return;
+  const token = sessionStorage.getItem('wrenToken') || localStorage.getItem('wrenToken') || '';
+  Wren.toast(`Generating PDF for ${selectedRecordIds.size} record${selectedRecordIds.size !== 1 ? 's' : ''}…`);
+  fetch('/api/export/pdf/bulk', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity: 'module_record', ids: [...selectedRecordIds] })
+  })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `bulk-records-${new Date().toISOString().slice(0,10)}.pdf`;
+      a.click();
+      Wren.toast('Bulk PDF downloaded ✓', 'success');
+    })
+    .catch(() => Wren.toast('Bulk PDF export failed', 'error'));
+}
+
+document.addEventListener('wren:ready', loadPage);
+
+// ── Inline handler migration ────────────────────────────────────────────────
+document.getElementById('view-select').addEventListener('change', function() { onViewChange(this.value); });
+document.getElementById('btn-save-view').addEventListener('click', openSaveViewModal);
+document.getElementById('btn-delete-view').addEventListener('click', deleteCurrentView);
+document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
+document.getElementById('btn-bulk-pdf').addEventListener('click', exportBulkPDF);
+document.getElementById('btn-edit-module').addEventListener('click', function() {
+  location.href = 'module-builder.html?id=' + moduleId;
+});
+document.getElementById('btn-prev').addEventListener('click', function() { changePage(-1); });
+document.getElementById('btn-next').addEventListener('click', function() { changePage(1); });
+</script>
+</body>
+</html>

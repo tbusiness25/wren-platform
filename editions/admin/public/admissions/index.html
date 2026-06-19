@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Admissions — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Pipeline ── */
+.pipeline-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;align-items:flex-start}
+.pipeline-col{min-width:210px;max-width:230px;flex-shrink:0;border-radius:12px;background:#1e293b;border:1px solid #2d3748;display:flex;flex-direction:column}
+.col-header{padding:12px 14px 10px;border-bottom:1px solid #2d3748;display:flex;align-items:center;justify-content:space-between}
+.col-title{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8}
+.col-count{font-size:.75rem;background:#0f172a;color:#94a3b8;border-radius:10px;padding:1px 7px}
+.col-cards{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:80px}
+.enq-card{background:#0f172a;border:1px solid #2d3748;border-radius:10px;padding:11px 12px;cursor:grab;transition:box-shadow .15s,border-color .15s;position:relative}
+.enq-card:hover{border-color:#4a9abf;box-shadow:0 0 0 1px #4a9abf40}
+.enq-card.dragging{opacity:.5;cursor:grabbing}
+.enq-card.drag-over{border-color:#e07820;background:#1e2a3a}
+.card-name{font-size:.875rem;font-weight:700;color:#f1f5f9;margin-bottom:3px;line-height:1.3}
+.card-parent{font-size:.75rem;color:#94a3b8;margin-bottom:4px}
+.card-meta{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.card-tag{font-size:.68rem;background:#2d3748;color:#94a3b8;border-radius:6px;padding:2px 6px}
+.card-tag.room{background:#1e3a5f;color:#7dd3fc}
+.card-tag.date{background:#1a2e1a;color:#86efac}
+.drop-zone{border:2px dashed #2d3748;border-radius:8px;min-height:40px;transition:border-color .15s,background .15s}
+.drop-zone.active{border-color:#4a9abf;background:#0f172a40}
+.stage-indicator{width:3px;position:absolute;left:0;top:0;bottom:0;border-radius:10px 0 0 10px}
+/* ── List ── */
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.filter-bar .form-control{height:36px;max-width:180px}
+.badge{display:inline-flex;align-items:center;border-radius:20px;padding:2px 9px;font-size:.72rem;font-weight:600;white-space:nowrap}
+.badge-new{background:#1e3a5f;color:#7dd3fc}
+.badge-tour_booked{background:#2d1e5f;color:#c4b5fd}
+.badge-tour_done{background:#1e2d5f;color:#93c5fd}
+.badge-on_waiting_list{background:#3d2e00;color:#fcd34d}
+.badge-offer_made{background:#3d1e00;color:#fb923c}
+.badge-offer_accepted{background:#1a3a2a;color:#6ee7b7}
+.badge-registered{background:#14291a;color:#86efac}
+.badge-declined{background:#3a1a1a;color:#fca5a5}
+.badge-lost{background:#1e293b;color:#64748b}
+.sort-btn{cursor:pointer;user-select:none;white-space:nowrap}
+.sort-btn:hover{color:#4a9abf}
+/* ── Trends ── */
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:18px 20px}
+.stat-num{font-size:2rem;font-weight:700;color:#f1f5f9;line-height:1}
+.stat-label{font-size:.78rem;color:#94a3b8;margin-top:6px}
+.chart-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:20px;margin-bottom:16px}
+.chart-title{font-size:.9rem;font-weight:700;color:#f1f5f9;margin-bottom:16px}
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:768px){.charts-grid{grid-template-columns:1fr}}
+/* ── Forecast ── */
+.forecast-table th,.forecast-table td{text-align:center;padding:10px 14px}
+.forecast-table th:first-child,.forecast-table td:first-child{text-align:left}
+.util-bar{height:10px;border-radius:5px;background:#2d3748;overflow:hidden;margin-top:4px;min-width:60px}
+.util-fill{height:100%;border-radius:5px;transition:width .3s}
+.insight-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px;margin-bottom:16px}
+.insight-title{font-size:.85rem;font-weight:700;color:#f1f5f9;margin-bottom:10px}
+.insight-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2d3748;font-size:.84rem}
+.insight-row:last-child{border-bottom:none}
+.tag-over{background:#3a1a1a;color:#fca5a5;border-radius:6px;padding:2px 8px;font-size:.72rem;font-weight:600}
+.tag-full{background:#14291a;color:#86efac;border-radius:6px;padding:2px 8px;font-size:.72rem;font-weight:600}
+.tag-low{background:#3d2e00;color:#fcd34d;border-radius:6px;padding:2px 8px;font-size:.72rem;font-weight:600}
+.tag-ok{background:#1e293b;color:#94a3b8;border-radius:6px;padding:2px 8px;font-size:.72rem;font-weight:600}
+/* ── Occupancy ── */
+.room-card{background:#1e293b;border:1px solid #2d3748;border-radius:14px;padding:20px;margin-bottom:16px}
+.room-name{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:4px}
+.room-meta{font-size:13px;color:#64748b;margin-bottom:16px}
+.capacity-bar-wrap{height:12px;background:#0f172a;border-radius:8px;overflow:hidden;margin-bottom:8px}
+.capacity-bar{height:100%;border-radius:8px;transition:.4s}
+.capacity-labels{display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:16px}
+.occ-stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.stat-box{background:#0f172a;border-radius:10px;padding:12px;text-align:center}
+.stat-box .stat-num{font-size:24px}
+.child-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.child-chip{background:#0f172a;border-radius:8px;padding:8px 12px;font-size:13px;color:#e2e8f0;display:flex;align-items:center;gap:8px;cursor:pointer}
+.child-chip-avatar{width:28px;height:28px;border-radius:50%;background:#4a9abf;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.forecast-card{background:#1e293b;border:1px solid #2d3748;border-radius:14px;padding:20px;margin-bottom:16px}
+.forecast-title{font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:12px}
+.forecast-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1e2d40;font-size:13px}
+.forecast-row:last-child{border-bottom:none}
+.forecast-val{font-weight:600;color:#f1f5f9}
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.summary-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px;text-align:center}
+.summary-num{font-size:28px;font-weight:700;color:var(--c-blue)}
+.summary-label{font-size:12px;color:#64748b;margin-top:2px}
+/* ── Shared form ── */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.form-row{grid-template-columns:1fr}}
+.sub-label{font-size:.72rem;color:#94a3b8;margin-top:12px;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <!-- Page header with dynamic action buttons -->
+  <div class="page-header">
+    <div class="page-title">Admissions</div>
+    <div id="view-actions" style="display:flex;gap:8px;align-items:center"></div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tabs" style="margin-bottom:20px" id="adm-tabs">
+    <button class="tab-btn" data-view="pipeline">Pipeline</button>
+    <button class="tab-btn" data-view="list">List</button>
+    <button class="tab-btn" data-view="trends">Trends</button>
+    <button class="tab-btn" data-view="forecast">Forecast</button>
+    <button class="tab-btn" data-view="occupancy">Occupancy</button>
+  </div>
+
+  <!-- ── PIPELINE VIEW ── -->
+  <div class="tab-panel" id="view-pipeline">
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <input class="form-control" id="pl-search" placeholder="Search name or parent..." style="max-width:220px;height:36px">
+      <select class="form-control" id="pl-filter-room" style="max-width:160px;height:36px">
+        <option value="">All rooms</option>
+        <option value="Baby Room">Baby Room</option>
+        <option value="Pre-school">Pre-school</option>
+      </select>
+      <select class="form-control" id="pl-filter-source" style="max-width:160px;height:36px">
+        <option value="">All sources</option>
+        <option>Website</option><option>Phone</option><option>Referral</option><option>Social Media</option><option>Walk-in</option>
+      </select>
+    </div>
+    <div class="pipeline-board" id="board"></div>
+  </div>
+
+  <!-- ── LIST VIEW ── -->
+  <div class="tab-panel" id="view-list">
+    <div class="filter-bar">
+      <input class="form-control" id="li-search" placeholder="Search...">
+      <select class="form-control" id="li-stage">
+        <option value="">All stages</option>
+        <option value="new">New enquiry</option>
+        <option value="tour_booked">Tour booked</option>
+        <option value="tour_done">Tour done</option>
+        <option value="on_waiting_list">On waiting list</option>
+        <option value="offer_made">Offer made</option>
+        <option value="offer_accepted">Offer accepted</option>
+        <option value="registered">Registered</option>
+        <option value="declined">Declined</option>
+        <option value="lost">Lost</option>
+      </select>
+      <select class="form-control" id="li-room">
+        <option value="">All rooms</option>
+        <option>Baby Room</option>
+        <option>Pre-school</option>
+      </select>
+      <select class="form-control" id="li-source">
+        <option value="">All sources</option>
+        <option>Website</option><option>Phone</option><option>Referral</option><option>Social Media</option><option>Walk-in</option>
+      </select>
+      <select class="form-control" id="li-viewtype">
+        <option value="enquiries">Enquiries only</option>
+        <option value="waiting">Waiting list only</option>
+        <option value="all">All</option>
+      </select>
+      <span id="li-row-count" style="color:#94a3b8;font-size:.82rem;white-space:nowrap"></span>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="table-wrapper" style="overflow-x:auto">
+        <table id="list-table">
+          <thead>
+            <tr>
+              <th class="sort-btn" data-sortby="child_first_name">Child name ⇅</th>
+              <th class="sort-btn" data-sortby="child_dob">DOB ⇅</th>
+              <th>Room</th>
+              <th class="sort-btn" data-sortby="parent_name">Parent ⇅</th>
+              <th>Contact</th>
+              <th>Stage</th>
+              <th class="sort-btn" data-sortby="preferred_start_date">Start date ⇅</th>
+              <th>Source</th>
+              <th class="sort-btn" data-sortby="created_at">Enquired ⇅</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="list-body">
+            <tr><td colspan="10" style="text-align:center;padding:32px;color:#94a3b8"><div class="spinner"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TRENDS VIEW ── -->
+  <div class="tab-panel" id="view-trends">
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-num" id="s-total">—</div><div class="stat-label">Total enquiries</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-registered">—</div><div class="stat-label">Registered</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-conversion">—</div><div class="stat-label">Conversion rate</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-avgdays">—</div><div class="stat-label">Avg days to registered</div></div>
+      <div class="stat-card"><div class="stat-num" id="s-pipeline">—</div><div class="stat-label">Active in pipeline</div></div>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-card"><div class="chart-title">Enquiries per month (last 12 months)</div><canvas id="chart-monthly" height="200"></canvas></div>
+      <div class="chart-card"><div class="chart-title">Pipeline by stage</div><canvas id="chart-stages" height="200"></canvas></div>
+      <div class="chart-card"><div class="chart-title">Enquiries by source</div><canvas id="chart-source" height="200"></canvas></div>
+      <div class="chart-card"><div class="chart-title">Conversion rate by source</div><canvas id="chart-conversion" height="200"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── FORECAST VIEW ── -->
+  <div class="tab-panel" id="view-forecast">
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px" id="fc-main">
+      <div>
+        <div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:20px;margin-bottom:16px">
+          <div style="font-size:.9rem;font-weight:700;color:#f1f5f9;margin-bottom:16px">Predicted occupancy — next 6 months</div>
+          <canvas id="chart-forecast" height="220"></canvas>
+        </div>
+        <div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:0;overflow:hidden;margin-bottom:16px">
+          <div style="padding:16px 20px 10px;font-size:.9rem;font-weight:700;color:#f1f5f9">Month-by-month breakdown</div>
+          <div class="table-wrapper"><table class="forecast-table" id="fc-table" style="width:100%"><thead id="fc-head"></thead><tbody id="fc-body"></tbody></table></div>
+        </div>
+      </div>
+      <div>
+        <div class="insight-card"><div class="insight-title">Insights</div><div id="fc-insights"><div class="spinner"></div></div></div>
+        <div class="insight-card"><div class="insight-title">Waiting list starters</div><div id="fc-wl"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── OCCUPANCY VIEW ── -->
+  <div class="tab-panel" id="view-occupancy">
+    <div class="summary-grid">
+      <div class="summary-card"><div class="summary-num" id="oc-enrolled">—</div><div class="summary-label">Total Enrolled</div></div>
+      <div class="summary-card"><div class="summary-num" id="oc-capacity">—</div><div class="summary-label">Total Capacity</div></div>
+      <div class="summary-card"><div class="summary-num" id="oc-spaces">—</div><div class="summary-label">Spaces Available</div></div>
+      <div class="summary-card"><div class="summary-num" id="oc-pct">—</div><div class="summary-label">Occupancy Rate</div></div>
+      <div class="summary-card"><div class="summary-num" id="oc-waiting">—</div><div class="summary-label">On Waiting List</div></div>
+      <div class="summary-card"><div class="summary-num" id="oc-funded">—</div><div class="summary-label">Funded Hours Children</div></div>
+    </div>
+    <div id="oc-rooms"><div class="loading-state">Loading occupancy…</div></div>
+    <div class="forecast-card">
+      <div class="forecast-title">💰 Income Forecast</div>
+      <div id="oc-forecast-rows"><div style="color:#64748b;font-size:13px">Loading…</div></div>
+      <div style="font-size:11px;color:#475569;margin-top:12px">Based on enrolled children × contracted sessions. Actual invoiced amounts may vary.</div>
+    </div>
+  </div>
+
+</div><!-- /wren-content -->
+
+<script>
+// ── Shared constants ──────────────────────────────────────────────────────────
+const STAGES = [
+  { key:'new',              label:'New enquiry',      color:'#4a9abf' },
+  { key:'tour_booked',      label:'Tour booked',      color:'#a78bfa' },
+  { key:'tour_done',        label:'Tour done',        color:'#60a5fa' },
+  { key:'on_waiting_list',  label:'On waiting list',  color:'#f59e0b' },
+  { key:'offer_made',       label:'Offer made',       color:'#e07820' },
+  { key:'offer_accepted',   label:'Offer accepted',   color:'#34d399' },
+  { key:'registered',       label:'Registered',       color:'#22c55e' },
+  { key:'declined',         label:'Declined',         color:'#f87171' },
+  { key:'lost',             label:'Lost',             color:'#475569' },
+];
+const STAGE_LABELS = {};
+STAGES.forEach(s => STAGE_LABELS[s.key] = s.label);
+const STAGE_COLORS = ['#4a9abf','#a78bfa','#60a5fa','#f59e0b','#e07820','#34d399','#22c55e','#f87171','#475569'];
+
+// ── View switching ────────────────────────────────────────────────────────────
+const VIEWS = ['pipeline','list','trends','forecast','occupancy'];
+const viewLoaded = {};
+
+function setView(v) {
+  if (!VIEWS.includes(v)) v = 'pipeline';
+  VIEWS.forEach(id => {
+    document.getElementById('view-'+id).classList.toggle('active', id===v);
+  });
+  document.querySelectorAll('#adm-tabs .tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === v);
+  });
+  history.replaceState(null, '', '#'+v);
+  renderViewActions(v);
+  if (!viewLoaded[v]) {
+    viewLoaded[v] = true;
+    loadView(v);
+  }
+}
+
+function renderViewActions(v) {
+  const el = document.getElementById('view-actions');
+  if (v === 'pipeline') {
+    el.innerHTML = `<button class="btn btn-primary" data-action="new-enquiry">+ New enquiry</button>`;
+  } else if (v === 'list') {
+    el.innerHTML = `
+      <button class="btn btn-ghost" data-action="export-csv">Export CSV</button>
+      <button class="btn btn-primary" data-action="pipeline-new-enquiry">+ New enquiry</button>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function loadView(v) {
+  if (v === 'pipeline') loadPipeline();
+  else if (v === 'list') loadList();
+  else if (v === 'trends') loadTrends();
+  else if (v === 'forecast') loadForecast();
+  else if (v === 'occupancy') loadOccupancy();
+}
+
+// Tab click handlers
+document.querySelectorAll('#adm-tabs .tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => setView(btn.dataset.view));
+});
+
+// ── PIPELINE ─────────────────────────────────────────────────────────────────
+let enquiries = [];
+let dragId = null;
+
+function stageColor(k){ return STAGES.find(s=>s.key===k)?.color||'#94a3b8'; }
+
+function filteredEnquiries(){
+  const q = document.getElementById('pl-search').value.toLowerCase();
+  const room = document.getElementById('pl-filter-room').value;
+  const src = document.getElementById('pl-filter-source').value;
+  return enquiries.filter(e => {
+    const name = ((e.child_first_name||'')+' '+(e.child_last_name||'')+' '+(e.parent_name||'')).toLowerCase();
+    if(q && !name.includes(q)) return false;
+    if(room && (e.preferred_room||e.room_needed) !== room) return false;
+    if(src && e.source !== src) return false;
+    return true;
+  });
+}
+
+function renderBoard(){
+  const board = document.getElementById('board');
+  const data = filteredEnquiries();
+  board.innerHTML = STAGES.map(stage => {
+    const cards = data.filter(e => e.stage === stage.key);
+    return `<div class="pipeline-col" data-stage="${stage.key}">
+      <div class="col-header">
+        <span class="col-title" style="color:${stage.color}">${stage.label}</span>
+        <span class="col-count">${cards.length}</span>
+      </div>
+      <div class="col-cards drop-zone" id="col-${stage.key}">
+        ${cards.map(e => renderCard(e)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  board.querySelectorAll('.enq-card').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      dragId = parseInt(card.dataset.id);
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('active'));
+    });
+    card.addEventListener('click', () => openCard(parseInt(card.dataset.id)));
+  });
+  board.querySelectorAll('.col-cards.drop-zone').forEach(zone => {
+    const stageKey = zone.id.replace('col-', '');
+    zone.addEventListener('dragover', e => onDragOver(e, zone));
+    zone.addEventListener('dragleave', () => onDragLeave(zone));
+    zone.addEventListener('drop', e => onDrop(e, stageKey));
+  });
+}
+
+function renderCard(e){
+  const room = e.preferred_room || e.room_needed || '';
+  const date = e.preferred_start_date || e.start_date_requested;
+  const color = stageColor(e.stage);
+  return `<div class="enq-card" data-id="${e.id}" draggable="true">
+    <div class="stage-indicator" style="background:${color}"></div>
+    <div class="card-name" style="padding-left:4px">${e.child_first_name||'?'} ${e.child_last_name||''}</div>
+    <div class="card-parent" style="padding-left:4px">${e.parent_name||''}</div>
+    <div class="card-meta" style="padding-left:4px">
+      ${room ? `<span class="card-tag room">${room}</span>` : ''}
+      ${date ? `<span class="card-tag date">${new Date(date).toLocaleDateString('en-GB',{month:'short',year:'2-digit'})}</span>` : ''}
+      ${e.source ? `<span class="card-tag">${e.source}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function onDragOver(e, el){ e.preventDefault(); e.dataTransfer.dropEffect='move'; el.classList.add('active'); }
+function onDragLeave(el){ el.classList.remove('active'); }
+
+async function onDrop(e, stage){
+  e.preventDefault();
+  document.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('active'));
+  if (!dragId) return;
+  try {
+    await Wren.api(`/api/enquiries/${dragId}/move`, { method:'POST', body:{ stage } });
+    const idx = enquiries.findIndex(x => x.id === dragId);
+    if (idx !== -1) enquiries[idx].stage = stage;
+    renderBoard();
+    Wren.toast(`Moved to ${STAGES.find(s=>s.key===stage)?.label}`, 'success');
+  } catch(err){
+    Wren.toast('Failed to update stage', 'danger');
+  }
+  dragId = null;
+}
+
+function openCard(id){
+  const e = enquiries.find(x => x.id === id);
+  if (!e) return;
+  const stageOpts = STAGES.map(s => `<option value="${s.key}" ${e.stage===s.key?'selected':''}>${s.label}</option>`).join('');
+  Wren.modal(`${e.child_first_name||'?'} ${e.child_last_name||''}`, `
+    <div style="display:grid;gap:12px;font-size:.875rem">
+      <div class="form-row">
+        <div><div class="sub-label">Child</div>
+          <div style="color:#f1f5f9">${e.child_first_name||''} ${e.child_last_name||''}</div>
+          <div style="color:#94a3b8">${e.child_dob?new Date(e.child_dob).toLocaleDateString('en-GB'):''}</div></div>
+        <div><div class="sub-label">Parent</div>
+          <div style="color:#f1f5f9">${e.parent_name||''}</div>
+          <div style="color:#94a3b8">${e.parent_phone||''}</div>
+          <div style="color:#94a3b8">${e.parent_email||''}</div></div>
+      </div>
+      <div class="form-row">
+        <div><div class="sub-label">Room preferred</div><div style="color:#f1f5f9">${e.preferred_room||e.room_needed||'—'}</div></div>
+        <div><div class="sub-label">Preferred start</div><div style="color:#f1f5f9">${e.preferred_start_date?new Date(e.preferred_start_date).toLocaleDateString('en-GB'):e.start_date_requested?new Date(e.start_date_requested).toLocaleDateString('en-GB'):'—'}</div></div>
+      </div>
+      <div class="form-row">
+        <div><div class="sub-label">Source</div><div style="color:#f1f5f9">${e.source||'—'}</div></div>
+        <div><div class="sub-label">Funded hours</div><div style="color:#f1f5f9">${e.funded_hours_type||'—'}</div></div>
+      </div>
+      ${e.notes ? `<div><div class="sub-label">Notes</div><div style="color:#f1f5f9">${e.notes}</div></div>` : ''}
+      <hr style="border-color:#2d3748;margin:4px 0">
+      <div><div class="sub-label">Move stage</div>
+        <select class="form-control" id="modal-stage" style="margin-top:4px">${stageOpts}</select></div>
+      <div><div class="sub-label">Notes</div>
+        <textarea class="form-control" id="modal-notes" rows="2" style="margin-top:4px">${e.notes||''}</textarea></div>
+    </div>
+  `, [
+    { label:'Save', class:'btn-primary', close:false, action: async () => {
+      const stage = document.getElementById('modal-stage').value;
+      const notes = document.getElementById('modal-notes').value;
+      await Wren.api(`/api/enquiries/${id}`, { method:'PUT', body:{ stage, notes } });
+      Wren.toast('Saved ✓','success');
+      document.querySelector('.wren-modal-overlay')?.remove();
+      await loadPipeline();
+    }},
+    { label:'Convert to waiting list', class:'btn-ghost', close:false, action: async () => {
+      if (!confirm('Add to waiting list?')) return;
+      await Wren.api(`/api/enquiries/${id}/convert-to-waiting-list`, { method:'POST', body:{} });
+      Wren.toast('Added to waiting list ✓','success');
+      document.querySelector('.wren-modal-overlay')?.remove();
+      await loadPipeline();
+    }},
+    { label:'Delete', class:'btn-danger', close:false, action: async () => {
+      if (!confirm('Delete this enquiry permanently?')) return;
+      await Wren.api(`/api/enquiries/${id}`, { method:'DELETE' });
+      Wren.toast('Deleted','success');
+      document.querySelector('.wren-modal-overlay')?.remove();
+      await loadPipeline();
+    }},
+    { label:'Close', class:'btn-ghost' },
+  ]);
+}
+
+function openNewEnquiry(){
+  const stageOpts = STAGES.map(s => `<option value="${s.key}" ${s.key==='new'?'selected':''}>${s.label}</option>`).join('');
+  Wren.modal('New Enquiry', `
+    <div style="display:grid;gap:12px">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Child first name</label><input class="form-control" id="ne-cfirst"></div>
+        <div class="form-group"><label class="form-label">Child last name</label><input class="form-control" id="ne-clast"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Date of birth</label><input type="date" class="form-control" id="ne-dob"></div>
+        <div class="form-group"><label class="form-label">Room needed</label>
+          <select class="form-control" id="ne-room"><option value="">—</option><option>Baby Room</option><option>Pre-school</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Preferred start date</label><input type="date" class="form-control" id="ne-start"></div>
+        <div class="form-group"><label class="form-label">Funded hours type</label>
+          <select class="form-control" id="ne-funded"><option value="">None / unknown</option><option value="15h">15 hours</option><option value="30h">30 hours</option><option value="2yr">2-yr funding</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">Parent name *</label><input class="form-control" id="ne-pname"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="ne-phone" type="tel"></div>
+        <div class="form-group"><label class="form-label">Email</label><input class="form-control" id="ne-email" type="email"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Source</label>
+          <select class="form-control" id="ne-source">
+            <option>Website</option><option>Phone</option><option>Referral</option><option>Social Media</option><option>Walk-in</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Initial stage</label>
+          <select class="form-control" id="ne-stage">${stageOpts}</select>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="ne-notes" rows="2"></textarea></div>
+    </div>
+  `, [
+    { label:'Save enquiry', class:'btn-primary', close:false, action: async () => {
+      const pname = document.getElementById('ne-pname').value.trim();
+      if (!pname){ Wren.toast('Parent name required','warning'); return; }
+      await Wren.api('/api/enquiries', { method:'POST', body:{
+        child_first_name: document.getElementById('ne-cfirst').value.trim(),
+        child_last_name:  document.getElementById('ne-clast').value.trim(),
+        child_dob:        document.getElementById('ne-dob').value || null,
+        preferred_room:   document.getElementById('ne-room').value,
+        room_needed:      document.getElementById('ne-room').value,
+        preferred_start_date: document.getElementById('ne-start').value || null,
+        funded_hours_type: document.getElementById('ne-funded').value,
+        parent_name:      pname,
+        parent_phone:     document.getElementById('ne-phone').value,
+        parent_email:     document.getElementById('ne-email').value,
+        source:           document.getElementById('ne-source').value,
+        stage:            document.getElementById('ne-stage').value,
+        notes:            document.getElementById('ne-notes').value,
+      }});
+      Wren.toast('Enquiry saved ✓','success');
+      document.querySelector('.wren-modal-overlay')?.remove();
+      await loadPipeline();
+    }},
+    { label:'Cancel', class:'btn-ghost' },
+  ]);
+}
+
+async function loadPipeline(){
+  try {
+    enquiries = await Wren.api('/api/enquiries');
+    renderBoard();
+  } catch(err){
+    Wren.toast('Failed to load enquiries','danger');
+  }
+}
+
+// ── LIST ──────────────────────────────────────────────────────────────────────
+let listRows = [];
+let listSortKey = 'created_at';
+let listSortDir = -1;
+
+function stageBadge(s){
+  return `<span class="badge badge-${s||'new'}">${STAGE_LABELS[s]||s||'New'}</span>`;
+}
+
+function applyListFilters(){
+  const q = document.getElementById('li-search').value.toLowerCase();
+  const stage = document.getElementById('li-stage').value;
+  const room = document.getElementById('li-room').value;
+  const src = document.getElementById('li-source').value;
+  const view = document.getElementById('li-viewtype').value;
+  let rows = listRows.filter(r => {
+    if(view==='enquiries' && r._type!=='enquiry') return false;
+    if(view==='waiting' && r._type!=='waiting') return false;
+    if(stage && r.stage !== stage) return false;
+    if(room && (r.preferred_room||r.room_needed) !== room) return false;
+    if(src && r.source !== src) return false;
+    if(q){
+      const txt = ((r.child_first_name||'')+(r.child_last_name||'')+(r.parent_name||'')).toLowerCase();
+      if(!txt.includes(q)) return false;
+    }
+    return true;
+  });
+  rows.sort((a,b) => {
+    const av=a[listSortKey]||'', bv=b[listSortKey]||'';
+    return av<bv?listSortDir:av>bv?-listSortDir:0;
+  });
+  document.getElementById('li-row-count').textContent = `${rows.length} record${rows.length!==1?'s':''}`;
+  renderListRows(rows);
+}
+
+function sortListBy(k){
+  if(listSortKey===k) listSortDir*=-1; else { listSortKey=k; listSortDir=-1; }
+  applyListFilters();
+}
+
+function renderListRows(rows){
+  const tbody = document.getElementById('list-body');
+  if(!rows.length){
+    tbody.innerHTML=`<tr><td colspan="10" style="text-align:center;padding:32px;color:#94a3b8">No records match your filters</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const start = r.preferred_start_date||r.expected_start_date||r.start_date_requested;
+    return `<tr>
+      <td><strong>${r.child_first_name||'?'} ${r.child_last_name||''}</strong><br><span style="font-size:.72rem;color:#64748b">${r._type==='waiting'?'⏳ waiting list':''}</span></td>
+      <td>${r.child_dob?new Date(r.child_dob).toLocaleDateString('en-GB'):'—'}</td>
+      <td>${r.preferred_room||r.room_needed||'—'}</td>
+      <td>${r.parent_name||'—'}</td>
+      <td style="font-size:.8rem">${r.parent_phone||''}<br>${r.parent_email||''}</td>
+      <td>${stageBadge(r.stage||'on_waiting_list')}</td>
+      <td>${start?new Date(start).toLocaleDateString('en-GB',{month:'short',year:'numeric'}):'—'}</td>
+      <td style="font-size:.8rem">${r.source||'—'}</td>
+      <td style="font-size:.8rem">${r.created_at?new Date(r.created_at).toLocaleDateString('en-GB'):'—'}</td>
+      <td>${r._type==='enquiry'?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:.78rem" data-action="edit-row" data-id="${r.id}">Edit</button>`:'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function editListRow(id){
+  const e = listRows.find(r=>r.id===id && r._type==='enquiry');
+  if(!e) return;
+  const stageOpts = Object.entries(STAGE_LABELS).map(([k,v])=>`<option value="${k}" ${e.stage===k?'selected':''}>${v}</option>`).join('');
+  Wren.modal(`Edit — ${e.child_first_name} ${e.child_last_name}`, `
+    <div style="display:grid;gap:10px;font-size:.875rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group"><label class="form-label">Stage</label>
+          <select class="form-control" id="ed-stage">${stageOpts}</select></div>
+        <div class="form-group"><label class="form-label">Preferred room</label>
+          <select class="form-control" id="ed-room">
+            <option value="">—</option>
+            <option ${(e.preferred_room||e.room_needed)==='Baby Room'?'selected':''}>Baby Room</option>
+            <option ${(e.preferred_room||e.room_needed)==='Pre-school'?'selected':''}>Pre-school</option>
+          </select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Preferred start date</label>
+        <input type="date" class="form-control" id="ed-start" value="${(e.preferred_start_date||e.start_date_requested||'').slice(0,10)}"></div>
+      <div class="form-group"><label class="form-label">Notes</label>
+        <textarea class="form-control" id="ed-notes" rows="2">${e.notes||''}</textarea></div>
+    </div>
+  `, [
+    { label:'Save', class:'btn-primary', close:false, action: async () => {
+      await Wren.api(`/api/enquiries/${id}`, { method:'PUT', body:{
+        stage: document.getElementById('ed-stage').value,
+        preferred_room: document.getElementById('ed-room').value,
+        preferred_start_date: document.getElementById('ed-start').value||null,
+        notes: document.getElementById('ed-notes').value,
+      }});
+      Wren.toast('Saved ✓','success');
+      document.querySelector('.wren-modal-overlay')?.remove();
+      loadList();
+    }},
+    { label:'Close', class:'btn-ghost' },
+  ]);
+}
+
+function exportCsv(){
+  if(!listRows.length){ Wren.toast('No data to export','warning'); return; }
+  const headers = ['Type','Child name','DOB','Room','Parent','Phone','Email','Stage','Start date','Source','Enquiry date','Notes'];
+  const lines = [headers.join(',')];
+  listRows.forEach(r => {
+    const start = r.preferred_start_date||r.expected_start_date||r.start_date_requested||'';
+    lines.push([
+      r._type==='waiting'?'Waiting list':'Enquiry',
+      `"${r.child_first_name||''} ${r.child_last_name||''}"`,
+      r.child_dob?new Date(r.child_dob).toLocaleDateString('en-GB'):'',
+      r.preferred_room||r.room_needed||'',
+      `"${r.parent_name||''}"`,r.parent_phone||'',r.parent_email||'',
+      STAGE_LABELS[r.stage]||r.stage||'',
+      start?new Date(start).toLocaleDateString('en-GB'):'',
+      r.source||'',
+      r.created_at?new Date(r.created_at).toLocaleDateString('en-GB'):'',
+      `"${(r.notes||'').replace(/"/g,'""')}"`,
+    ].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `admissions-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+async function loadList(){
+  try {
+    const [enq, wl] = await Promise.all([
+      Wren.api('/api/enquiries'),
+      Wren.api('/api/enquiries/waiting-list'),
+    ]);
+    listRows = [
+      ...enq.map(e => ({...e, _type:'enquiry'})),
+      ...wl.map(w => ({...w, _type:'waiting', stage: w.enquiry_stage||'on_waiting_list'})),
+    ];
+    applyListFilters();
+  } catch(err){
+    Wren.toast('Failed to load data','danger');
+  }
+}
+
+// ── TRENDS ────────────────────────────────────────────────────────────────────
+const C = { color:'#94a3b8', grid:'#2d3748', blue:'#4a9abf', orange:'#e07820', green:'#22c55e', purple:'#a78bfa', amber:'#f59e0b', red:'#ef4444' };
+
+async function loadTrends(){
+  try {
+    Chart.defaults.color = C.color;
+    Chart.defaults.borderColor = C.grid;
+    const stats = await Wren.api('/api/enquiries/stats');
+    const monthKeys = [];
+    for(let i=11;i>=0;i--){
+      const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
+      monthKeys.push(d.toISOString().slice(0,7));
+    }
+    const monthLabels = monthKeys.map(k => {
+      const d = new Date(k+'-01');
+      return d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'});
+    });
+    const monthMap = {};
+    (stats.byMonth||[]).forEach(r=>{ monthMap[r.month]=parseInt(r.count); });
+    const monthData = monthKeys.map(k=>monthMap[k]||0);
+    const total = (stats.byStage||[]).reduce((s,r)=>s+parseInt(r.count),0);
+    const regCount = parseInt((stats.byStage||[]).find(r=>r.stage==='registered')?.count||0);
+    const active = (stats.byStage||[]).filter(r=>!['registered','declined','lost'].includes(r.stage)).reduce((s,r)=>s+parseInt(r.count),0);
+    document.getElementById('s-total').textContent = total;
+    document.getElementById('s-registered').textContent = regCount;
+    document.getElementById('s-conversion').textContent = total ? Math.round(regCount/total*100)+'%' : '0%';
+    document.getElementById('s-avgdays').textContent = stats.avgDaysToRegistered!=null ? stats.avgDaysToRegistered+'d' : '—';
+    document.getElementById('s-pipeline').textContent = active;
+    new Chart(document.getElementById('chart-monthly'),{type:'bar',data:{labels:monthLabels,datasets:[{label:'Enquiries',data:monthData,backgroundColor:C.blue+'99',borderColor:C.blue,borderWidth:1,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:11}}},y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+    const stageData=(stats.byStage||[]).filter(r=>parseInt(r.count)>0);
+    new Chart(document.getElementById('chart-stages'),{type:'doughnut',data:{labels:stageData.map(r=>STAGE_LABELS[r.stage]||r.stage),datasets:[{data:stageData.map(r=>parseInt(r.count)),backgroundColor:STAGE_COLORS.slice(0,stageData.length),borderColor:'#1e293b',borderWidth:2}]},options:{responsive:true,plugins:{legend:{position:'right',labels:{font:{size:11},padding:10}}}}});
+    const srcData=(stats.bySource||[]).slice(0,7);
+    new Chart(document.getElementById('chart-source'),{type:'bar',data:{labels:srcData.map(r=>r.source),datasets:[{label:'Enquiries',data:srcData.map(r=>parseInt(r.total)),backgroundColor:C.orange+'99',borderColor:C.orange,borderWidth:1,borderRadius:4}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});
+    const convSrc=srcData.filter(r=>parseInt(r.total)>0);
+    new Chart(document.getElementById('chart-conversion'),{type:'bar',data:{labels:convSrc.map(r=>r.source),datasets:[{label:'Conversion %',data:convSrc.map(r=>Math.round(parseInt(r.converted)/parseInt(r.total)*100)),backgroundColor:C.green+'99',borderColor:C.green,borderWidth:1,borderRadius:4}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}}}});
+  } catch(err){
+    Wren.toast('Failed to load trends','danger');
+  }
+}
+
+// ── FORECAST ──────────────────────────────────────────────────────────────────
+const ROOM_COLORS = { 'Baby Room':'#4a9abf', 'Pre-school':'#e07820' };
+const ROOM_COLORS_FADED = { 'Baby Room':'#4a9abf55', 'Pre-school':'#e0782055' };
+
+function utilClass(u){ return u>=100?'tag-over':u>=85?'tag-full':u>=50?'tag-ok':'tag-low'; }
+function utilFill(u){ return u>=100?'#ef4444':u>=85?'#22c55e':u>=50?'#4a9abf':'#f59e0b'; }
+
+async function loadForecast(){
+  try {
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = '#2d3748';
+    const data = await Wren.api('/api/enquiries/forecast');
+    if(!data.length){ document.getElementById('fc-main').innerHTML='<div class="card" style="text-align:center;padding:40px;color:#94a3b8">No forecast data available</div>'; return; }
+    const rooms = data[0].rooms.map(r=>r.room_name);
+    const months = data.map(d=>new Date(d.month+'-01').toLocaleDateString('en-GB',{month:'short',year:'2-digit'}));
+    const datasets = rooms.map(room => {
+      const color=ROOM_COLORS[room]||'#94a3b8';
+      return { label:room, data:data.map(m=>m.rooms.find(r=>r.room_name===room)?.predicted||0), borderColor:color, backgroundColor:ROOM_COLORS_FADED[room]||'#94a3b855', borderWidth:2, fill:true, tension:.3, pointRadius:4 };
+    });
+    rooms.forEach(room => {
+      const cap=data[0].rooms.find(r=>r.room_name===room)?.capacity||0;
+      const color=ROOM_COLORS[room]||'#94a3b8';
+      datasets.push({ label:`${room} capacity`, data:data.map(()=>cap), borderColor:color, borderWidth:1, borderDash:[6,4], backgroundColor:'transparent', pointRadius:0, fill:false });
+    });
+    new Chart(document.getElementById('chart-forecast'),{type:'line',data:{labels:months,datasets},options:{responsive:true,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+    document.getElementById('fc-head').innerHTML=`<tr><th></th>${rooms.map(r=>`<th colspan="2" style="color:${ROOM_COLORS[r]||'#94a3b8'}">${r}</th>`).join('')}</tr><tr style="font-size:.75rem;color:#64748b"><th>Month</th>${rooms.map(()=>'<th>Predicted</th><th>Capacity</th>').join('')}</tr>`;
+    document.getElementById('fc-body').innerHTML=data.map(month=>{
+      const label=new Date(month.month+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+      return `<tr><td style="text-align:left;font-weight:600;color:#f1f5f9">${label}</td>${rooms.map(room=>{
+        const r=month.rooms.find(x=>x.room_name===room);
+        if(!r) return '<td>—</td><td>—</td>';
+        const fc=utilFill(r.utilisation);
+        return `<td><strong style="color:${fc}">${r.predicted}</strong>${r.starting>0?`<br><span style="font-size:.72rem;color:#34d399">+${r.starting} starting</span>`:''}<div class="util-bar"><div class="util-fill" style="width:${Math.min(r.utilisation,100)}%;background:${fc}"></div></div><span style="font-size:.7rem;color:#64748b">${r.utilisation}%</span></td><td style="color:#64748b">${r.capacity}</td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    const insights=[];
+    data.forEach(month=>{
+      const label=new Date(month.month+'-01').toLocaleDateString('en-GB',{month:'short',year:'numeric'});
+      month.rooms.forEach(r=>{
+        if(r.utilisation>=100) insights.push({label:`${r.room_name} — ${label}`,tag:'tag-over',text:'Over capacity'});
+        else if(r.utilisation<50) insights.push({label:`${r.room_name} — ${label}`,tag:'tag-low',text:`${100-r.predicted} spaces free`});
+      });
+    });
+    document.getElementById('fc-insights').innerHTML=insights.length?insights.slice(0,8).map(i=>`<div class="insight-row"><span style="color:#f1f5f9">${i.label}</span><span class="${i.tag}">${i.text}</span></div>`).join(''):'<div style="color:#94a3b8;font-size:.84rem">No critical alerts — occupancy looks healthy.</div>';
+    const hasStarters=data.some(m=>m.rooms.some(r=>r.starting>0));
+    document.getElementById('fc-wl').innerHTML=hasStarters?data.map(month=>{
+      const starters=month.rooms.filter(r=>r.starting>0).map(r=>`${r.starting} → ${r.room_name}`).join(', ');
+      if(!starters) return '';
+      const label=new Date(month.month+'-01').toLocaleDateString('en-GB',{month:'short',year:'numeric'});
+      return `<div class="insight-row"><span style="color:#f1f5f9">${label}</span><span style="color:#34d399">${starters}</span></div>`;
+    }).filter(Boolean).join(''):'<div style="color:#94a3b8;font-size:.84rem">No waiting list entries with start dates in the next 6 months.</div>';
+  } catch(err){
+    Wren.toast('Failed to load forecast','danger');
+  }
+}
+
+// ── OCCUPANCY ─────────────────────────────────────────────────────────────────
+async function loadOccupancy(){
+  try {
+    const [rooms, children, waiting] = await Promise.all([
+      Wren.api('/api/admin/rooms'),
+      Wren.api('/api/children?active=true'),
+      Wren.api('/api/admin/waiting-list-count').catch(()=>({count:0})),
+    ]);
+    const totalCap=rooms.reduce((s,r)=>s+(r.capacity||0),0);
+    const totalEnrolled=children.length;
+    const pct=totalCap?Math.round(totalEnrolled/totalCap*100):0;
+    const funded=children.filter(c=>c.funded_hours>0).length;
+    const waitingCount=waiting.count||0;
+    document.getElementById('oc-enrolled').textContent=totalEnrolled;
+    document.getElementById('oc-capacity').textContent=totalCap;
+    document.getElementById('oc-spaces').textContent=totalCap-totalEnrolled;
+    document.getElementById('oc-pct').textContent=pct+'%';
+    document.getElementById('oc-funded').textContent=funded;
+    document.getElementById('oc-waiting').textContent=waitingCount;
+    document.getElementById('oc-rooms').innerHTML=rooms.map(room=>{
+      const rc=children.filter(c=>c.room_id===room.id);
+      const cap=room.capacity||0,enrolled=rc.length,spaces=cap-enrolled;
+      const rpct=cap?Math.round(enrolled/cap*100):0;
+      const barColor=rpct>=90?'#ef4444':rpct>=75?'#f59e0b':'#22c55e';
+      const ageRange=room.min_age_months&&room.max_age_months?`${room.min_age_months<12?room.min_age_months+'m':Math.floor(room.min_age_months/12)+'yr'} – ${Math.floor(room.max_age_months/12)}yr`:'';
+      return `<div class="room-card">
+        <div class="room-name">${room.name}</div>
+        <div class="room-meta">${ageRange}</div>
+        <div class="capacity-bar-wrap"><div class="capacity-bar" style="width:${rpct}%;background:${barColor}"></div></div>
+        <div class="capacity-labels"><span>${enrolled} enrolled</span><span>${rpct}% full</span><span>${spaces} space${spaces!==1?'s':''} left</span></div>
+        <div class="occ-stat-row">
+          <div class="stat-box"><div class="stat-num" style="color:${barColor}">${rpct}%</div><div class="stat-label">Occupied</div></div>
+          <div class="stat-box"><div class="stat-num">${enrolled}</div><div class="stat-label">Children</div></div>
+          <div class="stat-box"><div class="stat-num" style="color:${spaces===0?'#ef4444':'#22c55e'}">${spaces}</div><div class="stat-label">Spaces</div></div>
+        </div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:8px;font-weight:600">Enrolled children</div>
+        <div class="child-list">${rc.map(c=>`<div class="child-chip" data-action="go-children"><div class="child-chip-avatar">${c.first_name.charAt(0)}</div><span>${c.first_name} ${c.last_name.charAt(0)}.</span></div>`).join('')||'<span style="font-size:13px;color:#475569">No children enrolled</span>'}</div>
+      </div>`;
+    }).join('');
+    const fundedHrsTotal=children.reduce((s,c)=>s+(c.funded_hours||0),0);
+    const avgRate=6.50,monthlyFunded=Math.round(fundedHrsTotal*avgRate*4.33);
+    const nonFunded=totalEnrolled-funded,estNF=nonFunded*800,totalMonthly=monthlyFunded+estNF;
+    document.getElementById('oc-forecast-rows').innerHTML=`
+      <div class="forecast-row"><span>Funded hours children (${funded})</span><span class="forecast-val">${funded} × avg ${Math.round(fundedHrsTotal/(funded||1))}h/wk</span></div>
+      <div class="forecast-row"><span>Funded income estimate (@ £${avgRate}/hr)</span><span class="forecast-val">£${monthlyFunded.toLocaleString()}/mo</span></div>
+      <div class="forecast-row"><span>Non-funded children (${nonFunded})</span><span class="forecast-val">£${estNF.toLocaleString()}/mo est.</span></div>
+      <div class="forecast-row" style="border-top:1px solid #2d3748;padding-top:10px;margin-top:4px">
+        <span style="font-weight:700;color:#f1f5f9">Total monthly estimate</span>
+        <span class="forecast-val" style="font-size:18px;color:var(--c-blue)">£${totalMonthly.toLocaleString()}</span>
+      </div>
+      <div class="forecast-row"><span style="color:#64748b">Annual estimate</span><span class="forecast-val">£${(totalMonthly*12).toLocaleString()}</span></div>`;
+  } catch(e){
+    document.getElementById('oc-rooms').innerHTML=`<div class="empty-state">Could not load occupancy data<br><small>${e.message}</small></div>`;
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', () => {
+  const hash = location.hash.replace('#','') || 'pipeline';
+  setView(hash);
+
+  // Pipeline filters
+  document.getElementById('pl-search').addEventListener('input', renderBoard);
+  document.getElementById('pl-filter-room').addEventListener('change', renderBoard);
+  document.getElementById('pl-filter-source').addEventListener('change', renderBoard);
+
+  // List filters
+  document.getElementById('li-search').addEventListener('input', applyListFilters);
+  document.getElementById('li-stage').addEventListener('change', applyListFilters);
+  document.getElementById('li-room').addEventListener('change', applyListFilters);
+  document.getElementById('li-source').addEventListener('change', applyListFilters);
+  document.getElementById('li-viewtype').addEventListener('change', applyListFilters);
+
+  // Sort headers
+  document.getElementById('list-table').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sortby]');
+    if (th) sortListBy(th.dataset.sortby);
+  });
+
+  // View action buttons (rendered dynamically by renderViewActions)
+  document.getElementById('view-actions').addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    if (btn.dataset.action === 'new-enquiry') openNewEnquiry();
+    else if (btn.dataset.action === 'export-csv') exportCsv();
+    else if (btn.dataset.action === 'pipeline-new-enquiry') { setView('pipeline'); openNewEnquiry(); }
+  });
+
+  // List rows Edit button
+  document.getElementById('list-body').addEventListener('click', e => {
+    const btn = e.target.closest('[data-action="edit-row"]');
+    if (btn) editListRow(parseInt(btn.dataset.id));
+  });
+
+  // Occupancy child chips
+  document.getElementById('oc-rooms').addEventListener('click', e => {
+    if (e.target.closest('[data-action="go-children"]')) window.location = '/children.html';
+  });
+});
+
+window.addEventListener('hashchange', () => {
+  const v = location.hash.replace('#','');
+  if (VIEWS.includes(v)) {
+    VIEWS.forEach(id => document.getElementById('view-'+id).classList.toggle('active', id===v));
+    document.querySelectorAll('#adm-tabs .tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view===v));
+    renderViewActions(v);
+    if (!viewLoaded[v]) { viewLoaded[v]=true; loadView(v); }
+  }
+});
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

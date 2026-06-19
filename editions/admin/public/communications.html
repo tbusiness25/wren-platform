@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Communications — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* ── Tab bar ──────────────────────────────────────────────────────── */
+.comms-tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid #2d3748;padding-bottom:0}
+.comms-tab{padding:8px 18px;border-radius:8px 8px 0 0;font-size:.82rem;font-weight:700;cursor:pointer;
+  background:none;border:1px solid transparent;color:#94a3b8;font-family:inherit;
+  transition:all .15s;margin-bottom:-1px;border-bottom:none}
+.comms-tab.active{background:#1e293b;border-color:#2d3748;border-bottom-color:#1e293b;color:#f1f5f9}
+.comms-tab:hover:not(.active){color:#f1f5f9;background:rgba(255,255,255,0.04)}
+.tab-badge{background:#ef4444;color:#fff;border-radius:999px;font-size:.65rem;
+  font-weight:800;padding:1px 5px;margin-left:5px;vertical-align:middle}
+
+/* ── Filter bar ───────────────────────────────────────────────────── */
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.filter-bar input[type=date],.filter-bar select,.filter-bar input[type=search]{
+  background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:8px;
+  padding:6px 10px;font-size:.78rem;font-family:inherit;outline:none}
+.filter-bar input[type=date]:focus,.filter-bar select:focus,.filter-bar input[type=search]:focus{
+  border-color:#4a9abf}
+.filter-btn{padding:6px 14px;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;
+  font-family:inherit;border:1px solid;transition:all .2s}
+.filter-btn-primary{background:rgba(74,154,191,.15);border-color:rgba(74,154,191,.4);color:#4a9abf}
+.filter-btn-primary:hover{background:rgba(74,154,191,.25)}
+.filter-btn-ghost{background:rgba(255,255,255,.04);border-color:#2d3748;color:#94a3b8}
+.filter-btn-ghost:hover{background:rgba(255,255,255,.08);color:#f1f5f9}
+
+/* ── Calls table ──────────────────────────────────────────────────── */
+.calls-wrap{overflow-x:auto}
+.calls-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.calls-table th{text-align:left;padding:8px 12px;color:#94a3b8;font-size:.7rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid #2d3748;
+  position:sticky;top:0;background:#0f172a;white-space:nowrap}
+.calls-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+.calls-table tr:hover td{background:rgba(255,255,255,.02)}
+.calls-table tr.expanded td{background:rgba(74,154,191,.04)}
+.expand-row td{padding:0 12px 12px;background:rgba(74,154,191,.04)!important}
+.expand-content{font-size:.78rem;line-height:1.65;color:#94a3b8;
+  border-top:1px solid #2d3748;padding-top:10px}
+.transcript-block{background:#0f172a;border:1px solid #2d3748;border-radius:6px;
+  padding:10px 14px;font-size:.75rem;color:#94a3b8;white-space:pre-wrap;
+  max-height:200px;overflow-y:auto;margin-top:6px;line-height:1.6}
+.summary-block{background:rgba(74,154,191,.08);border:1px solid rgba(74,154,191,.25);
+  border-radius:6px;padding:10px 14px;font-size:.8rem;color:#f1f5f9;margin-top:8px;line-height:1.6}
+.expand-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.follow-up-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.follow-up-input{flex:1;min-width:180px;background:#1e293b;border:1px solid #2d3748;
+  color:#f1f5f9;border-radius:8px;padding:6px 10px;font-size:.78rem;font-family:inherit;outline:none}
+.follow-up-input:focus{border-color:#e07820}
+
+/* ── Urgency / outcome pills ──────────────────────────────────────── */
+.pill{padding:2px 8px;border-radius:999px;font-size:.68rem;font-weight:700;white-space:nowrap}
+.pill-red{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.pill-amber{background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3)}
+.pill-blue{background:rgba(74,154,191,.15);color:#4a9abf;border:1px solid rgba(74,154,191,.3)}
+.pill-green{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
+.pill-muted{background:rgba(255,255,255,.06);color:#94a3b8;border:1px solid #2d3748}
+
+/* ── Email cards ──────────────────────────────────────────────────── */
+.email-cards{display:flex;flex-direction:column;gap:10px}
+.email-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:14px 16px;transition:border-color .15s}
+.email-card:hover{border-color:#4a9abf}
+.email-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.email-from{font-size:.82rem;font-weight:700;color:#f1f5f9}
+.email-meta{font-size:.72rem;color:#94a3b8;margin-top:2px}
+.email-subject{font-size:.85rem;font-weight:600;color:#4a9abf;margin:6px 0 4px}
+.email-body-preview{font-size:.78rem;color:#94a3b8;line-height:1.55;margin-bottom:10px}
+.email-draft-box{background:rgba(74,154,191,.06);border:1px solid rgba(74,154,191,.25);
+  border-radius:8px;padding:10px 14px;margin-bottom:10px}
+.email-draft-label{font-size:.68rem;font-weight:700;color:#4a9abf;text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:5px}
+.email-draft-text{font-size:.78rem;color:#f1f5f9;line-height:1.6}
+.email-draft-editor{width:100%;min-height:80px;background:#0f172a;border:1px solid #2d3748;
+  color:#f1f5f9;border-radius:6px;padding:8px 12px;font-size:.78rem;font-family:inherit;
+  resize:vertical;outline:none}
+.email-draft-editor:focus{border-color:#4a9abf}
+.email-actions{display:flex;gap:7px;flex-wrap:wrap}
+.btn-sm{padding:5px 12px;border-radius:8px;font-size:.75rem;font-weight:700;cursor:pointer;
+  font-family:inherit;border:1px solid;transition:all .2s;display:inline-flex;align-items:center;gap:4px}
+.btn-sm-blue{background:rgba(74,154,191,.15);border-color:rgba(74,154,191,.4);color:#4a9abf}
+.btn-sm-blue:hover{background:rgba(74,154,191,.25)}
+.btn-sm-orange{background:rgba(224,120,32,.15);border-color:rgba(224,120,32,.4);color:#e07820}
+.btn-sm-orange:hover{background:rgba(224,120,32,.25)}
+.btn-sm-ghost{background:rgba(255,255,255,.04);border-color:#2d3748;color:#94a3b8}
+.btn-sm-ghost:hover{background:rgba(255,255,255,.08);color:#f1f5f9}
+.btn-sm-danger{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3);color:#ef4444}
+.btn-sm-danger:hover{background:rgba(239,68,68,.2)}
+.btn-sm-green{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3);color:#22c55e}
+.btn-sm-green:hover{background:rgba(34,197,94,.2)}
+
+/* ── Message threads ──────────────────────────────────────────────── */
+.msg-layout{display:grid;grid-template-columns:300px 1fr;gap:0;border:1px solid #2d3748;border-radius:10px;overflow:hidden;min-height:500px}
+@media(max-width:700px){.msg-layout{grid-template-columns:1fr;grid-template-rows:auto 1fr}}
+.thread-list{border-right:1px solid #2d3748;overflow-y:auto;max-height:600px}
+.thread-item{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;transition:background .12s}
+.thread-item:hover{background:rgba(255,255,255,.03)}
+.thread-item.active{background:rgba(74,154,191,.1);border-left:3px solid #4a9abf}
+.thread-child{font-size:.8rem;font-weight:700;color:#f1f5f9;margin-bottom:2px}
+.thread-subject{font-size:.75rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread-time{font-size:.68rem;color:#94a3b8;float:right;margin-top:2px}
+.thread-unread{display:inline-block;width:7px;height:7px;background:#4a9abf;border-radius:50%;margin-right:5px;flex-shrink:0}
+.thread-detail{display:flex;flex-direction:column;overflow:hidden}
+.thread-header{padding:14px 16px;border-bottom:1px solid #2d3748;background:rgba(30,41,59,.7);flex-shrink:0}
+.thread-title{font-size:.9rem;font-weight:700;margin-bottom:4px}
+.thread-messages{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-height:450px}
+.msg-bubble{max-width:75%;padding:9px 13px;border-radius:10px;font-size:.8rem;line-height:1.6}
+.msg-parent{background:rgba(255,255,255,.06);align-self:flex-start}
+.msg-staff{background:rgba(74,154,191,.15);align-self:flex-end}
+.msg-meta{font-size:.65rem;color:#94a3b8;margin-top:3px}
+.reply-bar{padding:10px 14px;border-top:1px solid #2d3748;display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+.reply-input{flex:1;background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:8px;
+  padding:8px 12px;font-size:.78rem;font-family:inherit;resize:none;outline:none;min-height:60px}
+.reply-input:focus{border-color:#4a9abf}
+
+/* ── Pagination ───────────────────────────────────────────────────── */
+.pagination{display:flex;gap:6px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.page-btn{padding:5px 12px;border-radius:8px;font-size:.75rem;font-weight:700;cursor:pointer;
+  font-family:inherit;border:1px solid #2d3748;background:rgba(255,255,255,.04);color:#94a3b8;transition:all .15s}
+.page-btn.active{background:rgba(74,154,191,.2);border-color:#4a9abf;color:#4a9abf}
+.page-btn:hover:not(.active){background:rgba(255,255,255,.08);color:#f1f5f9}
+
+/* ── Misc ─────────────────────────────────────────────────────────── */
+.section-heading{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+  color:#94a3b8;margin-bottom:10px}
+.empty-state{text-align:center;padding:40px 20px;color:#94a3b8;font-size:.82rem}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header">
+    <div class="page-title">Communications</div>
+  </div>
+
+  <!-- ── Tabs ──────────────────────────────────────────────────────── -->
+  <div class="comms-tabs">
+    <button class="comms-tab active" id="tab-btn-calls">
+      📞 Vapi Calls <span class="tab-badge" id="badge-calls" style="display:none">0</span>
+    </button>
+    <button class="comms-tab" id="tab-btn-emails">
+      📧 Emails <span class="tab-badge" id="badge-emails" style="display:none">0</span>
+    </button>
+    <button class="comms-tab" id="tab-btn-msgs">
+      💬 Messages <span class="tab-badge" id="badge-msgs"  style="display:none">0</span>
+    </button>
+  </div>
+
+  <!-- ═══════════════════ CALLS TAB ═══════════════════ -->
+  <div id="section-calls">
+
+    <div class="filter-bar">
+      <input type="date" id="calls-from" title="From date">
+      <input type="date" id="calls-to"   title="To date">
+      <select id="calls-urgency">
+        <option value="">All urgencies</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+      <select id="calls-reviewed">
+        <option value="">All</option>
+        <option value="no">Unreviewed</option>
+        <option value="yes">Reviewed</option>
+      </select>
+      <button class="filter-btn filter-btn-primary" id="btn-calls-filter">🔍 Filter</button>
+      <button class="filter-btn filter-btn-ghost"   id="btn-calls-clear">✕ Clear</button>
+    </div>
+
+    <div class="calls-wrap">
+      <table class="calls-table">
+        <thead>
+          <tr>
+            <th style="width:20px"></th>
+            <th>Caller</th>
+            <th>Time</th>
+            <th>Duration</th>
+            <th>Urgency</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="calls-tbody">
+          <tr><td colspan="7" class="empty-state"><div class="spinner" style="margin:0 auto"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="calls-pagination"></div>
+  </div>
+
+  <!-- ═══════════════════ EMAILS TAB ═══════════════════ -->
+  <div id="section-emails" style="display:none">
+
+    <div class="filter-bar">
+      <input type="date" id="emails-from" title="From date">
+      <select id="emails-status">
+        <option value="pending">Pending</option>
+        <option value="sent">Sent</option>
+        <option value="ignored">Ignored</option>
+        <option value="">All</option>
+      </select>
+      <button class="filter-btn filter-btn-primary" id="btn-emails-filter">🔍 Filter</button>
+      <button class="filter-btn filter-btn-ghost"   id="btn-emails-clear">✕ Clear</button>
+    </div>
+
+    <div id="emails-list">
+      <div class="loading-state"><div class="spinner"></div></div>
+    </div>
+    <div class="pagination" id="emails-pagination"></div>
+  </div>
+
+  <!-- ═══════════════════ MESSAGES TAB ═══════════════════ -->
+  <div id="section-msgs" style="display:none">
+
+    <div class="filter-bar">
+      <input type="search" id="msgs-search" placeholder="Search child or subject…" style="min-width:200px">
+      <select id="msgs-child">
+        <option value="">All children</option>
+      </select>
+      <select id="msgs-staff">
+        <option value="">All staff</option>
+      </select>
+      <button class="filter-btn filter-btn-ghost" id="btn-msgs-clear">✕ Clear</button>
+    </div>
+
+    <div class="msg-layout">
+      <div class="thread-list" id="thread-list">
+        <div class="loading-state" style="padding:20px"><div class="spinner" style="margin:0 auto"></div></div>
+      </div>
+      <div class="thread-detail" id="thread-detail">
+        <div class="empty-state" style="align-self:center;width:100%">
+          <div style="font-size:2rem;margin-bottom:8px">💬</div>
+          <div style="font-weight:700;font-size:.9rem;color:#f1f5f9;margin-bottom:4px">Parent Messages</div>
+          <div>Select a thread to view conversation</div>
+        </div>
+      </div>
+    </div>
+    <div class="pagination" id="msgs-pagination"></div>
+  </div>
+
+</div><!-- /wren-content -->
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentTab    = 'calls';
+let callsPage     = 1;
+let emailsPage    = 1;
+let msgsPage      = 1;
+let activeThread  = null;
+let searchTimer   = null;
+let editingEmail  = null; // id of email being edited
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  ['calls','emails','msgs'].forEach(t => {
+    document.getElementById('section-'+t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('tab-btn-'+t).classList.toggle('active', t === tab);
+  });
+  if (tab === 'calls'  && !document.querySelector('#calls-tbody tr td[colspan]')?.textContent?.includes('…')) return;
+  if (tab === 'calls')  loadCalls(1);
+  if (tab === 'emails') loadEmails(1);
+  if (tab === 'msgs')   { loadMessages(1); loadMsgsDropdowns(); }
+}
+
+// ── ── ── CALLS ── ── ──────────────────────────────────────────────────────────
+
+let expandedCallId = null;
+
+async function loadCalls(page = 1) {
+  callsPage = page;
+  const tbody = document.getElementById('calls-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+
+  const from     = document.getElementById('calls-from').value;
+  const to       = document.getElementById('calls-to').value;
+  const urgency  = document.getElementById('calls-urgency').value;
+  const reviewed = document.getElementById('calls-reviewed').value;
+
+  const params = new URLSearchParams({ page });
+  if (from) params.set('from', from);
+  if (to)   params.set('to', to);
+  if (urgency)  params.set('urgency', urgency);
+  if (reviewed) params.set('reviewed', reviewed);
+
+  try {
+    const data = await Wren.api('/api/comms/calls?' + params);
+    tbody.innerHTML = '';
+
+    if (!data.calls?.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No calls found</td></tr>';
+      document.getElementById('calls-pagination').innerHTML = '';
+      updateBadge('badge-calls', 0);
+      return;
+    }
+
+    // Count unreviewed for badge
+    const unreviewed = data.calls.filter(c => !c.reviewed_at).length;
+    updateBadge('badge-calls', unreviewed);
+
+    data.calls.forEach(call => tbody.appendChild(buildCallRow(call)));
+    renderPagination('calls-pagination', data.page, data.total, data.limit, loadCalls);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">⚠️ ${esc(err.message)}</td></tr>`;
+  }
+}
+
+function buildCallRow(call) {
+  const tr = document.createElement('tr');
+  tr.dataset.callId = call.id;
+
+  const dur = call.duration_seconds ? Math.floor(call.duration_seconds / 60) + 'm ' + (call.duration_seconds % 60) + 's' : '—';
+  const time = fmtDt(call.started_at);
+  const urgencyPill = call.urgency
+    ? `<span class="pill ${urgencyClass(call.urgency)}">${esc(call.urgency)}</span>`
+    : '<span class="pill pill-muted">—</span>';
+  const statusPill = call.reviewed_at
+    ? `<span class="pill pill-green">✓ Reviewed</span>`
+    : `<span class="pill pill-amber">Unreviewed</span>`;
+
+  tr.innerHTML = `
+    <td style="cursor:pointer;font-size:.9rem;color:#94a3b8;user-select:none" data-call-action="expand">▶</td>
+    <td style="font-weight:600;color:#f1f5f9">${esc(call.from_number || 'Unknown')}</td>
+    <td style="white-space:nowrap">${time}</td>
+    <td>${dur}</td>
+    <td>${urgencyPill}</td>
+    <td>${statusPill}</td>
+    <td>
+      ${!call.reviewed_at
+        ? `<button class="btn-sm btn-sm-blue" data-call-action="review" data-call-id="${esc(call.id)}">✓ Mark reviewed</button>`
+        : `<span style="font-size:.72rem;color:#94a3b8">by ${esc(call.reviewed_by_name || 'staff')}</span>`
+      }
+    </td>
+  `;
+
+  // Expansion row
+  const expandTr = document.createElement('tr');
+  expandTr.className = 'expand-row';
+  expandTr.id = 'expand-' + call.id;
+  expandTr.style.display = 'none';
+  expandTr.innerHTML = `<td colspan="7">${buildCallExpandContent(call)}</td>`;
+
+  tr.after(expandTr);
+  tr.parentNode?.appendChild(expandTr); // will be appended by the forEach loop
+
+  return tr;
+}
+
+function buildCallExpandContent(call) {
+  return `
+    <div class="expand-content">
+      ${call.summary ? `
+        <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#4a9abf;letter-spacing:.5px;margin-bottom:4px">AI Summary</div>
+        <div class="summary-block">${esc(call.summary)}</div>
+      ` : ''}
+      ${call.transcript ? `
+        <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.5px;margin:10px 0 4px">Transcript</div>
+        <div class="transcript-block">${esc(call.transcript)}</div>
+      ` : (call.summary ? '' : '<div style="color:#94a3b8;font-size:.78rem">No transcript or summary available.</div>')}
+      <div class="expand-actions" id="expand-actions-${esc(call.id)}">
+        <div class="follow-up-row" style="width:100%">
+          <input class="follow-up-input" id="followup-input-${esc(call.id)}" placeholder="Follow-up task title…" maxlength="200">
+          <input type="date" class="follow-up-input" id="followup-date-${esc(call.id)}" style="max-width:150px">
+          <button class="btn-sm btn-sm-orange" data-call-action="followup" data-call-id="${esc(call.id)}">📋 Create task</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleCallExpand(callId, arrowTd) {
+  const expandRow = document.getElementById('expand-' + callId);
+  if (!expandRow) return;
+  const isOpen = expandRow.style.display !== 'none';
+  if (expandedCallId && expandedCallId !== callId) {
+    const prev = document.getElementById('expand-' + expandedCallId);
+    if (prev) prev.style.display = 'none';
+    const prevArrow = document.querySelector(`tr[data-call-id="${expandedCallId}"] td:first-child`);
+    if (prevArrow) prevArrow.textContent = '▶';
+  }
+  expandRow.style.display = isOpen ? 'none' : 'table-row';
+  arrowTd.textContent = isOpen ? '▶' : '▼';
+  expandedCallId = isOpen ? null : callId;
+}
+
+async function markReviewed(callId) {
+  try {
+    await Wren.api(`/api/comms/calls/${callId}/reviewed`, { method: 'POST', body: '{}' });
+    Wren.toast('Marked as reviewed');
+    loadCalls(callsPage);
+  } catch (err) {
+    Wren.toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function createFollowUp(callId) {
+  const titleEl = document.getElementById('followup-input-' + callId);
+  const dateEl  = document.getElementById('followup-date-' + callId);
+  const title   = titleEl?.value?.trim();
+  const due     = dateEl?.value || undefined;
+  if (!title) { Wren.toast('Enter a task title first', 'error'); return; }
+  try {
+    await Wren.api(`/api/comms/calls/${callId}/follow-up`, {
+      method: 'POST',
+      body: JSON.stringify({ task_title: title, due_date: due })
+    });
+    Wren.toast('✅ Task created');
+    if (titleEl) titleEl.value = '';
+    if (dateEl)  dateEl.value = '';
+  } catch (err) {
+    Wren.toast('Error: ' + err.message, 'error');
+  }
+}
+
+function clearCallsFilter() {
+  ['calls-from','calls-to'].forEach(id => document.getElementById(id).value = '');
+  ['calls-urgency','calls-reviewed'].forEach(id => document.getElementById(id).selectedIndex = 0);
+  loadCalls(1);
+}
+
+// ── ── ── EMAILS ── ── ─────────────────────────────────────────────────────────
+
+async function loadEmails(page = 1) {
+  emailsPage = page;
+  const listEl = document.getElementById('emails-list');
+  listEl.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const from   = document.getElementById('emails-from').value;
+  const status = document.getElementById('emails-status').value;
+
+  const params = new URLSearchParams({ page });
+  if (from)   params.set('from', from);
+  if (status) params.set('status', status);
+
+  try {
+    const data = await Wren.api('/api/comms/emails?' + params);
+    listEl.innerHTML = '';
+
+    if (!data.emails?.length) {
+      listEl.innerHTML = '<div class="empty-state">No emails in this queue.<br><span style="font-size:.72rem">Incoming emails from the n8n agent will appear here.</span></div>';
+      document.getElementById('emails-pagination').innerHTML = '';
+      updateBadge('badge-emails', 0);
+      return;
+    }
+
+    const pending = data.emails.filter(e => e.status === 'pending').length;
+    updateBadge('badge-emails', pending);
+
+    const cards = document.createElement('div');
+    cards.className = 'email-cards';
+    data.emails.forEach(email => cards.appendChild(buildEmailCard(email)));
+    listEl.appendChild(cards);
+    renderPagination('emails-pagination', data.page, data.total, data.limit, loadEmails);
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty-state">⚠️ ${esc(err.message)}</div>`;
+  }
+}
+
+function buildEmailCard(email) {
+  const card = document.createElement('div');
+  card.className = 'email-card';
+  card.id = 'email-card-' + email.id;
+
+  const classificationPill = email.classification
+    ? `<span class="pill ${classificationClass(email.classification)}" style="margin-left:8px">${esc(email.classification)}</span>`
+    : '';
+  const statusPill = email.status !== 'pending'
+    ? `<span class="pill ${email.status === 'sent' ? 'pill-green' : 'pill-muted'}" style="margin-left:8px">${esc(email.status)}</span>`
+    : '';
+  const effectiveDraft = email.draft_text || email.suggested_draft || '';
+
+  card.innerHTML = `
+    <div class="email-card-header">
+      <div>
+        <div class="email-from">${esc(email.from_name || email.from_email)}${classificationPill}${statusPill}</div>
+        <div class="email-meta">${esc(email.from_email)} · ${fmtDt(email.received_at)}</div>
+      </div>
+      ${email.status === 'pending' ? '' : `<span class="pill pill-muted" style="font-size:.68rem">Handled by ${esc(email.handled_by_name || 'staff')}</span>`}
+    </div>
+    <div class="email-subject">${esc(email.subject || '(no subject)')}</div>
+    ${email.body_text ? `<div class="email-body-preview">${esc(email.body_text.slice(0, 300))}${email.body_text.length > 300 ? '…' : ''}</div>` : ''}
+    ${effectiveDraft ? `
+      <div class="email-draft-box" id="draft-box-${email.id}">
+        <div class="email-draft-label">✨ Suggested reply</div>
+        <div class="email-draft-text" id="draft-text-${email.id}">${esc(effectiveDraft)}</div>
+      </div>
+    ` : ''}
+    ${email.status === 'pending' ? `
+      <div class="email-actions" id="email-actions-${email.id}">
+        ${effectiveDraft ? `<button class="btn-sm btn-sm-green" data-action="send-draft" data-email-id="${email.id}">📤 Send draft</button>` : ''}
+        <button class="btn-sm btn-sm-blue"  data-action="toggle-edit" data-email-id="${email.id}" data-draft="${encodeURIComponent(effectiveDraft || '')}">✏️ Edit draft</button>
+        <button class="btn-sm btn-sm-ghost" data-action="ignore-email" data-email-id="${email.id}">🚫 Don't reply</button>
+      </div>
+    ` : ''}
+  `;
+  return card;
+}
+
+function toggleEditDraft(emailId, currentText) {
+  const actionsEl = document.getElementById('email-actions-' + emailId);
+  const draftBox  = document.getElementById('draft-box-' + emailId);
+  if (editingEmail === emailId) {
+    // Cancel edit — restore actions
+    editingEmail = null;
+    loadEmails(emailsPage);
+    return;
+  }
+  editingEmail = emailId;
+  if (actionsEl) {
+    actionsEl.innerHTML = `
+      <div style="width:100%;display:flex;flex-direction:column;gap:7px">
+        <textarea class="email-draft-editor" id="draft-editor-${emailId}" placeholder="Edit the draft reply…">${esc(currentText)}</textarea>
+        <div style="display:flex;gap:7px">
+          <button class="btn-sm btn-sm-orange" data-action="save-draft" data-email-id="${emailId}">💾 Save</button>
+          <button class="btn-sm btn-sm-green"  data-action="save-then-send" data-email-id="${emailId}">📤 Save & Send</button>
+          <button class="btn-sm btn-sm-ghost"  data-action="cancel-edit" data-email-id="${emailId}">✕ Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function cancelEdit(emailId) {
+  editingEmail = null;
+  loadEmails(emailsPage);
+}
+
+async function saveDraft(emailId) {
+  const editor = document.getElementById('draft-editor-' + emailId);
+  const draft_text = editor?.value?.trim();
+  if (!draft_text) { Wren.toast('Draft cannot be empty', 'error'); return; }
+  try {
+    await Wren.api(`/api/comms/emails/${emailId}/edit-draft`, {
+      method: 'POST',
+      body: JSON.stringify({ draft_text })
+    });
+    editingEmail = null;
+    Wren.toast('Draft saved');
+    loadEmails(emailsPage);
+  } catch (err) {
+    Wren.toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function saveThenSend(emailId) {
+  await saveDraft(emailId);
+  await sendDraft(emailId);
+}
+
+async function sendDraft(emailId) {
+  if (!confirm('Send this draft reply?')) return;
+  try {
+    await Wren.api(`/api/comms/emails/${emailId}/send-draft`, { method: 'POST', body: '{}' });
+    Wren.toast('✅ Draft sent');
+    loadEmails(emailsPage);
+  } catch (err) {
+    Wren.toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function ignoreEmail(emailId) {
+  if (!confirm('Mark this email as no reply needed?')) return;
+  try {
+    await Wren.api(`/api/comms/emails/${emailId}/ignore`, { method: 'POST', body: '{}' });
+    Wren.toast('Marked as no reply');
+    loadEmails(emailsPage);
+  } catch (err) {
+    Wren.toast('Error: ' + err.message, 'error');
+  }
+}
+
+function clearEmailsFilter() {
+  document.getElementById('emails-from').value = '';
+  document.getElementById('emails-status').selectedIndex = 0;
+  loadEmails(1);
+}
+
+// ── ── ── MESSAGES ── ── ───────────────────────────────────────────────────────
+
+async function loadMessages(page = 1) {
+  msgsPage = page;
+  const listEl = document.getElementById('thread-list');
+  listEl.innerHTML = '<div style="padding:20px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>';
+
+  const search   = document.getElementById('msgs-search').value.trim();
+  const child_id = document.getElementById('msgs-child').value;
+  const staff_id = document.getElementById('msgs-staff').value;
+
+  const params = new URLSearchParams({ page });
+  if (search)   params.set('search', search);
+  if (child_id) params.set('child_id', child_id);
+  if (staff_id) params.set('staff_id', staff_id);
+
+  try {
+    const data = await Wren.api('/api/comms/messages?' + params);
+    listEl.innerHTML = '';
+
+    if (!data.threads?.length) {
+      listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#94a3b8;font-size:.78rem">No message threads found</div>';
+      document.getElementById('msgs-pagination').innerHTML = '';
+      updateBadge('badge-msgs', 0);
+      return;
+    }
+
+    const totalUnread = data.threads.reduce((s, t) => s + parseInt(t.unread_count || 0), 0);
+    updateBadge('badge-msgs', totalUnread);
+
+    data.threads.forEach(thread => {
+      const div = document.createElement('div');
+      div.className = 'thread-item' + (activeThread?.id === thread.id ? ' active' : '');
+      const unreadDot = parseInt(thread.unread_count) > 0
+        ? `<span class="thread-unread"></span>` : '';
+      div.innerHTML = `
+        <div class="thread-child">${unreadDot}${esc(thread.child_name || '—')}</div>
+        <div class="thread-subject" title="${esc(thread.subject || 'Message')}">${esc(thread.subject || 'Message')}</div>
+        <div class="thread-time">${fmtRelative(thread.last_message_at)}</div>
+        ${thread.last_body ? `<div style="font-size:.7rem;color:#94a3b8;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(thread.last_body.slice(0, 80))}</div>` : ''}
+      `;
+      div.onclick = () => openThread(thread, div);
+      listEl.appendChild(div);
+    });
+
+    renderPagination('msgs-pagination', data.page, data.total, data.limit, loadMessages);
+  } catch (err) {
+    listEl.innerHTML = `<div style="padding:20px;text-align:center;color:#ef4444;font-size:.78rem">⚠️ ${esc(err.message)}</div>`;
+  }
+}
+
+async function openThread(thread, rowEl) {
+  activeThread = thread;
+  document.querySelectorAll('.thread-item').forEach(el => el.classList.remove('active'));
+  if (rowEl) rowEl.classList.add('active');
+
+  const detail = document.getElementById('thread-detail');
+  detail.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;"><div class="spinner"></div></div>';
+
+  try {
+    const data = await Wren.api(`/api/comms/messages/${thread.id}`);
+    const { thread: t, messages } = data;
+
+    detail.innerHTML = `
+      <div class="thread-header">
+        <div class="thread-title">${esc(t.subject || 'Message')}</div>
+        <div style="font-size:.72rem;color:#94a3b8">
+          ${esc(thread.child_name || '')}
+          ${thread.assigned_staff ? ' · ' + esc(thread.assigned_staff) : ''}
+          · ${fmtDt(t.last_message_at)}
+        </div>
+      </div>
+      <div class="thread-messages" id="thread-msgs-body"></div>
+      <div class="reply-bar">
+        <textarea class="reply-input" id="reply-input-${t.id}" placeholder="Type a reply to parent…" rows="2"></textarea>
+        <button class="btn-sm btn-sm-orange" data-action="send-reply" data-thread-id="${t.id}" style="align-self:flex-end">📤 Send</button>
+      </div>
+    `;
+
+    const msgsBody = document.getElementById('thread-msgs-body');
+    if (!messages?.length) {
+      msgsBody.innerHTML = '<div style="text-align:center;color:#94a3b8;font-size:.78rem;padding:20px">No messages yet</div>';
+    } else {
+      messages.forEach(msg => {
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-bubble ' + (msg.sender_type === 'parent' ? 'msg-parent' : 'msg-staff');
+        const senderLabel = msg.sender_type === 'parent'
+          ? (msg.parent_email || 'Parent')
+          : (msg.staff_name || 'Staff');
+        bubble.innerHTML = `
+          <div>${esc(msg.body)}</div>
+          <div class="msg-meta">${esc(senderLabel)} · ${fmtRelative(msg.created_at)}</div>
+        `;
+        msgsBody.appendChild(bubble);
+      });
+      msgsBody.scrollTop = msgsBody.scrollHeight;
+    }
+
+    // Mark unread dot removed
+    if (rowEl) rowEl.querySelector('.thread-unread')?.remove();
+  } catch (err) {
+    detail.innerHTML = `<div class="empty-state">⚠️ ${esc(err.message)}</div>`;
+  }
+}
+
+async function sendReply(threadId) {
+  const input = document.getElementById('reply-input-' + threadId);
+  const body  = input?.value?.trim();
+  if (!body) { Wren.toast('Enter a message first', 'error'); return; }
+  try {
+    await Wren.api(`/api/comms/messages/${threadId}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ body })
+    });
+    Wren.toast('✅ Reply sent');
+    if (input) input.value = '';
+    // Reload thread view
+    openThread(activeThread, document.querySelector('.thread-item.active'));
+  } catch (err) {
+    Wren.toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function loadMsgsDropdowns() {
+  try {
+    const data = await Wren.api('/api/messages/recipients');
+    const childSel = document.getElementById('msgs-child');
+    const staffSel = document.getElementById('msgs-staff');
+    const currentChild = childSel.value;
+    const currentStaff = staffSel.value;
+
+    // Preserve existing "All" option
+    while (childSel.options.length > 1) childSel.remove(1);
+    while (staffSel.options.length > 1) staffSel.remove(1);
+
+    (data.parents || []).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.child_id;
+      o.textContent = p.child_name;
+      childSel.appendChild(o);
+    });
+    (data.staff || []).forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.id;
+      o.textContent = s.name;
+      staffSel.appendChild(o);
+    });
+
+    if (currentChild) childSel.value = currentChild;
+    if (currentStaff) staffSel.value = currentStaff;
+  } catch {}
+}
+
+function clearMsgsFilter() {
+  document.getElementById('msgs-search').value = '';
+  document.getElementById('msgs-child').value  = '';
+  document.getElementById('msgs-staff').value  = '';
+  activeThread = null;
+  document.getElementById('thread-detail').innerHTML = `
+    <div class="empty-state" style="align-self:center;width:100%">
+      <div style="font-size:2rem;margin-bottom:8px">💬</div>
+      <div style="font-weight:700;font-size:.9rem;color:#f1f5f9;margin-bottom:4px">Parent Messages</div>
+      <div>Select a thread to view conversation</div>
+    </div>
+  `;
+  loadMessages(1);
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadMessages(1), 350);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function renderPagination(containerId, page, total, limit, loadFn) {
+  const totalPages = Math.ceil(total / limit);
+  const el = document.getElementById(containerId);
+  if (!el || totalPages <= 1) { if (el) el.innerHTML = ''; return; }
+  let html = '';
+  if (page > 1) html += `<button class="page-btn" data-load-fn="${loadFn.name}" data-page="${page - 1}">‹ Prev</button>`;
+  for (let p = Math.max(1, page - 2); p <= Math.min(totalPages, page + 2); p++) {
+    html += `<button class="page-btn ${p === page ? 'active' : ''}" data-load-fn="${loadFn.name}" data-page="${p}">${p}</button>`;
+  }
+  if (page < totalPages) html += `<button class="page-btn" data-load-fn="${loadFn.name}" data-page="${page + 1}">Next ›</button>`;
+  el.innerHTML = html;
+}
+
+function updateBadge(id, count) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (count > 0) { el.textContent = count > 99 ? '99+' : count; el.style.display = 'inline'; }
+  else el.style.display = 'none';
+}
+
+function urgencyClass(u) {
+  const m = { high:'pill-red', medium:'pill-amber', low:'pill-blue' };
+  return m[u] || 'pill-muted';
+}
+
+function classificationClass(c) {
+  if (!c) return 'pill-muted';
+  if (c.toLowerCase().includes('enquir') || c.toLowerCase().includes('admission')) return 'pill-orange';
+  if (c.toLowerCase().includes('complaint')) return 'pill-red';
+  if (c.toLowerCase().includes('parent')) return 'pill-blue';
+  return 'pill-muted';
+}
+
+function fmtDt(d) {
+  if (!d) return '—';
+  try { return new Date(d).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); }
+  catch { return d; }
+}
+
+function fmtRelative(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso);
+  if (diff < 60000)    return 'just now';
+  if (diff < 3600000)  return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', function() {
+  // Tab buttons
+  document.getElementById('tab-btn-calls').addEventListener('click', () => switchTab('calls'));
+  document.getElementById('tab-btn-emails').addEventListener('click', () => switchTab('emails'));
+  document.getElementById('tab-btn-msgs').addEventListener('click', () => switchTab('msgs'));
+
+  // Calls filter bar
+  document.getElementById('btn-calls-filter').addEventListener('click', () => loadCalls(1));
+  document.getElementById('btn-calls-clear').addEventListener('click', clearCallsFilter);
+
+  // Emails filter bar
+  document.getElementById('btn-emails-filter').addEventListener('click', () => loadEmails(1));
+  document.getElementById('btn-emails-clear').addEventListener('click', clearEmailsFilter);
+
+  // Messages filter bar
+  document.getElementById('msgs-search').addEventListener('input', debounceSearch);
+  document.getElementById('msgs-child').addEventListener('change', () => loadMessages(1));
+  document.getElementById('msgs-staff').addEventListener('change', () => loadMessages(1));
+  document.getElementById('btn-msgs-clear').addEventListener('click', clearMsgsFilter);
+
+  // Calls table delegation (expand, review, followup)
+  document.getElementById('calls-tbody').addEventListener('click', function(e) {
+    const expandTd = e.target.closest('[data-call-action="expand"]');
+    if (expandTd) { toggleCallExpand(expandTd.closest('tr').dataset.callId, expandTd); return; }
+    const reviewBtn = e.target.closest('[data-call-action="review"]');
+    if (reviewBtn) { markReviewed(reviewBtn.dataset.callId); return; }
+    const followBtn = e.target.closest('[data-call-action="followup"]');
+    if (followBtn) { createFollowUp(followBtn.dataset.callId); }
+  });
+
+  // Emails list delegation (send, edit, ignore, save, cancel)
+  document.getElementById('emails-list').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const emailId = parseInt(btn.dataset.emailId);
+    if (btn.dataset.action === 'send-draft')    sendDraft(emailId);
+    else if (btn.dataset.action === 'toggle-edit') toggleEditDraft(emailId, decodeURIComponent(btn.dataset.draft || ''));
+    else if (btn.dataset.action === 'ignore-email') ignoreEmail(emailId);
+    else if (btn.dataset.action === 'save-draft')   saveDraft(emailId);
+    else if (btn.dataset.action === 'save-then-send') saveThenSend(emailId);
+    else if (btn.dataset.action === 'cancel-edit')  cancelEdit(emailId);
+  });
+
+  // Thread detail delegation (send reply)
+  document.getElementById('thread-detail').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="send-reply"]');
+    if (btn) sendReply(parseInt(btn.dataset.threadId));
+  });
+
+  // Pagination delegation
+  ['calls-pagination', 'emails-pagination', 'msgs-pagination'].forEach(function(id) {
+    document.getElementById(id).addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-load-fn]');
+      if (!btn) return;
+      const fn = window[btn.dataset.loadFn];
+      if (typeof fn === 'function') fn(parseInt(btn.dataset.page));
+    });
+  });
+
+  loadCalls(1);
+  // Load badge counts for other tabs silently
+  Wren.api('/api/comms/emails?status=pending').then(d => updateBadge('badge-emails', d.total || 0)).catch(()=>{});
+  Wren.api('/api/comms/messages').then(d => {
+    const unread = (d.threads || []).reduce((s, t) => s + parseInt(t.unread_count || 0), 0);
+    updateBadge('badge-msgs', unread);
+  }).catch(()=>{});
+});
+</script>
+</body>
+</html>

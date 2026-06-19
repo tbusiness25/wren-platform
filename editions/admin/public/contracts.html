@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Staff Contracts — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* ── Status badges ── */
+.s-draft       {background:rgba(148,163,184,.12);color:#94a3b8}
+.s-sent        {background:rgba(74,154,191,.12);color:#4a9abf}
+.s-countersigning{background:rgba(245,158,11,.12);color:#f59e0b}
+.s-signed      {background:rgba(34,197,94,.12);color:#22c55e}
+.s-expired     {background:rgba(239,68,68,.12);color:#ef4444}
+.s-superseded  {background:rgba(100,116,139,.12);color:#64748b}
+.status-badge  {display:inline-block;padding:3px 9px;border-radius:99px;font-size:.7rem;font-weight:700;text-transform:uppercase}
+
+/* ── Filter chips ── */
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.chip{padding:5px 13px;border-radius:6px;font-size:.78rem;background:#1e293b;border:1px solid #2d3748;color:#94a3b8;cursor:pointer;transition:.15s}
+.chip.active{background:rgba(74,154,191,.12);border-color:#4a9abf;color:#4a9abf}
+.chip:hover:not(.active){color:#f1f5f9;border-color:#4d5a6e}
+
+/* ── Contract card ── */
+.contract-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:16px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
+.contract-card:hover{border-color:#4d5a6e}
+.cc-avatar{width:38px;height:38px;border-radius:50%;background:#4a9abf22;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;color:#4a9abf;flex-shrink:0;margin-top:2px}
+.cc-body{flex:1;min-width:0}
+.cc-name{font-size:.92rem;font-weight:700;color:#f1f5f9;margin-bottom:2px}
+.cc-meta{font-size:.76rem;color:#94a3b8;display:flex;flex-wrap:wrap;gap:10px}
+.cc-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.btn-xs{padding:5px 11px;font-size:.73rem;font-weight:700;border-radius:7px;border:1px solid #2d3748;background:transparent;color:#94a3b8;cursor:pointer;transition:.15s}
+.btn-xs:hover{color:#f1f5f9;border-color:#4d5a6e}
+.btn-xs.primary{background:#4a9abf22;border-color:#4a9abf55;color:#4a9abf}
+.btn-xs.primary:hover{background:#4a9abf33}
+.btn-xs.danger{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#ef4444}
+.btn-xs.success{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:#22c55e}
+
+/* ── Form styles inside Wren.modal ── */
+.form-grid{display:grid;gap:12px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.form-group input,.form-group select,.form-group textarea{padding:9px 12px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;color:#f1f5f9;font-size:.88rem;width:100%;box-sizing:border-box}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#4a9abf}
+.form-group textarea{resize:vertical;min-height:80px}
+.form-divider{height:1px;background:#2d3748;margin:8px 0}
+.form-section-title{font-size:.78rem;font-weight:800;color:#4a9abf;text-transform:uppercase;letter-spacing:.05em;margin-top:4px}
+
+/* ── Working pattern picker ── */
+.wp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:6px}
+.wp-day{background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:10px 12px}
+.wp-day-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.wp-day-header input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:#4a9abf}
+.wp-day-name{font-size:.8rem;font-weight:700;color:#f1f5f9}
+.wp-time{display:flex;gap:6px;align-items:center;font-size:.72rem;color:#94a3b8}
+.wp-time input[type=time]{background:#1e293b;border:1px solid #2d3748;border-radius:6px;color:#f1f5f9;padding:4px 6px;font-size:.8rem;width:80px}
+
+/* ── Preview pane ── */
+.preview-wrap{margin-top:12px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;overflow:hidden}
+.preview-wrap iframe{width:100%;height:500px;border:none;display:block}
+.preview-placeholder{padding:30px;text-align:center;color:#94a3b8;font-size:.85rem}
+
+/* ── Empty / loading ── */
+.empty-state{padding:40px;text-align:center;color:#94a3b8}
+.loading-state{padding:40px;text-align:center;color:#94a3b8}
+.spinner{width:28px;height:28px;border:3px solid #2d3748;border-top-color:#4a9abf;border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title">Staff Contracts</div>
+      <div style="font-size:.78rem;color:#94a3b8;margin-top:2px">Generate, send and track employment contracts</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" style="font-size:.8rem" id="btn-handbook">Handbook</button>
+      <button class="btn" id="btn-new-contract">+ New Contract</button>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <span class="chip active" data-f="">All</span>
+    <span class="chip" data-f="draft">Draft</span>
+    <span class="chip" data-f="sent">Sent</span>
+    <span class="chip" data-f="countersigning">Awaiting Countersign</span>
+    <span class="chip" data-f="signed">Signed</span>
+  </div>
+
+  <div id="contracts-list">
+    <div class="loading-state"><div class="spinner"></div>Loading contracts…</div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtDate(d){return d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';}
+function fmtMoney(p,type){if(!p)return'—';const v=(p/100).toLocaleString('en-GB',{minimumFractionDigits:2});return type==='salary'?`£${v}/yr`:`£${v}/hr`;}
+
+let currentFilter = '';
+let allStaff = [];
+let allTemplates = [];
+
+function setFilter(el, f) {
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  currentFilter = f;
+  loadContracts();
+}
+
+async function loadContracts() {
+  const el = document.getElementById('contracts-list');
+  el.innerHTML = '<div class="loading-state"><div class="spinner"></div>Loading…</div>';
+  try {
+    const url = '/api/contracts' + (currentFilter ? '?status=' + currentFilter : '');
+    const rows = await Wren.api(url);
+    if (!rows.length) {
+      el.innerHTML = '<div class="empty-state">No contracts found. Create one with the + New Contract button.</div>';
+      return;
+    }
+    el.innerHTML = rows.map(c => renderCard(c)).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state" style="color:#ef4444">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderCard(c) {
+  const initials = ((c.staff_name||'').split(' ').map(w=>w[0]||'').join('')).slice(0,2).toUpperCase();
+  const payStr = fmtMoney(c.pay_rate_pennies, c.pay_rate_type);
+  const canSend = ['draft','generated'].includes(c.status);
+  const canCountersign = c.status === 'countersigning';
+  const isSigned = c.status === 'signed';
+  return `
+    <div class="contract-card">
+      <div class="cc-avatar">${esc(initials)}</div>
+      <div class="cc-body">
+        <div class="cc-name">${esc(c.staff_name||'Unknown')}</div>
+        <div class="cc-meta">
+          <span>${esc(c.template_name||c.template_type||'Contract')}</span>
+          ${c.job_title?`<span>${esc(c.job_title)}</span>`:''}
+          ${c.start_date?`<span>From ${fmtDate(c.start_date)}</span>`:''}
+          ${c.pay_rate_pennies?`<span>${payStr}</span>`:''}
+          <span class="status-badge s-${esc(c.status)}">${(c.status||'draft').replace('_',' ')}</span>
+        </div>
+        ${c.sent_at?`<div style="font-size:.72rem;color:#94a3b8;margin-top:3px">Sent ${fmtDate(c.sent_at)} to ${esc(c.sent_to_email||'')}</div>`:''}
+        ${c.staff_signature_at?`<div style="font-size:.72rem;color:#22c55e;margin-top:2px">Signed by staff ${fmtDate(c.staff_signature_at)}</div>`:''}
+        ${isSigned?`<div style="font-size:.72rem;color:#22c55e;margin-top:2px">Fully signed ${fmtDate(c.employer_signature_at)}</div>`:''}
+        <div class="cc-actions">
+          <button class="btn-xs primary" data-action="view-pdf" data-id="${c.id}">View PDF</button>
+          ${!isSigned?`<button class="btn-xs" data-action="edit-contract" data-id="${c.id}">Edit</button>`:''}
+          ${!isSigned?`<button class="btn-xs" data-action="regen-pdf" data-id="${c.id}">Regen PDF</button>`:''}
+          ${canSend?`<button class="btn-xs primary" data-action="send-contract" data-id="${c.id}" data-email="${esc(c.staff_email||'')}">Send to Staff</button>`:''}
+          ${canCountersign?`<button class="btn-xs success" data-action="countersign" data-id="${c.id}">Countersign</button>`:''}
+          ${isSigned?`<button class="btn-xs" data-action="view-pdf-signed" data-id="${c.id}">Signed PDF</button>`:''}
+          <button class="btn-xs" data-action="audit-log" data-id="${c.id}">Audit Log</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function regenPDF(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    await Wren.api('/api/contracts/' + id + '/generate-pdf', { method: 'POST', body: '{}' });
+    Wren.toast('PDF regenerated ✓', 'success');
+    if (btn) btn.textContent = 'Regen PDF';
+  } catch(e) {
+    Wren.toast('Failed: ' + e.message, 'error');
+  } finally { if (btn) btn.disabled = false; }
+}
+
+function viewPDF(id, signed) {
+  const url = '/api/contracts/' + id + '/pdf' + (signed ? '?signed=1' : '');
+  window.open(url, '_blank');
+}
+
+// ─── NEW CONTRACT MODAL ────────────────────────────────────────────────────
+
+async function openNewContract() {
+  if (!allStaff.length) {
+    [allStaff, allTemplates] = await Promise.all([
+      Wren.api('/api/staff').catch(()=>[]),
+      Wren.api('/api/contracts/templates').catch(()=>[]),
+    ]);
+  }
+  const staffOpts = allStaff.map(s=>
+    `<option value="${s.id}">${esc(s.first_name+' '+s.last_name)} (${esc(s.role||'')})</option>`
+  ).join('');
+  const tmplOpts = allTemplates.map(t=>
+    `<option value="${t.id}" data-type="${esc(t.template_type)}">${esc(t.name)}</option>`
+  ).join('');
+
+  Wren.modal('New Contract', `
+    <div class="form-grid">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Staff member</label>
+          <select id="nc-staff">
+            <option value="">— select staff —</option>
+            ${staffOpts}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Contract template</label>
+          <select id="nc-template">
+            <option value="">— select template —</option>
+            ${tmplOpts}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-divider"></div>
+      <div class="form-section-title">Role &amp; Dates</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Job title</label>
+          <input type="text" id="nc-jobtitle" placeholder="e.g. Early Years Practitioner">
+        </div>
+        <div class="form-group">
+          <label>Start date</label>
+          <input type="date" id="nc-start">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Employment type</label>
+          <select id="nc-emptype">
+            <option value="full_time">Full time</option>
+            <option value="part_time">Part time</option>
+            <option value="zero_hours">Zero hours</option>
+            <option value="apprentice">Apprentice</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Contracted hours/week</label>
+          <input type="number" id="nc-hours" min="1" max="48" step="0.5" placeholder="e.g. 40">
+        </div>
+      </div>
+
+      <div class="form-divider"></div>
+      <div class="form-section-title">Pay</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Pay rate type</label>
+          <select id="nc-paytype">
+            <option value="hourly">Hourly rate</option>
+            <option value="salary">Annual salary</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label id="nc-pay-label">Hourly rate (£)</label>
+          <input type="number" id="nc-pay" min="0" step="0.01" placeholder="e.g. 12.50">
+        </div>
+      </div>
+
+      <div class="form-divider"></div>
+      <div class="form-section-title">Working Pattern</div>
+      <div class="wp-grid" id="nc-wp">
+        ${['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d => {
+          const k = d.slice(0,3).toLowerCase();
+          return `<div class="wp-day">
+            <div class="wp-day-header">
+              <input type="checkbox" id="wp-${k}" data-day="${k}">
+              <label class="wp-day-name" for="wp-${k}">${d}</label>
+            </div>
+            <div class="wp-time" id="wp-times-${k}" style="display:none">
+              <input type="time" id="wp-start-${k}" value="08:00"> –
+              <input type="time" id="wp-end-${k}" value="18:00">
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div class="form-divider"></div>
+      <div class="form-section-title">Leave, Probation &amp; Notice</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Holiday entitlement (days/yr)</label>
+          <input type="number" id="nc-holiday" value="28" min="20" max="40">
+        </div>
+        <div class="form-group">
+          <label>Probation (weeks)</label>
+          <input type="number" id="nc-probation" value="12" min="1" max="26">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Notice period (weeks)</label>
+          <input type="number" id="nc-notice" value="4" min="1" max="12">
+        </div>
+        <div class="form-group">
+          <label>Pension eligible</label>
+          <select id="nc-pension">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Employer pension %</label>
+          <input type="number" id="nc-pension-er" value="3" min="0" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Employee pension %</label>
+          <input type="number" id="nc-pension-ee" value="5" min="0" step="0.1">
+        </div>
+      </div>
+    </div>
+  `, [
+    { label: 'Cancel', class: 'btn-secondary', action: 'close' },
+    { label: 'Generate Draft', class: 'btn', action: async () => {
+      await submitNewContract();
+    }},
+  ]);
+  requestAnimationFrame(() => {
+    document.getElementById('nc-staff')?.addEventListener('change', e => prefillFromStaff(e.target.value));
+    document.getElementById('nc-paytype')?.addEventListener('change', updatePayLabel);
+    ['mon','tue','wed','thu','fri'].forEach(k => {
+      document.getElementById('wp-' + k)?.addEventListener('change', () => toggleDay(k));
+    });
+  });
+}
+
+function toggleDay(k) {
+  const cb = document.getElementById('wp-' + k);
+  document.getElementById('wp-times-' + k).style.display = cb.checked ? 'flex' : 'none';
+}
+
+function updatePayLabel() {
+  const t = document.getElementById('nc-paytype')?.value;
+  const lbl = document.getElementById('nc-pay-label');
+  if (lbl) lbl.textContent = t === 'salary' ? 'Annual salary (£)' : 'Hourly rate (£)';
+}
+
+async function prefillFromStaff(staffId) {
+  if (!staffId) return;
+  const s = allStaff.find(x => x.id == staffId);
+  if (!s) return;
+  if (s.role && document.getElementById('nc-jobtitle')) {
+    document.getElementById('nc-jobtitle').value = s.role.replace(/_/g,' ');
+  }
+  if (s.contracted_hours) document.getElementById('nc-hours').value = s.contracted_hours;
+  if (s.employment_type) {
+    const et = document.getElementById('nc-emptype');
+    if (et) et.value = s.employment_type;
+  }
+  if (s.contract_start) {
+    const sd = document.getElementById('nc-start');
+    if (sd) sd.value = s.contract_start.slice(0,10);
+  }
+  if (s.holiday_entitlement_days) document.getElementById('nc-holiday').value = s.holiday_entitlement_days;
+  if (s.pension_eligible !== undefined) {
+    document.getElementById('nc-pension').value = s.pension_eligible ? 'true' : 'false';
+  }
+  if (s.pension_employer_contribution) document.getElementById('nc-pension-er').value = s.pension_employer_contribution;
+  if (s.pension_employee_contribution) document.getElementById('nc-pension-ee').value = s.pension_employee_contribution;
+}
+
+function getWorkingPattern() {
+  const days = ['mon','tue','wed','thu','fri'];
+  const pattern = {};
+  for (const d of days) {
+    const cb = document.getElementById('wp-' + d);
+    if (cb?.checked) {
+      pattern[d] = {
+        start: document.getElementById('wp-start-' + d)?.value || '08:00',
+        end:   document.getElementById('wp-end-' + d)?.value   || '18:00',
+      };
+      const start = pattern[d].start.split(':').map(Number);
+      const end   = pattern[d].end.split(':').map(Number);
+      pattern[d].hours = (((end[0]*60+end[1]) - (start[0]*60+start[1])) / 60).toFixed(1);
+    }
+  }
+  return Object.keys(pattern).length ? pattern : null;
+}
+
+async function submitNewContract() {
+  const staffId = document.getElementById('nc-staff')?.value;
+  const templateId = document.getElementById('nc-template')?.value;
+  if (!staffId) { Wren.toast('Select a staff member', 'warning'); return; }
+
+  const payPounds = parseFloat(document.getElementById('nc-pay')?.value || 0);
+  const payType   = document.getElementById('nc-paytype')?.value || 'hourly';
+  const payPennies = payPounds > 0 ? Math.round(payPounds * 100) : null;
+
+  const body = {
+    staff_id:    parseInt(staffId),
+    template_id: templateId ? parseInt(templateId) : null,
+    start_date:  document.getElementById('nc-start')?.value || null,
+    job_title:   document.getElementById('nc-jobtitle')?.value || null,
+    employment_type: document.getElementById('nc-emptype')?.value,
+    contracted_hours: parseFloat(document.getElementById('nc-hours')?.value || 0) || null,
+    pay_rate_type:    payType,
+    pay_rate_pennies: payPennies,
+    working_pattern:  getWorkingPattern(),
+    holiday_entitlement_days: parseFloat(document.getElementById('nc-holiday')?.value || 28),
+    probation_period_weeks:   parseInt(document.getElementById('nc-probation')?.value || 12),
+    notice_period_weeks:      parseInt(document.getElementById('nc-notice')?.value || 4),
+    pension_eligible:         document.getElementById('nc-pension')?.value === 'true',
+    pension_employer_contribution_pct: parseFloat(document.getElementById('nc-pension-er')?.value || 3),
+    pension_employee_contribution_pct: parseFloat(document.getElementById('nc-pension-ee')?.value || 5),
+  };
+
+  try {
+    const result = await Wren.api('/api/contracts', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+    document.querySelector('.wren-modal-overlay')?.remove();
+    Wren.toast('Contract draft created ✓', 'success');
+    loadContracts();
+    // Open PDF preview
+    setTimeout(() => viewPDF(result.id), 500);
+  } catch(e) {
+    Wren.toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// ─── EDIT CONTRACT MODAL ──────────────────────────────────────────────────
+
+async function editContract(id) {
+  let c;
+  try { c = await Wren.api('/api/contracts/' + id); } catch(e) {
+    Wren.toast('Failed to load: ' + e.message, 'error'); return;
+  }
+  const payPounds = c.pay_rate_pennies ? (c.pay_rate_pennies / 100).toFixed(2) : '';
+
+  Wren.modal('Edit Contract — ' + esc(c.first_name + ' ' + c.last_name), `
+    <div class="form-grid">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Job title</label>
+          <input type="text" id="ec-jobtitle" value="${esc(c.job_title||'')}">
+        </div>
+        <div class="form-group">
+          <label>Start date</label>
+          <input type="date" id="ec-start" value="${(c.start_date||'').slice(0,10)}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Pay rate type</label>
+          <select id="ec-paytype">
+            <option value="hourly" ${c.pay_rate_type==='hourly'?'selected':''}>Hourly</option>
+            <option value="salary" ${c.pay_rate_type==='salary'?'selected':''}>Annual salary</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Pay rate (£)</label>
+          <input type="number" id="ec-pay" value="${esc(payPounds)}" step="0.01" min="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contracted hours</label>
+          <input type="number" id="ec-hours" value="${esc(c.contracted_hours||'')}" step="0.5" min="0">
+        </div>
+        <div class="form-group">
+          <label>Holiday entitlement (days)</label>
+          <input type="number" id="ec-holiday" value="${esc(c.holiday_entitlement_days||28)}" min="20">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Probation (weeks)</label>
+          <input type="number" id="ec-probation" value="${esc(c.probation_period_weeks||12)}" min="1">
+        </div>
+        <div class="form-group">
+          <label>Notice period (weeks)</label>
+          <input type="number" id="ec-notice" value="${esc(c.notice_period_weeks||4)}" min="1">
+        </div>
+      </div>
+    </div>
+  `, [
+    { label: 'Cancel', class: 'btn-secondary', action: 'close' },
+    { label: 'Save & Regen PDF', class: 'btn', action: async () => {
+      const payPounds2 = parseFloat(document.getElementById('ec-pay')?.value || 0);
+      const patch = {
+        job_title:   document.getElementById('ec-jobtitle')?.value,
+        start_date:  document.getElementById('ec-start')?.value,
+        pay_rate_type:   document.getElementById('ec-paytype')?.value,
+        pay_rate_pennies: payPounds2 > 0 ? Math.round(payPounds2 * 100) : null,
+        contracted_hours: parseFloat(document.getElementById('ec-hours')?.value || 0) || null,
+        holiday_entitlement_days: parseFloat(document.getElementById('ec-holiday')?.value || 28),
+        probation_period_weeks: parseInt(document.getElementById('ec-probation')?.value || 12),
+        notice_period_weeks: parseInt(document.getElementById('ec-notice')?.value || 4),
+      };
+      try {
+        await Wren.api('/api/contracts/' + id, { method: 'PATCH', body: JSON.stringify(patch) });
+        await Wren.api('/api/contracts/' + id + '/generate-pdf', { method: 'POST', body: '{}' });
+        document.querySelector('.wren-modal-overlay')?.remove();
+        Wren.toast('Contract updated ✓', 'success');
+        loadContracts();
+      } catch(e) { Wren.toast('Failed: ' + e.message, 'error'); }
+    }},
+  ]);
+}
+
+// ─── SEND MODAL ────────────────────────────────────────────────────────────
+
+function openSendModal(id, staffEmail) {
+  Wren.modal('Send Contract to Staff', `
+    <div class="form-grid">
+      <p style="color:#94a3b8;font-size:.85rem;margin:0">
+        The contract PDF and current staff handbook will be sent by email. A signing link will be included.
+      </p>
+      <div class="form-group">
+        <label>Send to email</label>
+        <input type="email" id="send-email" value="${esc(staffEmail)}" placeholder="staff@example.com">
+      </div>
+      <p style="color:#f59e0b;font-size:.78rem;margin:0">
+        ⚠ Only use a <strong>test email</strong> until contracts have been reviewed by a solicitor — see handbook.
+      </p>
+    </div>
+  `, [
+    { label: 'Cancel', class: 'btn-secondary', action: 'close' },
+    { label: 'Send Contract', class: 'btn', action: async () => {
+      const email = document.getElementById('send-email')?.value?.trim();
+      if (!email || !email.includes('@')) { Wren.toast('Valid email required', 'warning'); return; }
+      try {
+        await Wren.api('/api/contracts/' + id + '/send', {
+          method: 'POST', body: JSON.stringify({ test_email: email }),
+        });
+        document.querySelector('.wren-modal-overlay')?.remove();
+        Wren.toast('Contract sent ✓', 'success');
+        loadContracts();
+      } catch(e) { Wren.toast('Failed: ' + e.message, 'error'); }
+    }},
+  ]);
+}
+
+// ─── COUNTERSIGN MODAL ─────────────────────────────────────────────────────
+
+function openCountersignModal(id) {
+  Wren.modal('Countersign Contract', `
+    <div class="form-grid">
+      <p style="color:#94a3b8;font-size:.85rem;margin:0">
+        Draw your signature below. This will be applied as the employer signature and finalise the contract.
+      </p>
+      <canvas id="cs-pad" width="400" height="150"
+        style="border:1px solid #2d3748;border-radius:8px;background:#f8fafc;touch-action:none;width:100%;max-width:400px;display:block;cursor:crosshair"></canvas>
+      <button class="btn btn-secondary" id="btn-clear-sig" style="font-size:.78rem;padding:5px 12px;width:fit-content">Clear</button>
+    </div>
+  `, [
+    { label: 'Cancel', class: 'btn-secondary', action: 'close' },
+    { label: 'Apply Signature', class: 'btn success', action: async () => {
+      const canvas = document.getElementById('cs-pad');
+      const dataUrl = canvas?.toDataURL('image/jpeg', 0.85);
+      if (isCanvasBlank(canvas)) { Wren.toast('Please draw your signature first', 'warning'); return; }
+      try {
+        await Wren.api('/api/contracts/' + id + '/countersign', {
+          method: 'POST', body: JSON.stringify({ signature_data: dataUrl }),
+        });
+        document.querySelector('.wren-modal-overlay')?.remove();
+        Wren.toast('Contract countersigned ✓ Final PDF generated.', 'success');
+        loadContracts();
+      } catch(e) { Wren.toast('Failed: ' + e.message, 'error'); }
+    }},
+  ]);
+  requestAnimationFrame(() => {
+    initSigPad('cs-pad');
+    document.getElementById('btn-clear-sig')?.addEventListener('click', clearSigPad);
+  });
+}
+
+// ─── AUDIT LOG MODAL ──────────────────────────────────────────────────────
+
+async function viewAudit(id) {
+  let log = [];
+  try { log = await Wren.api('/api/contracts/' + id + '/audit'); } catch {}
+  const html = log.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+      <thead><tr>
+        <th style="text-align:left;padding:6px 10px;color:#94a3b8;font-size:.7rem;text-transform:uppercase">Event</th>
+        <th style="text-align:left;padding:6px 10px;color:#94a3b8;font-size:.7rem;text-transform:uppercase">When</th>
+        <th style="text-align:left;padding:6px 10px;color:#94a3b8;font-size:.7rem;text-transform:uppercase">IP</th>
+      </tr></thead>
+      <tbody>${log.map(e=>`
+        <tr style="border-top:1px solid #2d3748">
+          <td style="padding:6px 10px;color:#f1f5f9;font-weight:600">${esc(e.event)}</td>
+          <td style="padding:6px 10px;color:#94a3b8">${fmtDate(e.event_at)}</td>
+          <td style="padding:6px 10px;color:#94a3b8;font-family:monospace;font-size:.72rem">${esc(e.ip||'—')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>` : '<div style="color:#94a3b8;font-size:.85rem">No events logged.</div>';
+  Wren.modal('Contract Audit Log', html, [{ label: 'Close', class: 'btn-secondary', action: 'close' }]);
+}
+
+// ─── Signature pad helpers ────────────────────────────────────────────────
+
+function initSigPad(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let drawing = false;
+
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / r.width;
+    const scaleY = canvas.height / r.height;
+    const touch = e.touches ? e.touches[0] : e;
+    return { x: (touch.clientX - r.left) * scaleX, y: (touch.clientY - r.top) * scaleY };
+  };
+
+  canvas.onmousedown = canvas.ontouchstart = (e) => {
+    e.preventDefault(); drawing = true;
+    const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y);
+  };
+  canvas.onmousemove = canvas.ontouchmove = (e) => {
+    e.preventDefault(); if (!drawing) return;
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.stroke();
+  };
+  canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
+}
+
+function clearSigPad() {
+  const c = document.getElementById('cs-pad') || document.getElementById('sp-pad');
+  if (!c) return;
+  c.getContext('2d').clearRect(0, 0, c.width, c.height);
+}
+
+function isCanvasBlank(canvas) {
+  if (!canvas) return true;
+  const ctx = canvas.getContext('2d');
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  return !data.some(b => b !== 0 && b !== 255);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', () => {
+  document.getElementById('btn-handbook').addEventListener('click', () => { window.location = '/handbook.html'; });
+  document.getElementById('btn-new-contract').addEventListener('click', openNewContract);
+
+  document.querySelector('.filter-bar').addEventListener('click', function(e) {
+    const chip = e.target.closest('[data-f]');
+    if (!chip) return;
+    setFilter(chip, chip.dataset.f);
+  });
+
+  document.getElementById('contracts-list').addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    const id = parseInt(el.dataset.id);
+    if (action === 'view-pdf') viewPDF(id);
+    else if (action === 'edit-contract') editContract(id);
+    else if (action === 'regen-pdf') regenPDF(id, el);
+    else if (action === 'send-contract') openSendModal(id, el.dataset.email);
+    else if (action === 'countersign') openCountersignModal(id);
+    else if (action === 'view-pdf-signed') viewPDF(id, true);
+    else if (action === 'audit-log') viewAudit(id);
+  });
+
+  loadContracts();
+});
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

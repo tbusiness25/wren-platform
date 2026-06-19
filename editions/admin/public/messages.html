@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Messages — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    body { background: #0f172a; color: #f1f5f9; }
+    /* Tab bar */
+    .msg-tabs { display:flex; gap:4px; margin-bottom:20px; background:#1e293b; border-radius:10px; padding:4px; }
+    .msg-tab { flex:1; padding:9px 8px; border-radius:8px; border:none; background:transparent; color:#94a3b8; font-size:13px; cursor:pointer; transition:.15s; font-family:inherit; font-weight:500; white-space:nowrap; }
+    .msg-tab.active { background:#4a9abf; color:#fff; font-weight:700; }
+    .msg-pane { display:none; }
+    .msg-pane.active { display:block; }
+    /* Thread list */
+    .thread-row { display:flex; align-items:center; gap:12px; padding:12px; border-radius:8px; cursor:pointer; transition:.15s; border:1px solid #2d3748; background:#1e293b; margin-bottom:8px; }
+    .thread-row:hover { border-color:#4a9abf; }
+    .thread-row.unread { border-left:3px solid #ef4444; }
+    .thread-avatar { width:40px; height:40px; border-radius:50%; background:#4a9abf22; display:flex; align-items:center; justify-content:center; font-weight:700; color:#4a9abf; flex-shrink:0; font-size:.85rem; }
+    .thread-body { flex:1; min-width:0; }
+    .thread-subject { font-weight:600; color:#f1f5f9; font-size:.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .thread-meta { font-size:.75rem; color:#64748b; margin-top:2px; }
+    .thread-preview { font-size:.78rem; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+    .unread-badge { background:#ef4444; color:#fff; border-radius:999px; font-size:10px; font-weight:700; padding:1px 6px; min-width:18px; text-align:center; flex-shrink:0; }
+    /* Filters */
+    .filter-chips { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+    .chip { padding:5px 12px; border-radius:999px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid #2d3748; background:transparent; color:#94a3b8; transition:.15s; font-family:inherit; }
+    .chip.active { background:#4a9abf; color:#fff; border-color:#4a9abf; }
+    /* Thread detail modal */
+    .thread-detail { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:16px; margin-top:16px; }
+    .msg-bubble { padding:10px 14px; border-radius:10px; font-size:13px; max-width:80%; margin-bottom:10px; line-height:1.5; }
+    .msg-bubble.parent { background:#2d3748; color:#f1f5f9; margin-right:auto; border-radius:10px 10px 10px 2px; }
+    .msg-bubble.staff { background:#4a9abf; color:#fff; margin-left:auto; border-radius:10px 10px 2px 10px; }
+    .msg-meta { font-size:11px; opacity:.7; margin-top:4px; }
+    /* Compose */
+    .compose-card { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:18px; }
+    .sent-item { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2d3748; font-size:13px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title" style="color:#f1f5f9">Messages</div>
+      <div class="page-subtitle" style="color:#94a3b8">Communications hub</div>
+    </div>
+    <button class="btn btn-primary" id="btn-new-message">+ New Message</button>
+  </div>
+
+  <div class="msg-tabs">
+    <button class="msg-tab active" data-tab="parent-threads">Parent Messages</button>
+    <button class="msg-tab" data-tab="compose">Compose / Send</button>
+    <button class="msg-tab" data-tab="staff-chat">Staff Chat</button>
+  </div>
+
+  <!-- ─── PARENT MESSAGES ─── -->
+  <div class="msg-pane active" id="msg-pane-parent-threads">
+    <div class="filter-chips">
+      <button class="chip active" id="chip-all" data-filter="all">All</button>
+      <button class="chip" id="chip-unread" data-filter="unread">Unread</button>
+      <button class="chip" id="chip-mine" data-filter="mine">To Me</button>
+    </div>
+    <div style="margin-bottom:14px">
+      <input class="form-control" id="thread-search" placeholder="Search by child or subject..."
+        style="background:#1e293b;border-color:#2d3748;color:#f1f5f9;max-width:360px">
+    </div>
+    <div id="thread-list"><div style="color:#64748b;font-size:13px;padding:20px">Loading threads...</div></div>
+    <div id="thread-detail-wrap" style="display:none"></div>
+  </div>
+
+  <!-- ─── COMPOSE / SEND ─── -->
+  <div class="msg-pane" id="msg-pane-compose">
+    <div class="compose-card" style="max-width:600px;margin-bottom:20px">
+      <div style="font-size:14px;font-weight:700;color:#f1f5f9;margin-bottom:16px">New Message</div>
+
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Send to</div>
+        <select class="form-control" id="compose-to" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+          <option value="">Select recipient...</option>
+          <option value="all_parents">All Parents</option>
+          <option value="all_staff">All Staff</option>
+          <optgroup label="── Specific Parent ──" id="parent-opts"></optgroup>
+          <optgroup label="── Specific Staff ──" id="staff-opts"></optgroup>
+        </select>
+      </div>
+      <div id="child-select-wrap" style="display:none;margin-bottom:10px">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Child (for parent threads)</div>
+        <select class="form-control" id="compose-child" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+          <option value="">Select child...</option>
+        </select>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Subject</div>
+        <input class="form-control" id="compose-subject" placeholder="Message subject..." style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Message</div>
+        <textarea class="form-control" id="compose-body" rows="5" placeholder="Type your message..." style="background:#0f172a;border-color:#2d3748;color:#f1f5f9"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary" id="btn-compose-send">Send</button>
+        <span id="compose-status" style="font-size:12px;color:#64748b"></span>
+      </div>
+    </div>
+
+    <div class="compose-card">
+      <div style="font-size:13px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Sent Messages</div>
+      <div id="sent-list"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- ─── STAFF CHAT AUDIT ─── -->
+  <div class="msg-pane" id="msg-pane-staff-chat">
+    <div style="margin-bottom:12px;padding:10px;background:rgba(74,154,191,.1);border:1px solid rgba(74,154,191,.2);border-radius:8px;font-size:12px;color:#94a3b8">
+      Manager audit view — read-only. Staff chat threads are shown below.
+    </div>
+    <div id="staff-thread-list"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    <div id="staff-thread-detail-wrap"></div>
+  </div>
+</div>
+
+<script>
+let allThreads = [], currentFilter = 'all', openThreadId = null;
+let children = [], staff = [];
+
+function msgSetTab(tab, el) {
+  document.querySelectorAll('.msg-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.msg-pane').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById(`msg-pane-${tab}`)?.classList.add('active');
+  if (tab === 'parent-threads') loadParentThreads();
+  if (tab === 'compose') loadComposeData();
+  if (tab === 'staff-chat') loadStaffChat();
+}
+
+// ── Parent Threads ──────────────────────────────────────────────────────────
+async function loadParentThreads() {
+  document.getElementById('thread-list').innerHTML = '<div style="color:#64748b;font-size:13px;padding:20px">Loading...</div>';
+  try {
+    allThreads = await Wren.api('/api/messages/all-threads');
+    renderThreads();
+  } catch(e) {
+    document.getElementById('thread-list').innerHTML = '<div style="color:#ef4444;font-size:13px;padding:20px">Failed to load threads: ' + (e.error||'') + '</div>';
+  }
+}
+
+function filterThreads(f, el) {
+  currentFilter = f;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderThreads();
+}
+
+function renderThreads() {
+  const q = document.getElementById('thread-search').value.toLowerCase();
+  const user = Wren.user;
+  let filtered = allThreads.filter(t => {
+    if (q && !`${t.subject||''} ${t.child_name||''}`.toLowerCase().includes(q)) return false;
+    if (currentFilter === 'unread' && parseInt(t.unread_count||0) === 0) return false;
+    if (currentFilter === 'mine' && t.assigned_staff && !t.assigned_staff.toLowerCase().includes(user?.name?.toLowerCase()||'')) return false;
+    return true;
+  });
+
+  const el = document.getElementById('thread-list');
+  if (!filtered.length) {
+    el.innerHTML = '<div style="color:#64748b;font-size:13px;padding:20px">No threads match this filter.</div>';
+    return;
+  }
+  el.innerHTML = filtered.map(t => {
+    const unread = parseInt(t.unread_count||0);
+    const initials = (t.child_name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    return `<div class="thread-row${unread>0?' unread':''}" data-action="open-thread" data-id="${t.id}">
+      <div class="thread-avatar">${initials}</div>
+      <div class="thread-body">
+        <div class="thread-subject">${t.subject||'(no subject)'}</div>
+        <div class="thread-meta">${t.child_name||'—'}${t.assigned_staff?' · '+t.assigned_staff:''} · ${t.last_message_at?new Date(t.last_message_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+        ${t.last_body?`<div class="thread-preview">${t.last_sender_type==='parent'?'Parent:':t.last_staff_reply||'Staff:'} ${String(t.last_body).substring(0,80)}</div>`:''}
+      </div>
+      ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function openThread(id) {
+  openThreadId = id;
+  const wrap = document.getElementById('thread-detail-wrap');
+  wrap.style.display = '';
+  wrap.innerHTML = '<div style="color:#64748b;font-size:13px;padding:20px">Loading thread...</div>';
+  wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  try {
+    const data = await Wren.api(`/api/messages/thread/${id}`);
+    // Mark as read
+    Wren.api(`/api/messages/thread/${id}/read`, { method:'POST' }).catch(() => {});
+    const t = data.thread;
+    const msgs = data.messages || [];
+    wrap.innerHTML = `
+      <div class="thread-detail">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-weight:700;color:#f1f5f9;font-size:1rem">${t.subject||'(no subject)'}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px">Child: ${allThreads.find(x=>x.id===id)?.child_name||'—'}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-action="close-thread-detail" style="border-color:#2d3748;color:#94a3b8">Close ✕</button>
+        </div>
+        <div style="max-height:360px;overflow-y:auto;padding-bottom:10px">
+          ${msgs.map(m => {
+            const isParent = m.sender_type === 'parent';
+            const sender = isParent ? (m.parent_email||'Parent') : (m.staff_name||'Staff');
+            return `<div style="display:flex;flex-direction:column;align-items:${isParent?'flex-start':'flex-end'};margin-bottom:8px">
+              <div class="msg-bubble ${isParent?'parent':'staff'}">${m.body}</div>
+              <div class="msg-meta" style="color:#64748b;font-size:10px;${isParent?'':'text-align:right'}">${sender} · ${new Date(m.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="border-top:1px solid #2d3748;padding-top:12px;margin-top:4px">
+          <textarea class="form-control" id="reply-body-${id}" rows="3" placeholder="Reply..." style="background:#0f172a;border-color:#2d3748;color:#f1f5f9;margin-bottom:10px"></textarea>
+          <button class="btn btn-primary" data-action="send-reply" data-thread-id="${id}">Send Reply</button>
+        </div>
+      </div>`;
+    // Mark unread as 0 in local state
+    const localThread = allThreads.find(x => x.id === id);
+    if (localThread) localThread.unread_count = 0;
+    renderThreads();
+  } catch(e) {
+    wrap.innerHTML = '<div style="color:#ef4444;padding:20px;font-size:13px">Failed to load thread.</div>';
+  }
+}
+
+async function sendReply(threadId) {
+  const body = document.getElementById(`reply-body-${threadId}`).value.trim();
+  if (!body) return Wren.toast('Enter a message', 'error');
+  try {
+    await Wren.api(`/api/messages/thread/${threadId}/reply`, { method:'POST', body: { body } });
+    Wren.toast('Reply sent', 'success');
+    openThread(threadId);
+  } catch(e) { Wren.toast('Failed to send: ' + (e.error||''), 'error'); }
+}
+
+// ── Compose / Send ──────────────────────────────────────────────────────────
+async function loadComposeData() {
+  try {
+    const data = await Wren.api('/api/messages/recipients').catch(() => null);
+    if (data) {
+      children = data.parents.map(p => ({ id: p.child_id, first_name: p.child_name.split(' ')[0], last_name: p.child_name.split(' ').slice(1).join(' ') }));
+      staff = data.staff;
+      const parentOpts = document.getElementById('parent-opts');
+      parentOpts.innerHTML = data.parents.map(p => `<option value="parent:${p.child_id}">${p.child_name}'s parent (${p.parent_name})</option>`).join('');
+      const staffOpts = document.getElementById('staff-opts');
+      staffOpts.innerHTML = data.staff.map(s => `<option value="staff:${s.id}">${s.name} (${s.role.replace('_',' ')})</option>`).join('');
+    } else {
+      // fallback to direct calls
+      const [ch, st] = await Promise.all([
+        Wren.api('/api/children').catch(() => []),
+        Wren.api('/api/staff').catch(() => [])
+      ]);
+      children = ch || [];
+      staff = (st || []).filter(s => s.is_active);
+      const parentOpts = document.getElementById('parent-opts');
+      parentOpts.innerHTML = children.map(c => `<option value="parent:${c.id}">${c.first_name} ${c.last_name}'s parent</option>`).join('');
+      const staffOpts = document.getElementById('staff-opts');
+      staffOpts.innerHTML = staff.map(s => `<option value="staff:${s.id}">${s.first_name} ${s.last_name}</option>`).join('');
+    }
+    const childSel = document.getElementById('compose-child');
+    if (childSel) {
+      childSel.innerHTML = '<option value="">Select child...</option>' +
+        children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('');
+    }
+    loadSentMessages();
+  } catch(e) { console.error('loadComposeData:', e); }
+}
+
+function composeToChanged() {
+  const val = document.getElementById('compose-to').value;
+  document.getElementById('child-select-wrap').style.display =
+    val.startsWith('parent:') ? '' : 'none';
+}
+
+async function composeSend() {
+  const to = document.getElementById('compose-to').value;
+  const subject = document.getElementById('compose-subject').value.trim();
+  const body = document.getElementById('compose-body').value.trim();
+  const status = document.getElementById('compose-status');
+  if (!to || !body) return Wren.toast('Select recipient and enter a message', 'error');
+  status.textContent = 'Sending...';
+  try {
+    if (to === 'all_parents' || to === 'all_staff') {
+      const r = await Wren.api('/api/messages/broadcast', { method:'POST', body: { subject:subject||'Message from manager', body, target:to } });
+      Wren.toast(`Sent to ${r.created} recipient${r.created!==1?'s':''}`, 'success');
+    } else if (to.startsWith('parent:')) {
+      const childId = parseInt(to.split(':')[1]);
+      const composedChildId = document.getElementById('compose-child').value || childId;
+      await Wren.api('/api/messages/thread', { method:'POST', body: { child_id:composedChildId, subject:subject||'Message from nursery', body, recipient_type:'nursery' } });
+      Wren.toast('Message sent', 'success');
+    } else if (to.startsWith('staff:')) {
+      // Staff group chat or direct — use staff_group thread
+      await Wren.api('/api/messages/staff-thread', { method:'POST', body: { subject:subject||'Message from manager', body } });
+      Wren.toast('Message sent to staff', 'success');
+    }
+    document.getElementById('compose-body').value = '';
+    document.getElementById('compose-subject').value = '';
+    document.getElementById('compose-to').value = '';
+    document.getElementById('child-select-wrap').style.display = 'none';
+    status.textContent = '';
+    loadSentMessages();
+  } catch(e) {
+    status.textContent = 'Failed: ' + (e.error||'error');
+    Wren.toast('Failed to send: ' + (e.error||''), 'error');
+  }
+}
+
+async function loadSentMessages() {
+  const el = document.getElementById('sent-list');
+  try {
+    const threads = await Wren.api('/api/messages/all-threads');
+    const sent = (threads || []).filter(t => {
+      // Show threads where last sender is staff
+      return t.last_sender_type === 'staff';
+    }).slice(0, 20);
+    if (!sent.length) {
+      el.innerHTML = '<div style="color:#64748b;font-size:13px">No sent messages yet.</div>';
+      return;
+    }
+    el.innerHTML = sent.map(t => `
+      <div class="sent-item">
+        <div>
+          <div style="color:#f1f5f9;font-size:13px;font-weight:600">${t.subject||'(no subject)'}</div>
+          <div style="font-size:11px;color:#64748b">${t.child_name||'—'} · ${t.last_message_at?new Date(t.last_message_at).toLocaleDateString('en-GB'):'—'}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-action="view-sent" data-id="${t.id}" style="border-color:#2d3748;color:#64748b;font-size:11px">View →</button>
+      </div>
+    `).join('');
+  } catch {
+    el.innerHTML = '<div style="color:#64748b;font-size:13px">Could not load sent messages.</div>';
+  }
+}
+
+// ── Staff Chat Audit ─────────────────────────────────────────────────────────
+async function loadStaffChat() {
+  const el = document.getElementById('staff-thread-list');
+  try {
+    const threads = await Wren.api('/api/messages/staff-threads');
+    if (!(threads||[]).length) {
+      el.innerHTML = '<div style="color:#64748b;font-size:13px">No staff group chat threads.</div>';
+      return;
+    }
+    el.innerHTML = threads.map(t => `
+      <div class="thread-row" data-action="open-staff-thread" data-id="${t.id}">
+        <div class="thread-avatar" style="background:#2d374850;color:#94a3b8">💬</div>
+        <div class="thread-body">
+          <div class="thread-subject">${t.subject}</div>
+          <div class="thread-meta">${t.last_message_at?new Date(t.last_message_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+          ${t.last_message?`<div class="thread-preview">${String(t.last_message).substring(0,100)}</div>`:''}
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="color:#ef4444;font-size:13px">Failed to load staff chat: ' + (e.error||'') + '</div>';
+  }
+}
+
+async function openStaffThread(id) {
+  const wrap = document.getElementById('staff-thread-detail-wrap');
+  wrap.innerHTML = '<div style="color:#64748b;font-size:13px;padding:20px">Loading...</div>';
+  wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  try {
+    const data = await Wren.api(`/api/messages/staff-thread/${id}`);
+    const t = data.thread;
+    const msgs = data.messages || [];
+    wrap.innerHTML = `
+      <div class="thread-detail" style="margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="font-weight:700;color:#f1f5f9">${t.subject||'Staff chat'}</div>
+          <button class="btn btn-ghost btn-sm" data-action="close-staff-detail" style="border-color:#2d3748;color:#94a3b8">Close ✕</button>
+        </div>
+        <div style="color:#94a3b8;font-size:11px;margin-bottom:12px">Audit view — read only</div>
+        <div style="max-height:400px;overflow-y:auto">
+          ${msgs.map(m => `
+            <div style="padding:8px 0;border-bottom:1px solid #2d3748;font-size:13px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="font-weight:600;color:#4a9abf">${m.staff_name||'Staff'}</span>
+                <span style="font-size:10px;color:#64748b">${new Date(m.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+              </div>
+              <div style="color:#f1f5f9">${m.body}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  } catch {
+    wrap.innerHTML = '<div style="color:#ef4444;font-size:13px;padding:12px">Failed to load thread.</div>';
+  }
+}
+
+// GET /api/messages/staff-thread/:id — need this endpoint (reuses existing logic)
+// Falls back gracefully if not available
+
+// Static button listeners
+document.getElementById('btn-new-message').addEventListener('click', () => {
+  msgSetTab('compose', document.querySelector('[data-tab=compose]'));
+});
+document.getElementById('btn-compose-send').addEventListener('click', composeSend);
+document.getElementById('thread-search').addEventListener('input', renderThreads);
+document.getElementById('compose-to').addEventListener('change', composeToChanged);
+
+// Tab bar delegation
+document.querySelector('.msg-tabs').addEventListener('click', function(e) {
+  const btn = e.target.closest('.msg-tab[data-tab]');
+  if (!btn) return;
+  msgSetTab(btn.dataset.tab, btn);
+});
+
+// Filter chip delegation
+document.querySelector('.filter-chips').addEventListener('click', function(e) {
+  const chip = e.target.closest('[data-filter]');
+  if (!chip) return;
+  filterThreads(chip.dataset.filter, chip);
+});
+
+// Delegated listener for dynamic content
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'open-thread') openThread(parseInt(el.dataset.id));
+  else if (action === 'close-thread-detail') document.getElementById('thread-detail-wrap').style.display = 'none';
+  else if (action === 'send-reply') sendReply(parseInt(el.dataset.threadId));
+  else if (action === 'view-sent') {
+    msgSetTab('parent-threads', document.querySelector('[data-tab=parent-threads]'));
+    openThread(parseInt(el.dataset.id));
+  }
+  else if (action === 'open-staff-thread') openStaffThread(parseInt(el.dataset.id));
+  else if (action === 'close-staff-detail') el.closest('.thread-detail').remove();
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadParentThreads();
+});
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

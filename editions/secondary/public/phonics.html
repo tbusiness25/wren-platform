@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Phonics — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🔤 Phonics Tracker</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Room Overview</button>
+    <button class="tab-btn" data-tab="child">Individual Child</button>
+  </div>
+
+  <div id="tab-overview" class="tab-panel active">
+    <div id="overview-area"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <div id="tab-child" class="tab-panel">
+    <div class="card" style="margin-bottom:16px">
+      <div class="form-group">
+        <label class="form-label">Select Child</label>
+        <select class="form-control" id="child-select">
+          <option value="">Choose a child...</option>
+        </select>
+      </div>
+    </div>
+    <div id="child-phonics-area"></div>
+  </div>
+</div>
+
+<script>
+const PHASES = {
+  2: ['s','a','t','p','i','n','m','d','g','o','c','k','ck','e','u','r','h','b','f','ff','l','ll','ss'],
+  3: ['j','v','w','x','y','z','zz','qu','ch','sh','th','ng','ai','ee','igh','oa','oo','ar','or','ur','ow','oi','ear','air','ure','er'],
+  4: ['bl','cl','fl','gl','pl','sl','br','cr','dr','fr','gr','pr','tr','sc','sk','sm','sn','sp','st','sw','tw','nd','nt','nk'],
+  5: ['ay','ou','ie','ea','oy','ir','ue','aw','wh','ph','ew','oe','au']
+};
+const STATUS_COLORS = {
+  mastered: '#15803d',
+  secure: '#4a9abf',
+  introduced: '#d97706',
+  not_introduced: '#e2e8f0'
+};
+const STATUS_TEXT_COLORS = {
+  mastered: '#fff',
+  secure: '#fff',
+  introduced: '#fff',
+  not_introduced: '#94a3b8'
+};
+
+let children = [];
+let childPhonics = {};
+
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.dataset.tab === tab) b.classList.add('active');
+  });
+}
+
+async function loadOverview() {
+  try {
+    const [overview, rooms] = await Promise.all([
+      Wren.api('/api/phonics/overview'),
+      Wren.api('/api/staff/rooms')
+    ]);
+    const preschoolRoom = rooms.find(r => r.name.toLowerCase().includes('pre') || r.id === 2);
+    const area = document.getElementById('overview-area');
+    if (!overview.length) {
+      area.innerHTML = '<div class="empty-state"><div class="empty-icon">🔤</div><div class="empty-title">No phonics data</div></div>';
+      return;
+    }
+    area.innerHTML = `<div class="card"><div class="card-header"><div class="card-title">Pre-school Phonics Overview</div></div>
+      <div class="table-wrapper"><table>
+        <thead><tr><th>Child</th><th>Phase</th><th>Mastered</th><th>Secure</th><th>Introduced</th></tr></thead>
+        <tbody>
+          ${overview.map(c => `<tr data-action="go-to-child" data-id="${c.id}" style="cursor:pointer">
+            <td><strong>${c.first_name} ${c.last_name}</strong></td>
+            <td><span class="badge badge-blue">Phase ${c.current_phase || 2}</span></td>
+            <td><span style="color:var(--c-green);font-weight:700">${c.mastered || 0}</span></td>
+            <td><span style="color:var(--c-blue);font-weight:700">${c.secure || 0}</span></td>
+            <td><span style="color:var(--c-amber);font-weight:700">${c.introduced || 0}</span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+  } catch(e) {}
+}
+
+async function loadChildren() {
+  children = await Wren.api('/api/children').catch(() => []);
+  const sel = document.getElementById('child-select');
+  children.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.first_name} ${c.last_name}`;
+    sel.appendChild(opt);
+  });
+}
+
+function goToChild(id) {
+  showTab('child');
+  document.getElementById('child-select').value = id;
+  loadChildPhonics(id);
+}
+
+async function loadChildPhonics(childId) {
+  if (!childId) return;
+  const area = document.getElementById('child-phonics-area');
+  area.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const records = await Wren.api(`/api/phonics/child/${childId}`);
+    childPhonics[childId] = {};
+    records.forEach(r => { childPhonics[childId][r.sound] = r.status; });
+    renderChildPhonics(childId);
+  } catch(e) {
+    area.innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderChildPhonics(childId) {
+  const area = document.getElementById('child-phonics-area');
+  const sounds = childPhonics[childId] || {};
+  area.innerHTML = Object.entries(PHASES).map(([phase, phonics]) => `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Phase ${phase}</div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${phonics.map(sound => {
+          const status = sounds[sound] || 'not_introduced';
+          return `<button
+            data-action="cycle-status" data-child="${childId}" data-sound="${encodeURIComponent(sound)}" data-phase="${phase}" data-status="${status}"
+            style="padding:6px 12px;border-radius:6px;border:none;cursor:pointer;
+              font-size:.875rem;font-weight:700;
+              background:${STATUS_COLORS[status]};
+              color:${STATUS_TEXT_COLORS[status]};
+              min-width:40px"
+            title="${status.replace('_',' ')}"
+          >${sound}</button>`;
+        }).join('')}
+      </div>
+      <div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;font-size:.78rem">
+        <span>🟢 Mastered</span>
+        <span style="color:var(--c-blue)">🔵 Secure</span>
+        <span style="color:var(--c-amber)">🟡 Introduced</span>
+        <span style="color:#94a3b8">⬜ Not introduced</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+const STATUS_CYCLE = ['not_introduced','introduced','secure','mastered'];
+async function cycleStatus(childId, sound, phase, currentStatus) {
+  const idx = STATUS_CYCLE.indexOf(currentStatus);
+  const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+  try {
+    await Wren.api(`/api/phonics/child/${childId}/sound`, { method: 'PUT', body: { sound, phase, status: next } });
+    if (!childPhonics[childId]) childPhonics[childId] = {};
+    childPhonics[childId][sound] = next;
+    renderChildPhonics(childId);
+  } catch(e) {
+    Wren.toast('Failed to update', 'error');
+  }
+}
+
+document.querySelector('.tabs').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-tab]');
+  if (btn) showTab(btn.dataset.tab);
+});
+document.getElementById('child-select').addEventListener('change', function() { loadChildPhonics(this.value); });
+document.getElementById('overview-area').addEventListener('click', function(e) {
+  const row = e.target.closest('[data-action="go-to-child"]');
+  if (row) goToChild(parseInt(row.dataset.id));
+});
+document.getElementById('child-phonics-area').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="cycle-status"]');
+  if (btn) cycleStatus(
+    parseInt(btn.dataset.child),
+    decodeURIComponent(btn.dataset.sound),
+    parseInt(btn.dataset.phase),
+    btn.dataset.status
+  );
+});
+loadOverview();
+document.addEventListener('DOMContentLoaded', () => { loadChildren(); });
+</script>
+</body>
+</html>

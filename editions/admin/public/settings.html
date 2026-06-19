@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Settings — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.settings-section { margin-bottom: 28px; }
+.settings-section-title { font-size:.75rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:#4a9abf; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #2d3748; }
+.toggle-row { display:flex; align-items:center; justify-content:space-between; padding:14px 0; border-bottom:1px solid #1e293b; gap:16px; }
+.toggle-row:last-child { border-bottom:none; }
+.toggle-label { flex:1 }
+.toggle-label strong { display:block; font-size:.9rem; margin-bottom:2px; }
+.toggle-label span { font-size:.8rem; color:#94a3b8; line-height:1.4; display:block; }
+.toggle-switch { position:relative; width:48px; height:26px; flex-shrink:0; }
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider { position:absolute; inset:0; cursor:pointer; background:#2d3748; border-radius:26px; transition:.2s; }
+.toggle-slider::before { content:''; position:absolute; height:20px; width:20px; left:3px; bottom:3px; background:#64748b; border-radius:50%; transition:.2s; }
+input:checked + .toggle-slider { background:#4a9abf; }
+input:checked + .toggle-slider::before { transform:translateX(22px); background:#fff; }
+.settings-save-row { margin-top:20px; display:flex; gap:10px; align-items:center; }
+.network-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:6px; font-size:.78rem; font-weight:600; }
+.badge-tailscale { background:rgba(74,154,191,.15); color:#4a9abf; border:1px solid rgba(74,154,191,.3); }
+.badge-remote { background:rgba(239,68,68,.1); color:#ef4444; border:1px solid rgba(239,68,68,.3); }
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">⚙️ Settings</div>
+    <button class="btn btn-primary" id="btn-save-top">Save All Settings</button>
+  </div>
+
+  <div style="max-width:760px">
+
+    <!-- Access Control -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🔒 Access Control</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Allow full portal access from outside school network</strong>
+          <span>When OFF, staff accessing from outside the school Tailscale network can only reach the HR portal — no child or learning data. When ON, full access is allowed remotely.</span>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <span class="network-badge badge-tailscale">✓ On Tailscale (100.x.x.x) — always full access</span>
+            <span class="network-badge badge-remote" id="remote-access-badge">✕ Remote — HR only</span>
+          </div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-remote-access">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div style="margin-top:12px;padding:12px;background:#0f2235;border-radius:8px;font-size:.82rem;color:#94a3b8;line-height:1.6">
+        <strong style="color:#f1f5f9">How this works:</strong> Wren checks the requesting IP address. Connections from the 100.x.x.x Tailscale network always have full access. Connections from any other IP are either allowed (toggle ON) or restricted to HR only (toggle OFF). Recommended: keep OFF for safeguarding — staff should use Tailscale for remote access to child data.
+      </div>
+    </div>
+
+    <!-- Away Mode -->
+    <div class="card settings-section" id="away-mode-card">
+      <div class="settings-section-title">🏖️ Away Mode</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Away mode</strong>
+          <span>When ON, Aria greets callers with "The manager is away until [return date]" and offers cover if the deputy is available. Fires an email OOO webhook to N8N.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="away-active" aria-label="Enable away mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="away-fields" style="margin-top:14px;display:grid;gap:12px;grid-template-columns:1fr 1fr">
+        <div class="form-group">
+          <label class="form-label">Return date <span style="color:#ef4444">*</span></label>
+          <input type="date" class="form-control" id="away-return-date" min="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cover person</label>
+          <select class="form-control" id="away-cover-person">
+            <option value="17">Demo Deputy (Deputy Manager)</option>
+            <option value="">Nobody — take a message only</option>
+          </select>
+        </div>
+      </div>
+      <div id="away-status-badge" style="margin-top:12px;display:none"></div>
+      <div style="margin-top:14px">
+        <button class="btn btn-primary" id="btn-apply-away-mode">Apply Away Mode</button>
+        <span id="away-last-updated" style="font-size:.78rem;color:#94a3b8;margin-left:12px"></span>
+      </div>
+      <div style="margin-top:10px;padding:10px 14px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;font-size:.8rem;color:#94a3b8;line-height:1.6">
+        <strong style="color:#f1f5f9">Note:</strong> Toby will switch this ON himself when he leaves. The N8N flow handles the Google Workspace OOO responder. Toggle OFF to revert everything.
+        the deputy is <strong>not available Thursdays</strong> — Aria will say she's unavailable on that day automatically.
+      </div>
+    </div>
+
+    <!-- Nursery Info -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🏫 Nursery Information</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nursery name</label>
+          <input type="text" class="form-control" id="setting-nursery_name" value="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone number</label>
+          <input type="text" class="form-control" id="setting-nursery_phone" value="">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Address</label>
+        <input type="text" class="form-control" id="setting-nursery_address" value="">
+      </div>
+    </div>
+
+    <!-- Academic Year -->
+    <div class="card settings-section">
+      <div class="settings-section-title">📅 Academic Year & Terms</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Current academic year</label>
+          <input type="text" class="form-control" id="setting-academic_year" placeholder="e.g. 2025-2026">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Default contracted hours/week</label>
+          <input type="number" class="form-control" id="setting-default_contracted_hours" min="0" max="60" step="0.5">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Term dates (one per line: "Term name: DD/MM/YYYY – DD/MM/YYYY")</label>
+        <textarea class="form-control" id="setting-term_dates" rows="6" placeholder="Autumn 1: 04/09/2025 – 24/10/2025&#10;Autumn 2: 03/11/2025 – 19/12/2025&#10;Spring 1: 06/01/2026 – 13/02/2026&#10;Spring 2: 23/02/2026 – 27/03/2026&#10;Summer 1: 14/04/2026 – 22/05/2026&#10;Summer 2: 01/06/2026 – 22/07/2026"></textarea>
+      </div>
+    </div>
+
+    <!-- Safeguarding -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🛡️ Safeguarding</div>
+      <div class="form-group">
+        <label class="form-label">Designated Safeguarding Lead (DSL)</label>
+        <input type="text" class="form-control" id="setting-safeguarding_lead" placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Deputy DSL</label>
+        <input type="text" class="form-control" id="setting-deputy_safeguarding_lead" placeholder="Full name (optional)">
+      </div>
+    </div>
+
+    <!-- My PIN -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🔑 My PIN</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">New PIN (4+ digits)</label>
+          <input type="password" class="form-control" id="new-pin" inputmode="numeric" maxlength="8">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm PIN</label>
+          <input type="password" class="form-control" id="confirm-pin" inputmode="numeric" maxlength="8">
+        </div>
+      </div>
+      <button class="btn btn-ghost" id="btn-change-pin">Update PIN</button>
+    </div>
+
+    <!-- Backup & Recovery -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🔒 Backup & Recovery</div>
+      <div id="backup-status-area"><div class="loading-state"><div class="spinner"></div></div></div>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" id="run-backup-btn">▶ Run Backup Now</button>
+        <a href="#recovery-guide" id="btn-recovery-guide" class="btn btn-ghost" style="border-color:#2d3748;color:#94a3b8">📖 Recovery Guide</a>
+      </div>
+      <div id="recovery-guide" style="display:none;margin-top:14px;background:#0f172a;border:1px solid #2d3748;border-radius:10px;padding:16px">
+        <div style="font-size:.85rem;font-weight:700;color:#4a9abf;margin-bottom:10px">Step-by-step recovery</div>
+        <ol style="color:#94a3b8;font-size:.82rem;line-height:1.8;padding-left:1.4em;margin:0">
+          <li>SSH into the Wren server: <code style="color:#f1f5f9;background:#1e293b;padding:1px 6px;border-radius:4px">ssh <admin-user>@<server-ip></code></li>
+          <li>Run: <code style="color:#f1f5f9;background:#1e293b;padding:1px 6px;border-radius:4px">bash /app/scripts/recover.sh</code></li>
+          <li>Confirm when prompted — the script lists available snapshots and restores the latest</li>
+          <li>Containers restart automatically after restore</li>
+          <li>If database is unrecoverable, restore from USB drive: <code style="color:#f1f5f9;background:#1e293b;padding:1px 6px;border-radius:4px">rsync -a /media/wren-backup/ /app-backups/</code></li>
+          <li>Contact Wren support if USB is also unavailable</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🖥️ System</div>
+      <div id="sys-info"><div class="loading-state"><div class="spinner"></div></div></div>
+    </div>
+
+    <div class="settings-save-row">
+      <button class="btn btn-primary" id="btn-save-bottom" style="flex:1;padding:14px">Save All Settings</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentSettings = {};
+
+function updateRemoteBadge() {
+  const on = document.getElementById('toggle-remote-access').checked;
+  const badge = document.getElementById('remote-access-badge');
+  badge.textContent = on ? '✓ Remote — Full access' : '✕ Remote — HR only';
+  badge.className = on ? 'network-badge badge-tailscale' : 'network-badge badge-remote';
+}
+
+async function loadSettings() {
+  try {
+    currentSettings = await Wren.api('/api/admin/settings');
+    // Apply to form fields
+    for (const [key, value] of Object.entries(currentSettings)) {
+      const el = document.getElementById('setting-'+key);
+      if (el) el.value = value;
+    }
+    // Access control toggle
+    const remoteAccess = currentSettings['remote_full_access'] === 'true';
+    document.getElementById('toggle-remote-access').checked = remoteAccess;
+    updateRemoteBadge();
+  } catch(e) {
+    Wren.toast('Failed to load settings', 'error');
+  }
+}
+
+async function saveAll() {
+  const updates = {
+    remote_full_access: document.getElementById('toggle-remote-access').checked ? 'true' : 'false'
+  };
+  // Collect all text inputs/textareas with setting- prefix
+  document.querySelectorAll('[id^="setting-"]').forEach(el => {
+    const key = el.id.replace('setting-', '');
+    updates[key] = el.value;
+  });
+  try {
+    await Wren.api('/api/admin/settings', { method: 'POST', body: updates });
+    Wren.toast('Settings saved ✓', 'success');
+  } catch(e) { Wren.toast(e.error || 'Failed to save', 'error'); }
+}
+
+async function changePin() {
+  const pin = document.getElementById('new-pin').value;
+  const confirm = document.getElementById('confirm-pin').value;
+  if (pin !== confirm) { Wren.toast('PINs do not match', 'warning'); return; }
+  if (pin.length < 4) { Wren.toast('PIN must be 4+ digits', 'warning'); return; }
+  try {
+    await Wren.api('/api/auth/set-my-pin', { method: 'POST', body: { pin } });
+    Wren.toast('PIN updated ✓ — signing out', 'success');
+    setTimeout(() => Wren.logout(), 2000);
+  } catch(e) { Wren.toast('Failed', 'error'); }
+}
+
+async function loadSysInfo() {
+  try {
+    const edition = await Wren.api('/api/edition');
+    document.getElementById('sys-info').innerHTML = `
+      <div style="font-size:.875rem;display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+        <div><span style="color:#94a3b8">Edition:</span> <strong>${edition.edition}</strong></div>
+        <div><span style="color:#94a3b8">Schema:</span> <strong>${edition.schema}</strong></div>
+        <div><span style="color:#94a3b8">Demo mode:</span> <strong>${edition.demo ? 'Yes' : 'No'}</strong></div>
+        <div><span style="color:#94a3b8">Server time:</span> <strong>${new Date().toLocaleString('en-GB')}</strong></div>
+      </div>`;
+  } catch(e) {}
+}
+
+loadSettings();
+loadSysInfo();
+loadBackupStatus();
+
+async function loadBackupStatus() {
+  try {
+    const d = await Wren.api('/api/admin/backup-status');
+    const el = document.getElementById('backup-status-area');
+    if (d.error) { el.innerHTML = `<div class="alert alert-warning">${d.error}</div>`; return; }
+    const usbBadge = d.usb_mounted
+      ? `<span style="color:#22c55e;font-weight:700">✅ Connected & synced</span>`
+      : `<span style="color:#f59e0b;font-weight:700">⚠️ Not connected</span>`;
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">
+        <div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:1.6rem;font-weight:800;color:#4a9abf">${d.snapshots}</div>
+          <div style="font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Daily Snapshots</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:1.6rem;font-weight:800;color:#4a9abf">${d.weekly_snapshots}</div>
+          <div style="font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Weekly Snapshots</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;color:#22c55e">${d.total_size||'—'}</div>
+          <div style="font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Total Size</div>
+        </div>
+      </div>
+      <div style="font-size:.82rem;margin-bottom:6px"><span style="color:#94a3b8">USB drive:</span> ${usbBadge}</div>
+      <div style="font-size:.82rem;margin-bottom:6px"><span style="color:#94a3b8">Next run:</span> <span style="color:#f1f5f9">${d.next_run}</span></div>
+      <div style="font-size:.82rem;margin-bottom:6px"><span style="color:#94a3b8">Latest snapshot:</span> <span style="color:#f1f5f9">${d.latest_date||'—'} (${d.latest_size||'—'})</span></div>
+      <div style="margin-top:12px">
+        <div style="font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Last backup log</div>
+        <pre style="font-size:.75rem;color:#94a3b8;background:#0f172a;border:1px solid #2d3748;border-radius:6px;padding:10px;margin:0;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto">${d.last_log||'No log yet'}</pre>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('backup-status-area').innerHTML = '<div style="color:#94a3b8;font-size:.85rem">Backup status unavailable</div>';
+  }
+}
+
+async function runBackup() {
+  const btn = document.getElementById('run-backup-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Starting...';
+  try {
+    await Wren.api('/api/admin/run-backup', { method: 'POST', body: {} });
+    Wren.toast('Backup started in background — check log in ~60 seconds', 'success');
+    btn.textContent = '✅ Backup started';
+    setTimeout(() => { btn.textContent = '▶ Run Backup Now'; btn.disabled = false; loadBackupStatus(); }, 65000);
+  } catch (e) {
+    Wren.toast('Failed to start backup: ' + (e.error||'error'), 'error');
+    btn.textContent = '▶ Run Backup Now';
+    btn.disabled = false;
+  }
+}
+
+function toggleRecovery(e) {
+  if (e) e.preventDefault();
+  const el = document.getElementById('recovery-guide');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+document.getElementById('btn-save-top').addEventListener('click', saveAll);
+document.getElementById('btn-save-bottom').addEventListener('click', saveAll);
+document.getElementById('toggle-remote-access').addEventListener('change', updateRemoteBadge);
+document.getElementById('btn-change-pin').addEventListener('click', changePin);
+document.getElementById('run-backup-btn').addEventListener('click', runBackup);
+document.getElementById('btn-recovery-guide').addEventListener('click', toggleRecovery);
+
+// Away Mode
+(function() {
+  const toggle = document.getElementById('away-active');
+  const fields = document.getElementById('away-fields');
+  const badge  = document.getElementById('away-status-badge');
+  const lastEl = document.getElementById('away-last-updated');
+  const minDate = new Date().toISOString().slice(0,10);
+  document.getElementById('away-return-date').setAttribute('min', minDate);
+
+  function setAwayUI(active) {
+    fields.style.opacity = active ? '1' : '0.5';
+    fields.querySelectorAll('input,select').forEach(el => el.disabled = !active);
+    badge.style.display = active ? 'block' : 'none';
+    if (active) {
+      badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:rgba(224,120,32,.15);border:1px solid rgba(224,120,32,.3);border-radius:6px;font-size:.8rem;color:#e07820;font-weight:600">🏖️ Away mode will be ACTIVE when you click Apply</span>';
+    }
+  }
+
+  toggle.addEventListener('change', () => setAwayUI(toggle.checked));
+
+  async function loadAwayMode() {
+    try {
+      const d = await Wren.api('/api/away-mode');
+      toggle.checked = d.active;
+      if (d.return_date) document.getElementById('away-return-date').value = d.return_date.slice(0,10);
+      if (d.cover_person_id) document.getElementById('away-cover-person').value = String(d.cover_person_id);
+      if (d.updated_at) {
+        const who = d.updated_by_name || 'someone';
+        lastEl.textContent = `Last changed by ${who} on ${new Date(d.updated_at).toLocaleDateString('en-GB')}`;
+      }
+      if (d.active) {
+        badge.style.display = 'block';
+        badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;font-size:.8rem;color:#ef4444;font-weight:600">🏖️ AWAY MODE IS ACTIVE — Aria is in away mode now</span>';
+      }
+      setAwayUI(d.active);
+    } catch(e) { console.error('away mode load error', e); }
+  }
+
+  document.getElementById('btn-apply-away-mode').addEventListener('click', async () => {
+    const active = toggle.checked;
+    const returnDate = document.getElementById('away-return-date').value;
+    const coverPersonId = document.getElementById('away-cover-person').value;
+    if (active && !returnDate) { Wren.toast('Return date is required when away mode is ON', 'warning'); return; }
+    const btn = document.getElementById('btn-apply-away-mode');
+    btn.disabled = true; btn.textContent = '⏳ Saving...';
+    try {
+      await Wren.api('/api/away-mode', {
+        method: 'PUT',
+        body: {
+          active,
+          return_date: returnDate || null,
+          cover_person_id: coverPersonId ? parseInt(coverPersonId) : null,
+        }
+      });
+      Wren.toast(active ? '🏖️ Away mode activated — webhook fired' : '✅ Away mode deactivated', 'success');
+      await loadAwayMode();
+    } catch(e) {
+      Wren.toast(e.error || 'Failed to update away mode', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Apply Away Mode';
+    }
+  });
+
+  loadAwayMode();
+})();
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

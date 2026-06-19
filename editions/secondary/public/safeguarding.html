@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Safeguarding — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🛡️ Safeguarding</div>
+    <button class="btn btn-primary" id="btn-raise-concern">+ Raise Concern</button>
+  </div>
+
+  <div class="alert alert-danger" style="margin-bottom:20px">
+    🔒 This area is confidential. Records are restricted to managers and deputies.
+    If you are concerned about a child's safety, record it immediately and notify the manager.
+  </div>
+
+  <div id="sg-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+let records = [];
+let children = [];
+
+async function loadData() {
+  try {
+    [records, children] = await Promise.all([
+      Wren.api('/api/safeguarding'),
+      Wren.api('/api/children')
+    ]);
+    renderRecords(records);
+  } catch(e) {
+    if (e.error === 'Manager access required') {
+      document.getElementById('sg-area').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🔒</div>
+          <div class="empty-title">Manager Access Required</div>
+          <div class="empty-body">You can raise a concern below but only managers can view records.</div>
+        </div>`;
+    } else {
+      document.getElementById('sg-area').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+    }
+  }
+}
+
+function renderRecords(list) {
+  const area = document.getElementById('sg-area');
+  if (!list.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">✅</div>
+      <div class="empty-title">No safeguarding concerns on record</div>
+    </div>`;
+    return;
+  }
+  area.innerHTML = list.map(r => `
+    <div class="card" style="margin-bottom:12px;border-left:4px solid ${r.status==='open'?'var(--c-red)':'var(--c-green)'}">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700">${r.child_name || 'No child linked'}</div>
+          <div style="font-size:.78rem;color:#64748b">
+            ${r.concern_date ? new Date(r.concern_date).toLocaleDateString('en-GB') : ''}
+            · ${r.concern_type || 'Concern'}
+            · Raised by: ${r.reporter_name || '—'}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge ${r.status==='open'?'badge-red':'badge-green'}">${r.status}</span>
+          <button class="btn btn-sm btn-ghost" data-action="edit-record" data-id="${r.id}">Update →</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:.875rem">${r.description}</div>
+      ${r.action_taken ? `<div style="margin-top:8px;font-size:.875rem;padding:8px;background:#f8fafc;border-radius:6px"><strong>Action taken:</strong> ${r.action_taken}</div>` : ''}
+      ${r.referred_to ? `<div style="margin-top:4px;font-size:.875rem"><strong>Referred to:</strong> ${r.referred_to}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function raiseConcern() {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <div class="alert alert-warning" style="margin-bottom:16px">
+      This concern will be logged confidentially and the manager notified.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Child (optional)</label>
+      <select class="form-control" id="sg-child">
+        <option value="">Select child...</option>
+        ${children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Date of Concern</label>
+        <input type="date" class="form-control" id="sg-date" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-control" id="sg-type">
+          <option value="Physical harm">Physical harm</option>
+          <option value="Emotional harm">Emotional harm</option>
+          <option value="Neglect">Neglect</option>
+          <option value="Sexual abuse">Sexual abuse</option>
+          <option value="Domestic violence">Domestic violence</option>
+          <option value="FGM concern">FGM concern</option>
+          <option value="Radicalisation">Radicalisation</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description of concern <span style="color:var(--c-red)">*</span></label>
+      <textarea class="form-control" id="sg-desc" rows="5"
+        placeholder="Describe what was observed, said, or noticed. Include dates, times, and direct quotes where possible..."></textarea>
+    </div>
+  `;
+  Wren.modal('Raise Safeguarding Concern', form, [
+    { label: 'Submit Concern', class: 'btn-danger', close: false, action: async () => {
+      const desc = document.getElementById('sg-desc').value.trim();
+      if (!desc) { Wren.toast('Description required', 'warning'); return; }
+      try {
+        await Wren.api('/api/safeguarding', { method: 'POST', body: {
+          child_id: document.getElementById('sg-child').value || null,
+          concern_date: document.getElementById('sg-date').value,
+          concern_type: document.getElementById('sg-type').value,
+          description: desc
+        }});
+        Wren.toast('Concern recorded. Manager has been notified.', 'success', 5000);
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed to save', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function editRecord(id) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  Wren.modal('Update Safeguarding Record', `
+    <div class="form-group"><label class="form-label">Action Taken</label>
+      <textarea class="form-control" id="sg-action" rows="3">${r.action_taken || ''}</textarea>
+    </div>
+    <div class="form-group"><label class="form-label">Referred To</label>
+      <input class="form-control" id="sg-referred" value="${r.referred_to || ''}"
+        placeholder="e.g. LADO, Children's Services, Police">
+    </div>
+    <div class="form-group"><label class="form-label">Status</label>
+      <select class="form-control" id="sg-status">
+        <option value="open" ${r.status==='open'?'selected':''}>Open</option>
+        <option value="under_review" ${r.status==='under_review'?'selected':''}>Under Review</option>
+        <option value="closed" ${r.status==='closed'?'selected':''}>Closed</option>
+      </select>
+    </div>
+  `, [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/safeguarding/${id}`, { method: 'PUT', body: {
+          action_taken: document.getElementById('sg-action').value,
+          referred_to: document.getElementById('sg-referred').value,
+          status: document.getElementById('sg-status').value
+        }});
+        Wren.toast('Record updated ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+document.getElementById('btn-raise-concern').addEventListener('click', raiseConcern);
+document.getElementById('sg-area').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="edit-record"]');
+  if (btn) editRecord(parseInt(btn.dataset.id));
+});
+document.addEventListener('DOMContentLoaded', () => { loadData(); });
+</script>
+</body>
+</html>

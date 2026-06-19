@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>Two-Factor Setup — Wren EY</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .totp-card { max-width: 540px; margin: 0 auto; }
+    .totp-section { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+    .totp-section h2 { font-size: 1.1rem; margin: 0 0 12px 0; color: var(--c-text); }
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: .8rem; font-weight: 600; }
+    .status-enrolled { background: #16a34a22; color: #22c55e; border: 1px solid #22c55e44; }
+    .status-not-enrolled { background: #dc262622; color: #ef4444; border: 1px solid #ef444444; }
+    .qr-wrap { text-align: center; margin: 16px 0; }
+    .qr-wrap img { border-radius: 8px; border: 4px solid #fff; width: 200px; height: 200px; }
+    .secret-box { font-family: monospace; font-size: 1rem; letter-spacing: .15rem; background: #0f172a; color: #4a9abf; padding: 10px 16px; border-radius: 8px; text-align: center; margin: 12px 0; word-break: break-all; }
+    .recovery-codes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0; }
+    .recovery-code-item { font-family: monospace; font-size: .9rem; background: #0f172a; color: #f1f5f9; padding: 6px 10px; border-radius: 6px; text-align: center; }
+    .warning-box { background: #92400e22; border: 1px solid #f59e0b44; border-radius: 8px; padding: 12px 16px; color: #f59e0b; font-size: .875rem; margin: 12px 0; }
+    .step-indicator { display: flex; gap: 8px; margin-bottom: 20px; }
+    .step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; }
+    .step-dot.active { background: #4a9abf; color: #fff; }
+    .step-dot.done { background: #22c55e; color: #fff; }
+    .step-dot.pending { background: #2d3748; color: #64748b; }
+    table.users-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+    table.users-table th { text-align: left; padding: 8px 10px; color: var(--c-muted); font-weight: 600; border-bottom: 1px solid var(--c-border); }
+    table.users-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; }
+  </style>
+</head>
+<body>
+<div id="wren-shell-root"></div>
+<div class="page-content" style="padding:24px">
+  <div class="totp-card">
+    <h1 style="font-size:1.4rem;margin-bottom:4px;color:var(--c-text)">🔐 Two-Factor Authentication</h1>
+    <p style="color:var(--c-muted);font-size:.875rem;margin-bottom:24px">Manage your TOTP (authenticator app) second factor</p>
+
+    <!-- Status + main panel -->
+    <div class="totp-section" id="status-section">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2>Your 2FA Status</h2>
+        <span id="enrol-status-badge" class="status-badge status-not-enrolled">Loading…</span>
+      </div>
+      <p id="status-message" style="color:var(--c-muted);font-size:.875rem;margin:8px 0 16px 0"></p>
+      <button id="start-enrol-btn" class="btn btn-primary" style="display:none">Set Up Authenticator</button>
+      <button id="regen-recovery-btn" class="btn btn-secondary" style="display:none">Regenerate Recovery Codes</button>
+    </div>
+
+    <!-- Enrolment flow (hidden initially) -->
+    <div id="enrol-flow" style="display:none">
+      <div class="step-indicator">
+        <div class="step-dot active" id="step-dot-1">1</div>
+        <div style="flex:1;height:2px;background:var(--c-border);margin:13px 0;align-self:center"></div>
+        <div class="step-dot pending" id="step-dot-2">2</div>
+        <div style="flex:1;height:2px;background:var(--c-border);margin:13px 0;align-self:center"></div>
+        <div class="step-dot pending" id="step-dot-3">3</div>
+      </div>
+
+      <!-- Step 1: Scan QR -->
+      <div class="totp-section" id="enrol-step1">
+        <h2>Step 1 — Scan this QR code</h2>
+        <p style="color:var(--c-muted);font-size:.875rem">Open Google Authenticator, Authy, or 1Password and scan this code.</p>
+        <div class="qr-wrap">
+          <img id="qr-image" src="" alt="QR Code">
+        </div>
+        <p style="color:var(--c-muted);font-size:.8rem;text-align:center">Or enter the secret key manually:</p>
+        <div class="secret-box" id="totp-secret-display"></div>
+        <p style="color:var(--c-muted);font-size:.75rem;text-align:center">Issuer: <strong>Wren</strong></p>
+        <button class="btn btn-primary btn-block" id="step1-next-btn" style="margin-top:12px">I've scanned it →</button>
+      </div>
+
+      <!-- Step 2: Verify code -->
+      <div class="totp-section" id="enrol-step2" style="display:none">
+        <h2>Step 2 — Enter the 6-digit code</h2>
+        <p style="color:var(--c-muted);font-size:.875rem">Enter the code shown in your authenticator app to confirm it's working.</p>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <input type="text" id="verify-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"
+                 placeholder="000000"
+                 style="flex:1;text-align:center;font-size:1.4rem;letter-spacing:.25rem;padding:12px;border-radius:12px;border:2px solid var(--c-border);background:#0f172a;color:var(--c-text);outline:none">
+          <button class="btn btn-primary" id="verify-btn" style="padding:12px 20px">Verify</button>
+        </div>
+        <p id="verify-error" style="color:var(--c-red);font-size:.875rem;margin-top:8px;display:none">Invalid code — check your clock is correct and try again</p>
+      </div>
+
+      <!-- Step 3: Recovery codes -->
+      <div class="totp-section" id="enrol-step3" style="display:none">
+        <h2>Step 3 — Save your recovery codes</h2>
+        <div class="warning-box">
+          ⚠️ <strong>Save these now — you cannot see them again.</strong> If you lose your authenticator and don't have these codes, you'll need the manager to reset your 2FA.
+        </div>
+        <div class="recovery-codes" id="recovery-codes-list"></div>
+        <button class="btn btn-secondary" id="copy-codes-btn" style="margin-top:12px">Copy All Codes</button>
+        <button class="btn btn-primary btn-block" id="finish-enrol-btn" style="margin-top:12px">I've saved my codes — Finish Setup</button>
+      </div>
+    </div>
+
+    <!-- Recovery code regeneration result -->
+    <div id="regen-result" style="display:none" class="totp-section">
+      <h2>New Recovery Codes</h2>
+      <div class="warning-box">
+        ⚠️ <strong>Save these now — they replace all previous unused codes.</strong>
+      </div>
+      <div class="recovery-codes" id="regen-codes-list"></div>
+      <button class="btn btn-secondary" id="copy-regen-btn" style="margin-top:12px">Copy All Codes</button>
+    </div>
+
+    <!-- Manager: user list section -->
+    <div id="manager-section" style="display:none" class="totp-section">
+      <h2>Staff 2FA Status</h2>
+      <p style="color:var(--c-muted);font-size:.875rem;margin-bottom:16px">Manager and above roles must have 2FA enrolled. Reset a user's 2FA if they've lost access to their authenticator.</p>
+      <table class="users-table">
+        <thead><tr><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <tbody id="users-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const api = (path, opts = {}) => fetch('/api/auth' + path, {
+  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sessionStorage.getItem('wrenToken') || '') },
+  ...opts
+}).then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })));
+
+let currentUser = null;
+
+async function init() {
+  const token = sessionStorage.getItem('wrenToken');
+  if (!token) { window.location.href = '/login.html'; return; }
+  try {
+    const me = await api('/me', { method: 'GET' });
+    if (!me.ok) { window.location.href = '/login.html'; return; }
+    currentUser = me.data;
+  } catch { window.location.href = '/login.html'; return; }
+
+  await refreshStatus();
+  if (['manager','deputy','admin'].includes(currentUser.role)) loadManagerSection();
+}
+
+async function refreshStatus() {
+  const r = await api('/totp/status', { method: 'GET' });
+  if (!r.ok) return;
+  const { enrolled, enrolled_at, recovery_codes_remaining } = r.data;
+  const badge = document.getElementById('enrol-status-badge');
+  const msg = document.getElementById('status-message');
+  if (enrolled) {
+    badge.className = 'status-badge status-enrolled';
+    badge.textContent = '✓ Enrolled';
+    msg.textContent = `Enrolled ${enrolled_at ? new Date(enrolled_at).toLocaleDateString('en-GB') : ''}. Recovery codes remaining: ${recovery_codes_remaining}`;
+    document.getElementById('start-enrol-btn').style.display = 'none';
+    document.getElementById('regen-recovery-btn').style.display = 'inline-block';
+  } else {
+    badge.className = 'status-badge status-not-enrolled';
+    badge.textContent = '✗ Not enrolled';
+    msg.textContent = r.data.totp_required
+      ? 'Your role requires 2FA. Please set it up now.'
+      : 'Optional: add an extra layer of security.';
+    document.getElementById('start-enrol-btn').style.display = 'inline-block';
+    document.getElementById('regen-recovery-btn').style.display = 'none';
+  }
+}
+
+async function startEnrol() {
+  const r = await api('/totp/enroll/start', { method: 'POST' });
+  if (!r.ok) { alert(r.data.error || 'Could not start enrolment'); return; }
+  document.getElementById('qr-image').src = r.data.qr_data_url;
+  document.getElementById('totp-secret-display').textContent = r.data.secret;
+  document.getElementById('enrol-flow').style.display = 'block';
+  document.getElementById('start-enrol-btn').style.display = 'none';
+  document.getElementById('enrol-step1').style.display = 'block';
+  document.getElementById('enrol-step2').style.display = 'none';
+  document.getElementById('enrol-step3').style.display = 'none';
+  document.getElementById('step-dot-1').className = 'step-dot active';
+  document.getElementById('step-dot-2').className = 'step-dot pending';
+  document.getElementById('step-dot-3').className = 'step-dot pending';
+}
+
+async function verifyCode() {
+  const code = document.getElementById('verify-code').value.trim();
+  if (code.length !== 6) { document.getElementById('verify-error').style.display = 'block'; return; }
+  document.getElementById('verify-error').style.display = 'none';
+  const r = await api('/totp/enroll/verify', { method: 'POST', body: JSON.stringify({ code }) });
+  if (!r.ok) {
+    document.getElementById('verify-error').textContent = r.data.error || 'Invalid code';
+    document.getElementById('verify-error').style.display = 'block';
+    document.getElementById('verify-code').value = '';
+    return;
+  }
+  showRecoveryCodes(r.data.recovery_codes, 'recovery-codes-list');
+  document.getElementById('enrol-step2').style.display = 'none';
+  document.getElementById('enrol-step3').style.display = 'block';
+  document.getElementById('step-dot-2').className = 'step-dot done';
+  document.getElementById('step-dot-3').className = 'step-dot active';
+}
+
+function showRecoveryCodes(codes, targetId) {
+  const list = document.getElementById(targetId);
+  list.innerHTML = codes.map(c => `<div class="recovery-code-item">${c}</div>`).join('');
+}
+
+async function regenRecovery() {
+  if (!confirm('This will invalidate all your current unused recovery codes. Continue?')) return;
+  const r = await api('/totp/recovery/regenerate', { method: 'POST' });
+  if (!r.ok) { alert(r.data.error || 'Failed'); return; }
+  showRecoveryCodes(r.data.recovery_codes, 'regen-codes-list');
+  document.getElementById('regen-result').style.display = 'block';
+  document.getElementById('regen-result').scrollIntoView({ behavior: 'smooth' });
+}
+
+function copyAll(listId) {
+  const items = document.querySelectorAll('#' + listId + ' .recovery-code-item');
+  const text = Array.from(items).map(el => el.textContent.trim()).join('\n');
+  navigator.clipboard.writeText(text).then(() => alert('Codes copied to clipboard')).catch(() => {
+    prompt('Copy these codes:', text);
+  });
+}
+
+async function loadManagerSection() {
+  const r = await api('/totp/users', { method: 'GET' });
+  if (!r.ok) return;
+  const tbody = document.getElementById('users-table-body');
+  tbody.innerHTML = r.data.map(u => `
+    <tr>
+      <td>${u.first_name} ${u.last_name}</td>
+      <td style="color:var(--c-muted)">${u.role}</td>
+      <td>${u.totp_verified
+        ? '<span class="status-badge status-enrolled">✓ Enrolled</span>'
+        : '<span class="status-badge status-not-enrolled">✗ Not enrolled</span>'}</td>
+      <td>${u.id !== currentUser.id
+        ? `<button class="btn btn-secondary" style="font-size:.75rem;padding:4px 10px" data-action="reset-user" data-id="${u.id}" data-name="${encodeURIComponent(u.first_name + ' ' + u.last_name)}">Reset</button>`
+        : '<span style="color:var(--c-muted);font-size:.75rem">You</span>'}</td>
+    </tr>
+  `).join('');
+  document.getElementById('manager-section').style.display = 'block';
+}
+
+async function resetUser(staffId, name) {
+  if (!confirm(`Reset 2FA for ${name}? They will need to re-enrol.`)) return;
+  const r = await api('/totp/reset', { method: 'POST', body: JSON.stringify({ target_staff_id: staffId }) });
+  if (!r.ok) { alert(r.data.error || 'Reset failed'); return; }
+  alert(`2FA reset for ${name}. They can now log in with PIN only.`);
+  loadManagerSection();
+}
+
+document.addEventListener('wren:ready', init);
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('start-enrol-btn').addEventListener('click', startEnrol);
+  document.getElementById('regen-recovery-btn').addEventListener('click', regenRecovery);
+  document.getElementById('step1-next-btn').addEventListener('click', () => {
+    document.getElementById('enrol-step1').style.display = 'none';
+    document.getElementById('enrol-step2').style.display = 'block';
+    document.getElementById('step-dot-1').className = 'step-dot done';
+    document.getElementById('step-dot-2').className = 'step-dot active';
+    setTimeout(() => document.getElementById('verify-code').focus(), 50);
+  });
+  document.getElementById('verify-btn').addEventListener('click', verifyCode);
+  document.getElementById('verify-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyCode(); });
+  document.getElementById('verify-code').addEventListener('input', () => {
+    if (document.getElementById('verify-code').value.replace(/\D/g,'').length === 6) verifyCode();
+  });
+  document.getElementById('finish-enrol-btn').addEventListener('click', () => {
+    document.getElementById('enrol-flow').style.display = 'none';
+    refreshStatus();
+    if (currentUser && ['manager','deputy','admin'].includes(currentUser.role)) loadManagerSection();
+  });
+  document.getElementById('copy-codes-btn').addEventListener('click', () => copyAll('recovery-codes-list'));
+  document.getElementById('copy-regen-btn').addEventListener('click', () => copyAll('regen-codes-list'));
+  document.getElementById('users-table-body').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="reset-user"]');
+    if (btn) resetUser(parseInt(btn.dataset.id), decodeURIComponent(btn.dataset.name));
+  });
+});
+</script>
+</body>
+</html>

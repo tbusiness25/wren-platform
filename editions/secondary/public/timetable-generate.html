@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Generate Timetable — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .wizard-nav { display:flex; gap:0; margin-bottom:28px; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+    .wiz-step-tab { flex:1; padding:10px 4px; text-align:center; font-size:11px; font-weight:600; color:var(--text-muted); background:var(--surface); border-right:1px solid var(--border); cursor:pointer; transition:all .15s; line-height:1.3; }
+    .wiz-step-tab:last-child { border-right:none; }
+    .wiz-step-tab.active { background:var(--accent); color:#fff; }
+    .wiz-step-tab.done { background:var(--success-bg,#f0fdf4); color:var(--success,#16a34a); }
+    .wiz-step-tab .step-num { display:block; font-size:16px; font-weight:700; margin-bottom:2px; }
+
+    .wizard-step { display:none; }
+    .wizard-step.active { display:block; }
+
+    .step-toolbar { display:flex; justify-content:space-between; align-items:center; margin-top:24px; padding-top:16px; border-top:1px solid var(--border); }
+
+    table.editable { width:100%; border-collapse:collapse; font-size:13px; }
+    table.editable th { background:var(--surface); color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:.5px; padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; }
+    table.editable td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    table.editable tr:hover td { background:var(--surface); }
+    table.editable input, table.editable select { width:100%; padding:3px 6px; border:1px solid var(--border); border-radius:4px; font-size:12px; background:var(--bg); color:var(--text); }
+    table.editable input[type=number] { width:70px; }
+
+    .tag-list { display:flex; flex-wrap:wrap; gap:4px; }
+    .tag { background:var(--accent-muted,rgba(74,154,191,.12)); color:var(--accent); padding:2px 8px; border-radius:12px; font-size:11px; display:flex; align-items:center; gap:4px; }
+    .tag-del { cursor:pointer; opacity:.6; }
+    .tag-del:hover { opacity:1; }
+
+    .periods-grid { display:grid; grid-template-columns: 80px 90px 90px; gap:6px; margin-top:8px; font-size:13px; }
+    .periods-grid label { color:var(--text-muted); font-size:11px; font-weight:600; padding-top:8px; }
+
+    .unavail-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; margin-top:8px; }
+    .unavail-day { font-weight:600; font-size:11px; text-align:center; color:var(--text-muted); margin-bottom:4px; }
+    .unavail-slot { display:flex; align-items:center; justify-content:center; height:28px; border:1px solid var(--border); border-radius:4px; font-size:11px; cursor:pointer; background:var(--surface); transition:all .1s; user-select:none; }
+    .unavail-slot.blocked { background:var(--danger,#ef4444); color:#fff; border-color:var(--danger); }
+
+    .gen-progress { text-align:center; padding:48px 24px; }
+    .gen-spinner { width:48px; height:48px; border:4px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 16px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* Timetable preview (same as timetable.html) */
+    .tt-grid { display:grid; grid-template-columns: 80px repeat(5,1fr); border:1px solid var(--border); border-radius:8px; overflow:hidden; font-size:12px; }
+    .tt-header { background:var(--surface); color:var(--text-muted); font-weight:600; padding:7px 4px; text-align:center; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; }
+    .tt-period-label { background:var(--surface); color:var(--text-muted); padding:5px 6px; font-size:10px; font-weight:600; border-bottom:1px solid var(--border); border-right:1px solid var(--border); }
+    .tt-cell { padding:4px 4px; border-bottom:1px solid var(--border); border-right:1px solid var(--border); min-height:54px; }
+    .tt-cell:last-child { border-right:none; }
+    .tt-activity { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:3px 5px; margin-bottom:2px; font-size:11px; }
+    .tt-subject { font-weight:700; }
+    .tt-teacher { color:var(--text-muted); font-size:10px; }
+    .tt-room { color:var(--accent); font-size:10px; }
+
+    .week-toggle { display:flex; gap:2px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:2px; }
+    .week-btn { padding:5px 14px; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; font-weight:600; transition:all .15s; font-size:13px; }
+    .week-btn.active { background:var(--accent); color:#fff; }
+
+    .infeasible-box { background:var(--danger-bg,#fef2f2); border:1px solid var(--danger,#ef4444); border-radius:8px; padding:16px; margin-bottom:16px; }
+    .hint-list { margin:8px 0 0 16px; font-size:13px; color:var(--text-muted); }
+    .hint-list li { margin-bottom:4px; }
+
+    .constraint-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; }
+    .constraint-row select { flex:1; min-width:140px; }
+    .constraint-row .del-btn { color:var(--danger); cursor:pointer; font-size:18px; line-height:1; padding:0 4px; }
+
+    .draft-list-item { display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-bottom:8px; cursor:pointer; transition:border-color .15s; }
+    .draft-list-item:hover { border-color:var(--accent); }
+    .draft-status-badge { padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+    .badge-draft { background:var(--surface); color:var(--text-muted); }
+    .badge-generated { background:#dbeafe; color:#1d4ed8; }
+    .badge-accepted { background:#dcfce7; color:#16a34a; }
+    .badge-generating { background:#fef9c3; color:#ca8a04; }
+
+    /* NL constraint parser */
+    .nl-panel { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:20px; }
+    .nl-panel-title { font-weight:700; font-size:14px; margin-bottom:4px; display:flex; align-items:center; gap:8px; }
+    .nl-panel-sub { font-size:12px; color:var(--text-muted); margin-bottom:10px; }
+    .nl-textarea { width:100%; min-height:72px; resize:vertical; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; background:var(--bg); color:var(--text); box-sizing:border-box; }
+    .nl-textarea:focus { outline:none; border-color:var(--accent); }
+    .nl-parse-row { display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
+    .nl-status { font-size:12px; color:var(--text-muted); }
+    .nl-status.error  { color:var(--danger,#ef4444); }
+    .nl-status.offline { color:var(--warning,#ca8a04); }
+
+    .nl-review { margin-bottom:20px; }
+    .nl-review-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+    .nl-review-title { font-weight:700; font-size:13px; }
+
+    .nl-card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+    .nl-card-top { display:flex; align-items:flex-start; gap:10px; }
+    .nl-card-body { flex:1; min-width:0; }
+    .nl-card-type { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); margin-bottom:2px; }
+    .nl-card-desc { font-size:13px; font-weight:600; margin-bottom:4px; }
+    .nl-card-source { font-size:11px; color:var(--text-muted); font-style:italic; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .nl-card-actions { display:flex; gap:6px; }
+    .nl-conf-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; white-space:nowrap; }
+    .nl-conf-high   { background:#dcfce7; color:#15803d; }
+    .nl-conf-mid    { background:#fef9c3; color:#92400e; }
+    .nl-conf-low    { background:#fee2e2; color:#991b1b; }
+
+    .nl-accepted-list { margin-bottom:16px; }
+    .nl-accepted-item { display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--surface); border:1px solid var(--border); border-radius:6px; margin-bottom:4px; font-size:12px; }
+    .nl-accepted-item .nl-type-pill { background:var(--accent-muted,rgba(74,154,191,.12)); color:var(--accent); padding:1px 6px; border-radius:8px; font-size:10px; font-weight:700; white-space:nowrap; }
+    .nl-accepted-item .nl-desc-text { flex:1; }
+    .nl-accepted-divider { font-weight:700; font-size:12px; color:var(--text-muted); margin-bottom:8px; margin-top:4px; display:flex; align-items:center; gap:8px; }
+    .nl-accepted-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Generate Timetable</div>
+      <div class="page-subtitle" id="draft-subtitle">Build a fresh timetable from your constraints</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="showDraftList()">My Drafts</button>
+      <button class="btn btn-secondary" onclick="window.location='/timetable.html'">Import view</button>
+    </div>
+  </div>
+
+  <!-- Draft list view -->
+  <div id="view-drafts" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-weight:600">Saved drafts</div>
+      <button class="btn btn-primary" onclick="newDraft()">+ New draft</button>
+    </div>
+    <div id="drafts-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- Wizard view -->
+  <div id="view-wizard">
+    <!-- Step tabs -->
+    <div class="wizard-nav" id="wizard-nav">
+      <div class="wiz-step-tab active" onclick="goStep(1)" data-step="1"><span class="step-num">1</span>Calendar</div>
+      <div class="wiz-step-tab" onclick="goStep(2)" data-step="2"><span class="step-num">2</span>Teachers</div>
+      <div class="wiz-step-tab" onclick="goStep(3)" data-step="3"><span class="step-num">3</span>Subjects</div>
+      <div class="wiz-step-tab" onclick="goStep(4)" data-step="4"><span class="step-num">4</span>Year Groups</div>
+      <div class="wiz-step-tab" onclick="goStep(5)" data-step="5"><span class="step-num">5</span>Rooms</div>
+      <div class="wiz-step-tab" onclick="goStep(6)" data-step="6"><span class="step-num">6</span>Activities</div>
+      <div class="wiz-step-tab" onclick="goStep(7)" data-step="7"><span class="step-num">7</span>Constraints</div>
+    </div>
+
+    <!-- ── Step 1: Calendar ── -->
+    <div id="step-1" class="wizard-step active">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">School calendar</div>
+      <div style="color:var(--text-muted);margin-bottom:20px;font-size:13px">Define your timetable structure</div>
+      <div class="form-row" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label class="form-label">Week pattern</label>
+          <select class="form-control" id="cal-weeks">
+            <option value="1">Single week</option>
+            <option value="2">A/B fortnightly</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1;min-width:100px">
+          <label class="form-label">Days per week</label>
+          <input type="number" class="form-control" id="cal-days" value="5" min="1" max="5">
+        </div>
+        <div class="form-group" style="flex:1;min-width:100px">
+          <label class="form-label">Periods per day</label>
+          <input type="number" class="form-control" id="cal-periods" value="6" min="1" max="12" onchange="renderPeriodTimes()">
+        </div>
+      </div>
+      <div style="font-weight:600;margin-bottom:8px">Period times</div>
+      <div id="period-times-grid" class="periods-grid"></div>
+      <div class="step-toolbar">
+        <div></div>
+        <button class="btn btn-primary" onclick="nextStep()">Next: Teachers →</button>
+      </div>
+    </div>
+
+    <!-- ── Step 2: Teachers ── -->
+    <div id="step-2" class="wizard-step">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">Teachers</div>
+      <div style="color:var(--text-muted);margin-bottom:20px;font-size:13px">Add all teachers who will have timetabled lessons</div>
+      <button class="btn btn-secondary" onclick="addTeacher()" style="margin-bottom:12px">+ Add teacher</button>
+      <table class="editable" id="teachers-table">
+        <thead><tr><th>Name</th><th>Specialisms</th><th>Max/day</th><th>Max/week</th><th>Unavailable</th><th></th></tr></thead>
+        <tbody id="teachers-body"></tbody>
+      </table>
+      <div class="step-toolbar">
+        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+        <button class="btn btn-primary" onclick="nextStep()">Next: Subjects →</button>
+      </div>
+    </div>
+
+    <!-- ── Step 3: Subjects ── -->
+    <div id="step-3" class="wizard-step">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">Subjects</div>
+      <div style="color:var(--text-muted);margin-bottom:20px;font-size:13px">Add subjects and how many periods per week each year group gets</div>
+      <button class="btn btn-secondary" onclick="addSubject()" style="margin-bottom:12px">+ Add subject</button>
+      <table class="editable" id="subjects-table">
+        <thead><tr><th>Code</th><th>Name</th><th>Y7</th><th>Y8</th><th>Y9</th><th>Y10</th><th>Y11</th><th></th></tr></thead>
+        <tbody id="subjects-body"></tbody>
+      </table>
+      <div class="step-toolbar">
+        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+        <button class="btn btn-primary" onclick="nextStep()">Next: Year Groups →</button>
+      </div>
+    </div>
+
+    <!-- ── Step 4: Year groups ── -->
+    <div id="step-4" class="wizard-step">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">Year groups</div>
+      <div style="color:var(--text-muted);margin-bottom:20px;font-size:13px">How many students and teaching sets per year group</div>
+      <button class="btn btn-secondary" onclick="addYearGroup()" style="margin-bottom:12px">+ Add year group</button>
+      <table class="editable" id="yeargroups-table">
+        <thead><tr><th>Name</th><th>Year</th><th>Students</th><th>Sets per subject</th><th></th></tr></thead>
+        <tbody id="yeargroups-body"></tbody>
+      </table>
+      <div class="step-toolbar">
+        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+        <button class="btn btn-primary" onclick="nextStep()">Next: Rooms →</button>
+      </div>
+    </div>
+
+    <!-- ── Step 5: Rooms ── -->
+    <div id="step-5" class="wizard-step">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">Rooms</div>
+      <div style="color:var(--text-muted);margin-bottom:20px;font-size:13px">Add classrooms, labs, halls, and studios</div>
+      <button class="btn btn-secondary" onclick="addRoom()" style="margin-bottom:12px">+ Add room</button>
+      <table class="editable" id="rooms-table">
+        <thead><tr><th>Name/Code</th><th>Capacity</th><th>Subject restrictions</th><th>Unavailable</th><th></th></tr></thead>
+        <tbody id="rooms-body"></tbody>
+      </table>
+      <div class="step-toolbar">
+        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+        <button class="btn btn-primary" onclick="nextStep()">Next: Activities →</button>
+      </div>
+    </div>
+
+    <!-- ── Step 6: Activities ── -->
+    <div id="step-6" class="wizard-step">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">Activities</div>
+      <div style="color:var(--text-muted);margin-bottom:20px;font-size:13px">Auto-generated from year groups × subjects × sets. Edit periods/week and assign teachers.</div>
+      <button class="btn btn-secondary" onclick="regenerateActivities()" style="margin-bottom:12px">Regenerate from steps 3 & 4</button>
+      <table class="editable" id="activities-table">
+        <thead><tr><th>Activity</th><th>Teacher</th><th>Periods/week</th><th></th></tr></thead>
+        <tbody id="activities-body"></tbody>
+      </table>
+      <div class="step-toolbar">
+        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+        <button class="btn btn-primary" onclick="nextStep()">Next: Constraints →</button>
+      </div>
+    </div>
+
+    <!-- ── Step 7: Constraints ── -->
+    <div id="step-7" class="wizard-step">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">Constraints</div>
+      <div style="color:var(--text-muted);margin-bottom:16px;font-size:13px">Add soft constraints. Fewer = easier to solve. Use plain English or the form below.</div>
+
+      <!-- NL input panel -->
+      <div class="nl-panel">
+        <div class="nl-panel-title">
+          <span>Tell us about your school's constraints</span>
+          <span style="font-size:10px;background:var(--accent-muted,rgba(74,154,191,.12));color:var(--accent);padding:2px 6px;border-radius:8px;font-weight:600">AI</span>
+        </div>
+        <div class="nl-panel-sub">Describe constraints in plain English — Qwen will parse them. Example: "Mrs Patel does Wednesday afternoons off for childcare. Mr Thompson can't teach period 1 Mondays. Year 11 maths sets must be parallel-blocked."</div>
+        <textarea id="nl-input" class="nl-textarea" placeholder="Type or paste your constraints here…" maxlength="4000"></textarea>
+        <div class="nl-parse-row">
+          <button class="btn btn-secondary" id="btn-parse-nl" onclick="parseNLConstraints()">Parse with AI</button>
+          <span id="nl-status" class="nl-status"></span>
+        </div>
+      </div>
+
+      <!-- Parsed constraint review (hidden until parse runs) -->
+      <div id="nl-review-panel" class="nl-review" style="display:none">
+        <div class="nl-review-header">
+          <div class="nl-review-title" id="nl-review-title">Parsed constraints — review each one</div>
+          <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" id="btn-accept-high" onclick="acceptAllHighConfidence()">Accept high-confidence</button>
+        </div>
+        <div id="nl-review-list"></div>
+      </div>
+
+      <!-- Accepted NL constraints -->
+      <div id="nl-accepted-section" style="display:none">
+        <div class="nl-accepted-divider">AI constraints</div>
+        <div id="nl-accepted-list" class="nl-accepted-list"></div>
+      </div>
+
+      <!-- Manual constraints -->
+      <div class="nl-accepted-divider" style="margin-bottom:10px">Manual constraints</div>
+      <button class="btn btn-secondary" onclick="addConstraint()" style="margin-bottom:12px">+ Add constraint</button>
+      <div id="constraints-list"></div>
+
+      <div style="background:var(--surface);border-radius:8px;padding:12px;margin-top:16px;font-size:13px;color:var(--text-muted)">
+        <strong>Tip:</strong> Hard constraints (teacher double-booking, room clashes) are always enforced. Soft constraints here are best-effort — if infeasible, the solver will tell you which to relax.
+      </div>
+      <div class="step-toolbar">
+        <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+        <button class="btn btn-primary" onclick="startGeneration()" id="btn-generate">Generate timetable</button>
+      </div>
+    </div>
+
+    <!-- ── Generating view ── -->
+    <div id="step-generating" class="wizard-step">
+      <div class="gen-progress">
+        <div class="gen-spinner"></div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:8px">Generating timetable…</div>
+        <div style="color:var(--text-muted);margin-bottom:4px" id="gen-status-text">Running constraint solver — this typically takes 5–30 seconds.</div>
+        <div style="color:var(--text-muted);font-size:13px" id="gen-elapsed"></div>
+        <button class="btn btn-secondary" style="margin-top:24px" onclick="cancelGeneration()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ── Result view ── -->
+    <div id="step-result" class="wizard-step">
+      <div id="result-success" style="display:none">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+          <div style="width:36px;height:36px;background:var(--success,#16a34a);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px">✓</div>
+          <div>
+            <div style="font-size:18px;font-weight:700">Timetable generated</div>
+            <div style="color:var(--text-muted);font-size:13px" id="result-stats"></div>
+          </div>
+        </div>
+        <!-- Week filter for preview -->
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <div style="font-weight:600;font-size:13px">Preview:</div>
+          <div id="preview-week-toggle" class="week-toggle"></div>
+          <select id="preview-filter" class="form-control" style="width:160px;font-size:13px" onchange="renderPreview()">
+            <option value="">All teachers</option>
+          </select>
+        </div>
+        <div id="result-grid" style="overflow-x:auto;margin-bottom:20px"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="acceptDraft()">Accept — make this the live timetable</button>
+          <button class="btn btn-secondary" onclick="rejectDraft()">Reject and go back to adjust</button>
+        </div>
+      </div>
+
+      <div id="result-infeasible" style="display:none">
+        <div style="font-size:18px;font-weight:700;margin-bottom:12px">Could not satisfy all constraints</div>
+        <div class="infeasible-box">
+          <div style="font-weight:600;margin-bottom:8px">Solver diagnostics</div>
+          <ul class="hint-list" id="infeasible-hints"></ul>
+        </div>
+        <div style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+          Try relaxing some constraints (especially room-locking and no-back-to-back rules), or increase teacher availability.
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" onclick="rejectDraft()">Adjust and try again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Unavailability modal -->
+<div id="unavail-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeUnavailModal()"></div>
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" id="unavail-modal-title">Unavailable times</div>
+      <button class="modal-close" onclick="closeUnavailModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Click a period to toggle unavailable (red). Each cell is Day × Period.</div>
+      <div style="display:grid;grid-template-columns:60px repeat(5,1fr);gap:4px" id="unavail-grid-modal"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="saveUnavailModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri'];
+
+// State
+let draftId   = null;
+let currentStep = 1;
+let genTimer  = null;
+let genStart  = null;
+let draftActivities = []; // from /drafts/:id/activities after generation
+
+let state = {
+  calendar:      { weeks: 1, days: 5, periods_per_day: 6, period_times: [] },
+  teachers:      [],
+  subjects:      [],
+  year_groups:   [],
+  rooms:         [],
+  activities:    [],
+  constraints:   [],
+  nlConstraints: [],   // AI-parsed, user-accepted constraints
+};
+
+let _unavailTarget   = null; // { list: teacher|room, idx }
+let _unavailWorkCopy = [];
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  if (!Wren.user || !['manager','deputy_manager','headteacher','deputy_headteacher'].includes(Wren.user.role)) {
+    document.getElementById('wren-content').innerHTML = '<div class="empty-state">Manager access required</div>';
+    return;
+  }
+  renderPeriodTimes();
+  showDraftList();
+}
+
+// ── Draft list ────────────────────────────────────────────────────────────────
+
+async function showDraftList() {
+  document.getElementById('view-wizard').style.display = 'none';
+  document.getElementById('view-drafts').style.display = 'block';
+  try {
+    const drafts = await Wren.api('/api/timetable-generate/drafts');
+    const el = document.getElementById('drafts-list');
+    if (!drafts.length) {
+      el.innerHTML = '<div class="empty-state">No drafts yet. <button class="btn btn-primary" onclick="newDraft()">Create one</button></div>';
+      return;
+    }
+    el.innerHTML = drafts.map(d => `
+      <div class="draft-list-item" onclick="openDraft('${d.id}')">
+        <div style="flex:1">
+          <div style="font-weight:600">${esc(d.name)}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${new Date(d.updated_at).toLocaleString('en-GB')}</div>
+        </div>
+        <span class="draft-status-badge badge-${d.status}">${d.status}</span>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" onclick="event.stopPropagation();deleteDraft('${d.id}')">Delete</button>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('drafts-list').innerHTML = `<div class="empty-state">${e.message}</div>`;
+  }
+}
+
+async function newDraft() {
+  const name = prompt('Draft name:', 'New timetable');
+  if (!name) return;
+  const d = await Wren.api('/api/timetable-generate/drafts', { method:'POST', body:{ name } });
+  openDraft(d.id);
+}
+
+async function openDraft(id) {
+  try {
+    const d = await Wren.api(`/api/timetable-generate/drafts/${id}`);
+    draftId = d.id;
+    document.getElementById('draft-subtitle').textContent = `Draft: ${d.name}`;
+    if (d.state && Object.keys(d.state).length) {
+      state = Object.assign({
+        calendar:      { weeks:1, days:5, periods_per_day:6, period_times:[] },
+        teachers:      [],
+        subjects:      [],
+        year_groups:   [],
+        rooms:         [],
+        activities:    [],
+        constraints:   [],
+        nlConstraints: [],
+      }, d.state);
+    }
+    document.getElementById('view-drafts').style.display = 'none';
+    document.getElementById('view-wizard').style.display = 'block';
+
+    if (d.status === 'generated') {
+      loadResultView(d.result);
+      showWizardStep('result');
+    } else if (d.status === 'generating' && d.job_id) {
+      showWizardStep('generating');
+      startPolling();
+    } else {
+      goStep(d.step || 1);
+    }
+  } catch(e) { alert('Error opening draft: ' + e.message); }
+}
+
+async function deleteDraft(id) {
+  if (!confirm('Delete this draft?')) return;
+  await Wren.api(`/api/timetable-generate/drafts/${id}`, { method:'DELETE' });
+  showDraftList();
+}
+
+// ── Wizard navigation ─────────────────────────────────────────────────────────
+
+function showWizardStep(name) {
+  document.querySelectorAll('.wizard-step').forEach(el => el.classList.remove('active'));
+  document.getElementById(`step-${name}`).classList.add('active');
+  document.querySelectorAll('.wiz-step-tab').forEach(tab => {
+    tab.classList.remove('active');
+    if (tab.dataset.step && parseInt(tab.dataset.step) === currentStep) tab.classList.add('active');
+  });
+}
+
+function goStep(n) {
+  readCurrentStep();
+  currentStep = n;
+  renderCurrentStep();
+  showWizardStep(n);
+  autoSave();
+}
+
+async function nextStep() {
+  readCurrentStep();
+  if (currentStep < 7) {
+    currentStep++;
+    renderCurrentStep();
+    showWizardStep(currentStep);
+    autoSave();
+  }
+}
+
+function prevStep() {
+  readCurrentStep();
+  if (currentStep > 1) {
+    currentStep--;
+    renderCurrentStep();
+    showWizardStep(currentStep);
+    autoSave();
+  }
+}
+
+function readCurrentStep() {
+  switch (currentStep) {
+    case 1: readCalendar();    break;
+    case 2: readTeachers();    break;
+    case 3: readSubjects();    break;
+    case 4: readYearGroups();  break;
+    case 5: readRooms();       break;
+    case 6: readActivities();  break;
+    case 7: readConstraints(); break;
+  }
+}
+
+function renderCurrentStep() {
+  switch (currentStep) {
+    case 1: renderCalendar();    break;
+    case 2: renderTeachers();    break;
+    case 3: renderSubjects();    break;
+    case 4: renderYearGroups();  break;
+    case 5: renderRooms();       break;
+    case 6: renderActivities();  break;
+    case 7: renderConstraints(); break;
+  }
+  // Update nav tabs
+  document.querySelectorAll('.wiz-step-tab').forEach(tab => {
+    const n = parseInt(tab.dataset.step);
+    tab.classList.remove('active','done');
+    if (n === currentStep) tab.classList.add('active');
+    else if (n < currentStep) tab.classList.add('done');
+  });
+}
+
+async function autoSave() {
+  if (!draftId) return;
+  try {
+    await Wren.api(`/api/timetable-generate/drafts/${draftId}`, {
+      method: 'PUT', body: { state, step: currentStep }
+    });
+  } catch {}
+}
+
+// ── Step 1: Calendar ──────────────────────────────────────────────────────────
+
+function renderCalendar() {
+  const c = state.calendar;
+  document.getElementById('cal-weeks').value   = c.weeks || 1;
+  document.getElementById('cal-days').value    = c.days || 5;
+  document.getElementById('cal-periods').value = c.periods_per_day || 6;
+  renderPeriodTimes();
+}
+
+function renderPeriodTimes() {
+  const n  = parseInt(document.getElementById('cal-periods')?.value || 6);
+  const pt = state.calendar.period_times || [];
+  const defaults = [
+    ['08:50','09:50'],['09:50','10:50'],['11:10','12:10'],
+    ['12:10','13:10'],['14:00','15:00'],['15:00','16:00'],
+    ['16:00','17:00'],['17:00','18:00'],
+  ];
+  const grid = document.getElementById('period-times-grid');
+  if (!grid) return;
+  grid.innerHTML = `<div class="periods-grid" style="grid-template-columns:60px 90px 90px">
+    <b style="font-size:11px;color:var(--text-muted)">Period</b>
+    <b style="font-size:11px;color:var(--text-muted)">Start</b>
+    <b style="font-size:11px;color:var(--text-muted)">End</b>
+    ${Array.from({length:n},(_,i)=>{
+      const saved = pt.find(p=>p.period===i+1);
+      const def   = defaults[i] || ['',''];
+      return `<span style="font-weight:600;padding-top:6px">P${i+1}</span>
+        <input type="time" id="pt-start-${i+1}" value="${saved?.start||def[0]}" class="form-control" style="padding:4px">
+        <input type="time" id="pt-end-${i+1}"   value="${saved?.end||def[1]}"   class="form-control" style="padding:4px">`;
+    }).join('')}
+  </div>`;
+}
+
+function readCalendar() {
+  const weeks   = parseInt(document.getElementById('cal-weeks')?.value || 1);
+  const days    = parseInt(document.getElementById('cal-days')?.value || 5);
+  const periods = parseInt(document.getElementById('cal-periods')?.value || 6);
+  const pt = [];
+  for (let i = 1; i <= periods; i++) {
+    const s = document.getElementById(`pt-start-${i}`)?.value || '';
+    const e = document.getElementById(`pt-end-${i}`)?.value   || '';
+    if (s) pt.push({ period: i, start: s, end: e });
+  }
+  state.calendar = { weeks, days, periods_per_day: periods, period_times: pt };
+}
+
+// ── Step 2: Teachers ──────────────────────────────────────────────────────────
+
+let _teacherSpecialismsInput = [];
+
+function renderTeachers() {
+  const tbody = document.getElementById('teachers-body');
+  tbody.innerHTML = (state.teachers || []).map((t,i) => `
+    <tr>
+      <td><input value="${esc(t.name||'')}" onchange="state.teachers[${i}].name=this.value" style="width:140px"></td>
+      <td><div class="tag-list" id="spec-tags-${i}"></div>
+          <input placeholder="Add specialism…" style="width:110px;margin-top:4px" onkeydown="addSpecialism(event,${i})"></td>
+      <td><input type="number" value="${t.max_periods_day||6}" min="1" max="10" onchange="state.teachers[${i}].max_periods_day=+this.value"></td>
+      <td><input type="number" value="${t.max_periods_week||25}" min="1" max="40" onchange="state.teachers[${i}].max_periods_week=+this.value"></td>
+      <td><button class="btn btn-secondary" style="padding:3px 8px;font-size:11px" onclick="openUnavailModal('teachers',${i})">${(t.unavailable||[]).length} blocked</button></td>
+      <td><button class="btn" style="color:var(--danger);padding:3px 8px" onclick="removeTeacher(${i})">✕</button></td>
+    </tr>
+  `).join('');
+  // Render specialism tags
+  (state.teachers || []).forEach((t,i) => renderSpecialismTags(i));
+}
+
+function renderSpecialismTags(i) {
+  const el = document.getElementById(`spec-tags-${i}`);
+  if (!el) return;
+  el.innerHTML = (state.teachers[i].specialisms||[]).map((s,j) =>
+    `<span class="tag">${esc(s)}<span class="tag-del" onclick="removeSpecialism(${i},${j})">×</span></span>`
+  ).join('');
+}
+
+function addSpecialism(e, idx) {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim();
+  if (!val) return;
+  if (!state.teachers[idx].specialisms) state.teachers[idx].specialisms = [];
+  state.teachers[idx].specialisms.push(val);
+  e.target.value = '';
+  renderSpecialismTags(idx);
+}
+
+function removeSpecialism(teacherIdx, specIdx) {
+  state.teachers[teacherIdx].specialisms.splice(specIdx, 1);
+  renderSpecialismTags(teacherIdx);
+}
+
+function addTeacher() {
+  state.teachers.push({ id: 't' + Date.now(), name:'', specialisms:[], max_periods_day:6, max_periods_week:25, unavailable:[] });
+  renderTeachers();
+}
+
+function removeTeacher(i) {
+  state.teachers.splice(i, 1);
+  renderTeachers();
+}
+
+function readTeachers() {
+  // State is updated live via onchange; just ensure name is read from inputs
+  document.querySelectorAll('#teachers-body tr').forEach((row, i) => {
+    const inp = row.querySelector('input');
+    if (inp && state.teachers[i]) state.teachers[i].name = inp.value;
+  });
+}
+
+// ── Step 3: Subjects ──────────────────────────────────────────────────────────
+
+function renderSubjects() {
+  const tbody = document.getElementById('subjects-body');
+  tbody.innerHTML = (state.subjects||[]).map((s,i) => `
+    <tr>
+      <td><input value="${esc(s.code||'')}" onchange="state.subjects[${i}].code=this.value" style="width:60px"></td>
+      <td><input value="${esc(s.name||'')}" onchange="state.subjects[${i}].name=this.value" style="width:130px"></td>
+      ${[7,8,9,10,11].map(y => `<td><input type="number" value="${s.periods_per_week?.[y]||0}" min="0" max="10" onchange="setSubjectPeriods(${i},${y},+this.value)" style="width:44px"></td>`).join('')}
+      <td><button class="btn" style="color:var(--danger);padding:3px 8px" onclick="removeSubject(${i})">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+function setSubjectPeriods(i, year, val) {
+  if (!state.subjects[i].periods_per_week) state.subjects[i].periods_per_week = {};
+  state.subjects[i].periods_per_week[year] = val;
+}
+
+function addSubject() {
+  state.subjects.push({ id:'s'+Date.now(), code:'', name:'', periods_per_week:{7:3,8:3,9:3,10:4,11:4} });
+  renderSubjects();
+}
+
+function removeSubject(i) { state.subjects.splice(i,1); renderSubjects(); }
+
+function readSubjects() {}  // updated live
+
+// ── Step 4: Year groups ───────────────────────────────────────────────────────
+
+function renderYearGroups() {
+  const tbody = document.getElementById('yeargroups-body');
+  tbody.innerHTML = (state.year_groups||[]).map((yg,i) => `
+    <tr>
+      <td><input value="${esc(yg.name||'')}" onchange="state.year_groups[${i}].name=this.value" style="width:100px"></td>
+      <td><input type="number" value="${yg.year||7}" min="7" max="13" onchange="state.year_groups[${i}].year=+this.value" style="width:55px"></td>
+      <td><input type="number" value="${yg.students||120}" min="1" onchange="state.year_groups[${i}].students=+this.value" style="width:70px"></td>
+      <td><input type="number" value="${yg.set_count||3}" min="1" max="10" onchange="state.year_groups[${i}].set_count=+this.value" style="width:70px"></td>
+      <td><button class="btn" style="color:var(--danger);padding:3px 8px" onclick="removeYearGroup(${i})">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+function addYearGroup() {
+  const yr = (state.year_groups.length ? Math.max(...state.year_groups.map(y=>y.year||7)) + 1 : 7);
+  state.year_groups.push({ id:'yg'+Date.now(), name:`Year ${yr}`, year:yr, students:120, set_count:3 });
+  renderYearGroups();
+}
+
+function removeYearGroup(i) { state.year_groups.splice(i,1); renderYearGroups(); }
+function readYearGroups() {}
+
+// ── Step 5: Rooms ─────────────────────────────────────────────────────────────
+
+function renderRooms() {
+  const tbody = document.getElementById('rooms-body');
+  tbody.innerHTML = (state.rooms||[]).map((r,i) => `
+    <tr>
+      <td><input value="${esc(r.name||'')}" onchange="state.rooms[${i}].name=this.value" style="width:120px"></td>
+      <td><input type="number" value="${r.capacity||30}" min="1" onchange="state.rooms[${i}].capacity=+this.value" style="width:65px"></td>
+      <td><div class="tag-list" id="room-sub-tags-${i}"></div>
+          <select style="width:120px;margin-top:4px;font-size:11px" onchange="addRoomSubject(${i},this)">
+            <option value="">Restrict to…</option>
+            ${(state.subjects||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}
+          </select></td>
+      <td><button class="btn btn-secondary" style="padding:3px 8px;font-size:11px" onclick="openUnavailModal('rooms',${i})">${(r.unavailable||[]).length} blocked</button></td>
+      <td><button class="btn" style="color:var(--danger);padding:3px 8px" onclick="removeRoom(${i})">✕</button></td>
+    </tr>
+  `).join('');
+  (state.rooms||[]).forEach((_,i) => renderRoomSubjectTags(i));
+}
+
+function renderRoomSubjectTags(i) {
+  const el = document.getElementById(`room-sub-tags-${i}`);
+  if (!el) return;
+  const subs = state.rooms[i].subject_restrictions || [];
+  el.innerHTML = subs.map((sid,j) => {
+    const sub = state.subjects.find(s=>s.id===sid);
+    return `<span class="tag">${esc(sub?.name||sid)}<span class="tag-del" onclick="removeRoomSubject(${i},${j})">×</span></span>`;
+  }).join('');
+}
+
+function addRoomSubject(roomIdx, sel) {
+  const val = sel.value; if (!val) return;
+  if (!state.rooms[roomIdx].subject_restrictions) state.rooms[roomIdx].subject_restrictions = [];
+  if (!state.rooms[roomIdx].subject_restrictions.includes(val))
+    state.rooms[roomIdx].subject_restrictions.push(val);
+  sel.value = '';
+  renderRoomSubjectTags(roomIdx);
+}
+
+function removeRoomSubject(ri, ji) {
+  state.rooms[ri].subject_restrictions.splice(ji,1);
+  renderRoomSubjectTags(ri);
+}
+
+function addRoom() {
+  state.rooms.push({ id:'r'+Date.now(), name:'', capacity:30, subject_restrictions:[], unavailable:[] });
+  renderRooms();
+}
+
+function removeRoom(i) { state.rooms.splice(i,1); renderRooms(); }
+function readRooms() {}
+
+// ── Step 6: Activities ────────────────────────────────────────────────────────
+
+function regenerateActivities() {
+  if (!state.year_groups.length || !state.subjects.length) {
+    alert('Add year groups and subjects first (steps 3 & 4).');
+    return;
+  }
+  const existing = new Map((state.activities||[]).map(a=>[`${a.subject_id}_${a.year_group}_${a.set_num}`,a]));
+  const generated = [];
+  for (const yg of state.year_groups) {
+    const yr = yg.year;
+    const sets = yg.set_count || 1;
+    for (const sub of state.subjects) {
+      const pw = sub.periods_per_week?.[yr] || 0;
+      if (!pw) continue;
+      for (let s = 1; s <= sets; s++) {
+        const key = `${sub.id}_${yr}_${s}`;
+        const existing_act = existing.get(key);
+        generated.push({
+          id:           existing_act?.id || `a_${sub.id}_${yr}_${s}`,
+          subject_id:   sub.id,
+          subject_name: sub.name,
+          subject_code: sub.code,
+          year_group:   yr,
+          set_num:      s,
+          teacher_id:   existing_act?.teacher_id   || null,
+          teacher_name: existing_act?.teacher_name || null,
+          class_id:     existing_act?.class_id     || null,
+          pupil_count:  Math.round((yg.students || 120) / sets),
+          periods_week: existing_act?.periods_week || pw,
+        });
+      }
+    }
+  }
+  state.activities = generated;
+  renderActivities();
+}
+
+function renderActivities() {
+  if (!state.activities?.length) {
+    document.getElementById('activities-body').innerHTML =
+      '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted)">Click "Regenerate" to auto-generate from your subjects and year groups</td></tr>';
+    return;
+  }
+  const tbody = document.getElementById('activities-body');
+  tbody.innerHTML = (state.activities||[]).map((a,i) => `
+    <tr>
+      <td style="font-size:12px"><strong>${esc(a.subject_name||a.subject_id)}</strong><br><span style="color:var(--text-muted)">Y${a.year_group} Set ${a.set_num} · ${a.pupil_count} pupils</span></td>
+      <td>
+        <select onchange="setActivityTeacher(${i},this.value)" style="width:160px;font-size:12px">
+          <option value="">No teacher (auto)</option>
+          ${(state.teachers||[]).map(t=>`<option value="${t.id}" ${a.teacher_id===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="number" value="${a.periods_week||3}" min="1" max="10" onchange="state.activities[${i}].periods_week=+this.value" style="width:60px"></td>
+      <td><button class="btn" style="color:var(--danger);padding:3px 8px;font-size:12px" onclick="removeActivity(${i})">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+function setActivityTeacher(i, tid) {
+  state.activities[i].teacher_id = tid || null;
+  const t = state.teachers.find(t=>t.id===tid);
+  state.activities[i].teacher_name = t?.name || null;
+}
+
+function removeActivity(i) { state.activities.splice(i,1); renderActivities(); }
+function readActivities() {}
+
+// ── Step 7: Constraints ───────────────────────────────────────────────────────
+
+function renderConstraints() {
+  document.getElementById('constraints-list').innerHTML =
+    (state.constraints || []).map((c, i) => renderConstraintRow(c, i)).join('');
+  renderNLConstraints();
+}
+
+function renderConstraintRow(c,i) {
+  const teacherOpts = (state.teachers||[]).map(t=>`<option value="${t.id}" ${c.teacher_id===t.id?'selected':''}>${esc(t.name)}</option>`).join('');
+  const subjectOpts = (state.subjects||[]).map(s=>`<option value="${s.id}" ${c.subject_id===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
+  const roomOpts    = (state.rooms||[]).map(r=>`<option value="${r.id}" ${c.room_id===r.id?'selected':''}>${esc(r.name||r.id)}</option>`).join('');
+
+  let extra = '';
+  if (c.type === 'no-back-to-back')
+    extra = `<select onchange="state.constraints[${i}].teacher_id=this.value" style="min-width:140px"><option value="">Teacher…</option>${teacherOpts}</select>`;
+  if (c.type === 'prefer-early')
+    extra = `<select onchange="state.constraints[${i}].subject_id=this.value" style="min-width:140px"><option value="">Subject…</option>${subjectOpts}</select>`;
+  if (c.type === 'room-locked')
+    extra = `<select onchange="state.constraints[${i}].subject_id=this.value" style="min-width:130px"><option value="">Subject…</option>${subjectOpts}</select>
+             <select onchange="state.constraints[${i}].room_id=this.value" style="min-width:120px"><option value="">Room…</option>${roomOpts}</select>`;
+
+  return `<div class="constraint-row">
+    <select onchange="changeConstraintType(${i},this.value)" style="min-width:180px">
+      <option value="no-back-to-back"  ${c.type==='no-back-to-back'?'selected':''}>No back-to-back</option>
+      <option value="prefer-early"     ${c.type==='prefer-early'?'selected':''}>Prefer early day</option>
+      <option value="room-locked"      ${c.type==='room-locked'?'selected':''}>Room locked to subject</option>
+    </select>
+    ${extra}
+    <span class="del-btn" onclick="removeConstraint(${i})">×</span>
+  </div>`;
+}
+
+function changeConstraintType(i, type) {
+  state.constraints[i] = { type };
+  renderConstraints();
+}
+
+function addConstraint() {
+  state.constraints.push({ type: 'no-back-to-back' });
+  renderConstraints();
+}
+
+function removeConstraint(i) { state.constraints.splice(i,1); renderConstraints(); }
+function readConstraints() {}
+
+// ── Generation ────────────────────────────────────────────────────────────────
+
+async function startGeneration() {
+  if (!state.activities?.length) {
+    alert('No activities defined. Complete step 6 first.');
+    return;
+  }
+  readCurrentStep();
+  await autoSave();
+
+  showWizardStep('generating');
+  document.getElementById('gen-status-text').textContent = 'Sending to solver…';
+  genStart = Date.now();
+  genTimer = setInterval(updateElapsed, 1000);
+
+  try {
+    const res = await Wren.api(`/api/timetable-generate/drafts/${draftId}/generate`, {
+      method: 'POST', body: {}
+    });
+    document.getElementById('gen-status-text').textContent = 'Running constraint solver — typically 5–30 seconds…';
+    startPolling();
+  } catch (e) {
+    clearInterval(genTimer);
+    showWizardStep(7);
+    alert('Failed to start generation: ' + e.message);
+  }
+}
+
+function updateElapsed() {
+  const secs = Math.round((Date.now() - genStart) / 1000);
+  document.getElementById('gen-elapsed').textContent = `Elapsed: ${secs}s`;
+  if (secs > 90) {
+    document.getElementById('gen-status-text').textContent = 'Still running… larger schools may take up to 3 minutes.';
+  }
+}
+
+let _pollTimeout = null;
+function startPolling() {
+  clearTimeout(_pollTimeout);
+  _pollTimeout = setTimeout(pollStatus, 3000);
+}
+
+async function pollStatus() {
+  try {
+    const res = await Wren.api(`/api/timetable-generate/drafts/${draftId}/status`);
+    if (res.status === 'generating') {
+      _pollTimeout = setTimeout(pollStatus, 3000);
+      return;
+    }
+    clearInterval(genTimer);
+    // Done
+    if (res.status === 'generated') {
+      loadResultView(res.result);
+      showWizardStep('result');
+    } else if (res.status === 'infeasible') {
+      loadResultView(res.result);
+      showWizardStep('result');
+    } else if (res.status === 'draft') {
+      // cancelled
+      showWizardStep(7);
+    } else {
+      showWizardStep(7);
+      alert('Generation error: ' + (res.result?.error || res.status));
+    }
+  } catch (e) {
+    _pollTimeout = setTimeout(pollStatus, 5000);
+  }
+}
+
+async function cancelGeneration() {
+  clearTimeout(_pollTimeout);
+  clearInterval(genTimer);
+  try {
+    await Wren.api(`/api/timetable-generate/drafts/${draftId}/cancel`, { method:'POST', body:{} });
+  } catch {}
+  showWizardStep(7);
+}
+
+// ── Result view ───────────────────────────────────────────────────────────────
+
+function loadResultView(result) {
+  if (!result) return;
+  document.getElementById('result-success').style.display   = result.success ? 'block' : 'none';
+  document.getElementById('result-infeasible').style.display = result.success ? 'none' : 'block';
+
+  if (result.success) {
+    draftActivities = result.assignments || [];
+    const stat = result.stats || {};
+    document.getElementById('result-stats').textContent =
+      `${stat.total || draftActivities.length} periods scheduled · ${stat.attempts||'?'} solve passes · ${stat.time_ms||0}ms`;
+
+    // Week toggle
+    const weeks = state.calendar?.weeks || 1;
+    const toggle = document.getElementById('preview-week-toggle');
+    if (weeks > 1) {
+      toggle.innerHTML = `<button class="week-btn active" id="pw1" onclick="setPreviewWeek(1)">Week A</button>
+                          <button class="week-btn" id="pw2" onclick="setPreviewWeek(2)">Week B</button>`;
+      toggle.style.display = 'flex';
+    } else {
+      toggle.style.display = 'none';
+    }
+
+    // Teacher filter
+    const sel = document.getElementById('preview-filter');
+    const teachers = [...new Set(draftActivities.map(a=>a.teacher_name).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">All teachers</option>' +
+      teachers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+
+    window._previewWeek = 1;
+    renderPreview();
+  } else {
+    const hints = result.diagnostics?.hints || ['Could not schedule all activities.'];
+    document.getElementById('infeasible-hints').innerHTML =
+      hints.map(h=>`<li>${esc(h)}</li>`).join('');
+  }
+}
+
+function setPreviewWeek(w) {
+  window._previewWeek = w;
+  document.getElementById('pw1')?.classList.toggle('active', w===1);
+  document.getElementById('pw2')?.classList.toggle('active', w===2);
+  renderPreview();
+}
+
+function renderPreview() {
+  const w   = window._previewWeek || 1;
+  const filterTeacher = document.getElementById('preview-filter')?.value || '';
+  const DAYS = ['','Monday','Tuesday','Wednesday','Thursday','Friday'];
+  const periods = state.calendar?.periods_per_day || 6;
+
+  let acts = draftActivities.filter(a => (a.week_pattern || 1) === w);
+  if (filterTeacher) acts = acts.filter(a => a.teacher_name === filterTeacher);
+
+  // Build grid map
+  const grid = {};
+  for (const a of acts) {
+    const key = `${a.day_of_week}_${a.period_num}`;
+    if (!grid[key]) grid[key] = [];
+    grid[key].push(a);
+  }
+
+  const periodTimes = state.calendar?.period_times || [];
+
+  let html = `<div class="tt-grid">
+    <div class="tt-header">Period</div>
+    ${[1,2,3,4,5].map(d=>`<div class="tt-header">${DAYS[d]}</div>`).join('')}`;
+
+  for (let p = 1; p <= periods; p++) {
+    const pt = periodTimes.find(t=>t.period===p);
+    const timeStr = pt ? `${pt.start}–${pt.end}` : '';
+    html += `<div class="tt-period-label">P${p}<br><small style="font-size:9px;opacity:.7">${timeStr}</small></div>`;
+    for (let d = 1; d <= 5; d++) {
+      const cells = grid[`${d}_${p}`] || [];
+      html += `<div class="tt-cell">`;
+      for (const a of cells) {
+        html += `<div class="tt-activity">
+          <div class="tt-subject">${esc(a.subject_name||'?')} <span style="color:var(--text-muted);font-weight:400">Y${a.year_group}/${a.set_num}</span></div>
+          <div class="tt-teacher">${esc(a.teacher_name||'')}</div>
+          <div class="tt-room">${esc(a.room_code||a.room_name||'')}</div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+  }
+  html += `</div>`;
+
+  if (!acts.length) html = `<div class="empty-state">No activities for this filter/week</div>`;
+  document.getElementById('result-grid').innerHTML = html;
+}
+
+async function acceptDraft() {
+  const clearFirst = confirm('Clear any existing generated timetable before importing this one?\n\nClick OK to clear first, Cancel to merge.');
+  try {
+    const res = await Wren.api(`/api/timetable-generate/drafts/${draftId}/accept`, {
+      method: 'POST', body: { clear_existing: clearFirst }
+    });
+    alert(`Timetable accepted — ${res.inserted} periods are now live.\n\nView it in the Timetable page.`);
+    window.location.href = '/timetable.html';
+  } catch (e) { alert('Accept failed: ' + e.message); }
+}
+
+async function rejectDraft() {
+  try {
+    await Wren.api(`/api/timetable-generate/drafts/${draftId}/reject`, { method:'POST', body:{} });
+    draftActivities = [];
+    goStep(7);
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ── Unavailability modal ──────────────────────────────────────────────────────
+
+function openUnavailModal(listName, idx) {
+  _unavailTarget = { listName, idx };
+  const item = state[listName][idx];
+  _unavailWorkCopy = JSON.parse(JSON.stringify(item.unavailable || []));
+
+  const periods = state.calendar?.periods_per_day || 6;
+  const title   = listName === 'teachers' ? `${item.name || 'Teacher'} — unavailable periods`
+                                          : `${item.name || 'Room'} — unavailable periods`;
+  document.getElementById('unavail-modal-title').textContent = title;
+
+  // Grid: rows=periods, cols=days
+  let html = `<div style="grid-column:1/1"></div>${DAY_NAMES.map(d=>`<div class="unavail-day">${d}</div>`).join('')}`;
+  for (let p = 1; p <= periods; p++) {
+    html += `<div style="font-size:11px;font-weight:600;color:var(--text-muted);padding-top:6px">P${p}</div>`;
+    for (let d = 1; d <= 5; d++) {
+      const blocked = _unavailWorkCopy.some(([dd,pp])=>dd===d && pp===p);
+      html += `<div class="unavail-slot ${blocked?'blocked':''}" data-d="${d}" data-p="${p}" onclick="toggleUnavailSlot(this,${d},${p})">${blocked?'✕':''}</div>`;
+    }
+  }
+  document.getElementById('unavail-grid-modal').innerHTML = html;
+  document.getElementById('unavail-modal').style.display = 'flex';
+}
+
+function toggleUnavailSlot(el, d, p) {
+  const idx = _unavailWorkCopy.findIndex(([dd,pp])=>dd===d&&pp===p);
+  if (idx >= 0) {
+    _unavailWorkCopy.splice(idx, 1);
+    el.classList.remove('blocked'); el.textContent = '';
+  } else {
+    _unavailWorkCopy.push([d, p]);
+    el.classList.add('blocked'); el.textContent = '✕';
+  }
+}
+
+function saveUnavailModal() {
+  if (_unavailTarget) {
+    state[_unavailTarget.listName][_unavailTarget.idx].unavailable = _unavailWorkCopy;
+    if (_unavailTarget.listName === 'teachers') renderTeachers();
+    else renderRooms();
+  }
+  closeUnavailModal();
+}
+
+function closeUnavailModal() {
+  document.getElementById('unavail-modal').style.display = 'none';
+  _unavailTarget = null;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── NL constraint parser ──────────────────────────────────────────────────────
+
+// Pending parsed constraints awaiting user review
+let _nlPending  = [];
+// Text that was last parsed (for the accept-log)
+let _nlLastText = '';
+
+const DAY_NAMES_FULL = ['','Monday','Tuesday','Wednesday','Thursday','Friday'];
+
+function buildSchoolContext() {
+  return {
+    teachers: (state.teachers || []).map(t => ({ id: t.id, name: t.name })),
+    subjects: (state.subjects || []).map(s => ({ id: s.id, code: s.code, name: s.name })),
+    years:    (state.year_groups || []).map(y => y.year),
+  };
+}
+
+async function parseNLConstraints() {
+  const text = (document.getElementById('nl-input')?.value || '').trim();
+  if (!text) { setNLStatus('Enter some text first.', 'error'); return; }
+
+  const btn = document.getElementById('btn-parse-nl');
+  btn.disabled = true;
+  btn.textContent = 'Parsing…';
+  setNLStatus('Sending to Qwen on Z420 — may take 10–30s…', '');
+  document.getElementById('nl-review-panel').style.display = 'none';
+  _nlPending  = [];
+  _nlLastText = text;
+
+  try {
+    const result = await Wren.api('/api/timetable/parse-constraints', {
+      method: 'POST',
+      body:   { text, schoolContext: buildSchoolContext() },
+    });
+
+    _nlPending = result.constraints || [];
+
+    if (!_nlPending.length) {
+      setNLStatus('No constraints recognised. Try rewording or add them manually.', '');
+    } else {
+      setNLStatus(`${_nlPending.length} constraint${_nlPending.length !== 1 ? 's' : ''} parsed — review below`, '');
+      renderReviewPanel();
+    }
+  } catch (err) {
+    const msg = err.message || '';
+    if (msg.includes('offline') || msg.includes('503') || msg.includes('unavailable')) {
+      setNLStatus('AI parser offline — Qwen unavailable. Add constraints manually.', 'offline');
+    } else if (msg.includes('429') || msg.includes('Rate limit')) {
+      setNLStatus(msg, 'error');
+    } else {
+      setNLStatus('Parse failed: ' + msg, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Parse with AI';
+  }
+}
+
+function setNLStatus(msg, cls) {
+  const el = document.getElementById('nl-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className   = 'nl-status' + (cls ? ' ' + cls : '');
+}
+
+function confBadgeClass(c) {
+  if (c >= 0.85) return 'nl-conf-high';
+  if (c >= 0.70) return 'nl-conf-mid';
+  return 'nl-conf-low';
+}
+
+function confLabel(c) {
+  if (c >= 0.85) return (c * 100).toFixed(0) + '% HIGH';
+  if (c >= 0.70) return (c * 100).toFixed(0) + '% REVIEW';
+  return (c * 100).toFixed(0) + '% LOW';
+}
+
+function nlConstraintDesc(c) {
+  const p = c.params || {};
+  switch (c.type) {
+    case 'teacher_unavailable': {
+      const day = DAY_NAMES_FULL[p.day] || `Day ${p.day}`;
+      const periods = Array.isArray(p.periods) && p.periods.length
+        ? ' P' + p.periods.join(', P')
+        : ' (full day)';
+      return `${esc(p.teacher_name || '?')} — ${day}${periods} unavailable`;
+    }
+    case 'teacher_no_back_to_back':
+      return `${esc(p.teacher_name || '?')} — no consecutive-period lessons`;
+    case 'subject_prefer_early': {
+      const yrs = Array.isArray(p.year_groups) ? ` (Y${p.year_groups.join(', Y')})` : '';
+      return `${esc(p.subject_code || '?')}${yrs} — prefer morning slots`;
+    }
+    case 'subject_prefer_late': {
+      const yrs = Array.isArray(p.year_groups) ? ` (Y${p.year_groups.join(', Y')})` : '';
+      return `${esc(p.subject_code || '?')}${yrs} — prefer afternoon slots`;
+    }
+    case 'parallel_block': {
+      const yrs = Array.isArray(p.year_groups) ? ` Y${p.year_groups.join('/Y')}` : '';
+      return `Parallel block${yrs}: ${esc(p.label || p.subject_code || 'multiple activities')}`;
+    }
+    case 'room_locked':
+      return `${esc(p.subject_name || p.subject_code || '?')} → room ${esc(p.room_name || '?')}`;
+    case 'min_days_between':
+      return `${esc(p.subject_code || '?')} — min ${p.min_days || '?'} days between lessons`;
+    case 'pair_lock': {
+      const yr = p.year_group ? ` Y${p.year_group}` : '';
+      return `${esc(p.subject_code || '?')}${yr} — pair on same day`;
+    }
+    case 'lunch_protected':
+      return `Lunch protected: P${p.start_period}–P${p.end_period}`;
+    default:
+      return esc(c.type);
+  }
+}
+
+function nlTypeName(type) {
+  return {
+    teacher_unavailable:    'Teacher unavailable',
+    teacher_no_back_to_back:'No back-to-back',
+    subject_prefer_early:   'Prefer morning',
+    subject_prefer_late:    'Prefer afternoon',
+    parallel_block:         'Parallel block',
+    room_locked:            'Room locked',
+    min_days_between:       'Min days between',
+    pair_lock:              'Pair (same day)',
+    lunch_protected:        'Lunch protected',
+  }[type] || type;
+}
+
+function renderReviewPanel() {
+  const panel = document.getElementById('nl-review-panel');
+  const list  = document.getElementById('nl-review-list');
+  if (!panel || !list) return;
+
+  if (!_nlPending.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  const highCount = _nlPending.filter(c => c.confidence >= 0.85).length;
+  document.getElementById('nl-review-title').textContent =
+    `${_nlPending.length} parsed — review each one`;
+  const btnHigh = document.getElementById('btn-accept-high');
+  if (btnHigh) {
+    btnHigh.textContent = highCount
+      ? `Accept high-confidence (${highCount})`
+      : 'Accept high-confidence';
+    btnHigh.disabled = !highCount;
+  }
+
+  list.innerHTML = _nlPending.map((c, i) => `
+    <div class="nl-card" id="nlcard-${i}">
+      <div class="nl-card-top">
+        <div class="nl-card-body">
+          <div class="nl-card-type">${nlTypeName(c.type)}</div>
+          <div class="nl-card-desc">${nlConstraintDesc(c)}</div>
+          ${c.sourceText ? `<div class="nl-card-source" title="${esc(c.sourceText)}">"${esc(c.sourceText.slice(0, 120))}${c.sourceText.length > 120 ? '…' : ''}"</div>` : ''}
+          <div class="nl-card-actions">
+            <button class="btn btn-primary" style="padding:3px 10px;font-size:12px" onclick="acceptPendingConstraint(${i})">Accept</button>
+            <button class="btn btn-secondary" style="padding:3px 10px;font-size:12px" onclick="rejectPendingConstraint(${i})">Reject</button>
+          </div>
+        </div>
+        <span class="nl-conf-badge ${confBadgeClass(c.confidence)}">${confLabel(c.confidence)}</span>
+      </div>
+      ${c.confidence < 0.70 ? '<div style="font-size:11px;color:var(--danger,#ef4444);margin-top:6px">⚠ Low confidence — verify before accepting</div>' : ''}
+    </div>
+  `).join('');
+
+  panel.style.display = 'block';
+}
+
+function acceptPendingConstraint(idx) {
+  const c = _nlPending[idx];
+  if (!c) return;
+  if (!state.nlConstraints) state.nlConstraints = [];
+  state.nlConstraints.push({ ...c, acceptedAt: new Date().toISOString() });
+  _nlPending.splice(idx, 1);
+  logAcceptedConstraints([c]);
+  renderReviewPanel();
+  renderNLConstraints();
+  autoSave();
+}
+
+function rejectPendingConstraint(idx) {
+  _nlPending.splice(idx, 1);
+  renderReviewPanel();
+}
+
+function acceptAllHighConfidence() {
+  const high = _nlPending.filter(c => c.confidence >= 0.85);
+  if (!high.length) return;
+  if (!state.nlConstraints) state.nlConstraints = [];
+  const ts = new Date().toISOString();
+  high.forEach(c => state.nlConstraints.push({ ...c, acceptedAt: ts }));
+  _nlPending = _nlPending.filter(c => c.confidence < 0.85);
+  logAcceptedConstraints(high);
+  renderReviewPanel();
+  renderNLConstraints();
+  autoSave();
+}
+
+function removeNLConstraint(idx) {
+  if (!state.nlConstraints) return;
+  state.nlConstraints.splice(idx, 1);
+  renderNLConstraints();
+  autoSave();
+}
+
+function renderNLConstraints() {
+  const section = document.getElementById('nl-accepted-section');
+  const list    = document.getElementById('nl-accepted-list');
+  if (!section || !list) return;
+
+  const nls = state.nlConstraints || [];
+  if (!nls.length) { section.style.display = 'none'; return; }
+
+  section.style.display = 'block';
+  list.innerHTML = nls.map((c, i) => `
+    <div class="nl-accepted-item">
+      <span class="nl-type-pill">${nlTypeName(c.type)}</span>
+      <span class="nl-desc-text">${nlConstraintDesc(c)}</span>
+      <span class="nl-conf-badge ${confBadgeClass(c.confidence)}" style="font-size:10px">${(c.confidence * 100).toFixed(0)}%</span>
+      <button class="btn" style="color:var(--danger);padding:2px 6px;font-size:13px;line-height:1" title="Remove" onclick="removeNLConstraint(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function logAcceptedConstraints(constraints) {
+  if (!constraints || !constraints.length) return;
+  Wren.api('/api/timetable/parse-constraints/accept', {
+    method: 'POST',
+    body:   { constraints, inputText: _nlLastText },
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>

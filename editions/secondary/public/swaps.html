@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Lesson Swaps — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .swap-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:12px; }
+    .swap-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+    .swap-status { padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }
+    .swap-status.pending  { background:#fef9c3; color:#854d0e; }
+    .swap-status.approved { background:#dcfce7; color:#166534; }
+    .swap-status.rejected { background:#fee2e2; color:#991b1b; }
+    .swap-teachers { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .swap-side { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; flex:1; min-width:140px; }
+    .swap-arrow { color:var(--text-muted); font-size:20px; }
+    .swap-side-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }
+    .swap-side-name { font-weight:700; }
+    .swap-side-detail { font-size:12px; color:var(--text-muted); margin-top:2px; }
+    .swap-meta { font-size:12px; color:var(--text-muted); margin-top:8px; }
+    .swap-actions { display:flex; gap:6px; margin-top:12px; }
+    .form-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+    .form-row .form-group { flex:1; min-width:160px; margin:0; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div><div class="page-title">Lesson Swaps</div><div class="page-subtitle">Request and manage period swaps between teachers</div></div>
+    <button class="btn btn-primary" onclick="openRequest()">Request swap</button>
+  </div>
+
+  <div style="display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid var(--border)">
+    <button class="tab-btn active" id="tab-pending"  onclick="showTab('pending')">Pending</button>
+    <button class="tab-btn"        id="tab-approved" onclick="showTab('approved')">Approved</button>
+    <button class="tab-btn"        id="tab-rejected" onclick="showTab('rejected')">Rejected</button>
+    <button class="tab-btn"        id="tab-all"      onclick="showTab('all')">All</button>
+  </div>
+
+  <div id="swaps-container">
+    <div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>
+  </div>
+</div>
+
+<!-- Request swap modal -->
+<div id="swap-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-content" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">Request a period swap</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+        A swap means you temporarily teach another teacher's class for one period, and they teach yours.
+        Your timetable doesn't change permanently — this is a one-off overlay for a specific date.
+        Swaps require manager approval.
+      </p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Swap date</label>
+          <input type="date" class="form-control" id="swap-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Week pattern</label>
+          <select class="form-control" id="swap-week">
+            <option value="1">Week A</option>
+            <option value="2">Week B</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Your lesson (Teacher A)</label>
+          <select class="form-control" id="swap-teacher-a" onchange="loadTeacherActivities('a')">
+            <option value="">Select teacher…</option>
+          </select>
+          <select class="form-control" id="swap-activity-a" style="margin-top:6px">
+            <option value="">Select period…</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Their lesson (Teacher B)</label>
+          <select class="form-control" id="swap-teacher-b" onchange="loadTeacherActivities('b')">
+            <option value="">Select teacher…</option>
+          </select>
+          <select class="form-control" id="swap-activity-b" style="margin-top:6px">
+            <option value="">Select period…</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Reason</label>
+        <input type="text" class="form-control" id="swap-reason" placeholder="Brief reason for the swap (optional)">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitSwap()">Submit for approval</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAY_NAMES = ['','Monday','Tuesday','Wednesday','Thursday','Friday'];
+let currentTab = 'pending';
+let staffList  = [];
+let activities = { a: [], b: [] };
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('swap-date').value = today;
+
+  try {
+    staffList = await Wren.api('/api/staff?active=true');
+    const selA = document.getElementById('swap-teacher-a');
+    const selB = document.getElementById('swap-teacher-b');
+    const opts = (staffList||[])
+      .filter(s => ['practitioner','manager','deputy_manager'].includes(s.role))
+      .sort((a,b) => a.last_name.localeCompare(b.last_name))
+      .map(s => `<option value="${s.id}">${s.last_name}, ${s.first_name}</option>`)
+      .join('');
+    selA.insertAdjacentHTML('beforeend', opts);
+    selB.insertAdjacentHTML('beforeend', opts);
+
+    // Pre-select current user as teacher A
+    if (Wren.user?.id) selA.value = Wren.user.id;
+  } catch(e) {}
+
+  loadSwaps('pending');
+}
+
+function showTab(t) {
+  currentTab = t;
+  ['pending','approved','rejected','all'].forEach(id => {
+    document.getElementById('tab-'+id).classList.toggle('active', id===t);
+  });
+  loadSwaps(t);
+}
+
+async function loadSwaps(status) {
+  const container = document.getElementById('swaps-container');
+  container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const params = status === 'all' ? '' : `?status=${status}`;
+    const rows = await Wren.api('/api/secondary-timetable/swaps' + params);
+    renderSwaps(rows || []);
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderSwaps(rows) {
+  const container = document.getElementById('swaps-container');
+  const isManager = ['manager','deputy_manager','headteacher','deputy_headteacher'].includes(Wren.user?.role);
+
+  if (!rows.length) {
+    container.innerHTML = `<div class="empty-state">No ${currentTab === 'all' ? '' : currentTab + ' '}swap requests.</div>`;
+    return;
+  }
+
+  container.innerHTML = rows.map(s => {
+    const statusClass = s.status;
+    const statusLabel = { pending:'Pending', approved:'Approved', rejected:'Rejected' }[s.status] || s.status;
+
+    const sideA = `<div class="swap-side">
+      <div class="swap-side-label">Teacher A</div>
+      <div class="swap-side-name">${esc(s.teacher_a_name||'Unknown')}</div>
+      <div class="swap-side-detail">${esc(s.subject_a||'—')} · ${DAY_NAMES[s.day_a]||''} · ${esc(s.period_a_label||'')}</div>
+    </div>`;
+
+    const sideB = `<div class="swap-side">
+      <div class="swap-side-label">Teacher B</div>
+      <div class="swap-side-name">${esc(s.teacher_b_name||'Unknown')}</div>
+      <div class="swap-side-detail">${esc(s.subject_b||'—')} · ${DAY_NAMES[s.day_b]||''} · ${esc(s.period_b_label||'')}</div>
+    </div>`;
+
+    const approveReject = (isManager && s.status === 'pending') ? `
+      <button class="btn btn-primary" onclick="decide(${s.id},'approve')">Approve</button>
+      <button class="btn btn-danger"  onclick="decide(${s.id},'reject')">Reject</button>
+    ` : '';
+
+    const approvedBy = s.approved_by_name
+      ? `<span> · ${s.status === 'approved' ? 'Approved' : 'Rejected'} by ${esc(s.approved_by_name)} ${formatDate(s.approved_at)}</span>`
+      : '';
+
+    return `<div class="swap-card">
+      <div class="swap-header">
+        <div style="font-size:13px;color:var(--text-muted)">Swap for ${esc(s.swap_date)}</div>
+        <div class="swap-status ${statusClass}">${statusLabel}</div>
+      </div>
+      <div class="swap-teachers">
+        ${sideA}
+        <div class="swap-arrow">⇄</div>
+        ${sideB}
+      </div>
+      ${s.reason ? `<div class="swap-meta">Reason: ${esc(s.reason)}</div>` : ''}
+      <div class="swap-meta">Requested ${formatDate(s.created_at)}${approvedBy}</div>
+      ${approveReject ? `<div class="swap-actions">${approveReject}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function decide(id, action) {
+  try {
+    await Wren.api(`/api/secondary-timetable/swaps/${id}/${action}`, { method: 'PUT' });
+    Wren.toast(action === 'approve' ? '✓ Swap approved' : 'Swap rejected', action === 'approve' ? 'success' : 'info');
+    loadSwaps(currentTab);
+  } catch(e) { Wren.toast('Error: ' + e.message, 'error'); }
+}
+
+function openRequest() {
+  document.getElementById('swap-modal').style.display = 'flex';
+}
+function closeModal() {
+  document.getElementById('swap-modal').style.display = 'none';
+}
+
+async function loadTeacherActivities(side) {
+  const teacherId = document.getElementById(`swap-teacher-${side}`).value;
+  const wp        = parseInt(document.getElementById('swap-week').value) || 1;
+  const sel       = document.getElementById(`swap-activity-${side}`);
+  sel.innerHTML   = '<option value="">Loading…</option>';
+
+  if (!teacherId) { sel.innerHTML = '<option value="">Select period…</option>'; return; }
+
+  try {
+    const acts = await Wren.api(`/api/secondary-timetable/activities/teacher/${teacherId}?week_pattern=${wp}`);
+    activities[side] = acts || [];
+    sel.innerHTML = '<option value="">Select period…</option>' +
+      (acts||[]).map(a =>
+        `<option value="${a.id}">${DAY_NAMES[a.day_of_week]} ${esc(a.period_label||('P'+a.period_num||''))}: ${esc(a.subject_name||a.subject_name_ref||'—')} (${esc(a.class_name||'')})</option>`
+      ).join('');
+  } catch(e) { sel.innerHTML = '<option value="">Error loading</option>'; }
+}
+
+// Watch for week change to reload activities
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('swap-week')?.addEventListener('change', () => {
+    if (document.getElementById('swap-teacher-a').value) loadTeacherActivities('a');
+    if (document.getElementById('swap-teacher-b').value) loadTeacherActivities('b');
+  });
+});
+
+async function submitSwap() {
+  const actA   = document.getElementById('swap-activity-a').value;
+  const actB   = document.getElementById('swap-activity-b').value;
+  const date   = document.getElementById('swap-date').value;
+  const reason = document.getElementById('swap-reason').value.trim();
+
+  if (!actA || !actB || !date) return alert('Please select both lessons and a date');
+  if (actA === actB) return alert('Cannot swap a lesson with itself');
+
+  try {
+    await Wren.api('/api/secondary-timetable/swaps', {
+      method: 'POST',
+      body: JSON.stringify({ activity_a_id: parseInt(actA), activity_b_id: parseInt(actB), swap_date: date, reason: reason || null }),
+    });
+    Wren.toast('Swap request submitted — awaiting manager approval', 'success');
+    closeModal();
+    loadSwaps(currentTab);
+  } catch(e) { Wren.toast('Error: ' + e.message, 'error'); }
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString('en-GB', { day:'numeric', month:'short' }); } catch { return ''; }
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

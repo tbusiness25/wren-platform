@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wren External Security Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 16px;
+      padding: 28px 24px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+    }
+    .logo { font-size: 2.5rem; margin-bottom: 8px; }
+    h1 { font-size: 1.2rem; color: #4a9abf; margin-bottom: 8px; }
+    p  { font-size: .85rem; color: #94a3b8; line-height: 1.5; margin-bottom: 16px; }
+    .status-box {
+      background: #0f172a;
+      border-radius: 10px;
+      padding: 16px;
+      margin: 16px 0;
+      text-align: left;
+    }
+    .check-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 6px 0;
+      font-size: .83rem;
+    }
+    .check-icon { flex-shrink: 0; width: 20px; text-align: center; }
+    .check-label { color: #94a3b8; min-width: 140px; }
+    .check-result { color: #f1f5f9; flex: 1; }
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid #2d3748;
+      border-top-color: #4a9abf;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .done-msg {
+      display: none;
+      background: rgba(22,163,74,.12);
+      border: 1px solid #16a34a;
+      border-radius: 10px;
+      padding: 16px;
+      color: #4ade80;
+      font-size: .9rem;
+    }
+    .err-msg {
+      display: none;
+      background: rgba(220,38,38,.12);
+      border: 1px solid #dc2626;
+      border-radius: 10px;
+      padding: 16px;
+      color: #fca5a5;
+      font-size: .85rem;
+    }
+    .privacy-note {
+      font-size: .72rem;
+      color: #475569;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🔬</div>
+  <h1>Wren External Security Test</h1>
+  <p>Running quick security checks from your device. Results go directly to your nursery's server — Wren never sees them.</p>
+
+  <div class="status-box" id="checks-area">
+    <div style="text-align:center;padding:8px"><div class="spinner"></div> Running checks…</div>
+  </div>
+
+  <div class="done-msg" id="done-msg">
+    ✅ Test complete — return to the Security dashboard on your admin panel to view results.
+  </div>
+  <div class="err-msg" id="err-msg"></div>
+
+  <p class="privacy-note">
+    This page is served from your own nursery server. Only your browser's user agent and a SHA-256 hash of your IP address are recorded — never the raw IP. No data is sent to Wren or any third party.
+  </p>
+</div>
+
+<script>
+'use strict';
+
+const token = location.pathname.split('/').pop();
+const serverBase = location.origin;
+
+const CHECKS = [
+  { name: 'HTTPS redirect',    key: 'https_redirect',   fn: checkHttpsRedirect },
+  { name: 'HSTS header',       key: 'hsts',             fn: checkHsts },
+  { name: 'X-Frame-Options',   key: 'x_frame',          fn: checkXFrame },
+  { name: 'CSP header',        key: 'csp',              fn: checkCsp },
+  { name: 'Response time',     key: 'response_time',    fn: checkResponseTime },
+  { name: 'Login CORS',        key: 'cors',             fn: checkCors },
+];
+
+let results = [];
+
+function render() {
+  const area = document.getElementById('checks-area');
+  area.innerHTML = results.map(r => `
+    <div class="check-row">
+      <div class="check-icon">${r.done ? (r.status === 'pass' ? '✅' : r.status === 'warn' ? '⚠️' : '❌') : '<span class="spinner" style="width:14px;height:14px;border-width:1.5px"></span>'}</div>
+      <div class="check-label">${r.name}</div>
+      <div class="check-result">${r.finding || ''}</div>
+    </div>
+  `).join('') || '<div style="color:#64748b;font-size:.82rem">No checks defined.</div>';
+}
+
+async function checkHttpsRedirect() {
+  if (location.protocol === 'https:') return { status: 'pass', finding: 'Connected over HTTPS' };
+  return { status: 'fail', finding: 'Not using HTTPS — connection is not encrypted' };
+}
+
+async function checkHsts() {
+  try {
+    const r = await fetch('/health', { method: 'HEAD', cache: 'no-cache' });
+    const hsts = r.headers.get('strict-transport-security');
+    if (hsts) return { status: 'pass', finding: 'HSTS header present' };
+    return { status: 'warn', finding: 'No HSTS header (strict-transport-security)' };
+  } catch { return { status: 'warn', finding: 'Could not check headers' }; }
+}
+
+async function checkXFrame() {
+  try {
+    const r = await fetch('/health', { method: 'HEAD', cache: 'no-cache' });
+    const xf = r.headers.get('x-frame-options');
+    const csp = r.headers.get('content-security-policy') || '';
+    if (xf || csp.includes('frame-ancestors')) return { status: 'pass', finding: 'Frame embedding blocked' };
+    return { status: 'warn', finding: 'No X-Frame-Options or frame-ancestors CSP' };
+  } catch { return { status: 'warn', finding: 'Could not check' }; }
+}
+
+async function checkCsp() {
+  try {
+    const r = await fetch('/health', { method: 'HEAD', cache: 'no-cache' });
+    const csp = r.headers.get('content-security-policy');
+    if (csp) return { status: 'pass', finding: 'Content-Security-Policy header present' };
+    return { status: 'warn', finding: 'No Content-Security-Policy header' };
+  } catch { return { status: 'warn', finding: 'Could not check' }; }
+}
+
+async function checkResponseTime() {
+  const t0 = performance.now();
+  try {
+    await fetch('/health', { cache: 'no-cache' });
+    const ms = Math.round(performance.now() - t0);
+    const status = ms < 500 ? 'pass' : ms < 2000 ? 'warn' : 'fail';
+    return { status, finding: `${ms}ms response time` };
+  } catch { return { status: 'warn', finding: 'Could not measure' }; }
+}
+
+async function checkCors() {
+  try {
+    const r = await fetch(`${serverBase}/api/auth/login`, {
+      method: 'OPTIONS',
+      headers: { 'Origin': 'https://evil.example.com', 'Access-Control-Request-Method': 'POST' },
+    });
+    const acao = r.headers.get('access-control-allow-origin');
+    if (!acao || acao === 'https://evil.example.com' || acao === '*') {
+      return { status: 'warn', finding: `CORS allows arbitrary origins: ${acao || 'unknown'}` };
+    }
+    return { status: 'pass', finding: 'CORS restricted to trusted origins' };
+  } catch { return { status: 'pass', finding: 'No CORS leak detected' }; }
+}
+
+async function runAll() {
+  // Initialise result slots
+  results = CHECKS.map(c => ({ name: c.name, key: c.key, done: false, status: 'pending', finding: '' }));
+  render();
+
+  // Run all checks
+  await Promise.all(CHECKS.map(async (c, i) => {
+    try {
+      const r = await c.fn();
+      results[i] = { ...results[i], done: true, ...r };
+    } catch (e) {
+      results[i] = { ...results[i], done: true, status: 'error', finding: e.message };
+    }
+    render();
+  }));
+
+  // POST results back to server
+  const payload = {
+    checks: results.map(r => ({ name: r.name, key: r.key, status: r.status, finding: r.finding })),
+    ran_at: new Date().toISOString(),
+    user_agent: navigator.userAgent,
+  };
+
+  try {
+    const resp = await fetch(`/api/security/external-test-result/${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const j = await resp.json().catch(() => ({}));
+      throw new Error(j.error || resp.statusText);
+    }
+    document.getElementById('done-msg').style.display = 'block';
+  } catch (e) {
+    const em = document.getElementById('err-msg');
+    em.style.display = 'block';
+    em.textContent = 'Could not submit results: ' + e.message + '. The checks ran successfully — you can note the results above manually.';
+  }
+}
+
+runAll();
+</script>
+</body>
+</html>

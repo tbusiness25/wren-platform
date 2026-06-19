@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>TOIL Management — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <h1 class="page-title">TOIL Bank — Team</h1>
+    <button class="btn btn-primary" id="add-toil-btn">+ Add TOIL Entry</button>
+  </div>
+
+  <div id="toil-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:24px">
+    <div style="color:#94a3b8">Loading…</div>
+  </div>
+
+  <h2 class="section-title" id="entries-heading" style="display:none">Entries for <span id="selected-name"></span></h2>
+  <div id="entries-list" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
+<!-- Add TOIL modal -->
+<div id="add-toil-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;overflow-y:auto">
+  <div style="background:#1e293b;border-radius:12px;max-width:440px;margin:6vh auto;padding:24px">
+    <h3 style="margin:0 0 20px;color:#f1f5f9">Add TOIL Entry</h3>
+    <div class="form-group">
+      <label class="form-label">Staff Member</label>
+      <select class="form-control" id="toil-staff-sel"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-control" id="toil-type">
+        <option value="earned">Earned (e.g. extra hours worked)</option>
+        <option value="used">Used (e.g. time off in lieu)</option>
+        <option value="adjustment">Adjustment (correction)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Hours</label>
+      <input type="number" class="form-control" id="toil-hours" min="0.5" step="0.5" placeholder="e.g. 2.5">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Date</label>
+      <input type="date" class="form-control" id="toil-date">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason</label>
+      <input type="text" class="form-control" id="toil-reason" placeholder="e.g. Covered bank holiday shift">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" id="cancel-add-btn">Cancel</button>
+      <button class="btn btn-primary" id="submit-add-btn">Add Entry</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let staffList = [];
+let selectedStaffId = null;
+
+document.addEventListener('wren:ready', async () => {
+  try {
+    staffList = await Wren.api('/api/staff');
+    // Populate staff selector in modal
+    const sel = document.getElementById('toil-staff-sel');
+    (staffList || []).filter(s => s.is_active !== false).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id; opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+    loadToilGrid();
+  } catch (err) {
+    document.getElementById('toil-grid').innerHTML = '<div style="color:#ef4444">Could not load staff</div>';
+  }
+});
+
+async function loadToilGrid() {
+  const el = document.getElementById('toil-grid');
+  try {
+    const data = await Wren.api('/api/toil/all');
+    el.innerHTML = (data || []).map(s => {
+      const b = parseFloat(s.balance) || 0;
+      const colour = b > 0 ? '#22c55e' : b < 0 ? '#ef4444' : '#94a3b8';
+      return `<div class="card" style="cursor:pointer;text-align:center" data-id="${s.id}" data-name="${escHtml(s.name||'')}">
+        <div style="font-weight:600;color:#f1f5f9;margin-bottom:8px">${escHtml(s.name||'')}</div>
+        <div style="font-size:1.75rem;font-weight:700;color:${colour}">${b >= 0 ? '+' : ''}${b.toFixed(1)}h</div>
+        <div style="color:#94a3b8;font-size:.8rem;margin-top:4px;text-transform:capitalize">${(s.role||'').replace(/_/g,' ')}</div>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('[data-id]').forEach(card => {
+      card.addEventListener('click', () => showEntries(card.dataset.id, card.dataset.name));
+    });
+  } catch (err) {
+    el.innerHTML = '<div style="color:#ef4444">Could not load TOIL data</div>';
+  }
+}
+
+async function showEntries(staffId, name) {
+  selectedStaffId = staffId;
+  document.getElementById('entries-heading').style.display = 'block';
+  document.getElementById('selected-name').textContent = name;
+  const el = document.getElementById('entries-list');
+  el.innerHTML = '<div style="color:#94a3b8">Loading…</div>';
+  try {
+    const entries = await Wren.api('/api/toil/staff/' + staffId);
+    if (!entries.length) { el.innerHTML = '<div class="card" style="color:#94a3b8;padding:16px">No entries.</div>'; return; }
+    const typeColour = { earned: '#22c55e', used: '#e07820', adjustment: '#4a9abf' };
+    el.innerHTML = entries.map(e => `
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="color:#f1f5f9;font-weight:500;text-transform:capitalize">${e.type} ${e.reason ? '— ' + escHtml(e.reason) : ''}${e.source === 'brighthr' ? ' <span style="font-size:9px;color:#64748b;text-transform:uppercase;border:1px solid #2d3748;border-radius:3px;padding:1px 4px">imported</span>' : ''}</div>
+          <div style="color:#94a3b8;font-size:.8rem">${fmt(e.occurred_on)}</div>
+        </div>
+        <div style="font-weight:700;font-size:1.1rem;color:${typeColour[e.type]||'#f1f5f9'}">
+          ${e.type === 'used' ? '-' : '+'}${Math.abs(e.hours)}h
+        </div>
+      </div>`).join('');
+  } catch (err) {
+    el.innerHTML = '<div style="color:#ef4444">Could not load entries</div>';
+  }
+}
+
+document.getElementById('add-toil-btn').addEventListener('click', () => {
+  document.getElementById('toil-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('add-toil-modal').style.display = 'block';
+});
+document.getElementById('cancel-add-btn').addEventListener('click', () => {
+  document.getElementById('add-toil-modal').style.display = 'none';
+});
+document.getElementById('submit-add-btn').addEventListener('click', async () => {
+  const staff_id = document.getElementById('toil-staff-sel').value;
+  const type = document.getElementById('toil-type').value;
+  const hours = document.getElementById('toil-hours').value;
+  const occurred_on = document.getElementById('toil-date').value;
+  const reason = document.getElementById('toil-reason').value;
+  if (!staff_id || !hours || !occurred_on) { Wren.toast('All fields required', 'error'); return; }
+  try {
+    await Wren.api('/api/toil', { method:'POST', body:{ staff_id, type, hours: parseFloat(hours), occurred_on, reason } });
+    document.getElementById('add-toil-modal').style.display = 'none';
+    Wren.toast('TOIL entry added', 'success');
+    loadToilGrid();
+    if (selectedStaffId) showEntries(selectedStaffId, document.getElementById('selected-name').textContent);
+  } catch (err) {
+    Wren.toast(err.error || 'Could not add TOIL entry', 'error');
+  }
+});
+
+function fmt(d) { return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—'; }
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+# Wren — EYFS edition, self-host bundle.
+#
+# Everything is configured from .env (copy .env.example -> .env first).
+# Data lives in a named Docker volume (db-data) — no host bind-mounts, so this
+# folder is fully portable: clone it anywhere and `docker compose up -d`.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-wren}
+      POSTGRES_DB: ${PG_DB:-wren}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?set PG_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # First-boot only: creates the schema + applies the seed. Read-only.
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-wren} -d ${PG_DB:-wren}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  wren-eyfs:
+    build:
+      context: ../..
+      dockerfile: docker/eyfs-selfhost/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # PG_HOST defaults to the db service name; override in .env if needed.
+      PG_HOST: ${PG_HOST:-db}
+      PG_PORT: ${PG_PORT:-5432}
+      # The app ALWAYS listens on 3000 inside the container. The PORT var in
+      # .env controls the *host* port only (the ports mapping below), so we pin
+      # the in-container listen port here to avoid them colliding.
+      PORT: 3000
+    ports:
+      # Host port is configurable via PORT in .env (default 8080).
+      # Container always listens on 3000.
+      - "${PORT:-8080}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  db-data:

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Staff Handbook — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.hb-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:16px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
+.hb-card.current{border-color:#22c55e44}
+.hb-icon{width:38px;height:38px;border-radius:8px;background:#4a9abf22;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
+.hb-body{flex:1;min-width:0}
+.hb-version{font-size:1rem;font-weight:700;color:#f1f5f9}
+.hb-title{font-size:.82rem;color:#94a3b8;margin-top:1px}
+.hb-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:.73rem;color:#94a3b8;margin-top:4px}
+.hb-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.badge-current{background:rgba(34,197,94,.12);color:#22c55e;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:99px}
+.btn-xs{padding:5px 11px;font-size:.73rem;font-weight:700;border-radius:7px;border:1px solid #2d3748;background:transparent;color:#94a3b8;cursor:pointer;transition:.15s}
+.btn-xs:hover{color:#f1f5f9;border-color:#4d5a6e}
+.btn-xs.success{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3);color:#22c55e}
+.btn-xs.primary{background:#4a9abf22;border-color:#4a9abf55;color:#4a9abf}
+.upload-zone{border:2px dashed #2d3748;border-radius:10px;padding:30px;text-align:center;color:#94a3b8;font-size:.85rem;cursor:pointer;transition:.15s}
+.upload-zone:hover,.upload-zone.drag{border-color:#4a9abf;color:#4a9abf}
+.upload-zone input{display:none}
+.form-grid{display:grid;gap:12px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.form-group input,.form-group select,.form-group textarea{padding:9px 12px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;color:#f1f5f9;font-size:.88rem;width:100%;box-sizing:border-box}
+.form-group textarea{resize:vertical;min-height:80px}
+.empty-state{padding:40px;text-align:center;color:#94a3b8}
+.loading-state{padding:40px;text-align:center;color:#94a3b8}
+.spinner{width:28px;height:28px;border:3px solid #2d3748;border-top-color:#4a9abf;border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.info-box{background:#0f172a;border:1px solid #2d374880;border-radius:8px;padding:14px 16px;font-size:.8rem;color:#94a3b8;margin-bottom:16px}
+.info-box strong{color:#4a9abf;display:block;margin-bottom:3px}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title">Staff Handbook</div>
+      <div style="font-size:.78rem;color:#94a3b8;margin-top:2px">Manage handbook versions — current version is attached to all contracts</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" style="font-size:.8rem" id="btn-contracts">Contracts</button>
+      <button class="btn" id="btn-upload-modal">+ Upload / New Version</button>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <strong>How handbook versions work</strong>
+    Upload a new version and click "Set as Current" to make it active. When a contract is sent, the current version PDF is attached automatically.
+    Version history is kept for audit purposes. Only one version can be current at a time.
+  </div>
+
+  <div id="hb-list">
+    <div class="loading-state"><div class="spinner"></div>Loading…</div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtDate(d){return d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';}
+
+async function loadHandbook() {
+  const el = document.getElementById('hb-list');
+  try {
+    const rows = await Wren.api('/api/handbook');
+    if (!rows.length) {
+      el.innerHTML = '<div class="empty-state">No handbook versions yet. Upload one to get started.</div>';
+      return;
+    }
+    el.innerHTML = rows.map(h => `
+      <div class="hb-card ${h.is_current ? 'current' : ''}">
+        <div class="hb-icon">📋</div>
+        <div class="hb-body">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="hb-version">v${esc(h.version)}</div>
+            ${h.is_current ? '<span class="badge-current">CURRENT</span>' : ''}
+          </div>
+          <div class="hb-title">${esc(h.title||'Staff Handbook')}</div>
+          <div class="hb-meta">
+            ${h.effective_date ? `<span>Effective: ${fmtDate(h.effective_date)}</span>` : ''}
+            ${h.approved_by_name ? `<span>Approved by: ${esc(h.approved_by_name)}</span>` : ''}
+            ${h.published_at ? `<span>Published: ${fmtDate(h.published_at)}</span>` : ''}
+            ${h.changes_summary ? `<span>Changes: ${esc(h.changes_summary.slice(0,80))}${h.changes_summary.length>80?'…':''}</span>` : ''}
+          </div>
+          <div class="hb-actions">
+            ${h.pdf_path ? `<button class="btn-xs primary" data-action="view-pdf" data-id="${h.id}">View PDF</button>` : ''}
+            ${!h.is_current ? `<button class="btn-xs success" data-action="set-current" data-id="${h.id}">Set as Current</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state" style="color:#ef4444">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function viewPDF(id) {
+  window.open('/api/handbook/' + id + '/pdf', '_blank');
+}
+
+async function setCurrent(id, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await Wren.api('/api/handbook/' + id + '/set-current', { method: 'PATCH', body: '{}' });
+    Wren.toast('Set as current version ✓', 'success');
+    loadHandbook();
+  } catch(e) {
+    Wren.toast('Failed: ' + e.message, 'error');
+    btn.disabled = false; btn.textContent = 'Set as Current';
+  }
+}
+
+function openUploadModal() {
+  Wren.modal('Upload Handbook Version', `
+    <div class="form-grid">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Version number</label>
+          <input type="text" id="hb-version" placeholder="e.g. 2.1" maxlength="20">
+        </div>
+        <div class="form-group">
+          <label>Title</label>
+          <input type="text" id="hb-title" value="Staff Handbook" placeholder="Staff Handbook">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Effective date</label>
+          <input type="date" id="hb-date">
+        </div>
+        <div class="form-group">
+          <label>Changes summary</label>
+          <input type="text" id="hb-changes" placeholder="Brief description of changes">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Upload file (optional)</label>
+        <div class="upload-zone" id="hb-drop-zone">
+          <input type="file" id="hb-file" accept=".docx,.pdf,.md,.txt">
+          <div id="hb-filename">Click to select .docx, .pdf, .md or .txt</div>
+          <div style="font-size:.72rem;margin-top:4px">Or paste/type content below</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Content (markdown) — optional if file uploaded</label>
+        <textarea id="hb-content" rows="8" placeholder="# Staff Handbook&#10;## Section 1…"></textarea>
+      </div>
+    </div>
+  `, [
+    { label: 'Cancel', class: 'btn-secondary', action: 'close' },
+    { label: 'Save Version', class: 'btn', action: submitHandbook },
+  ]);
+
+  // Setup drag-drop and file input
+  requestAnimationFrame(() => {
+    const zone = document.getElementById('hb-drop-zone');
+    if (!zone) return;
+    zone.addEventListener('click', function() { document.getElementById('hb-file').click(); });
+    zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('drag'); };
+    zone.ondragleave = () => zone.classList.remove('drag');
+    zone.ondrop = (e) => {
+      e.preventDefault(); zone.classList.remove('drag');
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        const input = document.getElementById('hb-file');
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        showFileName(input);
+      }
+    };
+    document.getElementById('hb-file').addEventListener('change', function() { showFileName(this); });
+  });
+}
+
+function showFileName(input) {
+  const el = document.getElementById('hb-filename');
+  if (el && input.files[0]) el.textContent = input.files[0].name;
+}
+
+async function submitHandbook() {
+  const version = document.getElementById('hb-version')?.value?.trim();
+  if (!version) { Wren.toast('Version number required', 'warning'); return; }
+
+  const fd = new FormData();
+  fd.append('version',       version);
+  fd.append('title',         document.getElementById('hb-title')?.value || 'Staff Handbook');
+  fd.append('effective_date',document.getElementById('hb-date')?.value || '');
+  fd.append('changes_summary', document.getElementById('hb-changes')?.value || '');
+  fd.append('content_md',    document.getElementById('hb-content')?.value || '');
+
+  const fileInput = document.getElementById('hb-file');
+  if (fileInput?.files[0]) fd.append('file', fileInput.files[0]);
+
+  try {
+    const token = localStorage.getItem('wrenToken') || sessionStorage.getItem('wrenToken');
+    const resp = await fetch('/api/handbook', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd,
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(err.error || 'Upload failed');
+    }
+    document.querySelector('.wren-modal-overlay')?.remove();
+    Wren.toast('Handbook version saved ✓', 'success');
+    loadHandbook();
+  } catch(e) {
+    Wren.toast('Failed: ' + e.message, 'error');
+  }
+}
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('btn-contracts').addEventListener('click', function() { window.location = '/contracts.html'; });
+  document.getElementById('btn-upload-modal').addEventListener('click', openUploadModal);
+  document.getElementById('hb-list').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const id = parseInt(btn.dataset.id);
+    if (btn.dataset.action === 'view-pdf') {
+      viewPDF(id);
+    } else if (btn.dataset.action === 'set-current') {
+      setCurrent(id, btn);
+    }
+  });
+  loadHandbook();
+});
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

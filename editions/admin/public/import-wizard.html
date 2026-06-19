@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Import Wizard — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Wizard step indicator ── */
+    .wiz-indicator {
+      display: flex; align-items: center; gap: 0;
+      margin-bottom: 28px; overflow-x: auto; padding-bottom: 4px;
+    }
+    .wiz-step { display: flex; flex-direction: column; align-items: center; min-width: 56px; }
+    .wiz-num {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; font-weight: 700;
+      background: #1e293b; border: 2px solid #2d3748; color: #64748b;
+      transition: all .2s;
+    }
+    .wiz-step.active .wiz-num  { background: #4a9abf; border-color: #4a9abf; color: #fff; }
+    .wiz-step.done  .wiz-num   { background: #22c55e; border-color: #22c55e; color: #fff; }
+    .wiz-lbl { font-size: .65rem; color: #64748b; margin-top: 4px; white-space: nowrap; text-align: center; }
+    .wiz-step.active .wiz-lbl  { color: #4a9abf; }
+    .wiz-step.done  .wiz-lbl   { color: #22c55e; }
+    .wiz-line { flex: 1; height: 2px; background: #2d3748; min-width: 16px; margin-bottom: 16px; transition: background .2s; }
+    .wiz-line.done { background: #22c55e; }
+
+    /* ── Cards & source grid ── */
+    .source-grid, .entity-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
+      margin-top: 16px;
+    }
+    .source-card, .entity-card {
+      background: #1e293b; border: 2px solid #2d3748; border-radius: 12px;
+      padding: 16px 12px; cursor: pointer; transition: all .15s;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      position: relative;
+    }
+    .source-card:hover:not(.disabled), .entity-card:hover { border-color: #4a9abf; }
+    .source-card.selected, .entity-card.selected { border-color: #4a9abf; background: #0f2233; }
+    .source-card.disabled { opacity: .45; cursor: default; }
+    .source-card input, .entity-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .source-icon { font-size: 2rem; }
+    .source-name, .entity-name { font-size: .9rem; font-weight: 600; color: #f1f5f9; }
+    .source-desc, .entity-desc { font-size: .75rem; color: #94a3b8; text-align: center; }
+    .badge-soon {
+      background: #1e3a5f; color: #60a5fa; font-size: .65rem; padding: 2px 8px;
+      border-radius: 99px; font-weight: 600;
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed #2d3748; border-radius: 12px; padding: 48px 24px;
+      text-align: center; cursor: pointer; transition: all .2s; margin-top: 12px;
+    }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: #4a9abf; background: #0f2233; }
+    .upload-zone .up-icon { font-size: 3rem; margin-bottom: 12px; }
+    .upload-zone p { margin: 6px 0; color: #94a3b8; }
+    .upload-zone .up-cta { color: #4a9abf; text-decoration: underline; cursor: pointer; }
+    .upload-status { margin-top: 12px; padding: 10px 14px; border-radius: 8px; display: none; }
+    .upload-status.ok  { background: #052e16; color: #86efac; border: 1px solid #166534; }
+    .upload-status.err { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+
+    /* ── Preview table ── */
+    .preview-meta { color: #94a3b8; font-size: .85rem; margin-bottom: 10px; }
+    .encoding-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .encoding-row label { font-size: .8rem; color: #94a3b8; }
+    .encoding-row select { background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 5px 8px; font-size: .8rem; }
+    .preview-scroll { overflow-x: auto; }
+    .preview-tbl { width: 100%; border-collapse: collapse; font-size: .78rem; min-width: 500px; }
+    .preview-tbl th { background: #0f172a; color: #4a9abf; padding: 7px 10px;
+      text-align: left; border-bottom: 1px solid #2d3748; white-space: nowrap; }
+    .preview-tbl td { padding: 5px 10px; border-bottom: 1px solid #1e293b; color: #cbd5e1;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .preview-tbl tr:hover td { background: #1e293b; }
+
+    /* ── Column mapping ── */
+    .mapping-header { display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+    .tpl-suggestion { background: #0f2233; border: 1px solid #1d4ed8; border-radius: 8px;
+      padding: 10px 14px; display: flex; align-items: center; gap: 10px;
+      font-size: .85rem; margin-bottom: 12px; }
+    .mapping-row {
+      display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid #1e293b;
+    }
+    .mapping-row:last-child { border-bottom: none; }
+    .map-label { font-size: .85rem; color: #f1f5f9; }
+    .map-hint { font-size: .72rem; color: #64748b; margin-top: 2px; }
+    .map-arrow { text-align: center; color: #4a9abf; font-weight: 700; }
+    .map-select {
+      width: 100%; background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 7px 8px; font-size: .82rem;
+    }
+    .map-select:focus { border-color: #4a9abf; outline: none; }
+    .tpl-save-row { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
+    .tpl-save-row input { flex: 1; background: #0f172a; border: 1px solid #2d3748;
+      color: #f1f5f9; border-radius: 8px; padding: 7px 10px; font-size: .85rem; }
+
+    /* ── Validation results ── */
+    .val-summary { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .val-stat { background: #1e293b; border-radius: 10px; padding: 12px 20px;
+      text-align: center; min-width: 100px; }
+    .val-stat .vs-num { font-size: 1.6rem; font-weight: 700; display: block; }
+    .val-stat .vs-lbl { font-size: .75rem; color: #94a3b8; }
+    .vs-ok  { color: #22c55e; }
+    .vs-err { color: #ef4444; }
+    .vs-warn { color: #f59e0b; }
+    .err-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .err-tbl th { text-align: left; padding: 7px 10px; color: #94a3b8; border-bottom: 1px solid #2d3748; }
+    .err-tbl td { padding: 6px 10px; border-bottom: 1px solid #1e293b; }
+    .err-tbl .err-row { color: #94a3b8; font-size: .75rem; }
+    .err-tbl .err-msg { color: #fca5a5; }
+    .err-tbl .err-val { font-family: monospace; color: #94a3b8; font-size: .75rem; max-width: 140px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Dry-run & commit ── */
+    .dr-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px; margin-bottom: 20px; }
+    .dr-card { background: #1e293b; border-radius: 10px; padding: 16px; text-align: center; }
+    .dr-num { font-size: 2rem; font-weight: 700; display: block; }
+    .dr-lbl { font-size: .75rem; color: #94a3b8; margin-top: 2px; }
+    .dr-create { color: #22c55e; }
+    .dr-update { color: #4a9abf; }
+    .dr-skip   { color: #f59e0b; }
+    .dr-total  { color: #94a3b8; }
+    .commit-box { background: #1e293b; border: 2px solid #e07820; border-radius: 12px;
+      padding: 20px 24px; margin-bottom: 20px; }
+    .commit-box p { margin: 6px 0; color: #cbd5e1; }
+    .commit-box strong { color: #f1f5f9; }
+
+    /* ── Done ── */
+    .done-icon { font-size: 4rem; text-align: center; margin: 12px 0; }
+    .done-title { font-size: 1.5rem; font-weight: 700; text-align: center;
+      color: #22c55e; margin-bottom: 8px; }
+    .done-stats { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin: 16px 0; }
+    .done-stat { background: #1e293b; border-radius: 8px; padding: 10px 18px; text-align: center; }
+    .done-stat .dn { font-size: 1.3rem; font-weight: 700; }
+    .done-stat .dl { font-size: .75rem; color: #94a3b8; }
+    .done-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+
+    /* ── Wizard footer nav ── */
+    .wiz-footer { display: flex; justify-content: space-between; align-items: center;
+      margin-top: 24px; padding-top: 16px; border-top: 1px solid #2d3748; }
+
+    /* ── Badge helpers ── */
+    .badge-req { background: #7f1d1d; color: #fca5a5; font-size: .65rem; padding: 1px 6px;
+      border-radius: 4px; margin-left: 4px; }
+    .badge-opt { background: #1e293b; color: #64748b; font-size: .65rem; padding: 1px 6px;
+      border-radius: 4px; margin-left: 4px; }
+
+    /* ── Alert ── */
+    .alert-info { background: #0f2233; border: 1px solid #1d4ed8; color: #93c5fd;
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+    .alert-warn { background: #1c1205; border: 1px solid #92400e; color: #fde68a;
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+    .alert-danger { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5;
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+
+    /* ── Spinner inline ── */
+    .spin-sm { width: 18px; height: 18px; border: 2px solid #2d3748;
+      border-top-color: #4a9abf; border-radius: 50%; animation: spin .7s linear infinite;
+      display: inline-block; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📥 Import Wizard</div>
+    <div class="page-actions" id="hdr-actions"></div>
+  </div>
+
+  <div class="card" id="wiz-indicator-card">
+    <div class="wiz-indicator" id="wiz-indicator"></div>
+  </div>
+
+  <div class="card" id="wiz-body">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+const STATE = {
+  step: 1,
+  jobId: sessionStorage.getItem('wren_import_job') || null,
+  sourceKind: 'csv',
+  targetEntity: null,
+  encoding: 'utf-8',
+  headers: [],
+  preview: [],
+  totalRows: 0,
+  mapping: {},
+  templates: [],
+  validationResult: null,
+  dryRunResult: null,
+  commitResult: null,
+  schemas: {}
+};
+
+const STEP_LABELS = [
+  'Source', 'Entity', 'Upload', 'Preview',
+  'Mapping', 'Validate', 'Dry run', 'Commit', 'Done'
+];
+
+const NON_CSV_SOURCES = ['ctf','tapestry','eylog','brighthr','famly'];
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  if (!['manager','deputy_manager','admin'].includes(Wren.user?.role)) {
+    document.getElementById('wren-content').innerHTML =
+      '<div class="alert-danger" style="margin:24px">Import wizard is restricted to managers.</div>';
+    return;
+  }
+
+  // Load schemas and templates in parallel
+  try {
+    const [schemas, templates] = await Promise.all([
+      Wren.api('/api/import/schemas'),
+      Wren.api('/api/import/templates').catch(() => [])
+    ]);
+    STATE.schemas = schemas;
+    STATE.templates = templates;
+  } catch (e) {
+    showError('Failed to load wizard configuration: ' + (e.error || e.message || 'Unknown error'));
+    return;
+  }
+
+  renderIndicator();
+  showStep(1);
+}
+
+// ── Step indicator ────────────────────────────────────────────────────────────
+function renderIndicator() {
+  const el = document.getElementById('wiz-indicator');
+  let html = '';
+  for (let i = 1; i <= 9; i++) {
+    const done   = STATE.step > i;
+    const active = STATE.step === i;
+    html += `<div class="wiz-step${active?' active':''}${done?' done':''}">
+      <div class="wiz-num">${done ? '✓' : i}</div>
+      <div class="wiz-lbl">${STEP_LABELS[i-1]}</div>
+    </div>`;
+    if (i < 9) html += `<div class="wiz-line${STATE.step > i ? ' done' : ''}"></div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── Show step ─────────────────────────────────────────────────────────────────
+function showStep(n) {
+  STATE.step = n;
+  renderIndicator();
+  const body = document.getElementById('wiz-body');
+  const renderers = [null,step1,step2,step3,step4,step5,step6,step7,step8,step9];
+  body.innerHTML = renderers[n]();
+  wireStep(n);
+  body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Wire up step interactivity ────────────────────────────────────────────────
+function wireStep(n) {
+  document.getElementById('btn-back')?.addEventListener('click', goBack);
+  document.getElementById('btn-next')?.addEventListener('click', advance);
+  document.getElementById('btn-upload-continue')?.addEventListener('click', advance);
+  if (n === 1) {
+    document.querySelectorAll('.source-card:not(.disabled)').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.source-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        STATE.sourceKind = card.dataset.val;
+      });
+    });
+  }
+  if (n === 2) {
+    document.querySelectorAll('.entity-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.entity-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        STATE.targetEntity = card.dataset.val;
+      });
+    });
+  }
+  if (n === 3) {
+    const zone  = document.getElementById('upload-zone');
+    const input = document.getElementById('file-input');
+    if (!zone || !input) return;
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) handleFileSelect(file);
+    });
+    input.addEventListener('change', () => { if (input.files[0]) handleFileSelect(input.files[0]); });
+  }
+  if (n === 4) {
+    document.getElementById('btn-reparse')?.addEventListener('click', reloadPreview);
+  }
+  if (n === 5) {
+    document.getElementById('btn-save-tpl')?.addEventListener('click', saveTemplate);
+    document.getElementById('btn-apply-tpl')?.addEventListener('click', applyTemplate);
+  }
+  if (n === 6) {
+    document.getElementById('btn-dl-errors-6')?.addEventListener('click', downloadErrors);
+  }
+  if (n === 7) {
+    document.getElementById('btn-dl-skipped-7')?.addEventListener('click', downloadErrors);
+  }
+  if (n === 8) {
+    document.getElementById('btn-commit')?.addEventListener('click', commitImport);
+  }
+  if (n === 9) {
+    document.getElementById('btn-dl-errors-9')?.addEventListener('click', downloadErrors);
+    document.getElementById('btn-start-fresh')?.addEventListener('click', startFresh);
+  }
+}
+
+// ── Step 1: Source picker ─────────────────────────────────────────────────────
+function step1() {
+  const sources = [
+    { val: 'csv',      icon: '📄', name: 'CSV File',   desc: 'Generic comma-separated',    avail: true },
+    { val: 'ctf',      icon: '🏫', name: 'CTF',         desc: 'Common Transfer File (DfE)', avail: false },
+    { val: 'tapestry', icon: '🌿', name: 'Tapestry',    desc: 'Tapestry export',             avail: false },
+    { val: 'eylog',    icon: '📚', name: 'EYLog',       desc: 'EYLog/EYMan export',          avail: false },
+    { val: 'brighthr', icon: '💼', name: 'BrightHR',    desc: 'BrightHR export',             avail: false },
+    { val: 'famly',    icon: '👨‍👩‍👧', name: 'Famly',       desc: 'Famly export',               avail: false },
+  ];
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Where is your data coming from?</h3>
+    <p style="color:#94a3b8;margin-top:0">Choose the format to import.</p>
+    <div class="source-grid">
+      ${sources.map(s => `
+        <label class="source-card${s.val===STATE.sourceKind?' selected':''}${!s.avail?' disabled':''}"
+               data-val="${s.val}">
+          <input type="radio" name="source" value="${s.val}" ${s.avail?'':'disabled'}>
+          <div class="source-icon">${s.icon}</div>
+          <div class="source-name">${s.name}</div>
+          <div class="source-desc">${s.desc}</div>
+          ${!s.avail ? '<span class="badge-soon">Coming soon</span>' : ''}
+        </label>`).join('')}
+    </div>
+    ${wizFooter(false, true, 'Choose source & continue')}`;
+}
+
+// ── Step 2: Target entity ─────────────────────────────────────────────────────
+function step2() {
+  const entities = Object.entries(STATE.schemas).map(([key, s]) => ({
+    val: key, icon: entityIcon(key), name: s.label, desc: s.description
+  }));
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">What data are you importing?</h3>
+    <p style="color:#94a3b8;margin-top:0">Choose the target entity in Wren.</p>
+    <div class="entity-grid">
+      ${entities.map(e => `
+        <label class="entity-card${e.val===STATE.targetEntity?' selected':''}" data-val="${e.val}">
+          <input type="radio" name="entity" value="${e.val}">
+          <div class="source-icon">${e.icon}</div>
+          <div class="entity-name">${e.name}</div>
+          <div class="entity-desc">${e.desc}</div>
+        </label>`).join('')}
+    </div>
+    ${wizFooter(true, true, 'Choose entity & continue')}`;
+}
+
+function entityIcon(key) {
+  return {children:'👶',staff:'👤',parents:'👪',attendance:'📋',observations:'👁️',funding:'💷'}[key] || '📂';
+}
+
+// ── Step 3: Upload ────────────────────────────────────────────────────────────
+function step3() {
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Upload your CSV file</h3>
+    <p style="color:#94a3b8;margin-top:0">Max 50 MB · CSV or TXT only</p>
+    <input type="file" id="file-input" accept=".csv,.txt" style="display:none">
+    <div class="upload-zone" id="upload-zone">
+      <div class="up-icon">📁</div>
+      <p>Drag &amp; drop your file here</p>
+      <p>or <span class="up-cta">browse to select</span></p>
+      <p style="font-size:.75rem">Max 50 MB · .csv or .txt</p>
+    </div>
+    <div class="upload-status" id="upload-status"></div>
+    ${wizFooter(true, false, 'Upload & continue', 'btn-upload-continue', true)}`;
+}
+
+async function handleFileSelect(file) {
+  const status = document.getElementById('upload-status');
+  const btnContinue = document.getElementById('btn-upload-continue');
+  status.style.display = 'none';
+
+  // Validate size client-side first
+  if (file.size > 50 * 1024 * 1024) {
+    status.className = 'upload-status err';
+    status.textContent = `File is ${(file.size/1024/1024).toFixed(1)} MB — exceeds 50 MB limit`;
+    status.style.display = 'block';
+    return;
+  }
+  if (!/\.(csv|txt)$/i.test(file.name)) {
+    status.className = 'upload-status err';
+    status.textContent = 'Only CSV or TXT files are accepted';
+    status.style.display = 'block';
+    return;
+  }
+
+  // Show uploading
+  status.className = 'upload-status ok';
+  status.innerHTML = '<span class="spin-sm"></span> Uploading…';
+  status.style.display = 'block';
+  if (btnContinue) btnContinue.disabled = true;
+
+  try {
+    // Create job if needed
+    if (!STATE.jobId) {
+      const j = await Wren.api('/api/import/jobs', {
+        method: 'POST',
+        body: { source_kind: STATE.sourceKind, target_entity: STATE.targetEntity }
+      });
+      STATE.jobId = j.id;
+      sessionStorage.setItem('wren_import_job', j.id);
+    }
+
+    // Upload file via raw fetch (Wren.api forces JSON content-type)
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = Wren.getToken();
+    const res = await fetch(`/api/import/jobs/${STATE.jobId}/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw err;
+    }
+    const data = await res.json();
+
+    status.innerHTML = `✓ Uploaded <strong>${file.name}</strong> (${(file.size/1024).toFixed(0)} KB)`;
+    if (btnContinue) { btnContinue.disabled = false; btnContinue.textContent = 'Continue to preview →'; }
+
+    // Load preview immediately
+    const preview = await Wren.api(`/api/import/jobs/${STATE.jobId}/preview?encoding=${STATE.encoding}`);
+    STATE.headers   = preview.headers;
+    STATE.preview   = preview.preview;
+    STATE.totalRows = preview.total_rows;
+
+  } catch (e) {
+    status.className = 'upload-status err';
+    status.textContent = 'Upload failed: ' + (e.error || e.message || 'Unknown error');
+    if (btnContinue) btnContinue.disabled = true;
+  }
+}
+
+// ── Step 4: Preview ───────────────────────────────────────────────────────────
+function step4() {
+  if (!STATE.headers.length) {
+    return `<div class="alert-warn">No preview data loaded. Go back and upload a file.</div>
+            ${wizFooter(true, false)}`;
+  }
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Preview — first ${STATE.preview.length} rows</h3>
+    <div class="encoding-row">
+      <label>File encoding:
+        <select id="encoding-sel">
+          <option value="utf-8"      ${STATE.encoding==='utf-8'      ?'selected':''}>UTF-8 (default)</option>
+          <option value="win-1252"   ${STATE.encoding==='win-1252'   ?'selected':''}>Windows-1252 (legacy)</option>
+          <option value="iso-8859-1" ${STATE.encoding==='iso-8859-1' ?'selected':''}>ISO-8859-1 / Latin-1</option>
+        </select>
+      </label>
+      <button class="btn btn-ghost btn-sm" id="btn-reparse">Re-parse</button>
+    </div>
+    <p class="preview-meta">${STATE.totalRows.toLocaleString()} data rows · ${STATE.headers.length} columns detected</p>
+    <div class="preview-scroll">
+      <table class="preview-tbl">
+        <thead><tr>${STATE.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${STATE.preview.map(row =>
+            `<tr>${STATE.headers.map((_,i) => `<td title="${esc(row[i]||'')}">${esc(row[i]||'')}</td>`).join('')}</tr>`
+          ).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${wizFooter(true, true, 'Looks good — set up mapping →')}`;
+}
+
+async function reloadPreview() {
+  const sel = document.getElementById('encoding-sel');
+  if (sel) STATE.encoding = sel.value;
+  const btn = document.getElementById('btn-reparse');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Parsing…'; }
+  try {
+    const preview = await Wren.api(`/api/import/jobs/${STATE.jobId}/preview?encoding=${STATE.encoding}`);
+    STATE.headers   = preview.headers;
+    STATE.preview   = preview.preview;
+    STATE.totalRows = preview.total_rows;
+    showStep(4);
+  } catch (e) {
+    Wren.toast('Re-parse failed: ' + (e.error || e.message), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-parse'; }
+  }
+}
+
+// ── Step 5: Column mapping ────────────────────────────────────────────────────
+function step5() {
+  const schema = STATE.schemas[STATE.targetEntity];
+  if (!schema) return `<div class="alert-warn">Unknown entity. Go back to step 2.</div>${wizFooter(true,false)}`;
+
+  // Find matching template
+  const matchedTpl = findMatchingTemplate();
+
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Map columns to Wren fields</h3>
+    <p style="color:#94a3b8;margin-top:0">
+      For each Wren field, pick the matching column from your CSV.
+      Required fields <span class="badge-req">required</span> must be mapped.
+    </p>
+
+    ${matchedTpl ? `
+    <div class="tpl-suggestion">
+      <span>💡 Template <strong>${esc(matchedTpl.name)}</strong> matches your columns.</span>
+      <button class="btn btn-ghost btn-sm" id="btn-apply-tpl" data-tpl='${JSON.stringify(matchedTpl.mapping_json)}'>
+        Apply template
+      </button>
+    </div>` : ''}
+
+    <div class="mapping-header">
+      <span style="color:#94a3b8;font-size:.85rem">${schema.fields.length} fields · ${STATE.headers.length} source columns</span>
+    </div>
+
+    <div id="mapping-rows">
+      ${schema.fields.map(f => {
+        const autoCol = autoMatch(f.key, STATE.headers);
+        const currentVal = STATE.mapping[f.key] || autoCol || '';
+        return `
+        <div class="mapping-row">
+          <div>
+            <div class="map-label">${esc(f.label)}<span class="${f.required?'badge-req':'badge-opt'}">${f.required?'required':'optional'}</span></div>
+            ${f.hint ? `<div class="map-hint">${esc(f.hint)}</div>` : ''}
+            ${f.type==='enum' ? `<div class="map-hint">Values: ${f.values.join(', ')}</div>` : ''}
+          </div>
+          <div class="map-arrow">→</div>
+          <div>
+            <select class="map-select" data-field="${f.key}" id="map_${f.key}">
+              <option value="">— not mapped —</option>
+              ${STATE.headers.map(h =>
+                `<option value="${esc(h)}"${h===currentVal?' selected':''}>${esc(h)}</option>`
+              ).join('')}
+            </select>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="tpl-save-row">
+      <input type="text" id="tpl-name-input" placeholder="Template name (optional)…">
+      <button class="btn btn-ghost btn-sm" id="btn-save-tpl">💾 Save mapping as template</button>
+    </div>
+    ${wizFooter(true, true, 'Save mapping & validate →')}`;
+}
+
+function autoMatch(fieldKey, headers) {
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const fk = norm(fieldKey);
+  return headers.find(h => {
+    const hn = norm(h);
+    return hn === fk || hn.includes(fk) || fk.includes(hn);
+  }) || '';
+}
+
+function findMatchingTemplate() {
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const normHeaders = new Set(STATE.headers.map(norm));
+  let best = null, bestScore = 0;
+  for (const tpl of STATE.templates) {
+    if (tpl.target_entity && tpl.target_entity !== STATE.targetEntity) continue;
+    const cols = Object.values(tpl.mapping_json).filter(Boolean);
+    if (!cols.length) continue;
+    const matches = cols.filter(c => normHeaders.has(norm(c))).length;
+    const score = matches / cols.length;
+    if (score >= 0.5 && score > bestScore) { best = tpl; bestScore = score; }
+  }
+  return best;
+}
+
+function applyTemplate() {
+  const btn = document.getElementById('btn-apply-tpl');
+  if (!btn) return;
+  const mapping = JSON.parse(btn.dataset.tpl || '{}');
+  Object.entries(mapping).forEach(([field, col]) => {
+    const sel = document.getElementById(`map_${field}`);
+    if (sel) sel.value = col || '';
+  });
+  Wren.toast('Template applied', 'success');
+}
+
+async function saveTemplate() {
+  const name = document.getElementById('tpl-name-input')?.value?.trim();
+  if (!name) { Wren.toast('Enter a template name first', 'warning'); return; }
+  const mapping = readCurrentMapping();
+  try {
+    await Wren.api('/api/import/templates', {
+      method: 'POST',
+      body: { name, source_kind: STATE.sourceKind, target_entity: STATE.targetEntity, mapping }
+    });
+    Wren.toast(`Template "${name}" saved`, 'success');
+    // Refresh templates list
+    STATE.templates = await Wren.api('/api/import/templates').catch(() => STATE.templates);
+  } catch (e) {
+    Wren.toast('Save failed: ' + (e.error || e.message), 'error');
+  }
+}
+
+function readCurrentMapping() {
+  const mapping = {};
+  document.querySelectorAll('.map-select').forEach(sel => {
+    if (sel.value) mapping[sel.dataset.field] = sel.value;
+  });
+  return mapping;
+}
+
+// ── Step 6: Validation ────────────────────────────────────────────────────────
+function step6() {
+  if (!STATE.validationResult) {
+    return `
+      <h3 style="margin-top:0;color:#f1f5f9">Validating ${STATE.totalRows.toLocaleString()} rows…</h3>
+      <div style="text-align:center;padding:40px">
+        <div class="spinner"></div>
+        <p style="color:#94a3b8;margin-top:16px">Running schema validation on all rows…</p>
+      </div>`;
+  }
+
+  const vr = STATE.validationResult;
+  const validRows = vr.total - vr.error_count;
+  const errors = vr.errors || [];
+  const shown = errors.slice(0, 100);
+
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Validation results</h3>
+    <div class="val-summary">
+      <div class="val-stat"><span class="vs-num vs-ok">${validRows.toLocaleString()}</span><span class="vs-lbl">valid rows</span></div>
+      <div class="val-stat"><span class="vs-num vs-err">${vr.error_count.toLocaleString()}</span><span class="vs-lbl">errors</span></div>
+      <div class="val-stat"><span class="vs-num vs-warn">${vr.total.toLocaleString()}</span><span class="vs-lbl">total rows</span></div>
+    </div>
+
+    ${vr.valid ? `
+      <div class="alert-info">✓ All rows passed validation. Ready for dry run.</div>
+    ` : `
+      <div class="alert-warn">
+        ${vr.error_count} row${vr.error_count!==1?'s':''} have errors.
+        You can download the error list or skip bad rows and continue.
+      </div>
+      ${errors.length > 0 ? `
+      <div class="preview-scroll" style="max-height:260px;overflow-y:auto;margin-bottom:12px">
+        <table class="err-tbl">
+          <thead><tr><th>Row</th><th>Field</th><th>Error</th><th>Value</th></tr></thead>
+          <tbody>
+            ${shown.map(e => `
+            <tr>
+              <td class="err-row">${e.row}</td>
+              <td style="color:#94a3b8;font-size:.8rem">${esc(e.field||'')}</td>
+              <td class="err-msg">${esc(e.error||'')}</td>
+              <td class="err-val">${esc(e.value||'')}</td>
+            </tr>`).join('')}
+            ${errors.length > 100 ? `<tr><td colspan="4" style="color:#64748b;text-align:center;padding:8px">…${errors.length-100} more errors not shown</td></tr>` : ''}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btn-dl-errors-6">⬇ Download error list (CSV)</button>
+      ` : ''}
+    `}
+
+    ${wizFooter(true, true, vr.valid ? 'Run dry run →' : 'Skip errors & continue →')}`;
+}
+
+// ── Step 7: Dry run ───────────────────────────────────────────────────────────
+function step7() {
+  if (!STATE.dryRunResult) {
+    return `
+      <h3 style="margin-top:0;color:#f1f5f9">Running dry run…</h3>
+      <div style="text-align:center;padding:40px">
+        <div class="spinner"></div>
+        <p style="color:#94a3b8;margin-top:16px">Simulating import inside a transaction (will not be committed)…</p>
+      </div>`;
+  }
+
+  const dr = STATE.dryRunResult;
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Dry-run results</h3>
+    <p style="color:#94a3b8;margin-top:0">No data was written — this is a preview of what will happen on commit.</p>
+    <div class="dr-stats">
+      <div class="dr-card"><span class="dr-num dr-create">${dr.created.toLocaleString()}</span><div class="dr-lbl">to create</div></div>
+      <div class="dr-card"><span class="dr-num dr-update">${dr.updated.toLocaleString()}</span><div class="dr-lbl">to update</div></div>
+      <div class="dr-card"><span class="dr-num dr-skip">${dr.skipped.toLocaleString()}</span><div class="dr-lbl">to skip</div></div>
+      <div class="dr-card"><span class="dr-num dr-total">${dr.total.toLocaleString()}</span><div class="dr-lbl">total rows</div></div>
+    </div>
+    ${dr.skipped > 0 ? `
+    <div class="alert-warn">
+      ${dr.skipped} row${dr.skipped!==1?'s':''} will be skipped (validation errors or missing linked records).
+      <button class="btn btn-ghost btn-sm" id="btn-dl-skipped-7" style="margin-left:8px">⬇ Download skipped rows</button>
+    </div>` : ''}
+    ${(dr.created + dr.updated) === 0 ? `
+    <div class="alert-warn">⚠ No rows would be imported. Check your column mapping and try again.</div>
+    ` : `
+    <div class="alert-info">✓ Dry run complete. ${(dr.created+dr.updated).toLocaleString()} records will be imported.</div>
+    `}
+    ${wizFooter(true, (dr.created + dr.updated) > 0, 'Proceed to commit →')}`;
+}
+
+// ── Step 8: Commit ────────────────────────────────────────────────────────────
+function step8() {
+  const dr = STATE.dryRunResult || {};
+  const entityLabel = STATE.schemas[STATE.targetEntity]?.label || STATE.targetEntity;
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Ready to import</h3>
+    <div class="commit-box">
+      <p>Entity: <strong>${esc(entityLabel)}</strong></p>
+      <p>Source: <strong>${esc(STATE.sourceKind.toUpperCase())} file</strong></p>
+      <p>Rows to create: <strong style="color:#22c55e">${(dr.created||0).toLocaleString()}</strong></p>
+      <p>Rows to update: <strong style="color:#4a9abf">${(dr.updated||0).toLocaleString()}</strong></p>
+      <p>Rows to skip:   <strong style="color:#f59e0b">${(dr.skipped||0).toLocaleString()}</strong></p>
+    </div>
+    <div class="alert-warn">
+      ⚠ This will write to the production database. Rows that already exist will be updated (not duplicated).
+    </div>
+    <div id="commit-status"></div>
+    ${wizFooter(true, false)}
+    <div style="margin-top:12px;text-align:center">
+      <button class="btn btn-primary" style="background:#e07820;border-color:#e07820;min-width:200px;font-size:1rem;padding:14px 28px"
+              id="btn-commit">
+        ✓ Confirm Import
+      </button>
+    </div>`;
+}
+
+async function commitImport() {
+  const btn = document.getElementById('btn-commit');
+  const status = document.getElementById('commit-status');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Importing…'; }
+
+  try {
+    const result = await Wren.api(`/api/import/jobs/${STATE.jobId}/commit`, {
+      method: 'POST',
+      body: { encoding: STATE.encoding }
+    });
+    STATE.commitResult = result;
+    sessionStorage.removeItem('wren_import_job');
+    STATE.jobId = null;
+    showStep(9);
+  } catch (e) {
+    if (status) {
+      status.className = 'alert-danger';
+      status.textContent = 'Import failed: ' + (e.error || e.message || 'Unknown error');
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = '✓ Retry Import'; }
+  }
+}
+
+// ── Step 9: Done ──────────────────────────────────────────────────────────────
+function step9() {
+  const cr = STATE.commitResult || {};
+  const entityLabel = STATE.schemas[STATE.targetEntity]?.label || STATE.targetEntity;
+  const entityHref = { children: '/children.html', staff: '/staff.html', observations: '/observations.html' }[STATE.targetEntity] || '/index.html';
+  return `
+    <div style="text-align:center;padding:16px 0">
+      <div class="done-icon">🎉</div>
+      <div class="done-title">Import complete!</div>
+      <p style="color:#94a3b8">${entityLabel} imported successfully.</p>
+    </div>
+    <div class="done-stats">
+      <div class="done-stat"><div class="dn" style="color:#22c55e">${(cr.created||0).toLocaleString()}</div><div class="dl">created</div></div>
+      <div class="done-stat"><div class="dn" style="color:#4a9abf">${(cr.updated||0).toLocaleString()}</div><div class="dl">updated</div></div>
+      <div class="done-stat"><div class="dn" style="color:#f59e0b">${(cr.skipped||0).toLocaleString()}</div><div class="dl">skipped</div></div>
+      <div class="done-stat"><div class="dn" style="color:#94a3b8">${(cr.total||0).toLocaleString()}</div><div class="dl">total rows</div></div>
+    </div>
+    ${(cr.errors||[]).length > 0 ? `
+    <div style="text-align:center;margin-top:8px">
+      <button class="btn btn-ghost" id="btn-dl-errors-9">⬇ Download skipped-row report</button>
+    </div>` : ''}
+    <div class="done-actions">
+      <a href="${entityHref}" class="btn btn-primary">View ${entityLabel.toLowerCase()}</a>
+      <button class="btn btn-ghost" id="btn-start-fresh">Start another import</button>
+      <a href="/audit.html" class="btn btn-ghost">View audit log</a>
+    </div>`;
+}
+
+// ── Advance / back ────────────────────────────────────────────────────────────
+async function advance() {
+  const n = STATE.step;
+
+  if (n === 1) {
+    if (NON_CSV_SOURCES.includes(STATE.sourceKind)) {
+      Wren.toast(`${STATE.sourceKind.toUpperCase()} import is coming in a future release. Please use CSV for now.`, 'info', 5000);
+      return;
+    }
+    showStep(2);
+    return;
+  }
+
+  if (n === 2) {
+    if (!STATE.targetEntity) { Wren.toast('Please choose a target entity', 'warning'); return; }
+    // Create/update job with entity selection
+    try {
+      if (!STATE.jobId) {
+        const j = await Wren.api('/api/import/jobs', {
+          method: 'POST', body: { source_kind: STATE.sourceKind, target_entity: STATE.targetEntity }
+        });
+        STATE.jobId = j.id;
+        sessionStorage.setItem('wren_import_job', j.id);
+      } else {
+        await Wren.api(`/api/import/jobs/${STATE.jobId}/mapping`, {
+          method: 'POST', body: { mapping: STATE.mapping || {}, target_entity: STATE.targetEntity }
+        });
+      }
+    } catch (e) { /* non-critical if job already exists */ }
+    showStep(3);
+    return;
+  }
+
+  if (n === 3) {
+    if (!STATE.headers.length) { Wren.toast('Please upload a file first', 'warning'); return; }
+    showStep(4);
+    return;
+  }
+
+  if (n === 4) {
+    showStep(5);
+    return;
+  }
+
+  if (n === 5) {
+    const mapping = readCurrentMapping();
+    if (!Object.keys(mapping).length) { Wren.toast('Map at least one column before continuing', 'warning'); return; }
+
+    // Validate required fields are mapped
+    const schema = STATE.schemas[STATE.targetEntity];
+    const missingRequired = schema.fields.filter(f => f.required && !mapping[f.key]);
+    if (missingRequired.length) {
+      Wren.toast(`Please map required field${missingRequired.length>1?'s':''}: ${missingRequired.map(f=>f.label).join(', ')}`, 'warning', 5000);
+      return;
+    }
+
+    STATE.mapping = mapping;
+
+    // Save mapping to server
+    const btn = document.getElementById('btn-next');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Saving…'; }
+    try {
+      await Wren.api(`/api/import/jobs/${STATE.jobId}/mapping`, {
+        method: 'POST', body: { mapping, target_entity: STATE.targetEntity }
+      });
+    } catch (e) {
+      Wren.toast('Failed to save mapping: ' + (e.error || e.message), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save mapping & validate →'; }
+      return;
+    }
+
+    // Proceed to validation step (step 6 auto-runs)
+    STATE.validationResult = null;
+    showStep(6);
+    runValidation();
+    return;
+  }
+
+  if (n === 6) {
+    // Continue from validation → dry run
+    STATE.dryRunResult = null;
+    showStep(7);
+    runDryRun();
+    return;
+  }
+
+  if (n === 7) {
+    showStep(8);
+    return;
+  }
+}
+
+async function runValidation() {
+  try {
+    const result = await Wren.api(`/api/import/jobs/${STATE.jobId}/validate`, {
+      method: 'POST', body: { encoding: STATE.encoding }
+    });
+    STATE.validationResult = result;
+    showStep(6);
+  } catch (e) {
+    STATE.validationResult = { valid: false, errors: [{ row:0, field:'', error: e.error||e.message, value:'' }], total: 0, error_count: 1 };
+    showStep(6);
+  }
+}
+
+async function runDryRun() {
+  try {
+    const result = await Wren.api(`/api/import/jobs/${STATE.jobId}/dry-run`, {
+      method: 'POST', body: { encoding: STATE.encoding }
+    });
+    STATE.dryRunResult = result;
+    showStep(7);
+  } catch (e) {
+    Wren.toast('Dry run failed: ' + (e.error || e.message || 'Unknown error'), 'error');
+    showStep(7); // re-render with null result to show error state
+  }
+}
+
+function goBack() {
+  if (STATE.step > 1) showStep(STATE.step - 1);
+}
+
+function startFresh() {
+  Object.assign(STATE, {
+    step: 1, jobId: null, sourceKind: 'csv', targetEntity: null,
+    encoding: 'utf-8', headers: [], preview: [], totalRows: 0,
+    mapping: {}, validationResult: null, dryRunResult: null, commitResult: null
+  });
+  sessionStorage.removeItem('wren_import_job');
+  showStep(1);
+}
+
+// ── Download errors ───────────────────────────────────────────────────────────
+function downloadErrors() {
+  if (!STATE.jobId) { Wren.toast('No job to download errors from', 'warning'); return; }
+  const token = Wren.getToken();
+  const a = document.createElement('a');
+  a.href = `/api/import/jobs/${STATE.jobId}/errors.csv`;
+  a.click();
+}
+
+// ── Wizard footer helper ──────────────────────────────────────────────────────
+function wizFooter(showBack, showNext, nextLabel = 'Continue →', nextId = 'btn-next', nextDisabled = false) {
+  return `
+    <div class="wiz-footer">
+      <div>${showBack ? `<button class="btn btn-ghost" id="btn-back">← Back</button>` : '<span></span>'}</div>
+      <div>${showNext ? `<button class="btn btn-primary" id="${nextId}"${nextDisabled?' disabled':''}>${nextLabel}</button>` : ''}</div>
+    </div>`;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function showError(msg) {
+  document.getElementById('wiz-body').innerHTML =
+    `<div class="alert-danger">${esc(msg)}</div>`;
+}
+</script>
+</body>
+</html>

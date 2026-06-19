@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="primary">
+<title>Seating Plan — Wren Primary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.sp-controls { display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center; }
+.sp-grid-wrap { overflow:auto; }
+.sp-grid {
+  display:grid;
+  gap:8px;
+  min-width:600px;
+  user-select:none;
+}
+.desk {
+  background:var(--c-surface);
+  border:2px solid var(--c-border);
+  border-radius:10px;
+  padding:10px 8px;
+  text-align:center;
+  cursor:grab;
+  transition:.15s;
+  min-height:70px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+}
+.desk:hover { border-color:var(--c-blue); }
+.desk.drag-over { background:rgba(74,154,191,.12); border-color:var(--c-blue); border-style:dashed; }
+.desk.empty { border-style:dashed; opacity:.5; cursor:pointer; }
+.desk.empty:hover { opacity:1; border-color:var(--c-blue); }
+.desk-name { font-size:.8rem;font-weight:700;color:var(--c-text); }
+.desk-year { font-size:.68rem;color:var(--c-muted); }
+.desk-badge { font-size:.6rem;padding:1px 5px;border-radius:4px;font-weight:700; }
+.desk-badge.pp  { background:rgba(34,197,94,.15);color:#22c55e; }
+.desk-badge.sen { background:rgba(139,92,246,.15);color:#8b5cf6; }
+.unplaced-list { display:flex;flex-wrap:wrap;gap:6px;padding:12px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:12px;min-height:60px; }
+.unplaced-chip {
+  padding:6px 12px;border-radius:8px;background:var(--c-surface);border:1px solid var(--c-border);
+  font-size:.8rem;font-weight:600;cursor:grab;color:var(--c-text);transition:.15s;
+  display:flex;align-items:center;gap:5px;
+}
+.unplaced-chip:hover { border-color:var(--c-blue); }
+.unplaced-chip.dragging { opacity:.4; }
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Seating Plan</div>
+      <div class="page-subtitle">Drag-and-drop desk layout for your class</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" id="btn-clear-plan">Clear plan</button>
+      <button class="btn btn-secondary" id="btn-save-plan">Save plan</button>
+      <button class="btn btn-primary" id="btn-print-plan">Print</button>
+    </div>
+  </div>
+
+  <div class="sp-controls">
+    <label class="form-label" style="margin:0">Class:</label>
+    <select class="form-control" id="class-sel" style="flex:0 0 160px">
+      <option value="">Select class…</option>
+    </select>
+    <label class="form-label" style="margin:0">Columns:</label>
+    <input type="number" class="form-control" id="cols" value="5" min="2" max="8" style="width:70px">
+    <label class="form-label" style="margin:0">Rows:</label>
+    <input type="number" class="form-control" id="rows" value="5" min="2" max="8" style="width:70px">
+    <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--c-muted);cursor:pointer">
+      <input type="checkbox" id="show-flags"> Show PP/SEN flags
+    </label>
+  </div>
+
+  <!-- Unplaced pupils -->
+  <div style="margin-bottom:16px">
+    <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin-bottom:6px">
+      Unplaced pupils — drag to a desk
+    </div>
+    <div class="unplaced-list" id="unplaced-list" ondragover="event.preventDefault()" ondrop="dropOnUnplaced(event)">
+      <span style="color:var(--c-muted);font-size:.82rem">Select a class to load pupils</span>
+    </div>
+  </div>
+
+  <!-- Grid -->
+  <div class="sp-grid-wrap">
+    <div class="sp-grid" id="sp-grid"></div>
+  </div>
+</div>
+
+<script>
+let pupils = [], plan = {}, dragging = null, draggingFrom = null;
+
+document.getElementById('btn-clear-plan').addEventListener('click', clearPlan);
+document.getElementById('btn-save-plan').addEventListener('click', savePlan);
+document.getElementById('btn-print-plan').addEventListener('click', printPlan);
+document.getElementById('class-sel').addEventListener('change', loadClass);
+document.getElementById('cols').addEventListener('change', buildGrid);
+document.getElementById('rows').addEventListener('change', buildGrid);
+document.getElementById('show-flags').addEventListener('change', refreshDesks);
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  await loadClasses();
+  buildGrid();
+}
+
+async function loadClasses() {
+  try {
+    const classes = await Wren.api('/api/classes').catch(() => []);
+    const sel = document.getElementById('class-sel');
+    const opts = Array.isArray(classes)
+      ? classes.map(c => `<option value="${c.id||c.name}" data-name="${c.name||c.id}">${c.name||c.class_name||c.id}</option>`)
+      : [];
+    sel.innerHTML = '<option value="">Select class…</option>' + opts.join('');
+  } catch {}
+}
+
+async function loadClass() {
+  const val = document.getElementById('class-sel').value;
+  if (!val) return;
+  try {
+    const all = await Wren.api('/api/children');
+    const selEl = document.getElementById('class-sel');
+    const name  = selEl.options[selEl.selectedIndex]?.dataset.name || val;
+    pupils = Array.isArray(all) ? all.filter(p => p.class_group === name || String(p.class_id) === val) : [];
+    if (!pupils.length) pupils = Array.isArray(all) ? all.slice(0, 30) : [];
+    loadSavedPlan();
+    refreshDesks();
+  } catch { Wren.toast('Could not load pupils', 'error'); }
+}
+
+function loadSavedPlan() {
+  try {
+    const key = 'sp-' + document.getElementById('class-sel').value;
+    plan = JSON.parse(localStorage.getItem(key) || '{}');
+  } catch { plan = {}; }
+}
+
+function savePlan() {
+  const key = 'sp-' + document.getElementById('class-sel').value;
+  localStorage.setItem(key, JSON.stringify(plan));
+  Wren.toast('Seating plan saved', 'success');
+}
+
+function clearPlan() {
+  plan = {};
+  refreshDesks();
+}
+
+function buildGrid() {
+  const cols = parseInt(document.getElementById('cols').value) || 5;
+  const rows = parseInt(document.getElementById('rows').value) || 5;
+  const grid = document.getElementById('sp-grid');
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  const total = cols * rows;
+  const desks = [];
+  for (let i = 0; i < total; i++) {
+    const desk = document.createElement('div');
+    desk.className = 'desk empty';
+    desk.dataset.seat = i;
+    desk.innerHTML = '<span style="font-size:1.2rem;opacity:.4">＋</span>';
+    desk.addEventListener('dragover', e => { e.preventDefault(); desk.classList.add('drag-over'); });
+    desk.addEventListener('dragleave', () => desk.classList.remove('drag-over'));
+    desk.addEventListener('drop', e => { e.preventDefault(); dropOnDesk(desk, parseInt(desk.dataset.seat)); desk.classList.remove('drag-over'); });
+    desks.push(desk);
+  }
+  grid.innerHTML = '';
+  desks.forEach(d => grid.appendChild(d));
+  refreshDesks();
+}
+
+function refreshDesks() {
+  const showFlags = document.getElementById('show-flags').checked;
+  const cols = parseInt(document.getElementById('cols').value) || 5;
+  const rows = parseInt(document.getElementById('rows').value) || 5;
+  const total = cols * rows;
+  const desks = document.querySelectorAll('.desk');
+
+  desks.forEach((desk, i) => {
+    const pid = plan[i];
+    const pupil = pid ? pupils.find(p => p.id === pid) : null;
+    if (pupil) {
+      const flags = showFlags ? [
+        pupil.pupil_premium ? '<span class="desk-badge pp">PP</span>' : '',
+        pupil.sen_status && pupil.sen_status !== 'none' ? '<span class="desk-badge sen">SEN</span>' : ''
+      ].filter(Boolean).join('') : '';
+      desk.className = 'desk';
+      desk.draggable = true;
+      desk.innerHTML = `<div class="desk-name">${pupil.first_name} ${pupil.last_name.charAt(0)}.</div>
+        <div class="desk-year">${pupil.year_group==='R'?'R':'Y'+(pupil.year_group||'')}</div>
+        ${flags}`;
+      desk.addEventListener('dragstart', () => { dragging = pupil.id; draggingFrom = i; desk.style.opacity = '0.4'; });
+      desk.addEventListener('dragend', () => { desk.style.opacity = '1'; });
+    } else {
+      desk.className = 'desk empty';
+      desk.draggable = false;
+      desk.innerHTML = '<span style="font-size:1.2rem;opacity:.3">＋</span>';
+    }
+  });
+
+  const placed = new Set(Object.values(plan));
+  const unplaced = pupils.filter(p => !placed.has(p.id));
+  const ul = document.getElementById('unplaced-list');
+  if (!unplaced.length && pupils.length) {
+    ul.innerHTML = '<span style="color:#22c55e;font-size:.82rem;font-weight:600">✓ All pupils seated</span>';
+  } else {
+    ul.innerHTML = unplaced.map(p =>
+      `<div class="unplaced-chip" draggable="true" data-pid="${p.id}"
+        ondragstart="dragging=${p.id};draggingFrom=null;this.classList.add('dragging')"
+        ondragend="this.classList.remove('dragging')">
+        ${p.first_name} ${p.last_name.charAt(0)}.
+      </div>`
+    ).join('');
+  }
+}
+
+function dropOnDesk(desk, seat) {
+  if (!dragging) return;
+  if (draggingFrom !== null) delete plan[draggingFrom];
+  const currentOccupant = plan[seat];
+  if (currentOccupant && draggingFrom !== null) plan[draggingFrom] = currentOccupant;
+  plan[seat] = dragging;
+  dragging = null; draggingFrom = null;
+  refreshDesks();
+}
+
+function dropOnUnplaced(e) {
+  e.preventDefault();
+  if (dragging && draggingFrom !== null) {
+    delete plan[draggingFrom];
+    dragging = null; draggingFrom = null;
+    refreshDesks();
+  }
+}
+
+function printPlan() {
+  window.print();
+}
+</script>
+</body>
+</html>

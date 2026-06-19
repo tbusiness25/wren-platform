@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Google Classroom — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .tab-bar { display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px; }
+    .tab-btn { background:none;border:none;color:var(--text-muted);padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s; }
+    .tab-btn.active { color:#4a9abf;border-bottom-color:#4a9abf; }
+    .cl-card { background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;transition:.15s; }
+    .cl-card:hover { border-color:rgba(74,154,191,.4); }
+    .cl-card-title { font-weight:700;font-size:15px;margin-bottom:6px; }
+    .cl-card-meta { font-size:13px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:8px;align-items:center; }
+    .state-badge { display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase; }
+    .state-TURNED_IN  { background:#14532d;color:#4ade80; }
+    .state-RETURNED   { background:#1e3a5f;color:#60a5fa; }
+    .state-CREATED    { background:#422006;color:#fdba74; }
+    .state-NEW        { background:#1e293b;color:#94a3b8;border:1px solid #2d3748; }
+    .state-RECLAIMED_BY_STUDENT { background:#3b0764;color:#c084fc; }
+    .grade-pill { background:rgba(74,154,191,.15);color:#4a9abf;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700; }
+    .overdue-flag { color:#ef4444;font-size:12px;font-weight:700; }
+    .sync-stamp { font-size:12px;color:var(--text-muted);margin-bottom:16px; }
+    .filter-row { display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center; }
+    .week-group-header { font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#4a9abf;padding:8px 0 4px;margin-top:8px; }
+    .no-data { padding:32px;text-align:center;color:var(--text-muted);font-size:14px; }
+    .widget-box { background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px; }
+    .widget-title { font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#4a9abf;margin-bottom:12px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Google Classroom</div>
+      <div class="page-subtitle">Assignments &amp; grades from your school's Classroom</div>
+    </div>
+  </div>
+
+  <div id="sync-info" class="sync-stamp"></div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="this-week">This week</button>
+    <button class="tab-btn" data-tab="all">All assignments</button>
+    <button class="tab-btn" data-tab="by-course">By course</button>
+  </div>
+
+  <!-- This week -->
+  <div id="tab-this-week">
+    <div id="week-list"><div class="no-data">Loading…</div></div>
+  </div>
+
+  <!-- All assignments -->
+  <div id="tab-all" style="display:none">
+    <div class="filter-row">
+      <select id="filter-course" class="form-control" style="max-width:220px">
+        <option value="">All courses</option>
+      </select>
+      <select id="filter-state" class="form-control" style="max-width:180px">
+        <option value="">Any status</option>
+        <option value="TURNED_IN">Turned in</option>
+        <option value="CREATED">Assigned</option>
+        <option value="RETURNED">Returned</option>
+      </select>
+    </div>
+    <div id="all-list"><div class="no-data">Loading…</div></div>
+  </div>
+
+  <!-- By course -->
+  <div id="tab-by-course" style="display:none">
+    <div id="by-course-list"><div class="no-data">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+let childId = null;
+let allAssignments = [];
+
+async function init() {
+  const user = Wren?.user || {};
+  childId = user.child_id || user.id || null;
+
+  if (!childId) {
+    document.getElementById('week-list').innerHTML = '<div class="no-data">No student profile linked to this account.<br>Contact your school administrator.</div>';
+    return;
+  }
+
+  const data = await fetch(`/api/classroom/student/${childId}`, { headers: authHeaders() })
+    .then(r => r.ok ? r.json() : { assignments: [], last_synced_at: null })
+    .catch(() => ({ assignments: [], last_synced_at: null }));
+
+  allAssignments = data.assignments || [];
+
+  // Sync stamp
+  const stamp = document.getElementById('sync-info');
+  if (data.last_synced_at) {
+    const ok = data.sync_ok !== false;
+    stamp.innerHTML = ok
+      ? `Last synced ${timeSince(data.last_synced_at)} &nbsp;·&nbsp; <span style="color:#22c55e">&#10003;</span>`
+      : `<span style="color:#f59e0b">Last sync had issues — showing cached data (${timeSince(data.last_synced_at)})</span>`;
+  }
+
+  // Populate course filter
+  const courses = [...new Set(allAssignments.map(a => a.course_name).filter(Boolean))];
+  const sel = document.getElementById('filter-course');
+  courses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  });
+
+  renderWeek();
+  renderAll();
+  renderByCourse();
+}
+
+function switchTab(btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['this-week', 'all', 'by-course'].forEach(id => {
+    document.getElementById('tab-' + id).style.display = btn.dataset.tab === id ? '' : 'none';
+  });
+}
+
+function renderWeek() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
+  const items = allAssignments.filter(a => {
+    if (!a.due_date) return false;
+    const d = new Date(a.due_date);
+    return d >= today && d <= nextWeek;
+  }).sort((a,b) => a.due_date.localeCompare(b.due_date));
+
+  if (!items.length) {
+    document.getElementById('week-list').innerHTML = '<div class="no-data">No assignments due this week</div>';
+    return;
+  }
+  document.getElementById('week-list').innerHTML = items.map(renderCard).join('');
+}
+
+function renderAll() {
+  const courseSel = document.getElementById('filter-course').value;
+  const stateSel  = document.getElementById('filter-state').value;
+  let items = [...allAssignments];
+  if (courseSel) items = items.filter(a => a.course_name === courseSel);
+  if (stateSel)  items = items.filter(a => a.submission_state === stateSel);
+  items.sort((a,b) => (a.due_date || '').localeCompare(b.due_date || ''));
+  document.getElementById('all-list').innerHTML = items.length
+    ? items.map(renderCard).join('')
+    : '<div class="no-data">No assignments match the filter</div>';
+}
+
+function loadAll() { renderAll(); }
+
+function renderByCourse() {
+  const grouped = {};
+  allAssignments.forEach(a => {
+    const k = a.course_name || 'Unknown course';
+    if (!grouped[k]) grouped[k] = [];
+    grouped[k].push(a);
+  });
+  if (!Object.keys(grouped).length) {
+    document.getElementById('by-course-list').innerHTML = '<div class="no-data">No assignments</div>';
+    return;
+  }
+  let html = '';
+  for (const [course, items] of Object.entries(grouped).sort()) {
+    html += `<div class="week-group-header">${escHtml(course)}</div>`;
+    items.sort((a,b) => (a.due_date||'').localeCompare(b.due_date||''));
+    html += items.map(renderCard).join('');
+  }
+  document.getElementById('by-course-list').innerHTML = html;
+}
+
+function renderCard(a) {
+  const today = new Date().toISOString().slice(0,10);
+  const overdue = a.due_date && a.due_date < today && !['TURNED_IN','RETURNED'].includes(a.submission_state);
+  const state = a.submission_state || 'NEW';
+  const stateClass = 'state-' + state.replace(/\s+/g, '_');
+
+  return `<div class="cl-card">
+    <div class="cl-card-title">${escHtml(a.coursework_title)}</div>
+    <div class="cl-card-meta">
+      <span style="color:#4a9abf">${escHtml(a.course_name || '')}</span>
+      ${a.due_date ? `<span>${overdue ? '<span class="overdue-flag">OVERDUE</span> ' : ''}Due ${fmtDate(a.due_date)}</span>` : ''}
+      ${a.max_points ? `<span style="color:var(--text-muted)">${a.max_points} pts</span>` : ''}
+      <span class="state-badge ${stateClass}">${stateLabel(state)}</span>
+      ${a.assigned_grade != null ? `<span class="grade-pill">${a.assigned_grade}${a.max_points ? `/${a.max_points}` : ''}</span>` : ''}
+      ${a.draft_grade   != null && a.assigned_grade == null ? `<span class="grade-pill" style="opacity:.6">${a.draft_grade} (draft)</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function stateLabel(s) {
+  const map = {
+    TURNED_IN: 'Turned in', RETURNED: 'Returned', CREATED: 'Assigned',
+    NEW: 'Not started', RECLAIMED_BY_STUDENT: 'Reclaimed',
+  };
+  return map[s] || s;
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const [y,m,day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+function timeSince(iso) {
+  const h = Math.floor((Date.now() - new Date(iso)) / 3600000);
+  if (h < 1) return 'just now';
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function authHeaders() {
+  const t = sessionStorage.getItem('wren_token') || localStorage.getItem('wren_token') || '';
+  return t ? { Authorization: 'Bearer ' + t } : {};
+}
+
+document.querySelector('.tab-bar').addEventListener('click', function(e) {
+  const btn = e.target.closest('.tab-btn');
+  if (btn) switchTab(btn);
+});
+document.getElementById('filter-course').addEventListener('change', loadAll);
+document.getElementById('filter-state').addEventListener('change', loadAll);
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

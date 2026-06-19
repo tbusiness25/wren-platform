@@ -1,0 +1,63 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Occupancy & Ratios · Wren</title>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;--blue:#4a9abf;--orange:#e07820}
+ .occ-wrap{padding:18px;max-width:1100px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+ .c{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+ .c .n{font-size:1.7rem;font-weight:800}.c .l{color:var(--mut);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+ .c.alert .n{color:var(--orange)}
+ table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden;font-size:.85rem}
+ th{background:#15233f;text-align:left;padding:9px 11px;font-size:.72rem;text-transform:uppercase;color:var(--mut)}
+ td{padding:8px 11px;border-top:1px solid var(--bd);vertical-align:middle}
+ .bar{height:18px;border-radius:5px;background:#1e293b;position:relative;min-width:120px;overflow:hidden}
+ .bar > span{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+ .fill-ok{background:var(--blue)}.fill-full{background:#22c55e}.fill-over{background:#ef4444}
+ .bartxt{position:absolute;right:6px;top:0;line-height:18px;font-size:.7rem;font-weight:700;color:#fff;text-shadow:0 0 3px #000}
+ .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.72rem;font-weight:700}
+ .pill.out{background:#7f1d1d;color:#fecaca}.pill.up{background:#1e3a5f;color:#bfdbfe}.pill.in{background:#14532d;color:#bbf7d0}
+ .free{color:#22c55e;font-weight:700}.over{color:#ef4444;font-weight:700}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="occ-wrap">
+  <h1>📊 Occupancy &amp; Ratios — year ahead</h1>
+  <div class="sub" id="occ-sub">Loading…</div>
+  <div class="cards" id="occ-cards"></div>
+  <div style="overflow-x:auto"><table id="occ-table"><thead><tr>
+    <th>Month</th><th>Baby Room</th><th>Pre-school</th><th>Out</th><th>In</th><th>Transfer ↑</th></tr></thead>
+    <tbody id="occ-body"><tr><td colspan="6" style="color:var(--mut);padding:20px">Loading forecast…</td></tr></tbody>
+  </table></div>
+  <p class="sub" style="margin-top:14px">Baby→Pre-school transfers modelled at 24 months. Capacity is a hard ceiling — red = over, green = full/spaces. Source: live enrol/leave dates. Tweak the 24-month transfer (hold-back / bring-forward) is a planning lever — ask Wren to adjust.</p>
+</div>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+function bar(o){var pct=Math.min(100,Math.round(o.count/o.capacity*100));
+ var cls=o.over?'fill-over':(o.headroom===0?'fill-full':'fill-ok');
+ var note=o.over?('<span class="over">+'+o.over+' over</span>'):(o.headroom>0?('<span class="free">'+o.headroom+' free</span>'):'full');
+ return '<div style="display:flex;align-items:center;gap:8px"><div class="bar" style="flex:1"><span class="'+cls+'" style="width:'+pct+'%"></span><span class="bartxt">'+o.count+'/'+o.capacity+'</span></div>'+note+'</div>';}
+function mlabel(m){var d=new Date(m+'-01T00:00:00Z');return d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'});}
+function loadOcc(){
+ var from=new Date();var f=from.getUTCFullYear()+'-'+String(from.getUTCMonth()+1).padStart(2,'0');
+ Wren.api('/api/occupancy/forecast?from='+f+'&months=14').then(function(d){
+  document.getElementById('occ-sub').textContent='Forecast from '+mlabel(d.from)+' · Baby cap '+d.baby_capacity+' · Pre-school cap '+d.preschool_capacity+' · generated '+d.generated;
+  var augN=(d.summary.august_leavers[0]||{}).leavers||0;
+  var tr=d.summary.preschool_trough;
+  var cur=d.series[0];
+  document.getElementById('occ-cards').innerHTML=
+   '<div class="c alert"><div class="n">'+augN+'</div><div class="l">Pre-school leavers this August</div></div>'+
+   '<div class="c"><div class="n">'+cur.preschool.count+'/'+cur.preschool.capacity+'</div><div class="l">Pre-school now'+(cur.preschool.over?' (over '+cur.preschool.over+')':'')+'</div></div>'+
+   '<div class="c"><div class="n">'+cur.baby.count+'/'+cur.baby.capacity+'</div><div class="l">Baby room now</div></div>'+
+   '<div class="c"><div class="n">'+mlabel(tr.month)+'</div><div class="l">Pre-school low point ('+tr.count+', '+tr.headroom+' free)</div></div>';
+  document.getElementById('occ-body').innerHTML=d.series.map(function(s){
+   var pl=function(a,c){return a.length?'<span class="pill '+c+'">'+a.length+'</span> '+a.map(function(x){return x.name;}).join(', '):'<span style="color:#475569">—</span>';};
+   return '<tr><td style="font-weight:700;white-space:nowrap">'+mlabel(s.month)+'</td><td>'+bar(s.baby)+'</td><td>'+bar(s.preschool)+'</td>'+
+    '<td>'+pl(s.leavers,'out')+'</td><td>'+pl(s.starters,'in')+'</td><td>'+pl(s.transfers,'up')+'</td></tr>';
+  }).join('');
+ }).catch(function(e){document.getElementById('occ-body').innerHTML='<tr><td colspan=6 style="color:#ef4444;padding:20px">Could not load forecast: '+(e&&e.message||e)+'</td></tr>';});
+}
+document.addEventListener('wren:ready', loadOcc);
+</script></body></html>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>Incidents — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+  <meta name="wren-hide-modules" content="HR,Staff,IT Settings,Reports,Action Plans,Supervisions,CPD">
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🩹 Incidents</div>
+    <button class="btn btn-primary" onclick="newIncident()">+ New Incident</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('open')">Open</button>
+    <button class="tab-btn" onclick="showTab('closed')">Closed</button>
+    <button class="tab-btn" onclick="showTab('all')">All</button>
+  </div>
+
+  <div id="incidents-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+let incidents = [];
+let currentTab = 'open';
+let children = [];
+
+async function loadData() {
+  try {
+    [incidents, children] = await Promise.all([
+      Wren.api('/api/incidents'),
+      Wren.api('/api/children')
+    ]);
+    renderIncidents();
+  } catch(e) {
+    document.getElementById('incidents-area').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', ['open','closed','all'][i] === tab);
+  });
+  renderIncidents();
+}
+
+function renderIncidents() {
+  const area = document.getElementById('incidents-area');
+  let filtered = incidents;
+  if (currentTab === 'open') filtered = incidents.filter(i => i.status === 'open');
+  else if (currentTab === 'closed') filtered = incidents.filter(i => i.status === 'closed');
+
+  if (!filtered.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🩹</div>
+      <div class="empty-title">No ${currentTab === 'all' ? '' : currentTab} incidents</div>
+    </div>`;
+    return;
+  }
+
+  area.innerHTML = filtered.map(i => `
+    <div class="card" style="margin-bottom:12px;border-left:4px solid ${i.status==='open'?'var(--c-orange)':'var(--c-green)'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700;font-size:1rem;color:var(--c-navy)">${i.child_name}</div>
+          <div style="font-size:.78rem;color:#64748b">
+            ${i.incident_date ? new Date(i.incident_date).toLocaleDateString('en-GB') : ''}
+            ${i.incident_time || ''} · ${i.room_name || ''} · ${i.incident_type || 'Incident'}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge ${i.status==='open'?'badge-amber':'badge-green'}">${i.status}</span>
+          ${i.parent_notified ? '<span class="badge badge-blue">Parent Notified</span>' : ''}
+          <button class="btn btn-sm btn-ghost" onclick="openDetail(${i.id})">View →</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:.875rem;color:#374151">${i.description || ''}</div>
+      ${i.injury_description ? `<div style="margin-top:6px;font-size:.875rem"><strong>Injury:</strong> ${i.injury_description}</div>` : ''}
+      ${i.first_aid_given ? `<div style="margin-top:4px;font-size:.875rem"><strong>First aid:</strong> ${i.first_aid_given}</div>` : ''}
+      <div style="margin-top:10px;font-size:.78rem;color:#64748b">Reported by: ${i.reporter_name || '—'}</div>
+    </div>
+  `).join('');
+}
+
+function openDetail(id) {
+  const i = incidents.find(x => x.id === id);
+  if (!i) return;
+  Wren.modal(`Incident — ${i.child_name}`, `
+    <div style="display:grid;gap:10px;font-size:.875rem">
+      <div><strong>Date/Time:</strong> ${i.incident_date ? new Date(i.incident_date).toLocaleDateString('en-GB') : ''} ${i.incident_time || ''}</div>
+      <div><strong>Location:</strong> ${i.location || '—'}</div>
+      <div><strong>Type:</strong> ${i.incident_type || '—'}</div>
+      <div><strong>Description:</strong> ${i.description}</div>
+      ${i.injury_description ? `<div><strong>Injury:</strong> ${i.injury_description}</div>` : ''}
+      ${i.first_aid_given ? `<div><strong>First Aid:</strong> ${i.first_aid_given}</div>` : ''}
+      <hr class="divider">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="notified" ${i.parent_notified ? 'checked' : ''}>
+        Parent notified
+      </label>
+      <div style="display:flex;gap:8px">
+        <span class="badge ${i.manager_reviewed ? 'badge-green' : 'badge-grey'}">
+          Manager review: ${i.manager_reviewed ? '✓' : 'Pending'}
+        </span>
+        <span class="badge ${i.status==='open' ? 'badge-amber' : 'badge-green'}">${i.status}</span>
+      </div>
+    </div>
+  `, [
+    { label: 'Mark Reviewed & Close', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/incidents/${id}`, { method: 'PUT', body: {
+          parent_notified: document.getElementById('notified').checked,
+          manager_reviewed: true,
+          status: 'closed'
+        }});
+        Wren.toast('Incident closed ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Save', class: 'btn-ghost', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/incidents/${id}`, { method: 'PUT', body: {
+          parent_notified: document.getElementById('notified').checked
+        }});
+        Wren.toast('Saved ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) {}
+    }},
+    { label: 'Close', class: 'btn-ghost' }
+  ]);
+}
+
+function newIncident() {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Child <span style="color:var(--c-red)">*</span></label>
+      <select class="form-control" id="inc-child">
+        <option value="">Select...</option>
+        ${children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input type="date" class="form-control" id="inc-date" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Time</label>
+        <input type="time" class="form-control" id="inc-time" value="${new Date().toTimeString().slice(0,5)}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-control" id="inc-type">
+          <option value="Fall">Fall / Trip</option>
+          <option value="Bite">Bite (child-on-child)</option>
+          <option value="Allergic Reaction">Allergic Reaction</option>
+          <option value="Illness">Illness</option>
+          <option value="Bump">Bump / Head injury</option>
+          <option value="Scratch">Scratch / Graze</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input class="form-control" id="inc-location" placeholder="e.g. Garden, Hall">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">What happened <span style="color:var(--c-red)">*</span></label>
+      <textarea class="form-control" id="inc-desc" rows="3" placeholder="Describe the incident..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Injury / physical description</label>
+      <textarea class="form-control" id="inc-injury" rows="2" placeholder="e.g. Grazed right knee..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mark injury location on body:
+        <span style="color:#94a3b8;font-weight:400;font-size:.8rem"> — Click regions to mark</span>
+      </label>
+      <div id="inc-body-map-container"></div>
+      <div id="inc-body-map-marks" style="margin-top:8px"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">First aid given</label>
+      <textarea class="form-control" id="inc-aid" rows="2" placeholder="e.g. Cleaned wound, applied plaster..."></textarea>
+    </div>
+  `;
+  Wren.modal('New Incident Report', form, [
+    { label: 'Save Report', class: 'btn-primary', close: false, action: async () => {
+      const child_id = document.getElementById('inc-child').value;
+      const description = document.getElementById('inc-desc').value.trim();
+      if (!child_id || !description) { Wren.toast('Child and description required', 'warning'); return; }
+      try {
+        await Wren.api('/api/incidents', { method: 'POST', body: {
+          child_id: parseInt(child_id),
+          incident_date: document.getElementById('inc-date').value,
+          incident_time: document.getElementById('inc-time').value,
+          incident_type: document.getElementById('inc-type').value,
+          location: document.getElementById('inc-location').value,
+          description,
+          injury_description: document.getElementById('inc-injury').value,
+          first_aid_given: document.getElementById('inc-aid').value,
+          body_map_data: getIncBodyMapData()
+        }});
+        Wren.toast('Incident recorded ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed to save', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+  // Init body map after modal rendered
+  incBodyMapMarks = {};
+  incBodyMapSide = 'front';
+  requestAnimationFrame(() => initIncBodyMap());
+}
+
+// ── Body Map (incidents) ────────────────────────────────────────────────────
+let incBodyMapMarks = {};
+let incBodyMapSide = 'front';
+
+const INC_REGIONS = {
+  front: [
+    {id:'head',label:'Head'},{id:'neck',label:'Neck'},{id:'left_shoulder',label:'L shoulder'},
+    {id:'right_shoulder',label:'R shoulder'},{id:'chest',label:'Chest'},
+    {id:'left_arm',label:'L arm'},{id:'right_arm',label:'R arm'},
+    {id:'left_hand',label:'L hand'},{id:'right_hand',label:'R hand'},
+    {id:'abdomen',label:'Abdomen'},{id:'left_leg',label:'L leg'},{id:'right_leg',label:'R leg'},
+    {id:'left_foot',label:'L foot'},{id:'right_foot',label:'R foot'}
+  ],
+  back: [
+    {id:'head_back',label:'Head (back)'},{id:'neck_back',label:'Neck (back)'},
+    {id:'upper_back',label:'Upper back'},{id:'lower_back',label:'Lower back'},
+    {id:'left_shoulder_back',label:'L shoulder (back)'},{id:'right_shoulder_back',label:'R shoulder (back)'},
+    {id:'left_arm_back',label:'L arm (back)'},{id:'right_arm_back',label:'R arm (back)'},
+    {id:'left_buttock',label:'L buttock'},{id:'right_buttock',label:'R buttock'},
+    {id:'left_leg_back',label:'L leg (back)'},{id:'right_leg_back',label:'R leg (back)'}
+  ]
+};
+
+function initIncBodyMap() {
+  const c = document.getElementById('inc-body-map-container');
+  if (!c) return;
+  const regions = INC_REGIONS[incBodyMapSide];
+  c.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button style="padding:5px 12px;border-radius:6px;border:1px solid ${incBodyMapSide==='front'?'#4a9abf':'#2d3748'};background:${incBodyMapSide==='front'?'#4a9abf':'#1e293b'};color:${incBodyMapSide==='front'?'#fff':'#94a3b8'};cursor:pointer;font-size:.8rem" onclick="incBodyMapSide='front';initIncBodyMap()">Front</button>
+      <button style="padding:5px 12px;border-radius:6px;border:1px solid ${incBodyMapSide==='back'?'#4a9abf':'#2d3748'};background:${incBodyMapSide==='back'?'#4a9abf':'#1e293b'};color:${incBodyMapSide==='back'?'#fff':'#94a3b8'};cursor:pointer;font-size:.8rem" onclick="incBodyMapSide='back';initIncBodyMap()">Back</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${regions.map(r => {
+        const isMarked = ('inc_'+r.id) in incBodyMapMarks;
+        return `<button onclick="toggleIncRegion('${r.id}','${r.label}')" style="padding:5px 10px;border-radius:6px;border:1px solid ${isMarked?'#e07820':'#2d3748'};background:${isMarked?'rgba(224,120,32,.25)':'#1e293b'};color:${isMarked?'#e07820':'#94a3b8'};cursor:pointer;font-size:.8rem">${r.label}</button>`;
+      }).join('')}
+    </div>`;
+  updateIncBodyMapMarks();
+}
+
+function toggleIncRegion(regionId, label) {
+  const key = 'inc_'+regionId;
+  if (key in incBodyMapMarks) delete incBodyMapMarks[key];
+  else incBodyMapMarks[key] = { region: regionId, label, side: incBodyMapSide, note: '' };
+  initIncBodyMap();
+}
+
+function updateIncBodyMapMarks() {
+  const el = document.getElementById('inc-body-map-marks');
+  if (!el) return;
+  const keys = Object.keys(incBodyMapMarks);
+  if (!keys.length) { el.innerHTML = '<div style="font-size:.8rem;color:#64748b;padding:2px 0">No areas marked</div>'; return; }
+  el.innerHTML = keys.map(k => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#1e293b;border:1px solid #e07820;border-radius:6px;margin-bottom:5px">
+      <span style="font-size:.78rem;background:#e07820;color:#fff;padding:2px 7px;border-radius:4px;white-space:nowrap">${incBodyMapMarks[k].label}</span>
+      <input type="text" placeholder="Note (e.g. bruise 2cm)" value="${incBodyMapMarks[k].note||''}"
+        data-mark="${k}"
+        style="flex:1;background:transparent;border:none;color:#f1f5f9;font-size:.82rem;outline:none;min-width:0"
+        oninput="incBodyMapMarks['${k}'].note=this.value">
+      <button onclick="toggleIncRegion('${incBodyMapMarks[k].region}','${incBodyMapMarks[k].label}')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:.9rem">✕</button>
+    </div>`).join('');
+}
+
+function getIncBodyMapData() {
+  const vals = Object.values(incBodyMapMarks);
+  return vals.length ? vals.map(m => ({ side: m.side, region: m.region, label: m.label, note: m.note })) : null;
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadData(); });
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

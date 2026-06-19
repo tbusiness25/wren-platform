@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="primary">
+  <title>Homework — Parent Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .hw-card { background:var(--card-bg);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px; }
+    .hw-tab-bar { display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--border);padding-bottom:0; }
+    .hw-tab { padding:10px 18px;border-radius:8px 8px 0 0;cursor:pointer;font-weight:600;font-size:14px;color:var(--text-muted);transition:.15s;border:none;background:none; }
+    .hw-tab.active { color:var(--primary);border-bottom:2px solid var(--primary);margin-bottom:-2px; }
+    .status-pill { display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700; }
+    .status-upcoming { background:#1e3a5f;color:#7dd3fc; }
+    .status-overdue { background:#7f1d1d;color:#fca5a5; }
+    .status-done { background:#14532d;color:#4ade80; }
+    .hw-actions { display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Homework</div>
+      <div class="page-subtitle" id="child-name-sub">Your child's homework</div>
+    </div>
+  </div>
+
+  <div class="hw-tab-bar">
+    <button class="hw-tab active" id="tab-upcoming" onclick="showTab('upcoming')">Upcoming</button>
+    <button class="hw-tab" id="tab-overdue" onclick="showTab('overdue')">Overdue</button>
+    <button class="hw-tab" id="tab-done" onclick="showTab('done')">Completed</button>
+  </div>
+
+  <div id="hw-list"><div class="empty-state">Loading…</div></div>
+</div>
+
+<!-- Submit modal -->
+<div id="modal-submit" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:none;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeSubmit()">
+  <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:480px;width:100%">
+    <h3 style="margin:0 0 16px" id="submit-title">Submit Homework</h3>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Notes (optional)</label>
+      <textarea id="submit-content" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);resize:vertical;min-height:80px" placeholder="Any notes for the teacher…"></textarea>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Upload file (optional)</label>
+      <input type="file" id="submit-file" style="color:var(--text)">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeSubmit()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitHomework()">Submit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allItems = [], currentTab = 'upcoming', submitHWId = null, childId = null;
+
+async function init() {
+  // Get child_id from session/params (in demo, use first child)
+  const params = new URLSearchParams(window.location.search);
+  childId = params.get('child_id') || 1;
+
+  const data = await fetch('/api/homework?status=published').then(r=>r.json()).catch(()=>[]);
+  const today = new Date().toISOString().slice(0,10);
+
+  allItems = data.map(h => {
+    const sub = (h.submissions||[]).find(s => s.pupil_id == childId);
+    const isOverdue = h.due_date < today;
+    const isDone = sub && (sub.submitted_at || sub.parent_acknowledged);
+    return { ...h, sub, isOverdue, isDone };
+  });
+
+  showTab('upcoming');
+}
+
+function showTab(tab) {
+  currentTab = tab;
+  ['upcoming','overdue','done'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', t===tab);
+  });
+  const today = new Date().toISOString().slice(0,10);
+  let items;
+  if (tab === 'upcoming') items = allItems.filter(h => !h.isDone && !h.isOverdue);
+  else if (tab === 'overdue') items = allItems.filter(h => !h.isDone && h.isOverdue);
+  else items = allItems.filter(h => h.isDone);
+  renderItems(items);
+}
+
+function renderItems(items) {
+  if (!items.length) {
+    document.getElementById('hw-list').innerHTML = `<div class="empty-state">No items yet</div>`;
+    return;
+  }
+  document.getElementById('hw-list').innerHTML = items.map(h => {
+    const sub = h.sub;
+    const statusLabel = h.isDone ? `<span class="status-pill status-done">✅ Done</span>` :
+      h.isOverdue ? `<span class="status-pill status-overdue">⚠️ Overdue</span>` :
+      `<span class="status-pill status-upcoming">Due ${formatDate(h.due_date)}</span>`;
+    const typeEmoji = { reading:'📚', worksheet:'📄', project:'🔬', research:'🔍', online_task:'💻', practice:'🏆' };
+    return `<div class="hw-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:700;font-size:16px;margin-bottom:4px">${h.title}</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">
+            ${typeEmoji[h.type]||'📝'} ${h.subject_name||''}
+            ${h.class_name ? `&nbsp;·&nbsp; ${h.class_name}` : ''}
+            &nbsp;·&nbsp; ~${h.estimated_duration_minutes} min
+          </div>
+        </div>
+        ${statusLabel}
+      </div>
+      ${h.description ? `<p style="font-size:14px;color:var(--text-muted);margin:8px 0">${h.description}</p>` : ''}
+      ${h.external_resource_url ? `<a href="${h.external_resource_url}" target="_blank" class="btn btn-secondary" style="font-size:13px;display:inline-block;margin-top:4px">🔗 Open Online Task</a>` : ''}
+      ${sub && sub.teacher_feedback ? `
+        <div style="background:rgba(74,154,191,.1);border:1px solid var(--primary);border-radius:8px;padding:10px 14px;margin-top:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;margin-bottom:4px">Teacher Feedback</div>
+          <div style="font-size:14px">${sub.teacher_feedback}</div>
+          ${sub.grade ? `<div style="margin-top:6px;font-weight:700">Grade: ${sub.grade}</div>` : ''}
+        </div>` : ''}
+      <div class="hw-actions">
+        ${!h.isDone ? `
+          <button class="btn btn-primary" onclick="openSubmit(${h.id},'${escHtml(h.title)}')">Mark as Done</button>
+          ${h.type === 'online_task' && h.external_resource_url ? `<a href="${h.external_resource_url}" target="_blank" class="btn btn-secondary">Open Task</a>` : ''}
+        ` : (sub && !sub.parent_acknowledged ? `<button class="btn btn-secondary" onclick="acknowledge(${h.id},${sub.id})">Acknowledge Feedback</button>` : '')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function escHtml(s) { return (s||'').replace(/'/g,"&#39;"); }
+function formatDate(d) { if(!d)return'—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
+
+function openSubmit(id, title) {
+  submitHWId = id;
+  document.getElementById('submit-title').textContent = `Mark as Done — ${title}`;
+  document.getElementById('submit-content').value = '';
+  document.getElementById('modal-submit').style.display = 'flex';
+}
+function closeSubmit() { document.getElementById('modal-submit').style.display = 'none'; }
+
+async function submitHomework() {
+  const fd = new FormData();
+  fd.append('pupil_id', childId);
+  fd.append('content', document.getElementById('submit-content').value);
+  fd.append('parent_acknowledged', 'true');
+  const file = document.getElementById('submit-file').files[0];
+  if (file) fd.append('attachments', file);
+  const r = await fetch(`/api/homework/${submitHWId}/submit`, { method:'POST', body: fd });
+  if (r.ok) {
+    closeSubmit();
+    wrenToast('Marked as done!', 'success');
+    await init();
+  } else {
+    wrenToast('Failed to submit', 'error');
+  }
+}
+
+async function acknowledge(hwId, subId) {
+  await fetch(`/api/homework/${hwId}/submissions/${subId}/acknowledge`, { method:'PATCH' });
+  wrenToast('Acknowledged', 'success');
+  init();
+}
+
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

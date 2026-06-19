@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="primary">
+  <title>Attendance — Wren Primary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .att-code { display:inline-block;width:32px;height:32px;border-radius:6px;text-align:center;line-height:32px;font-weight:700;font-size:14px;cursor:pointer;border:2px solid transparent;transition:all .15s; }
+    .att-code:hover { opacity:.8; }
+    .att-present { background:#dcfce7;color:#166534;border-color:#16a34a; }
+    .att-absent-auth { background:#fef9c3;color:#854d0e;border-color:#ca8a04; }
+    .att-absent-unauth { background:#fee2e2;color:#991b1b;border-color:#dc2626; }
+    .att-late { background:#dbeafe;color:#1e40af;border-color:#2563eb; }
+    .att-holiday { background:#f3e8ff;color:#581c87;border-color:#9333ea; }
+    .att-other { background:#f1f5f9;color:#475569;border-color:#94a3b8; }
+    .att-empty { background:#f8fafc;color:#94a3b8;border-color:#e2e8f0; }
+    .register-table th, .register-table td { padding:6px 8px;text-align:left;border-bottom:1px solid var(--border); }
+    .register-table th { background:var(--surface);font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase; }
+    .session-label { font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);text-align:center; }
+    .code-picker { display:flex;flex-wrap:wrap;gap:4px;padding:8px; }
+    .code-btn { padding:4px 10px;border-radius:4px;border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:600;background:var(--surface); }
+    .week-cell { padding:4px;text-align:center;min-width:40px; }
+  </style>
+</head>
+<body>
+
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Attendance Register</div>
+      <div class="page-subtitle" id="subtitle">AM/PM register</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-secondary" onclick="showTab('week')">Week View</button>
+      <button class="btn btn-secondary" onclick="showTab('stats')">Stats</button>
+      <button class="btn btn-primary" onclick="showTab('register')">Register</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div style="display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid var(--border)">
+    <button class="tab-btn active" id="tab-register" onclick="showTab('register')">Today's Register</button>
+    <button class="tab-btn" id="tab-week" onclick="showTab('week')">Week View</button>
+    <button class="tab-btn" id="tab-stats" onclick="showTab('stats')">Attendance Stats</button>
+  </div>
+
+  <!-- Register tab -->
+  <div id="pane-register">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Date</label>
+        <input type="date" class="form-control" id="reg-date" onchange="loadRegister()" style="width:160px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Class</label>
+        <select class="form-control" id="reg-class" onchange="loadRegister()" style="width:150px">
+          <option value="">All Classes</option>
+        </select>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="markAllPresent('am')">All AM Present</button>
+        <button class="btn btn-secondary" onclick="markAllPresent('pm')">All PM Present</button>
+      </div>
+    </div>
+
+    <!-- Stats bar -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:16px" id="reg-stats"></div>
+
+    <div id="register-area">
+      <div class="loading-state"><div class="spinner"></div><span>Loading register...</span></div>
+    </div>
+  </div>
+
+  <!-- Week view tab -->
+  <div id="pane-week" style="display:none">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Week starting (Monday)</label>
+        <input type="date" class="form-control" id="week-start" onchange="loadWeek()" style="width:160px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Class</label>
+        <select class="form-control" id="week-class" onchange="loadWeek()" style="width:150px">
+          <option value="">All Classes</option>
+        </select>
+      </div>
+    </div>
+    <div id="week-area">
+      <div class="empty-state">Select a week to view</div>
+    </div>
+  </div>
+
+  <!-- Stats tab -->
+  <div id="pane-stats" style="display:none">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">From</label>
+        <input type="date" class="form-control" id="stats-from" style="width:160px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">To</label>
+        <input type="date" class="form-control" id="stats-to" style="width:160px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Class</label>
+        <select class="form-control" id="stats-class" style="width:150px">
+          <option value="">All Classes</option>
+        </select>
+      </div>
+      <div style="margin-top:20px">
+        <button class="btn btn-primary" onclick="loadStats()">Load Stats</button>
+      </div>
+    </div>
+    <div id="stats-area">
+      <div class="empty-state">Select date range and load</div>
+    </div>
+  </div>
+</div>
+
+<!-- Code picker popover -->
+<div id="code-picker" style="display:none;position:fixed;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:1000;min-width:200px">
+  <div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--text-muted)" id="picker-label">Select code</div>
+  <div class="code-picker" id="picker-codes"></div>
+</div>
+
+<script>
+const CODES = [
+  { code: '/', label: 'Present (AM)', class: 'att-present' },
+  { code: '\\', label: 'Present (PM)', class: 'att-present' },
+  { code: 'B', label: 'Off-site approved', class: 'att-other' },
+  { code: 'C', label: 'Authorised – other', class: 'att-absent-auth' },
+  { code: 'D', label: 'Dual registered', class: 'att-other' },
+  { code: 'E', label: 'Excluded', class: 'att-absent-unauth' },
+  { code: 'I', label: 'Illness', class: 'att-absent-auth' },
+  { code: 'J', label: 'Interview/Test', class: 'att-other' },
+  { code: 'L', label: 'Late (before reg.)', class: 'att-late' },
+  { code: 'M', label: 'Medical appt.', class: 'att-absent-auth' },
+  { code: 'N', label: 'No reason provided', class: 'att-absent-unauth' },
+  { code: 'O', label: 'Absent – unauthorised', class: 'att-absent-unauth' },
+  { code: 'P', label: 'Sporting activity', class: 'att-other' },
+  { code: 'Q', label: 'Unable to attend', class: 'att-other' },
+  { code: 'R', label: 'Religious observance', class: 'att-absent-auth' },
+  { code: 'S', label: 'Study leave', class: 'att-other' },
+  { code: 'T', label: 'Traveller absence', class: 'att-absent-auth' },
+  { code: 'U', label: 'Late (after reg.)', class: 'att-absent-unauth' },
+  { code: 'V', label: 'Educational visit', class: 'att-other' },
+  { code: 'W', label: 'Work experience', class: 'att-other' },
+  { code: 'X', label: 'Non-compulsory age', class: 'att-other' },
+  { code: 'Y', label: 'Enforced closure', class: 'att-other' },
+  { code: 'Z', label: 'Not on roll', class: 'att-other' },
+];
+
+let registerData = [];
+let pickerCallback = null;
+
+document.addEventListener('wren:ready', init);
+
+function init() {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('reg-date').value = today;
+  // Default week = most recent Monday
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  document.getElementById('week-start').value = d.toISOString().slice(0,10);
+  loadClasses();
+  loadRegister();
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#code-picker') && !e.target.closest('.att-code')) {
+      document.getElementById('code-picker').style.display = 'none';
+    }
+  });
+}
+
+async function loadClasses() {
+  try {
+    const res = await fetch('/api/classes', { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    const data = await res.json();
+    const classes = Array.isArray(data) ? data.map(c => c.name).sort() : [];
+    ['reg-class','week-class','stats-class'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (sel) sel.innerHTML = '<option value="">All Classes</option>' + classes.map(c => `<option value="${c}">${c}</option>`).join('');
+    });
+  } catch(e) {
+    // fallback: extract from register data on first load
+  }
+}
+
+async function loadRegister() {
+  const date = document.getElementById('reg-date').value;
+  const cls = document.getElementById('reg-class').value;
+  if (!date) return;
+  document.getElementById('register-area').innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading...</span></div>';
+  try {
+    let url = '/api/attendance-register?date=' + date;
+    if (cls) url += '&class_group=' + encodeURIComponent(cls);
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    registerData = await res.json();
+    renderRegister();
+    updateRegStats();
+  } catch(e) {
+    document.getElementById('register-area').innerHTML = '<div class="empty-state">Failed to load register</div>';
+  }
+}
+
+function updateRegStats() {
+  const present = registerData.filter(r => r.am_code === '/' || r.am_code === '\\').length;
+  const absent = registerData.filter(r => r.am_code && r.am_code !== '/' && r.am_code !== '\\').length;
+  const unmarked = registerData.filter(r => !r.am_code).length;
+  const pct = registerData.length ? Math.round(present / registerData.length * 100) : 0;
+  document.getElementById('reg-stats').innerHTML = `
+    <div class="stat-card green"><span class="stat-value">${present}</span><span class="stat-label">Present</span></div>
+    <div class="stat-card red"><span class="stat-value">${absent}</span><span class="stat-label">Absent</span></div>
+    <div class="stat-card grey" style="border-left:4px solid #94a3b8"><span class="stat-value">${unmarked}</span><span class="stat-label">Unmarked</span></div>
+    <div class="stat-card blue"><span class="stat-value">${pct}%</span><span class="stat-label">Attendance</span></div>`;
+}
+
+function renderRegister() {
+  const area = document.getElementById('register-area');
+  if (!Array.isArray(registerData) || !registerData.length) {
+    area.innerHTML = '<div class="empty-state">No pupils found for this date/class</div>'; return;
+  }
+
+  // Group by class_group for compact view when a specific class is selected,
+  // otherwise group by year_group
+  const cls = document.getElementById('reg-class').value;
+  const YG_ORDER = ['Reception','Year 1','Year 2','Year 3','Year 4','Year 5','Year 6'];
+  const groups = {};
+  registerData.forEach(p => {
+    const key = cls ? (p.class_group || 'Unassigned') : (p.year_group || 'Unassigned');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(p);
+  });
+
+  // Sort groups: year groups in school order, class groups alphabetically
+  const order = cls
+    ? Object.keys(groups).sort()
+    : [...YG_ORDER.filter(k => groups[k]), ...Object.keys(groups).filter(k => !YG_ORDER.includes(k)).sort()];
+
+  let html = '';
+  order.forEach(key => {
+    const pupils = groups[key];
+    html += `<div style="margin-bottom:24px">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:8px;color:var(--text)">${key}
+        <span style="color:var(--text-muted);font-weight:400;font-size:13px">${pupils.length} pupils</span></h3>
+      <div class="table-wrapper">
+      <table class="data-table register-table">
+        <thead><tr>
+          <th>Name</th><th>Class</th>
+          <th class="session-label">AM</th>
+          <th class="session-label">PM</th>
+          <th>PP</th>
+        </tr></thead>
+        <tbody>
+        ${pupils.map(p => `
+          <tr>
+            <td><strong>${p.first_name} ${p.last_name}</strong></td>
+            <td>${p.class_group || '—'}</td>
+            <td style="text-align:center">
+              <span class="att-code ${codeClass(p.am_code)}" onclick="openPicker(event,${p.id},'am')" title="${codeLabel(p.am_code)}">${p.am_code || '·'}</span>
+            </td>
+            <td style="text-align:center">
+              <span class="att-code ${codeClass(p.pm_code)}" onclick="openPicker(event,${p.id},'pm')" title="${codeLabel(p.pm_code)}">${p.pm_code || '·'}</span>
+            </td>
+            <td>${p.pupil_premium ? '<span class="badge badge-green">PP</span>' : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div></div>`;
+  });
+  area.innerHTML = html || '<div class="empty-state">No pupils found</div>';
+}
+
+function codeClass(code) {
+  if (!code) return 'att-empty';
+  if (code === '/' || code === '\\') return 'att-present';
+  if (['A','C','I','M','R','T'].includes(code)) return 'att-absent-auth';
+  if (['O','N','U','E'].includes(code)) return 'att-absent-unauth';
+  if (code === 'L' || code === 'U') return 'att-late';
+  if (['H','F'].includes(code)) return 'att-holiday';
+  return 'att-other';
+}
+
+function codeLabel(code) {
+  if (!code) return 'Not marked';
+  const c = CODES.find(x => x.code === code);
+  return c ? c.label : code;
+}
+
+function openPicker(e, childId, session) {
+  e.stopPropagation();
+  const picker = document.getElementById('code-picker');
+  document.getElementById('picker-label').textContent = session.toUpperCase() + ' session';
+  document.getElementById('picker-codes').innerHTML = CODES.map(c =>
+    `<button class="code-btn ${c.class}" onclick="pickCode(${childId},'${session}','${c.code}')" title="${c.label}">${c.code}</button>`
+  ).join('') + `<button class="code-btn" onclick="pickCode(${childId},'${session}','')" style="color:var(--text-muted)">✕ Clear</button>`;
+  pickerCallback = { childId, session };
+  const rect = e.target.getBoundingClientRect();
+  picker.style.display = 'block';
+  picker.style.top = (rect.bottom + 4 + window.scrollY) + 'px';
+  picker.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+}
+
+async function pickCode(childId, session, code) {
+  document.getElementById('code-picker').style.display = 'none';
+  const date = document.getElementById('reg-date').value;
+  if (!code) {
+    // Clear — for now just reload (no DELETE endpoint yet)
+    loadRegister(); return;
+  }
+  try {
+    await fetch('/api/attendance-register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') },
+      body: JSON.stringify({ child_id: childId, date, session, code })
+    });
+    loadRegister();
+  } catch(e) { alert('Failed to save'); }
+}
+
+async function markAllPresent(session) {
+  const date = document.getElementById('reg-date').value;
+  const code = session === 'am' ? '/' : '\\';
+  const token = sessionStorage.getItem('wren_token');
+  await Promise.all(registerData.map(p =>
+    fetch('/api/attendance-register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ child_id: p.id, date, session, code })
+    })
+  ));
+  loadRegister();
+}
+
+async function loadWeek() {
+  const ws = document.getElementById('week-start').value;
+  const cls = document.getElementById('week-class').value;
+  if (!ws) return;
+  document.getElementById('week-area').innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading...</span></div>';
+  try {
+    let url = '/api/attendance-register/week?week_start=' + ws;
+    if (cls) url += '&class_group=' + encodeURIComponent(cls);
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    const rows = await res.json();
+    renderWeek(rows, ws);
+  } catch(e) {
+    document.getElementById('week-area').innerHTML = '<div class="empty-state">Failed to load</div>';
+  }
+}
+
+function renderWeek(rows, weekStart) {
+  // Build date headers Mon-Fri
+  const days = [];
+  const d = new Date(weekStart + 'T12:00:00');
+  for (let i = 0; i < 5; i++) {
+    const dt = new Date(d);
+    dt.setDate(d.getDate() + i);
+    days.push(dt.toISOString().slice(0,10));
+  }
+  const dayLabels = ['Mon','Tue','Wed','Thu','Fri'];
+
+  // Index by child+date+session
+  const idx = {};
+  rows.forEach(r => { idx[`${r.child_id}_${r.date}_${r.session}`] = r.code; });
+
+  // Get unique pupils
+  const pupils = [...new Map(rows.map(r => [r.child_id, r])).values()];
+
+  if (!pupils.length) { document.getElementById('week-area').innerHTML = '<div class="empty-state">No attendance data for this week</div>'; return; }
+
+  let html = '<div class="table-wrapper"><table class="data-table register-table"><thead><tr><th>Name</th><th>Class</th>' +
+    days.map((dt,i) => `<th colspan="2" style="text-align:center">${dayLabels[i]}<br><span style="font-size:11px;font-weight:400">${dt.slice(5)}</span></th>`).join('') +
+    '</tr><tr><th></th><th></th>' + days.map(() => '<th class="session-label">AM</th><th class="session-label">PM</th>').join('') + '</tr></thead><tbody>' +
+    pupils.map(p => `<tr>
+      <td><strong>${p.first_name} ${p.last_name}</strong></td>
+      <td>${p.class_group||'—'}</td>
+      ${days.map(dt => {
+        const am = idx[`${p.child_id}_${dt}_am`] || '';
+        const pm = idx[`${p.child_id}_${dt}_pm`] || '';
+        return `<td class="week-cell"><span class="att-code ${codeClass(am)}" style="width:26px;height:26px;line-height:26px;font-size:12px">${am||'·'}</span></td>
+                <td class="week-cell"><span class="att-code ${codeClass(pm)}" style="width:26px;height:26px;line-height:26px;font-size:12px">${pm||'·'}</span></td>`;
+      }).join('')}
+    </tr>`).join('') +
+    '</tbody></table></div>';
+
+  document.getElementById('week-area').innerHTML = html;
+}
+
+async function loadStats() {
+  const from = document.getElementById('stats-from').value;
+  const to = document.getElementById('stats-to').value;
+  const cls = document.getElementById('stats-class').value;
+  if (!from || !to) { alert('Please select from and to dates'); return; }
+  document.getElementById('stats-area').innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading...</span></div>';
+  try {
+    let url = `/api/attendance-register/stats?from=${from}&to=${to}`;
+    if (cls) url += '&class_group=' + encodeURIComponent(cls);
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    const rows = await res.json();
+    renderStats(rows);
+  } catch(e) {
+    document.getElementById('stats-area').innerHTML = '<div class="empty-state">Failed to load stats</div>';
+  }
+}
+
+function renderStats(rows) {
+  if (!rows.length) { document.getElementById('stats-area').innerHTML = '<div class="empty-state">No data</div>'; return; }
+  const concern = rows.filter(r => parseFloat(r.pct) < 90);
+  let html = '';
+  if (concern.length) {
+    html += `<div class="card" style="border-left:4px solid #dc2626;margin-bottom:16px;padding:12px 16px">
+      <strong style="color:#dc2626">${concern.length} pupil${concern.length>1?'s':''} below 90% attendance</strong>
+      <div style="margin-top:4px;font-size:13px;color:var(--text-muted)">${concern.map(r => r.first_name + ' ' + r.last_name + ' (' + r.pct + '%)').join(', ')}</div>
+    </div>`;
+  }
+  html += '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Name</th><th>Class</th><th>Year</th><th>Present</th><th>Absent</th><th>Total Marks</th><th>%</th></tr></thead><tbody>' +
+    rows.map(r => {
+      const pct = parseFloat(r.pct);
+      const color = pct >= 95 ? '#166534' : pct >= 90 ? '#854d0e' : '#991b1b';
+      return `<tr>
+        <td><strong>${r.first_name} ${r.last_name}</strong></td>
+        <td>${r.class_group||'—'}</td>
+        <td>${r.year_group||'—'}</td>
+        <td>${r.present_count}</td>
+        <td>${r.absent_count}</td>
+        <td>${r.total_marks}</td>
+        <td style="font-weight:700;color:${color}">${r.pct || '—'}%</td>
+      </tr>`;
+    }).join('') + '</tbody></table></div>';
+  document.getElementById('stats-area').innerHTML = html;
+}
+
+function showTab(tab) {
+  ['register','week','stats'].forEach(t => {
+    document.getElementById('pane-' + t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+  });
+}
+
+function exportCSV() {
+  if (!registerData.length) return;
+  const date = document.getElementById('reg-date').value;
+  const headers = ['Name','Class','Year Group','AM Code','PM Code'];
+  const rows = registerData.map(p => [p.first_name+' '+p.last_name, p.class_group||'', p.year_group||'', p.am_code||'', p.pm_code||'']);
+  const csv = [headers,...rows].map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'register-' + date + '.csv';
+  a.click();
+}
+</script>
+</body>
+</html>

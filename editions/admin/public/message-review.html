@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Message Review — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">💬 Message Review</div>
+      <div class="page-subtitle" id="review-subtitle">Staff photo messages awaiting approval</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" id="tab-pending">Pending Photos</button>
+      <button class="btn btn-ghost" id="tab-audit">Audit Log</button>
+      <button class="btn btn-ghost" id="tab-blocks">Block List</button>
+    </div>
+  </div>
+
+  <!-- Pending photos tab -->
+  <div id="panel-pending">
+    <div id="pending-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- Audit log tab -->
+  <div id="panel-audit" style="display:none">
+    <div class="filter-bar" style="margin-bottom:16px">
+      <button class="btn btn-ghost btn-sm" id="btn-refresh-audit">Refresh</button>
+      <span id="audit-page-info" style="color:var(--c-muted);font-size:13px"></span>
+    </div>
+    <div id="audit-list"><div class="loading-state"><div class="spinner"></div></div></div>
+    <div style="text-align:center;margin-top:12px">
+      <button class="btn btn-ghost" id="audit-more" style="display:none">Load more</button>
+    </div>
+  </div>
+
+  <!-- Block list tab -->
+  <div id="panel-blocks" style="display:none">
+    <div style="margin-bottom:16px">
+      <div class="card" style="padding:16px">
+        <div style="font-weight:700;margin-bottom:12px">Block a parent from messaging</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input class="form-control" id="block-email" placeholder="parent@example.com" style="flex:1;min-width:200px">
+          <input class="form-control" id="block-reason" placeholder="Reason (optional)" style="flex:2;min-width:200px">
+          <button class="btn btn-danger" id="btn-add-block">Block</button>
+        </div>
+      </div>
+    </div>
+    <div id="blocks-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<style>
+.review-card { display:grid; gap:14px; grid-template-columns:1fr auto; align-items:start; padding:16px; background:var(--c-card); border:1px solid var(--c-border); border-radius:12px; margin-bottom:10px; }
+.review-card .photo-frame { margin-top:10px; }
+.review-card .photo-frame img { max-width:100%; max-height:300px; border-radius:8px; display:block; }
+.audit-row { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; padding:10px 14px; border-bottom:1px solid #2d3748; font-size:13px; }
+</style>
+
+<script>
+let currentTab = 'pending';
+let auditPage = 0;
+let pendingItems = [];
+let blockItems = [];
+
+function setTab(tab) {
+  currentTab = tab;
+  ['pending','audit','blocks'].forEach(t => {
+    document.getElementById(`panel-${t}`).style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById(`tab-${t}`);
+    if (btn) btn.className = t === tab ? 'btn btn-primary' : 'btn btn-ghost';
+  });
+  if (tab === 'pending') loadPending();
+  else if (tab === 'audit') { auditPage = 0; loadAudit(0); }
+  else if (tab === 'blocks') loadBlocks();
+}
+
+async function loadPending() {
+  document.getElementById('pending-list').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    pendingItems = await Wren.api('/api/messages/pending-photos');
+    renderPending();
+  } catch {
+    document.getElementById('pending-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderPending() {
+  const list = document.getElementById('pending-list');
+  document.getElementById('review-subtitle').textContent = `${pendingItems.length} photo message${pendingItems.length !== 1 ? 's' : ''} awaiting review`;
+  if (!pendingItems.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">No pending photos</div><div class="empty-body">All staff photo messages have been reviewed.</div></div>`;
+    return;
+  }
+  list.innerHTML = pendingItems.map(m => `
+
+    <div class="review-card" id="review-${m.id}">
+      <div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <span style="font-weight:700">${escHtml(m.staff_name||'Staff')}</span>
+          <span style="color:var(--c-muted);font-size:12px">→</span>
+          <span style="font-size:13px;color:var(--c-muted)">${m.child_name ? `Parent of ${escHtml(m.child_name)}` : 'Parent'}</span>
+          <span style="font-size:11px;color:#64748b;margin-left:auto">${new Date(m.created_at).toLocaleString('en-GB')}</span>
+        </div>
+        <div style="font-size:13px;color:var(--c-muted);margin-bottom:8px">Thread: ${escHtml(m.subject||'Message')}</div>
+        ${m.body ? `<div style="padding:8px 12px;background:#243347;border-radius:8px;margin-bottom:10px;font-size:14px">${escHtml(m.body)}</div>` : ''}
+        ${m.attachment_path ? `
+          <div class="photo-frame">
+            <div style="font-size:12px;color:var(--c-muted);margin-bottom:6px">📎 Attached photo</div>
+            <img src="${escHtml(m.attachment_path)}" alt="Attachment" data-errorfallback="1">
+          </div>` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:120px">
+        <button class="btn btn-primary btn-sm" data-action="approve" data-id="${m.id}">✅ Approve</button>
+        <button class="btn btn-danger btn-sm" data-action="reject" data-id="${m.id}">✕ Reject</button>
+      </div>
+    </div>
+  `).join('');
+  list.querySelectorAll('img[data-errorfallback]').forEach(img => {
+    img.addEventListener('error', () => {
+      img.parentElement.innerHTML = '<div style="color:#94a3b8;font-size:12px">Photo not accessible from admin view</div>';
+    });
+  });
+}
+
+async function review(id, decision, reason) {
+  try {
+    await Wren.api(`/api/messages/message/${id}/review`, { method:'POST', body:{ decision, reason } });
+    Wren.toast(decision === 'approved' ? 'Message approved and delivered' : 'Message rejected', decision === 'approved' ? 'success' : 'info');
+    pendingItems = pendingItems.filter(m => m.id !== id);
+    renderPending();
+  } catch (e) {
+    Wren.toast('Failed: ' + (e.error || e.message), 'error');
+  }
+}
+
+function promptReject(id) {
+  const m = pendingItems.find(x => x.id === id);
+  Wren.modal('Reject Message', `
+    <p style="margin-bottom:12px;color:var(--c-muted)">The staff member will be notified that their photo was not approved.</p>
+    <div class="form-group">
+      <label class="form-label">Reason (optional)</label>
+      <textarea class="form-control" id="reject-reason" rows="2" placeholder="e.g. Photo contains identifiable child without consent"></textarea>
+    </div>
+  `, [
+    { label:'Reject & Notify', class:'btn-danger', close:false, action: async () => {
+      const reason = document.getElementById('reject-reason')?.value.trim();
+      await review(id, 'rejected', reason);
+      document.querySelector('.wren-modal-overlay')?.remove();
+    }},
+    { label:'Cancel', class:'btn-ghost' },
+  ]);
+}
+
+async function loadAudit(page) {
+  document.getElementById('audit-list').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const rows = await Wren.api(`/api/messages/audit?page=${page}`);
+    document.getElementById('audit-more').style.display = rows.length === 50 ? '' : 'none';
+    document.getElementById('audit-page-info').textContent = `Page ${page + 1} · ${rows.length} entries`;
+    if (!rows.length && page === 0) {
+      document.getElementById('audit-list').innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No audit entries yet</div></div>';
+      return;
+    }
+    const html = rows.map(r => `
+      <div class="audit-row">
+        <div style="color:var(--c-muted);font-size:11px;white-space:nowrap">${new Date(r.sent_at).toLocaleDateString('en-GB')}<br>${new Date(r.sent_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+        <div>
+          <div style="font-weight:600;font-size:13px">${escHtml(r.staff_name||'?')} → <span style="font-weight:400;color:var(--c-muted)">${escHtml(r.thread_subject||'Parent')}</span></div>
+          <div style="font-size:12px;color:var(--c-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.preview||'')}${r.has_attachment?' 📎':''}</div>
+        </div>
+        <div style="font-size:11px;text-align:right;white-space:nowrap">
+          ${r.manager_reviewed ? `<span class="badge badge-green">Reviewed</span>` : (r.has_attachment ? '<span class="badge badge-yellow">Pending</span>' : '')}
+        </div>
+      </div>
+    `).join('');
+    document.getElementById('audit-list').innerHTML = `<div class="card" style="padding:0;overflow:hidden">${html}</div>`;
+  } catch {
+    document.getElementById('audit-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+async function loadBlocks() {
+  document.getElementById('blocks-list').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    blockItems = await Wren.api('/api/messages/blocks');
+    renderBlocks();
+  } catch {
+    document.getElementById('blocks-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderBlocks() {
+  const list = document.getElementById('blocks-list');
+  if (!blockItems.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🚫</div><div class="empty-title">No blocked contacts</div></div>';
+    return;
+  }
+  list.innerHTML = `<div class="card" style="padding:0;overflow:hidden">` +
+    blockItems.map(b => `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #2d3748">
+        <div style="flex:1">
+          <div style="font-weight:600">${escHtml(b.parent_email)}</div>
+          ${b.reason ? `<div style="font-size:12px;color:var(--c-muted)">${escHtml(b.reason)}</div>` : ''}
+          <div style="font-size:11px;color:#64748b">${b.blocked_by_name||'?'} · ${new Date(b.blocked_at).toLocaleDateString('en-GB')}</div>
+        </div>
+        <button class="btn btn-sm btn-ghost" data-action="unblock" data-id="${b.id}">Unblock</button>
+      </div>
+    `).join('') + `</div>`;
+}
+
+async function addBlock() {
+  const email  = document.getElementById('block-email').value.trim();
+  const reason = document.getElementById('block-reason').value.trim();
+  if (!email) { Wren.toast('Email required', 'warning'); return; }
+  try {
+    const b = await Wren.api('/api/messages/blocks', { method:'POST', body:{ parent_email:email, reason } });
+    Wren.toast('Contact blocked', 'success');
+    document.getElementById('block-email').value = '';
+    document.getElementById('block-reason').value = '';
+    blockItems = [b, ...blockItems.filter(x => x.parent_email !== b.parent_email)];
+    renderBlocks();
+  } catch (e) {
+    Wren.toast('Failed: ' + (e.error||e.message), 'error');
+  }
+}
+
+async function removeBlock(id) {
+  try {
+    await Wren.api(`/api/messages/blocks/${id}`, { method:'DELETE' });
+    Wren.toast('Unblocked', 'success');
+    blockItems = blockItems.filter(b => b.id !== id);
+    renderBlocks();
+  } catch (e) {
+    Wren.toast('Failed', 'error');
+  }
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.getElementById('tab-pending').addEventListener('click', () => setTab('pending'));
+document.getElementById('tab-audit').addEventListener('click', () => setTab('audit'));
+document.getElementById('tab-blocks').addEventListener('click', () => setTab('blocks'));
+document.getElementById('btn-refresh-audit').addEventListener('click', () => loadAudit(0));
+document.getElementById('audit-more').addEventListener('click', () => { auditPage++; loadAudit(auditPage); });
+document.getElementById('btn-add-block').addEventListener('click', addBlock);
+document.getElementById('pending-list').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = parseInt(btn.dataset.id);
+  if (btn.dataset.action === 'approve') review(id, 'approved');
+  else if (btn.dataset.action === 'reject') promptReject(id);
+});
+document.getElementById('blocks-list').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action="unblock"]');
+  if (btn) removeBlock(parseInt(btn.dataset.id));
+});
+
+document.addEventListener('wren:ready', () => setTab('pending'));
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

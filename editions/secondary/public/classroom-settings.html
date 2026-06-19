@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Google Classroom Settings — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .cl-section { background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px; }
+    .cl-section-title { font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#4a9abf;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border); }
+    .cl-field { margin-bottom:14px; }
+    .cl-field label { display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px; }
+    .cl-field input { width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px; }
+    .cl-toggle { display:flex;align-items:center;gap:12px; }
+    .cl-toggle-switch { position:relative;width:48px;height:26px;flex-shrink:0; }
+    .cl-toggle-switch input { opacity:0;width:0;height:0;position:absolute; }
+    .cl-slider { position:absolute;inset:0;cursor:pointer;background:#2d3748;border-radius:26px;transition:.2s; }
+    .cl-slider::before { content:'';position:absolute;height:20px;width:20px;left:3px;bottom:3px;background:#64748b;border-radius:50%;transition:.2s; }
+    .cl-toggle-switch input:checked + .cl-slider { background:#22c55e; }
+    .cl-toggle-switch input:checked + .cl-slider::before { transform:translateX(22px);background:#fff; }
+    .status-pill { display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600; }
+    .pill-ok  { background:#14532d;color:#4ade80; }
+    .pill-err { background:#7f1d1d;color:#fca5a5; }
+    .pill-na  { background:#1e293b;color:#64748b;border:1px solid #2d3748; }
+    .behind-row { display:grid;grid-template-columns:1fr 1fr 1fr 120px;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px; }
+    .behind-row:last-child { border-bottom:none; }
+    .behind-header { font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted); }
+    .course-filter { max-width:260px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;margin-bottom:14px; }
+    .scope-badge { display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;background:rgba(74,154,191,.15);color:#4a9abf; }
+    @media(max-width:640px) { .behind-row { grid-template-columns:1fr 1fr; } .behind-row .due-col,.behind-row .state-col{display:none;} }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Google Classroom</div>
+      <div class="page-subtitle">Integration settings, sync status &amp; submissions tracker</div>
+    </div>
+  </div>
+
+  <!-- ── Configuration ─────────────────────────────────────────── -->
+  <div class="cl-section" id="config-section">
+    <div class="cl-section-title">Connection settings</div>
+
+    <div class="cl-field">
+      <label>Google Workspace domain</label>
+      <input type="text" id="cfg-domain" placeholder="e.g. yoursetting.co.uk" autocomplete="off">
+    </div>
+    <div class="cl-field">
+      <label>Impersonated admin email
+        <span style="font-weight:400;color:var(--text-muted);font-size:11px">(must be a Workspace admin in that domain)</span>
+      </label>
+      <input type="email" id="cfg-email" placeholder="admin@yoursetting.co.uk" autocomplete="off">
+    </div>
+    <div class="cl-field">
+      <div class="cl-toggle">
+        <label class="cl-toggle-switch">
+          <input type="checkbox" id="cfg-enabled">
+          <span class="cl-slider"></span>
+        </label>
+        <span style="font-size:14px;color:var(--text)">Enable daily sync (Mon–Fri 05:00)</span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+      <button class="btn btn-secondary" id="btn-test">Test connection</button>
+      <button class="btn btn-primary"   id="btn-save">Save settings</button>
+    </div>
+    <div id="test-result" style="margin-top:12px;font-size:13px;display:none"></div>
+  </div>
+
+  <!-- ── Sync status ────────────────────────────────────────────── -->
+  <div class="cl-section">
+    <div class="cl-section-title">Sync status</div>
+    <div id="sync-status-body" style="font-size:14px;color:var(--text-muted)">Loading…</div>
+    <div style="margin-top:14px">
+      <button class="btn btn-secondary" id="btn-sync">Sync now</button>
+      <span id="sync-spinner" style="display:none;margin-left:12px;font-size:13px;color:var(--text-muted)">Syncing…</span>
+    </div>
+  </div>
+
+  <!-- ── Courses cached ─────────────────────────────────────────── -->
+  <div class="cl-section" id="courses-section" style="display:none">
+    <div class="cl-section-title">Cached courses</div>
+    <div id="courses-list" style="font-size:13px;color:var(--text-muted)">Loading…</div>
+  </div>
+
+  <!-- ── Students behind ───────────────────────────────────────── -->
+  <div class="cl-section" id="behind-section">
+    <div class="cl-section-title">Students behind on submissions</div>
+    <select class="course-filter" id="behind-course">
+      <option value="">All courses</option>
+    </select>
+    <div class="behind-row behind-header">
+      <span>Student</span><span>Assignment</span><span class="due-col">Due</span><span class="state-col">Status</span>
+    </div>
+    <div id="behind-list"><div class="empty-state">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+let courses = [];
+
+async function init() {
+  await Promise.all([loadSettings(), loadSyncStatus(), loadCourses()]);
+  loadBehind();
+}
+
+async function loadSettings() {
+  const d = await fetch('/api/classroom/settings', { headers: authHeaders() }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+  document.getElementById('cfg-domain').value  = d.workspace_domain || '';
+  document.getElementById('cfg-email').value   = d.admin_email || '';
+  document.getElementById('cfg-enabled').checked = !!d.enabled;
+}
+
+async function loadSyncStatus() {
+  const d = await fetch('/api/classroom/sync-status', { headers: authHeaders() }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+  const el = document.getElementById('sync-status-body');
+  if (!d.last_sync_at) {
+    el.innerHTML = '<span class="status-pill pill-na">Never synced</span>';
+    return;
+  }
+  const ago = timeSince(d.last_sync_at);
+  const pill = d.last_sync_ok
+    ? `<span class="status-pill pill-ok">Last sync OK — ${ago}</span>`
+    : `<span class="status-pill pill-err">Sync failed — ${ago}</span>`;
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px">${pill}</div>
+    <div style="display:grid;grid-template-columns:repeat(2,auto);gap:4px 16px;font-size:13px">
+      <span style="color:var(--text-muted)">Courses</span><strong>${d.last_sync_courses_cnt ?? '—'}</strong>
+      <span style="color:var(--text-muted)">Submissions</span><strong>${d.last_sync_students_cnt ?? '—'}</strong>
+    </div>
+    ${d.last_sync_error ? `<div style="margin-top:10px;padding:10px;background:#1c0a0a;border-radius:8px;color:#fca5a5;font-size:12px;font-family:monospace">${escHtml(d.last_sync_error)}</div>` : ''}
+  `;
+}
+
+async function loadCourses() {
+  const rows = await fetch('/api/classroom/courses', { headers: authHeaders() }).then(r => r.ok ? r.json() : []).catch(() => []);
+  courses = rows;
+
+  const section = document.getElementById('courses-section');
+  if (!rows.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  document.getElementById('courses-list').innerHTML = rows.map(c =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-weight:600">${escHtml(c.name)}</span>
+      ${c.section ? `<span style="font-size:12px;color:var(--text-muted)">${escHtml(c.section)}</span>` : ''}
+      <span class="scope-badge">${escHtml(c.course_state || 'ACTIVE')}</span>
+    </div>`
+  ).join('');
+
+  // Populate behind-filter dropdown
+  const sel = document.getElementById('behind-course');
+  rows.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.course_id;
+    opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadBehind() {
+  const courseId = document.getElementById('behind-course').value;
+  const url = '/api/classroom/behind' + (courseId ? `?course_id=${encodeURIComponent(courseId)}` : '');
+  document.getElementById('behind-list').innerHTML = '<div class="empty-state">Loading…</div>';
+  const rows = await fetch(url, { headers: authHeaders() }).then(r => r.ok ? r.json() : []).catch(() => []);
+  if (!rows.length) {
+    document.getElementById('behind-list').innerHTML = '<div class="empty-state" style="padding:16px 0;color:var(--text-muted)">No overdue submissions</div>';
+    return;
+  }
+  document.getElementById('behind-list').innerHTML = rows.map(r => {
+    const name = (r.first_name && r.last_name) ? `${r.first_name} ${r.last_name}` : (r.student_email || r.student_id);
+    return `<div class="behind-row">
+      <span style="font-weight:600">${escHtml(name)}</span>
+      <span>${escHtml(r.coursework_title)} <span style="font-size:11px;color:var(--text-muted)">${escHtml(r.course_name || '')}</span></span>
+      <span class="due-col" style="color:#ef4444">${fmtDate(r.due_date)}</span>
+      <span class="state-col"><span style="padding:2px 8px;border-radius:6px;font-size:11px;background:#374151;color:#9ca3af">${escHtml(r.submission_state || 'NEW')}</span></span>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('btn-save').addEventListener('click', async () => {
+  const body = {
+    workspace_domain: document.getElementById('cfg-domain').value.trim(),
+    admin_email:      document.getElementById('cfg-email').value.trim(),
+    enabled:          document.getElementById('cfg-enabled').checked,
+  };
+  const r = await fetch('/api/classroom/settings', {
+    method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  wrenToast(r.ok ? 'Settings saved' : 'Save failed', r.ok ? 'success' : 'error');
+});
+
+document.getElementById('btn-test').addEventListener('click', async () => {
+  const email = document.getElementById('cfg-email').value.trim();
+  if (!email) { wrenToast('Enter admin email first', 'error'); return; }
+  const resultEl = document.getElementById('test-result');
+  resultEl.style.display = '';
+  resultEl.innerHTML = 'Testing connection…';
+  const r = await fetch('/api/classroom/test', {
+    method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ admin_email: email }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    resultEl.innerHTML = `<span class="status-pill pill-ok">Connected — ${d.courseCount} course${d.courseCount !== 1 ? 's' : ''} found</span>`;
+  } else {
+    resultEl.innerHTML = `<span class="status-pill pill-err">Failed: ${escHtml(d.error)}</span>`;
+  }
+});
+
+document.getElementById('btn-sync').addEventListener('click', async () => {
+  const spinner = document.getElementById('sync-spinner');
+  spinner.style.display = '';
+  document.getElementById('btn-sync').disabled = true;
+  const r = await fetch('/api/classroom/sync', {
+    method: 'POST', headers: authHeaders(),
+  });
+  const d = await r.json();
+  wrenToast(d.ok ? 'Sync started — check status in a moment' : ('Error: ' + d.error), d.ok ? 'info' : 'error');
+  setTimeout(async () => {
+    await loadSyncStatus();
+    await loadCourses();
+    loadBehind();
+    spinner.style.display = 'none';
+    document.getElementById('btn-sync').disabled = false;
+  }, 4000);
+});
+
+function authHeaders() {
+  const token = sessionStorage.getItem('wren_token') || localStorage.getItem('wren_token') || '';
+  return token ? { Authorization: 'Bearer ' + token } : {};
+}
+
+function timeSince(iso) {
+  const d = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(d / 3600000);
+  if (h < 1) return Math.floor(d / 60000) + ' min ago';
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const [y, m, day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('behind-course').addEventListener('change', loadBehind);
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Regulatory Alert — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .back-link { color:#4a9abf; font-size:.875rem; text-decoration:none; display:inline-flex; align-items:center; gap:6px; margin-bottom:16px; }
+    .back-link:hover { color:#93c5fd; }
+
+    .source-banner { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:16px 20px;
+                     margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .source-pub { font-size:.78rem; color:#94a3b8; }
+
+    .analysis-card { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:20px; margin-bottom:16px; }
+    .analysis-card h3 { font-size:.9rem; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin:0 0 12px; }
+
+    .key-change { display:flex; gap:8px; align-items:flex-start; margin-bottom:6px; font-size:.875rem; }
+    .key-change::before { content:'•'; color:#4a9abf; flex-shrink:0; }
+
+    .affected-policy-row { display:flex; gap:12px; align-items:center; padding:10px;
+                           border-bottom:1px solid #2d3748; flex-wrap:wrap; }
+    .affected-policy-row:last-child { border-bottom:none; }
+
+    .urgency-critical { color:#fca5a5; background:#450a0a; }
+    .urgency-high     { color:#fed7aa; background:#451a03; }
+    .urgency-normal   { color:#93c5fd; background:#1e3a5f; }
+
+    .action-strip { background:#0f172a; border:1px solid #2d3748; border-radius:12px;
+                    padding:16px 20px; margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .action-strip .suggested { flex:1; font-size:.875rem; color:#f1f5f9; }
+
+    .status-timeline { font-size:.8rem; color:#94a3b8; }
+    .timeline-item   { display:flex; gap:12px; margin-bottom:8px; align-items:flex-start; }
+    .timeline-dot    { width:8px; height:8px; border-radius:50%; background:#4a9abf; margin-top:4px; flex-shrink:0; }
+
+    .importance-critical { background:#450a0a; color:#fca5a5; }
+    .importance-high     { background:#451a03; color:#fed7aa; }
+    .importance-normal   { background:#1e3a5f; color:#93c5fd; }
+    .importance-fyi      { background:#1a1a2e; color:#94a3b8; }
+    .status-new         { background:#14532d; color:#86efac; }
+    .status-reviewed    { background:#1e3a5f; color:#93c5fd; }
+    .status-action_taken { background:#4a1d96; color:#ddd6fe; }
+    .status-dismissed   { background:#374151; color:#9ca3af; }
+    .status-noise       { background:#1f2937; color:#6b7280; }
+
+    .raw-content { background:#0a0f1a; border:1px solid #2d3748; border-radius:8px; padding:12px;
+                   font-size:.78rem; color:#94a3b8; max-height:200px; overflow:auto;
+                   font-family:monospace; white-space:pre-wrap; word-break:break-word; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <a href="/admin/regulatory" class="back-link">← Regulatory Watcher</a>
+  <div id="alert-area"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<script>
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function formatDate(dt) {
+  if (!dt) return '—';
+  return new Date(dt).toLocaleString('en-GB', { dateStyle:'medium', timeStyle:'short' });
+}
+function importanceBadge(imp) {
+  return `<span class="badge importance-${imp}" style="font-size:.72rem;padding:2px 7px">${imp}</span>`;
+}
+function statusBadge(s) {
+  const label = { new:'New', reviewed:'Reviewed', action_taken:'Action taken', dismissed:'Dismissed', noise:'Noise' }[s] || s;
+  return `<span class="badge status-${s}" style="font-size:.72rem;padding:2px 7px">${label}</span>`;
+}
+
+function getAlertId() {
+  // Works when served at /admin/regulatory/alerts/:id
+  const parts = window.location.pathname.split('/');
+  return parts[parts.length - 1];
+}
+
+async function loadAlert() {
+  const id = getAlertId();
+  const area = document.getElementById('alert-area');
+  try {
+    const a = await Wren.api(`/api/regulatory/alerts/${id}`);
+    const ai = a.ai_analysis || {};
+    const affected = ai.affected_policies || [];
+
+    document.title = `${a.title} — Wren Regulatory`;
+
+    area.innerHTML = `
+      <!-- Source banner -->
+      <div class="source-banner">
+        <div>
+          <div class="source-pub">${escHtml(a.publisher)}</div>
+          <div style="font-weight:600;font-size:1.05rem">${escHtml(a.source_name)}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${importanceBadge(a.importance)}
+          ${statusBadge(a.status)}
+          ${a.url ? `<a href="${escHtml(a.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ghost">↗ View source</a>` : ''}
+        </div>
+      </div>
+
+      <!-- Alert title + meta -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <div class="card-title" style="font-size:1.1rem">${escHtml(a.title)}</div>
+        </div>
+        <div style="padding:0 0 12px;color:#94a3b8;font-size:.85rem">
+          Detected: ${formatDate(a.detected_at)}
+          ${a.alert_type ? ` · <em>${a.alert_type.replace(/_/g,' ')}</em>` : ''}
+          ${a.reviewed_by_name ? ` · Reviewed by ${escHtml(a.reviewed_by_name)} on ${formatDate(a.reviewed_at)}` : ''}
+        </div>
+      </div>
+
+      ${ai && Object.keys(ai).length > 0 ? renderAnalysis(ai, a) : `
+        <div class="analysis-card" style="border-color:#2d3748">
+          <h3>AI Analysis</h3>
+          <div style="color:#94a3b8">
+            ${a.status === 'noise' ? '🔕 Marked as noise — no further analysis needed.' : 'Awaiting AI triage (runs every 15 min).'}
+            <button class="btn btn-sm btn-ghost" style="margin-left:12px" data-action="requeue-analysis">↻ Re-analyse now</button>
+          </div>
+        </div>
+      `}
+
+      <!-- Manager actions -->
+      <div class="action-strip" id="action-strip">
+        <div class="suggested">Status: ${statusBadge(a.status)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${a.status !== 'reviewed' ? `<button class="btn btn-primary btn-sm" data-action="update-status" data-status="reviewed">✓ Mark reviewed</button>` : ''}
+          ${a.status !== 'action_taken' ? `<button class="btn btn-sm" style="background:#4a1d96;color:#ddd6fe" data-action="update-status" data-status="action_taken">Action taken</button>` : ''}
+          ${a.status !== 'dismissed' ? `<button class="btn btn-sm btn-ghost" data-action="update-status" data-status="dismissed">Dismiss</button>` : ''}
+          ${a.status !== 'noise' ? `<button class="btn btn-sm btn-ghost" data-action="update-status" data-status="noise">Mark as noise</button>` : ''}
+        </div>
+      </div>
+
+      <!-- Raw content (collapsible) -->
+      ${a.raw_content ? `
+        <div class="analysis-card" style="margin-top:16px">
+          <h3>Raw captured content <button class="btn btn-sm btn-ghost" data-action="toggle-raw" style="text-transform:none;font-size:.72rem">show/hide</button></h3>
+          <div id="raw-section" style="display:none">
+            <div class="raw-content">${escHtml(a.raw_content.slice(0, 3000))}${a.raw_content.length > 3000 ? '\n…(truncated)' : ''}</div>
+          </div>
+        </div>
+      ` : ''}
+    `;
+  } catch(e) {
+    area.innerHTML = `<div class="alert alert-danger">Failed to load alert: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderAnalysis(ai, alert) {
+  const affected = ai.affected_policies || [];
+  return `
+    <!-- AI Summary -->
+    <div class="analysis-card">
+      <h3>AI Summary <span class="badge" style="background:#4a1d96;color:#ddd6fe;font-size:.7rem;text-transform:none;padding:2px 6px">${OLLAMA_MODEL_LABEL}</span></h3>
+      <p style="font-size:.9rem;line-height:1.6;color:#f1f5f9">${escHtml(ai.summary || '—')}</p>
+      ${ai.key_changes?.length ? `
+        <div style="margin-top:12px">
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:6px;font-weight:600">KEY CHANGES</div>
+          ${ai.key_changes.map(c => `<div class="key-change">${escHtml(c)}</div>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+
+    <!-- Affected policies -->
+    ${affected.length ? `
+      <div class="analysis-card">
+        <h3>Affected Policies (${affected.length})</h3>
+        <div>
+          ${affected.map(p => `
+            <div class="affected-policy-row">
+              <div style="flex:1">
+                <div style="font-weight:500">${escHtml(p.policy_title || 'Policy #' + p.policy_id)}</div>
+                <div style="font-size:.8rem;color:#94a3b8;margin-top:2px">${escHtml(p.why || '')}</div>
+              </div>
+              <span class="badge urgency-${p.urgency || 'normal'}" style="font-size:.72rem;padding:2px 7px">${p.urgency || 'normal'}</span>
+              <button class="btn btn-sm" style="background:#e07820;color:#fff;border:none"
+                      data-action="start-workspace" data-policy-id="${p.policy_id}" data-policy-title="${escHtml(p.policy_title || '')}" data-url="${escHtml(alert.url || '')}">
+                Start update workspace →
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Suggested action -->
+    ${ai.suggested_action ? `
+      <div class="action-strip">
+        <div class="suggested">
+          <span style="color:#94a3b8;font-size:.78rem">SUGGESTED ACTION</span><br>
+          ${escHtml(ai.suggested_action)}
+        </div>
+        ${ai.action_type === 'start_doc_update' && affected.length ? `
+          <button class="btn btn-primary btn-sm" data-action="start-workspace" data-policy-id="${affected[0].policy_id}" data-policy-title="${escHtml(affected[0].policy_title || '')}" data-url="${escHtml(alert.url || '')}">
+            Open update workspace →
+          </button>
+        ` : ''}
+      </div>
+    ` : ''}
+  `;
+}
+
+// ── Workspace handoff (Prompt 07) ──────────────────────────────────────────
+async function startDocWorkspace(policyId, policyTitle, sourceUrl) {
+  if (!confirm(`Open a document update workspace for "${policyTitle}"?\n\nThis will pre-fill the workspace with this policy as the base document and the regulatory source URL as the update target.`)) return;
+
+  try {
+    const ws = await Wren.api('/api/documents/workspaces', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: `Update: ${policyTitle}`,
+        doc_type: 'policy',
+        mode: 'update',
+        base_doc_policy_id: policyId,
+        update_doc_url: sourceUrl,
+        source_alert_id: getAlertId(),
+      }),
+    });
+
+    // Link workspace back to this alert
+    await Wren.api(`/api/regulatory/alerts/${getAlertId()}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'action_taken', related_workspace_id: ws.id }),
+    });
+
+    window.location.href = `/admin/documents/workspaces/${ws.id}`;
+  } catch(e) {
+    alert('Could not create workspace: ' + e.message + '\n\nThe document workspaces feature may not be fully set up yet.');
+  }
+}
+
+async function updateStatus(newStatus) {
+  const id = getAlertId();
+  try {
+    await Wren.api(`/api/regulatory/alerts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    loadAlert(); // refresh
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function requeueAnalysis() {
+  const id = getAlertId();
+  try {
+    await Wren.api(`/api/regulatory/alerts/${id}/analyse`, { method: 'POST' });
+    alert('Analysis queued — check back in a minute.');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function toggleRaw() {
+  const s = document.getElementById('raw-section');
+  if (s) s.style.display = s.style.display === 'none' ? 'block' : 'none';
+}
+
+const OLLAMA_MODEL_LABEL = 'qwen2.5-coder:27b';
+
+document.addEventListener('wren:ready', loadAlert);
+
+document.getElementById('alert-area').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  if (action === 'requeue-analysis') requeueAnalysis();
+  else if (action === 'update-status') updateStatus(btn.dataset.status);
+  else if (action === 'toggle-raw') toggleRaw();
+  else if (action === 'start-workspace') startDocWorkspace(parseInt(btn.dataset.policyId), btn.dataset.policyTitle, btn.dataset.url);
+});
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

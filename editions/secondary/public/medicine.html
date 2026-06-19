@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Medicine — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">💊 Medicine Records</div>
+    <button class="btn btn-primary" id="btn-new-record">+ New Record</button>
+  </div>
+
+  <div class="alert alert-warning" style="margin-bottom:20px">
+    ⚠️ Always obtain written parental consent before administering any medication.
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header"><div class="card-title">Today's Records</div></div>
+    <div id="today-records"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">All Records</div></div>
+    <div id="all-records"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<script>
+let children = [];
+
+async function loadData() {
+  try {
+    const [today, childrenData] = await Promise.all([
+      Wren.api('/api/medicine/today'),
+      Wren.api('/api/children')
+    ]);
+    children = childrenData;
+    renderTable('today-records', today);
+
+    // Load all - get per child
+    const allEl = document.getElementById('all-records');
+    allEl.innerHTML = '<p style="color:#64748b;font-size:.875rem;text-align:center;padding:16px">Select a child to see their history.</p>';
+  } catch(e) {
+    Wren.toast('Failed to load', 'error');
+  }
+}
+
+function renderTable(id, records) {
+  const el = document.getElementById(id);
+  if (!records.length) {
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px;font-size:.875rem">No records</p>';
+    return;
+  }
+  el.innerHTML = `<div class="table-wrapper"><table>
+    <thead><tr>
+      <th>Child</th><th>Medicine</th><th>Dose</th><th>Time Given</th>
+      <th>Parent Consent</th><th>By</th>
+    </tr></thead>
+    <tbody>
+      ${records.map(r => `<tr>
+        <td><strong>${r.child_name}</strong></td>
+        <td>${r.medicine_name}</td>
+        <td>${r.dose || '—'}</td>
+        <td>${r.time_given ? new Date(r.time_given).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+        <td>${r.parent_consent ? '<span class="badge badge-green">✓ Yes</span>' : '<span class="badge badge-red">No</span>'}</td>
+        <td>${r.staff_name || '—'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function newRecord() {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Child <span style="color:var(--c-red)">*</span></label>
+      <select class="form-control" id="med-child">
+        <option value="">Select child...</option>
+        ${children.map(c => `<option value="${c.id}" data-allergies="${c.allergies||''}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+      <div id="allergy-warn" style="display:none" class="alert alert-danger mt-2"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Medicine Name <span style="color:var(--c-red)">*</span></label>
+        <input class="form-control" id="med-name" placeholder="e.g. Calpol">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Dose</label>
+        <input class="form-control" id="med-dose" placeholder="e.g. 2.5ml">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Time Given</label>
+      <input type="time" class="form-control" id="med-time" value="${new Date().toTimeString().slice(0,5)}">
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600">
+        <input type="checkbox" id="med-consent">
+        Parent has given written consent ✓
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <input class="form-control" id="med-notes" placeholder="Any additional notes...">
+    </div>
+  `;
+
+  function checkAllergies(childId) {
+    const opt = form.querySelector(`option[value="${childId}"]`);
+    const warn = form.querySelector('#allergy-warn');
+    if (opt && opt.dataset.allergies) {
+      warn.style.display = 'block';
+      warn.textContent = `⚠ ALLERGIES: ${opt.dataset.allergies}`;
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+
+  form.querySelector('#med-child').addEventListener('change', function() { checkAllergies(this.value); });
+
+  Wren.modal('New Medicine Record', form, [
+    { label: 'Save Record', class: 'btn-primary', close: false, action: async () => {
+      const child_id = document.getElementById('med-child').value;
+      const medicine_name = document.getElementById('med-name').value.trim();
+      if (!child_id || !medicine_name) { Wren.toast('Child and medicine required', 'warning'); return; }
+      const timeVal = document.getElementById('med-time').value;
+      const today = new Date().toISOString().split('T')[0];
+      try {
+        await Wren.api('/api/medicine', { method: 'POST', body: {
+          child_id: parseInt(child_id),
+          medicine_name,
+          dose: document.getElementById('med-dose').value,
+          time_given: timeVal ? `${today}T${timeVal}:00` : null,
+          parent_consent: document.getElementById('med-consent').checked,
+          notes: document.getElementById('med-notes').value
+        }});
+        Wren.toast('Record saved ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed to save', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+document.getElementById('btn-new-record').addEventListener('click', newRecord);
+document.addEventListener('DOMContentLoaded', () => { loadData(); });
+</script>
+</body>
+</html>

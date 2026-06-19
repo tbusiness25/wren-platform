@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="primary">
+<title>Exclusions — Wren Primary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Exclusions Register</div>
+      <div class="page-subtitle">Fixed-term and permanent exclusions — statutory record</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-primary" onclick="openAdd()">+ Record Exclusion</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px" id="stats">
+    <div class="stat-card blue"><span class="stat-value" id="s-total">—</span><span class="stat-label">Total this term</span></div>
+    <div class="stat-card amber"><span class="stat-value" id="s-fixed">—</span><span class="stat-label">Fixed-term</span></div>
+    <div class="stat-card red"><span class="stat-value" id="s-perm">—</span><span class="stat-label">Permanent</span></div>
+    <div class="stat-card grey" style="border-left:4px solid #8b5cf6"><span class="stat-value" id="s-days">—</span><span class="stat-label">Days lost</span></div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar" style="margin-bottom:16px">
+    <div class="search-box"><span class="search-icon">🔍</span><input type="text" id="search" placeholder="Search pupil name…" oninput="filter()"></div>
+    <select class="form-control" id="type-filter" onchange="filter()" style="flex:0 0 160px">
+      <option value="">All types</option>
+      <option value="fixed">Fixed-term</option>
+      <option value="permanent">Permanent</option>
+      <option value="internal">Internal</option>
+    </select>
+    <select class="form-control" id="term-filter" onchange="filter()" style="flex:0 0 140px">
+      <option value="current">This term</option>
+      <option value="all">All time</option>
+    </select>
+  </div>
+
+  <div id="exclusions-area">
+    <div class="loading-state"><div class="spinner"></div><span>Loading exclusions…</span></div>
+  </div>
+</div>
+
+<!-- Add modal -->
+<div id="add-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeAdd()"></div>
+  <div class="modal-content" style="max-width:560px">
+    <div class="modal-header"><div class="modal-title">Record Exclusion</div><button class="modal-close" onclick="closeAdd()">×</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Pupil *</label>
+          <select class="form-control" id="exc-pupil" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Exclusion type *</label>
+          <select class="form-control" id="exc-type">
+            <option value="fixed">Fixed-term</option>
+            <option value="permanent">Permanent</option>
+            <option value="internal">Internal exclusion</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start date *</label>
+          <input class="form-control" id="exc-start" type="date" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">End date (fixed-term)</label>
+          <input class="form-control" id="exc-end" type="date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Days excluded</label>
+          <input class="form-control" id="exc-days" type="number" min="0.5" step="0.5" placeholder="e.g. 1">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Reason *</label>
+          <select class="form-control" id="exc-reason">
+            <option value="physical_assault_pupil">Physical assault against a pupil</option>
+            <option value="physical_assault_adult">Physical assault against an adult</option>
+            <option value="verbal_abuse_pupil">Verbal abuse / threatening behaviour against a pupil</option>
+            <option value="verbal_abuse_adult">Verbal abuse / threatening behaviour against an adult</option>
+            <option value="bullying">Bullying</option>
+            <option value="racist_abuse">Racist abuse</option>
+            <option value="sexual_misconduct">Sexual misconduct</option>
+            <option value="drug_alcohol">Drug / alcohol related</option>
+            <option value="damage">Damage to property</option>
+            <option value="theft">Theft</option>
+            <option value="persistent_disruptive">Persistent disruptive behaviour</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control" id="exc-notes" rows="3" placeholder="Incident description, actions taken, parent contact…"></textarea>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">Reintegration plan</label>
+          <textarea class="form-control" id="exc-reint" rows="2" placeholder="Return meeting, support measures, monitoring plan…"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAdd()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveExclusion()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allExclusions = [], allPupils = [];
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('exc-start').value = today;
+  await Promise.all([loadPupils(), loadExclusions()]);
+}
+
+async function loadPupils() {
+  try {
+    allPupils = await Wren.api('/api/children');
+    const sel = document.getElementById('exc-pupil');
+    sel.innerHTML = '<option value="">Select pupil…</option>' +
+      allPupils.map(p => `<option value="${p.id}">${p.first_name} ${p.last_name} (${p.year_group==='R'?'Reception':'Y'+p.year_group})</option>`).join('');
+  } catch {}
+}
+
+async function loadExclusions() {
+  try {
+    const data = await Wren.api('/api/exclusions').catch(() => []);
+    allExclusions = Array.isArray(data) ? data : (data.exclusions || []);
+    updateStats();
+    render();
+  } catch {
+    document.getElementById('exclusions-area').innerHTML = '<div class="empty-state">Failed to load exclusions</div>';
+  }
+}
+
+function updateStats() {
+  const termStart = getTermStart();
+  const term = allExclusions.filter(e => new Date(e.start_date) >= termStart);
+  document.getElementById('s-total').textContent  = term.length;
+  document.getElementById('s-fixed').textContent  = term.filter(e => e.exclusion_type === 'fixed').length;
+  document.getElementById('s-perm').textContent   = term.filter(e => e.exclusion_type === 'permanent').length;
+  const days = term.reduce((acc, e) => acc + (parseFloat(e.days_excluded) || 0), 0);
+  document.getElementById('s-days').textContent   = days;
+}
+
+function getTermStart() {
+  const now = new Date();
+  const m = now.getMonth();
+  if (m >= 8) return new Date(now.getFullYear(), 8, 1);
+  if (m >= 0 && m < 3) return new Date(now.getFullYear(), 0, 1);
+  return new Date(now.getFullYear(), 3, 1);
+}
+
+function filter() {
+  const q    = document.getElementById('search').value.toLowerCase();
+  const type = document.getElementById('type-filter').value;
+  const term = document.getElementById('term-filter').value;
+  const ts   = getTermStart();
+  let rows = allExclusions.filter(e => {
+    const name = ((e.first_name||'') + ' ' + (e.last_name||'')).toLowerCase();
+    if (q && !name.includes(q)) return false;
+    if (type && e.exclusion_type !== type) return false;
+    if (term === 'current' && new Date(e.start_date) < ts) return false;
+    return true;
+  });
+  render(rows);
+}
+
+function render(rows) {
+  rows = rows || allExclusions;
+  const area = document.getElementById('exclusions-area');
+  if (!rows.length) {
+    area.innerHTML = '<div class="empty-state">No exclusions recorded</div>'; return;
+  }
+  area.innerHTML = `<div class="table-wrapper"><table class="data-table">
+    <thead><tr><th>Pupil</th><th>Year</th><th>Type</th><th>Start</th><th>End</th><th>Days</th><th>Reason</th><th></th></tr></thead>
+    <tbody>${rows.map(e => {
+      const typeLabel = {fixed:'Fixed-term',permanent:'Permanent',internal:'Internal'}[e.exclusion_type]||e.exclusion_type;
+      const typeBadge = e.exclusion_type==='permanent'?'badge-red':e.exclusion_type==='fixed'?'badge-amber':'badge-blue';
+      const reasonLabel = e.reason ? e.reason.replace(/_/g,' ') : '—';
+      return `<tr>
+        <td><strong>${e.first_name||''} ${e.last_name||''}</strong></td>
+        <td>${e.year_group==='R'?'R':'Y'+(e.year_group||'')}</td>
+        <td><span class="badge ${typeBadge}">${typeLabel}</span></td>
+        <td>${e.start_date ? new Date(e.start_date).toLocaleDateString('en-GB') : '—'}</td>
+        <td>${e.end_date   ? new Date(e.end_date).toLocaleDateString('en-GB')   : '—'}</td>
+        <td>${e.days_excluded||'—'}</td>
+        <td style="font-size:.8rem;text-transform:capitalize">${reasonLabel}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="viewExclusion(${e.id})">View</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+function openAdd() { document.getElementById('add-modal').style.display = 'flex'; }
+function closeAdd() { document.getElementById('add-modal').style.display = 'none'; }
+
+async function saveExclusion() {
+  const body = {
+    child_id:         parseInt(document.getElementById('exc-pupil').value),
+    exclusion_type:   document.getElementById('exc-type').value,
+    start_date:       document.getElementById('exc-start').value,
+    end_date:         document.getElementById('exc-end').value || null,
+    days_excluded:    parseFloat(document.getElementById('exc-days').value) || null,
+    reason:           document.getElementById('exc-reason').value,
+    notes:            document.getElementById('exc-notes').value,
+    reintegration_plan: document.getElementById('exc-reint').value,
+  };
+  if (!body.child_id || !body.start_date) { Wren.toast('Pupil and start date required', 'warning'); return; }
+  try {
+    await Wren.api('/api/exclusions', { method:'POST', body });
+    Wren.toast('Exclusion recorded', 'success');
+    closeAdd();
+    loadExclusions();
+  } catch(e) { Wren.toast('Error: ' + (e.error||e.message), 'error'); }
+}
+
+function viewExclusion(id) {
+  const e = allExclusions.find(x => x.id === id);
+  if (!e) return;
+  Wren.modal(`Exclusion — ${e.first_name} ${e.last_name}`,
+    `<div style="font-size:.88rem;line-height:1.8">
+      <div><strong>Type:</strong> ${e.exclusion_type}</div>
+      <div><strong>Dates:</strong> ${e.start_date||'—'} → ${e.end_date||'open'}</div>
+      <div><strong>Days:</strong> ${e.days_excluded||'—'}</div>
+      <div><strong>Reason:</strong> ${(e.reason||'').replace(/_/g,' ')}</div>
+      ${e.notes ? `<div style="margin-top:10px"><strong>Notes:</strong><br>${e.notes}</div>` : ''}
+      ${e.reintegration_plan ? `<div style="margin-top:10px"><strong>Reintegration:</strong><br>${e.reintegration_plan}</div>` : ''}
+    </div>`,
+    [{ label:'Close', class:'btn-secondary' }]
+  );
+}
+
+function exportCSV() {
+  const h = ['Pupil','Year','Type','Start','End','Days','Reason'];
+  const rows = allExclusions.map(e => [
+    e.first_name+' '+e.last_name, e.year_group, e.exclusion_type,
+    e.start_date||'', e.end_date||'', e.days_excluded||'',
+    (e.reason||'').replace(/_/g,' ')
+  ]);
+  const csv = [h,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'exclusions-'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
+}
+</script>
+</body>
+</html>

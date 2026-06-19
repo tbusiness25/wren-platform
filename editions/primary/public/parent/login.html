@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Parent Login — Wren Primary</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);min-height:100dvh;display:flex;align-items:center;justify-content:center;font-family:system-ui,Arial,sans-serif;color:#f1f5f9}
+
+.box{background:#1e293b;border:1px solid #2d3748;border-radius:20px;padding:36px 28px;max-width:420px;width:100%;margin:20px}
+
+.logo{text-align:center;margin-bottom:28px}
+.logo-name{font-size:1.4rem;font-weight:900;letter-spacing:-.5px}
+.logo-name .w{color:#4a9abf}.logo-name .ren{color:#e07820}
+.logo-ed{font-size:.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.1em;border:1px solid #2d3748;border-radius:4px;padding:2px 6px;display:inline-block;margin-top:4px}
+.logo-sub{font-size:.85rem;color:#94a3b8;margin-top:6px}
+
+.form-label{display:block;font-size:.8rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.form-input{width:100%;padding:14px 16px;border-radius:12px;border:2px solid #2d3748;background:#0f172a;color:#f1f5f9;font-family:inherit;font-size:1rem;outline:none;transition:.2s;margin-bottom:14px}
+.form-input:focus{border-color:#4a9abf}
+.btn-big{width:100%;padding:16px;border-radius:14px;font-size:1rem;font-weight:700;border:none;cursor:pointer;transition:.2s;font-family:inherit}
+.btn-primary{background:#4a9abf;color:#fff}.btn-primary:hover{opacity:.85}
+.btn-secondary{background:#1e293b;border:2px solid #2d3748;color:#f1f5f9;margin-top:8px}.btn-secondary:hover{background:rgba(255,255,255,.06)}
+
+.err{color:#ef4444;font-size:.85rem;margin-bottom:12px;padding:10px 14px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;display:none}
+.msg{color:#22c55e;font-size:.85rem;margin-bottom:12px;padding:10px 14px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:8px;display:none}
+.divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:#475569;font-size:.78rem}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#2d3748}
+.demo-note{text-align:center;font-size:.78rem;color:#64748b;margin-top:16px}
+.link{color:#4a9abf;cursor:pointer;text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">
+    <div class="logo-name"><span class="w">w</span><span class="ren">ren</span></div>
+    <div class="logo-ed">Parent Portal</div>
+    <div class="logo-sub">Sign in to view your child's progress</div>
+  </div>
+
+  <div id="err-msg" class="err"></div>
+  <div id="ok-msg" class="msg"></div>
+
+  <!-- Login form -->
+  <div id="form-login">
+    <label class="form-label">Email address</label>
+    <input class="form-input" id="email" type="email" placeholder="you@example.com" autocomplete="email">
+
+    <label class="form-label">Password</label>
+    <input class="form-input" id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+
+    <button class="btn-big btn-primary" id="login-btn">Sign in</button>
+
+    <div class="divider">or</div>
+
+    <button class="btn-big btn-secondary" id="btn-show-otp">Sign in with email code</button>
+  </div>
+
+  <!-- OTP form -->
+  <div id="form-otp" style="display:none">
+    <label class="form-label">Email address</label>
+    <input class="form-input" id="otp-email" type="email" placeholder="you@example.com">
+    <button class="btn-big btn-primary" id="otp-btn">Send login code</button>
+    <button class="btn-big btn-secondary" style="margin-top:8px" id="btn-show-login">Back to password login</button>
+  </div>
+
+  <!-- OTP verify -->
+  <div id="form-otp-verify" style="display:none">
+    <p style="color:#94a3b8;font-size:.85rem;margin-bottom:16px">Check your email for a 6-digit code.</p>
+    <label class="form-label">One-time code</label>
+    <input class="form-input" id="otp-code" type="text" inputmode="numeric" maxlength="6" placeholder="000000">
+    <button class="btn-big btn-primary" id="btn-verify-otp">Verify code</button>
+    <button class="btn-big btn-secondary" style="margin-top:8px" id="btn-resend-otp">Resend code</button>
+  </div>
+
+  <div class="demo-note" id="demo-note" style="display:none">
+    Demo: <span class="link" id="demo-link">parent@demo.wren / demo1234</span>
+  </div>
+</div>
+
+<script>
+// Check demo mode
+fetch('/api/edition').then(r=>r.json()).then(d=>{
+  if(d.demo) document.getElementById('demo-note').style.display='block';
+}).catch(()=>{});
+
+// Check already logged in
+if(sessionStorage.getItem('wrenParentToken')) window.location.href='/parent/';
+
+function showLogin(){ document.getElementById('form-login').style.display=''; document.getElementById('form-otp').style.display='none'; document.getElementById('form-otp-verify').style.display='none'; clearMessages(); }
+function showOTP()  { document.getElementById('form-login').style.display='none'; document.getElementById('form-otp').style.display=''; document.getElementById('form-otp-verify').style.display='none'; clearMessages(); }
+function clearMessages(){ document.getElementById('err-msg').style.display='none'; document.getElementById('ok-msg').style.display='none'; }
+function showErr(m){ const e=document.getElementById('err-msg'); e.textContent=m; e.style.display='block'; }
+function showOk(m) { const e=document.getElementById('ok-msg');  e.textContent=m; e.style.display='block'; }
+
+function fillDemo(){ document.getElementById('email').value='parent@demo.wren'; document.getElementById('password').value='demo1234'; }
+
+async function tryLogin(){
+  clearMessages();
+  const email    = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  if(!email||!password){ showErr('Enter your email and password'); return; }
+  const btn = document.getElementById('login-btn');
+  btn.disabled=true; btn.textContent='Signing in…';
+  try{
+    const res = await fetch('/api/auth/parent-login',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password})
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||'Login failed');
+    sessionStorage.setItem('wrenParentToken', data.token);
+    sessionStorage.setItem('wrenParentUser',  JSON.stringify(data.parent));
+    window.location.href = '/parent/';
+  }catch(e){
+    showErr(e.message||'Login failed');
+  }finally{
+    btn.disabled=false; btn.textContent='Sign in';
+  }
+}
+
+async function requestOTP(){
+  clearMessages();
+  const email = document.getElementById('otp-email').value.trim();
+  if(!email){ showErr('Enter your email address'); return; }
+  const btn = document.getElementById('otp-btn');
+  btn.disabled=true; btn.textContent='Sending…';
+  try{
+    await fetch('/api/auth/parent-otp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    document.getElementById('form-otp').style.display='none';
+    document.getElementById('form-otp-verify').style.display='';
+    showOk('Check your email — code sent to '+email);
+  }catch(e){ showErr('Could not send code'); }
+  finally{ btn.disabled=false; btn.textContent='Send login code'; }
+}
+
+async function verifyOTP(){
+  clearMessages();
+  const email = document.getElementById('otp-email').value.trim();
+  const code  = document.getElementById('otp-code').value.trim();
+  if(!code){ showErr('Enter the 6-digit code'); return; }
+  try{
+    const res = await fetch('/api/auth/parent-otp-verify',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,code})
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||'Invalid code');
+    sessionStorage.setItem('wrenParentToken', data.token);
+    sessionStorage.setItem('wrenParentUser',  JSON.stringify(data.parent));
+    window.location.href='/parent/';
+  }catch(e){ showErr(e.message||'Invalid code'); }
+}
+
+document.getElementById('email').addEventListener('keydown', function(e){ if(e.key==='Enter') tryLogin(); });
+document.getElementById('password').addEventListener('keydown', function(e){ if(e.key==='Enter') tryLogin(); });
+document.getElementById('login-btn').addEventListener('click', tryLogin);
+document.getElementById('btn-show-otp').addEventListener('click', showOTP);
+document.getElementById('otp-btn').addEventListener('click', requestOTP);
+document.getElementById('btn-show-login').addEventListener('click', showLogin);
+document.getElementById('otp-code').addEventListener('keydown', function(e){ if(e.key==='Enter') verifyOTP(); });
+document.getElementById('btn-verify-otp').addEventListener('click', verifyOTP);
+document.getElementById('btn-resend-otp').addEventListener('click', showOTP);
+document.getElementById('demo-link').addEventListener('click', fillDemo);
+</script>
+</body>
+</html>

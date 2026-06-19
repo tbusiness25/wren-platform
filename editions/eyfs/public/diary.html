@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Daily Diary · Wren</title>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+  :root{ --blue:#4a9abf; --orange:#e07820; --navy:#0f172a; --card:#1e293b; --border:#2d3748;
+         --txt:#f1f5f9; --muted:#94a3b8; --row:#ffffff; --row-alt:#f1f5f9; --grid-txt:#0f172a; --grid-border:#d8dee9; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--navy);color:var(--txt);font-family:system-ui,Arial,sans-serif}
+  .dd-top{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--blue);color:#fff;flex-wrap:wrap}
+  .dd-top select,.dd-top .dd-date{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;padding:7px 12px;font-size:.9rem;font-weight:600}
+  .dd-date{display:flex;align-items:center;gap:10px}
+  .dd-date button{background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer;padding:0 6px}
+  .dd-staff{margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:700}
+  .dd-staff img{width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid #fff}
+  /* tabs */
+  .dd-tabs{display:flex;gap:0;background:var(--card);border-bottom:1px solid var(--border);overflow-x:auto}
+  .dd-tab{padding:13px 20px;border:none;background:none;color:var(--muted);font-size:.9rem;font-weight:600;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent}
+  .dd-tab.active{color:#fff;background:var(--orange);border-bottom-color:#fff}
+  /* grid */
+  .dd-wrap{padding:14px;overflow-x:auto}
+  table.dd-grid{width:100%;border-collapse:collapse;background:var(--row);color:var(--grid-txt);border-radius:10px;overflow:hidden;min-width:760px}
+  .dd-grid th{background:#eef2f7;padding:11px 10px;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#475569;text-align:left;border-bottom:2px solid var(--grid-border)}
+  .dd-grid td{padding:8px 10px;border-bottom:1px solid var(--grid-border);vertical-align:middle;font-size:.85rem}
+  .dd-grid tr:nth-child(even) td{background:var(--row-alt)}
+  .dd-grid tr.absent td{opacity:.5;background:#e2e8f0}
+  .dd-child{display:flex;align-items:center;gap:9px;font-weight:700;color:#0f172a;min-width:150px}
+  .dd-child img{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#cbd5e1}
+  .dd-child .ph{width:34px;height:34px;border-radius:50%;background:#cbd5e1;display:inline-block}
+  .dd-grid select,.dd-grid input[type=text],.dd-grid input[type=time],.dd-grid input[type=number]{
+    width:100%;border:1px solid var(--grid-border);border-radius:6px;padding:5px 7px;font-size:.82rem;background:#fff;color:#0f172a}
+  .dd-grid input[type=checkbox]{width:18px;height:18px;cursor:pointer}
+  /* bottom action bar */
+  .dd-actions{position:sticky;bottom:0;display:flex;gap:0;background:var(--card);border-top:1px solid var(--border)}
+  .dd-actions button{flex:1;padding:16px;border:none;font-size:.95rem;font-weight:800;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .dd-publish{background:#22c55e}.dd-share{background:var(--blue)}.dd-draft{background:#475569}
+  .dd-actions button:hover{filter:brightness(1.08)}
+  .dd-status{padding:8px 16px;font-size:.82rem;color:var(--muted)}
+  .dd-empty{padding:40px;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body data-portal="ey">
+<div id="wren-shell"></div>
+
+<div class="dd-top">
+  <select id="dd-group" aria-label="Group"><option value="">All groups</option></select>
+  <div class="dd-date"><button id="dd-prev" aria-label="Previous day">‹</button><span class="dd-date-label" id="dd-date-label">—</span><button id="dd-next" aria-label="Next day">›</button></div>
+  <div class="dd-staff"><span id="dd-staff-name">—</span><img id="dd-staff-photo" alt="" src="/img/avatar-placeholder.png" onerror="this.style.display='none'"></div>
+</div>
+
+<div class="dd-tabs" id="dd-tabs">
+  <button class="dd-tab active" data-tab="food">What I ate today</button>
+  <button class="dd-tab" data-tab="sleep">Sleep Times</button>
+  <button class="dd-tab" data-tab="bottle">I had my bottle</button>
+  <button class="dd-tab" data-tab="nappy">Nappies</button>
+  <button class="dd-tab" data-tab="suncream">Sun Cream</button>
+  <button class="dd-tab" data-tab="notes">Additional Notes</button>
+</div>
+
+<div class="dd-wrap"><div id="dd-grid-host"><div class="dd-empty">Loading children…</div></div></div>
+<div class="dd-status" id="dd-status"></div>
+
+<div class="dd-actions">
+  <button class="dd-publish" id="dd-publish">✅ Publish</button>
+  <button class="dd-share"   id="dd-share">🔗 Share with Parents</button>
+  <button class="dd-draft"   id="dd-draft">💾 Save as Draft</button>
+</div>
+
+<script src="/js/wren-app-shell.js"></script>
+<script>
+(function(){
+  var AMT=['All','Most','Some','None','Refused'];
+  var MEALS=[['breakfast','Breakfast'],['lunch','Lunch'],['pudding','Pudding'],['snack-pm','Snack PM'],['tea','Tea']];
+  var TABS={
+    food:   {label:'What I ate today'},
+    sleep:  {label:'Sleep Times'},
+    bottle: {label:'I had my bottle'},
+    nappy:  {label:'Nappies'},
+    suncream:{label:'Sun Cream'},
+    notes:  {label:'Additional Notes'}
+  };
+  var state={ date:new Date().toISOString().slice(0,10), tab:'food', children:[], room:'' };
+  var data={}; // data[tab][childId] = {...}
+  Object.keys(TABS).forEach(function(t){data[t]={};});
+  var E=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&quot;').replace(/"/g,'&quot;');};
+  function fmtDate(d){var x=new Date(d+'T00:00:00');return x.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}).toUpperCase().replace(/ /g,'-');}
+
+  function loadChildren(){
+    var host=document.getElementById('dd-grid-host');
+    host.innerHTML='<div class="dd-empty">Loading children…</div>';
+    Wren.api('/api/children').then(function(rows){
+      rows=Array.isArray(rows)?rows:(rows.data||rows.children||[]);
+      state.children=rows.filter(function(c){return c.is_active!==false;});
+      // populate group filter from rooms
+      var sel=document.getElementById('dd-group'); var rooms={};
+      state.children.forEach(function(c){if(c.room_name||c.room)rooms[c.room_name||c.room]=1;});
+      Object.keys(rooms).forEach(function(r){var o=document.createElement('option');o.value=r;o.textContent=r;sel.appendChild(o);});
+      render();
+    }).catch(function(){host.innerHTML='<div class="dd-empty">Could not load children.</div>';});
+  }
+
+  function visibleChildren(){
+    return state.children.filter(function(c){return !state.room || (c.room_name||c.room)===state.room;});
+  }
+  function cName(c){return c.preferred_name||((c.first_name||'')+' '+(c.last_name||'')).trim();}
+  function avatar(c){return c.photo_url?'<img src="'+E(c.photo_url)+'" alt="">':'<span class="ph"></span>';}
+
+  function dropdown(opts,val,cls,attrs){
+    var h='<select class="'+(cls||'')+'" '+(attrs||'')+'>';
+    h+='<option value="">Select</option>';
+    opts.forEach(function(o){var v=Array.isArray(o)?o[0]:o,l=Array.isArray(o)?o[1]:o;h+='<option value="'+E(v)+'"'+(String(val)===String(v)?' selected':'')+'>'+E(l)+'</option>';});
+    return h+'</select>';
+  }
+
+  function render(){
+    var host=document.getElementById('dd-grid-host');
+    var kids=visibleChildren();
+    if(!kids.length){host.innerHTML='<div class="dd-empty">No children for this group/day.</div>';return;}
+    var t=state.tab, head='', body='';
+    function row(c,cells){return '<tr data-cid="'+c.id+'"><td><input type="checkbox" class="dd-sel" data-cid="'+c.id+'"></td>'+
+      '<td><span class="dd-child">'+avatar(c)+'<span>'+E(cName(c))+'</span></span></td>'+cells+'</tr>';}
+    if(t==='food'){
+      head='<th><input type="checkbox" id="dd-all"></th><th>Child</th>'+MEALS.map(function(m){return '<th>'+m[1]+'</th>';}).join('')+'<th>Notes</th>';
+      body=kids.map(function(c){
+        var d=data.food[c.id]||{};
+        var cells=MEALS.map(function(m){return '<td>'+dropdown(AMT,(d[m[0]]||''),'dd-food','data-cid="'+c.id+'" data-meal="'+m[0]+'"')+'</td>';}).join('');
+        cells+='<td><input type="text" class="dd-foodnote" data-cid="'+c.id+'" value="'+E(d.notes||'')+'" placeholder="—"></td>';
+        return row(c,cells);
+      }).join('');
+    } else if(t==='sleep'){
+      head='<th><input type="checkbox" id="dd-all"></th><th>Child</th><th>Asleep</th><th>Awake</th><th>Quality</th><th>Notes</th>';
+      body=kids.map(function(c){var d=data.sleep[c.id]||{};
+        return row(c,'<td><input type="time" class="dd-sf" data-cid="'+c.id+'" value="'+E(d.from||'')+'"></td>'+
+          '<td><input type="time" class="dd-st" data-cid="'+c.id+'" value="'+E(d.to||'')+'"></td>'+
+          '<td>'+dropdown(['Sound','Restless','Woke'],(d.quality||''),'dd-sq','data-cid="'+c.id+'"')+'</td>'+
+          '<td><input type="text" class="dd-snote" data-cid="'+c.id+'" value="'+E(d.notes||'')+'"></td>');
+      }).join('');
+    } else if(t==='bottle'){
+      head='<th><input type="checkbox" id="dd-all"></th><th>Child</th><th>Amount (ml)</th><th>Time</th><th>Type</th><th>Notes</th>';
+      body=kids.map(function(c){var d=data.bottle[c.id]||{};
+        return row(c,'<td><input type="number" class="dd-bml" data-cid="'+c.id+'" value="'+E(d.ml||'')+'" min="0" step="10"></td>'+
+          '<td><input type="time" class="dd-bt" data-cid="'+c.id+'" value="'+E(d.time||'')+'"></td>'+
+          '<td>'+dropdown(['Formula','Breast milk','Water','Cow milk'],(d.type||''),'dd-btype','data-cid="'+c.id+'"')+'</td>'+
+          '<td><input type="text" class="dd-bnote" data-cid="'+c.id+'" value="'+E(d.notes||'')+'"></td>');
+      }).join('');
+    } else if(t==='nappy'){
+      head='<th><input type="checkbox" id="dd-all"></th><th>Child</th><th>State</th><th>Time</th><th>Notes</th>';
+      body=kids.map(function(c){var d=data.nappy[c.id]||{};
+        return row(c,'<td>'+dropdown(['Wet','Soiled','Dry','Toilet'],(d.state||''),'dd-nstate','data-cid="'+c.id+'"')+'</td>'+
+          '<td><input type="time" class="dd-nt" data-cid="'+c.id+'" value="'+E(d.time||'')+'"></td>'+
+          '<td><input type="text" class="dd-nnote" data-cid="'+c.id+'" value="'+E(d.notes||'')+'"></td>');
+      }).join('');
+    } else if(t==='suncream'){
+      head='<th><input type="checkbox" id="dd-all"></th><th>Child</th><th>Applied</th><th>Time</th><th>Notes</th>';
+      body=kids.map(function(c){var d=data.suncream[c.id]||{};
+        return row(c,'<td><input type="checkbox" class="dd-scapp" data-cid="'+c.id+'"'+(d.applied?' checked':'')+'></td>'+
+          '<td><input type="time" class="dd-sct" data-cid="'+c.id+'" value="'+E(d.time||'')+'"></td>'+
+          '<td><input type="text" class="dd-scnote" data-cid="'+c.id+'" value="'+E(d.notes||'')+'"></td>');
+      }).join('');
+    } else {
+      head='<th><input type="checkbox" id="dd-all"></th><th>Child</th><th>Additional notes</th>';
+      body=kids.map(function(c){var d=data.notes[c.id]||{};
+        return row(c,'<td><input type="text" class="dd-note" data-cid="'+c.id+'" value="'+E(d.text||'')+'" placeholder="Add a note for this child…"></td>');
+      }).join('');
+    }
+    host.innerHTML='<table class="dd-grid"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>';
+    var all=document.getElementById('dd-all');
+    if(all)all.addEventListener('change',function(){document.querySelectorAll('.dd-sel').forEach(function(cb){cb.checked=all.checked;});});
+  }
+
+  // capture inputs into state on change (delegated)
+  document.getElementById('dd-grid-host').addEventListener('input',function(e){
+    var el=e.target, cid=el.dataset.cid; if(!cid)return; var t=state.tab; data[t][cid]=data[t][cid]||{};
+    if(el.classList.contains('dd-food'))data.food[cid][el.dataset.meal]=el.value;
+    else if(el.classList.contains('dd-foodnote'))data.food[cid].notes=el.value;
+    else if(el.classList.contains('dd-sf'))data.sleep[cid].from=el.value;
+    else if(el.classList.contains('dd-st'))data.sleep[cid].to=el.value;
+    else if(el.classList.contains('dd-sq'))data.sleep[cid].quality=el.value;
+    else if(el.classList.contains('dd-snote'))data.sleep[cid].notes=el.value;
+    else if(el.classList.contains('dd-bml'))data.bottle[cid].ml=el.value;
+    else if(el.classList.contains('dd-bt'))data.bottle[cid].time=el.value;
+    else if(el.classList.contains('dd-btype'))data.bottle[cid].type=el.value;
+    else if(el.classList.contains('dd-bnote'))data.bottle[cid].notes=el.value;
+    else if(el.classList.contains('dd-nstate'))data.nappy[cid].state=el.value;
+    else if(el.classList.contains('dd-nt'))data.nappy[cid].time=el.value;
+    else if(el.classList.contains('dd-nnote'))data.nappy[cid].notes=el.value;
+    else if(el.classList.contains('dd-scapp'))data.suncream[cid].applied=el.checked;
+    else if(el.classList.contains('dd-sct'))data.suncream[cid].time=el.value;
+    else if(el.classList.contains('dd-scnote'))data.suncream[cid].notes=el.value;
+    else if(el.classList.contains('dd-note'))data.notes[cid].text=el.value;
+  });
+
+  function status(msg){document.getElementById('dd-status').textContent=msg;}
+
+  function saveFood(share){
+    // one POST per meal that has any data, via /api/diary/group (→ food_intake_log).
+    // The endpoint takes amount as a string key: all|most|some|none|refused.
+    var jobs=[];
+    MEALS.forEach(function(m){
+      var entries=[];
+      visibleChildren().forEach(function(c){var d=data.food[c.id];if(d&&d[m[0]]){entries.push({child_id:c.id,amount:String(d[m[0]]).toLowerCase(),refused:d[m[0]]==='Refused',notes:d.notes||null});}});
+      if(entries.length)jobs.push(Wren.api('/api/diary/group',{method:'POST',body:{date:state.date,meal_type:m[0],entries:entries,share_with_parents:!!share}}));
+    });
+    return Promise.all(jobs);
+  }
+  function saveType(type,share){
+    var perChild=[],ids=[];
+    visibleChildren().forEach(function(c){var d=data[type][c.id];if(!d)return;ids.push(c.id);
+      if(type==='sleep')perChild.push({child_id:c.id,from:d.from,to:d.to,status:d.quality});
+      else if(type==='bottle')perChild.push({child_id:c.id,amount_ml:d.ml,time:d.time,drink_type:d.type});
+      else if(type==='nappy')perChild.push({child_id:c.id,state:d.state,time:d.time,notes:d.notes});
+      else if(type==='notes'&&d.text)perChild.push({child_id:c.id,note:d.text});
+    });
+    if(!perChild.length)return Promise.resolve();
+    var apiType = type==='notes'?'note':type;
+    return Wren.api('/api/daily-diary/group',{method:'POST',body:{date:state.date,type:apiType,child_ids:ids,common:{share:!!share},perChild:perChild}});
+  }
+
+  function saveAll(share,label){
+    // DEMO MODE: the shared diary save-routes target the ladn schema, so the demo
+    // does NOT persist (prevents demo writes hitting production). Shows the flow only.
+    status('🎬 Demo mode — '+label.toLowerCase()+' (entries are not saved in the demo).');
+  }
+
+  document.addEventListener('wren:ready',function(){
+    document.getElementById('dd-date-label').textContent=fmtDate(state.date);
+    try{var u=(window.Wren&&Wren.user)||JSON.parse(sessionStorage.getItem('wren.user')||'{}');document.getElementById('dd-staff-name').textContent=u.name||u.first_name||'Staff';}catch(e){}
+    document.getElementById('dd-tabs').addEventListener('click',function(e){var b=e.target.closest('.dd-tab');if(!b)return;
+      document.querySelectorAll('.dd-tab').forEach(function(x){x.classList.remove('active');});b.classList.add('active');state.tab=b.dataset.tab;render();});
+    document.getElementById('dd-group').addEventListener('change',function(){state.room=this.value;render();});
+    document.getElementById('dd-prev').addEventListener('click',function(){shiftDay(-1);});
+    document.getElementById('dd-next').addEventListener('click',function(){shiftDay(1);});
+    document.getElementById('dd-draft').addEventListener('click',function(){saveAll(false,'Saved as draft');});
+    document.getElementById('dd-publish').addEventListener('click',function(){saveAll(false,'Published');});
+    document.getElementById('dd-share').addEventListener('click',function(){saveAll(true,'Shared with parents');});
+    loadChildren();
+  });
+  function shiftDay(n){var d=new Date(state.date+'T00:00:00');d.setDate(d.getDate()+n);state.date=d.toISOString().slice(0,10);
+    document.getElementById('dd-date-label').textContent=fmtDate(state.date);render();}
+})();
+</script>
+</body>
+</html>

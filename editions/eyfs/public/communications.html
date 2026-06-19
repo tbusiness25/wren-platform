@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Communications — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .tab-bar{display:flex;gap:4px;margin-bottom:20px;background:#1e293b;border-radius:10px;padding:4px}
+    .tab-btn{flex:1;padding:8px;border-radius:8px;border:none;background:transparent;color:#94a3b8;font-size:13px;cursor:pointer;transition:.15s}
+    .tab-btn.active{background:#4a9abf;color:#fff;font-weight:700}
+    .thread-item{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:.15s}
+    .thread-item:hover{border-color:#4a9abf}
+    .thread-unread{border-left:3px solid #4a9abf}
+    .msg-bubble{border-radius:12px;padding:10px 14px;max-width:80%;margin-bottom:8px}
+    .msg-me{background:#4a9abf;color:#fff;margin-left:auto}
+    .msg-other{background:#1e293b;border:1px solid #2d3748;color:#f1f5f9}
+    .compose-area{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px;margin-top:auto}
+    .notice-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:14px;margin-bottom:10px}
+    .vapi-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:14px;margin-bottom:8px}
+    .call-status{font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;display:inline-block}
+    .call-completed{background:#22c55e22;color:#22c55e}
+    .call-missed{background:#ef444422;color:#ef4444}
+    .call-transferred{background:#4a9abf22;color:#4a9abf}
+  </style>
+  <meta name="wren-hide-modules" content="HR,Staff,IT Settings,Reports,Action Plans,Supervisions,CPD">
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">Communications</div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tab-messages" onclick="showTab('messages')">Messages</button>
+    <button class="tab-btn" id="tab-notices" onclick="showTab('notices')">Notices</button>
+    <button class="tab-btn" id="tab-calls" onclick="showTab('calls')">Aria Calls</button>
+  </div>
+
+  <!-- MESSAGES -->
+  <div id="pane-messages">
+    <p style="color:#94a3b8;font-size:14px;margin-bottom:12px">Parent and staff messages</p>
+    <button class="btn btn-primary" style="margin-bottom:12px" onclick="location.href='/messages.html'">Open Full Messaging →</button>
+    <div id="recent-threads"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- NOTICES -->
+  <div id="pane-notices" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="color:#94a3b8;font-size:14px">Announcements posted to parents portal</span>
+      <button class="btn btn-primary" onclick="showNoticeForm()">+ New Notice</button>
+    </div>
+    <div id="notice-form" style="display:none;background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px;margin-bottom:16px">
+      <div class="form-row">
+        <div class="form-label" style="font-size:12px;color:#94a3b8;margin-bottom:4px">Title</div>
+        <input class="form-control" id="notice-title" type="text" placeholder="Notice title...">
+      </div>
+      <div class="form-row" style="margin-top:10px">
+        <div class="form-label" style="font-size:12px;color:#94a3b8;margin-bottom:4px">Message</div>
+        <textarea class="form-control" id="notice-body" rows="4" placeholder="Notice content..."></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-secondary" onclick="document.getElementById('notice-form').style.display='none'">Cancel</button>
+        <button class="btn btn-primary" onclick="postNotice()">Post to Parents</button>
+      </div>
+    </div>
+    <div id="notices-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- ARIA CALLS -->
+  <div id="pane-calls" style="display:none">
+    <div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:14px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:4px">Aria — AI Receptionist</div>
+      <div style="font-size:12px;color:#94a3b8">+44 208 016 3508 · Powered by Vapi + Claude</div>
+    </div>
+    <div id="calls-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<script>
+async function init(){
+  loadRecentThreads();
+}
+
+function showTab(tab){
+  ['messages','notices','calls'].forEach(t=>{
+    document.getElementById('pane-'+t).style.display=t===tab?'':'none';
+    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+  });
+  if(tab==='notices')loadNotices();
+  if(tab==='calls')loadCalls();
+}
+
+// ── MESSAGES ──
+async function loadRecentThreads(){
+  const area=document.getElementById('recent-threads');
+  try{
+    const threads=await Wren.api('/api/messages/threads').catch(()=>[]);
+    if(!threads.length){area.innerHTML='<div class="empty-state">No messages yet</div>';return;}
+    area.innerHTML=threads.slice(0,8).map(t=>`
+      <div class="thread-item${t.unread_count>0?' thread-unread':''}" onclick="location.href='/messages.html'">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="font-size:14px;color:#f1f5f9">${t.subject||'(no subject)'}</strong>
+          ${t.unread_count>0?`<span style="background:#4a9abf;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700">${t.unread_count}</span>`:''}
+        </div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:2px">${t.last_message||''}</div>
+        <div style="font-size:11px;color:#475569;margin-top:2px">${t.updated_at?new Date(t.updated_at).toLocaleDateString('en-GB'):''}</div>
+      </div>`).join('');
+  }catch(e){area.innerHTML='<div class="empty-state">Could not load messages</div>';}
+}
+
+// ── NOTICES ──
+function showNoticeForm(){document.getElementById('notice-form').style.display='';}
+
+async function postNotice(){
+  const title=document.getElementById('notice-title').value.trim();
+  const body=document.getElementById('notice-body').value.trim();
+  if(!title||!body)return Wren.toast('Title and message required','error');
+  try{
+    await Wren.api('/api/newsletter',{method:'POST',body:JSON.stringify({
+      title,body,status:'notice',send_to:'all_parents'
+    })});
+    Wren.toast('Notice posted to parents portal');
+    document.getElementById('notice-form').style.display='none';
+    document.getElementById('notice-title').value='';
+    document.getElementById('notice-body').value='';
+    loadNotices();
+  }catch(e){Wren.toast('Error: '+e.message,'error');}
+}
+
+async function loadNotices(){
+  const area=document.getElementById('notices-list');
+  try{
+    const items=await Wren.api('/api/newsletter?status=notice').catch(()=>[]);
+    if(!items.length){area.innerHTML='<div class="empty-state">No notices posted yet</div>';return;}
+    area.innerHTML=items.map(n=>`
+      <div class="notice-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <strong style="font-size:14px;color:#f1f5f9">${n.title||''}</strong>
+          <span style="font-size:11px;color:#94a3b8;flex-shrink:0">${n.created_at?new Date(n.created_at).toLocaleDateString('en-GB'):''}</span>
+        </div>
+        <div style="font-size:13px;color:#94a3b8;margin-top:6px">${(n.body||'').slice(0,120)}${(n.body||'').length>120?'...':''}</div>
+      </div>`).join('');
+  }catch(e){area.innerHTML='<div class="empty-state">Could not load notices</div>';}
+}
+
+// ── ARIA CALLS ──
+async function loadCalls(){
+  const area=document.getElementById('calls-list');
+  try{
+    const calls=await Wren.api('/api/admin/vapi-calls').catch(()=>null);
+    if(!calls||!calls.length){
+      area.innerHTML='<div class="empty-state">No recent Aria calls.<br><span style="font-size:12px;color:#94a3b8">Calls will appear here once Vapi is connected.</span></div>';
+      return;
+    }
+    const statusCls={completed:'call-completed',missed:'call-missed',transferred:'call-transferred'};
+    area.innerHTML=calls.map(c=>`
+      <div class="vapi-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:14px;font-weight:600;color:#f1f5f9">${c.caller_number||'Unknown'}</span>
+          <span class="call-status ${statusCls[c.outcome]||''}">${c.outcome||c.status||'—'}</span>
+        </div>
+        <div style="font-size:12px;color:#94a3b8">${c.created_at?new Date(c.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''} · ${c.duration?Math.round(c.duration/60)+'min':''}</div>
+        ${c.transcript?`<div style="font-size:12px;color:#94a3b8;margin-top:6px;font-style:italic">"${c.transcript.slice(0,100)}..."</div>`:''}
+      </div>`).join('');
+  }catch(e){area.innerHTML='<div class="empty-state">Could not load calls</div>';}
+}
+
+document.addEventListener('wren:ready',init);
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

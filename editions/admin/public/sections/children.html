@@ -1,0 +1,602 @@
+<div class="v2-section" data-section="children">
+
+  <nav class="wren-tab-bar" role="tablist" aria-label="Children tabs">
+    <div class="tab-bar-track">
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="list"    id="tab-ch-list"    aria-controls="panel-ch-list">List</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="reports"  id="tab-ch-reports" aria-controls="panel-ch-reports">Reports</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+  <div class="wren-tab-panels">
+
+    <!-- LIST -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ch-list" data-tab="list" aria-labelledby="tab-ch-list">
+      <div class="v2-list-toolbar">
+        <input type="search" class="v2-search-input" id="ch-search" placeholder="Search children…" aria-label="Search children" autocomplete="off">
+        <div class="v2-filter-chips" id="ch-filter-chips">
+          <button class="v2-chip active" data-filter="">All</button>
+          <button class="v2-chip" data-filter="baby-room">Baby Room</button>
+          <button class="v2-chip" data-filter="pre-school">Pre-school</button>
+          <button class="v2-chip" data-filter="sen">SEN</button>
+          <button class="v2-chip" data-filter="eal">EAL</button>
+          <button class="v2-chip" data-filter="funded">Funded</button>
+          <button class="v2-chip" data-filter="pp">PP</button>
+          <button class="v2-chip" data-filter="ehcp">EHCP</button>
+        </div>
+        <select class="v2-sort-select" id="ch-sort" aria-label="Sort children">
+          <option value="name">Name A–Z</option>
+          <option value="dob">Age (youngest)</option>
+          <option value="room">Room</option>
+          <option value="start">Start date</option>
+        </select>
+        <button class="btn btn-sm btn-ghost" id="ch-export-btn" style="display:none" title="Export filtered list as CSV">↓ Export CSV</button>
+        <button class="btn btn-sm btn-primary" id="ch-bulk-btn" style="display:none">Bulk actions ▾</button>
+      </div>
+
+      <div id="ch-list-stats" style="font-size:.8rem;color:var(--c-muted);margin-bottom:10px"></div>
+      <div id="ch-list-container" class="v2-virtual-list" role="list" aria-label="Children list" aria-live="polite">
+        <div class="tab-skeleton-grid">
+          <div class="tab-sk-card"></div><div class="tab-sk-card"></div>
+          <div class="tab-sk-card"></div><div class="tab-sk-card"></div>
+          <div class="tab-sk-card"></div><div class="tab-sk-card"></div>
+        </div>
+      </div>
+      <div id="ch-list-sentinel" class="v2-list-sentinel" aria-hidden="true"></div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ch-reports" data-tab="reports" aria-labelledby="tab-ch-reports" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h2 class="page-title" style="font-size:1.1rem;margin:0">Child Reports</h2>
+        <div style="display:flex;gap:8px">
+          <a href="/parent-reports.html" class="btn btn-sm btn-ghost">Report writer →</a>
+          <a href="/ey/home" class="btn btn-sm btn-ghost">Observations →</a>
+        </div>
+      </div>
+      <div id="ch-reports-grid" class="v2-card-grid">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const PAGE_SIZE = 50;
+  let _all = [], _filtered = [], _rendered = 0, _observer = null;
+  let _activeFilter = '', _activeSort = 'name';
+
+  function _fullName(c) { return ((c.first_name || '') + ' ' + (c.last_name || '')).trim() || c.name || '?'; }
+  function _roomClass(room) {
+    if (!room) return '';
+    const r = room.toLowerCase();
+    if (r.includes('baby')) return 'baby-room';
+    if (r.includes('pre') || r.includes('preschool')) return 'pre-school';
+    return '';
+  }
+  function _calcAge(dob) {
+    if (!dob) return '';
+    const d = new Date(dob), now = new Date();
+    const totalM = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+    const y = Math.floor(totalM / 12), m = totalM % 12;
+    if (y === 0) return `${m}m`;
+    if (m === 0) return `${y}y`;
+    return `${y}y ${m}m`;
+  }
+  const _pal = ['#4a9abf','#e07820','#22c55e','#a78bfa','#f59e0b','#ef4444'];
+  function _col(name) { return _pal[(name || '?').charCodeAt(0) % _pal.length]; }
+
+  function _sort(arr) {
+    return [...arr].sort((a, b) => {
+      const na = _fullName(a), nb = _fullName(b);
+      if (_activeSort === 'name')  return na.localeCompare(nb);
+      if (_activeSort === 'dob')   return new Date(b.date_of_birth||0) - new Date(a.date_of_birth||0);
+      if (_activeSort === 'room')  return (a.room_name||'').localeCompare(b.room_name||'');
+      if (_activeSort === 'start') return new Date(b.start_date||0) - new Date(a.start_date||0);
+      return 0;
+    });
+  }
+
+  function _filter() {
+    const q = (document.getElementById('ch-search')?.value || '').toLowerCase();
+    _filtered = _all.filter(c => {
+      const name = _fullName(c).toLowerCase();
+      if (q && !name.includes(q)) return false;
+      const rc = _roomClass(c.room_name || '');
+      if (_activeFilter === 'baby-room')  return rc === 'baby-room';
+      if (_activeFilter === 'pre-school') return rc === 'pre-school';
+      if (_activeFilter === 'sen')        return c.is_on_sen_register || c.send_needs;
+      if (_activeFilter === 'eal')        return c.eal || (c.home_language && c.home_language.toLowerCase() !== 'english');
+      if (_activeFilter === 'funded')     return parseFloat(c.funded_hours||0) > 0 || parseFloat(c.funded_hours_15||0) > 0 || parseFloat(c.funded_hours_30||0) > 0;
+      if (_activeFilter === 'pp')         return c.pupil_premium || c.eypp_eligible;
+      if (_activeFilter === 'ehcp')       return c.ehcp_status || (c.sen_needs && (c.sen_needs+'').toLowerCase().includes('ehcp'));
+      return true;
+    });
+    _filtered = _sort(_filtered);
+    _rendered = 0;
+    const el = document.getElementById('ch-list-container');
+    if (el) el.innerHTML = '';
+    const stats = document.getElementById('ch-list-stats');
+    if (stats) stats.textContent = `${_filtered.length} child${_filtered.length !== 1 ? 'ren' : ''} shown`;
+    _renderBatch();
+  }
+
+  function _makeCard(c) {
+    const name = _fullName(c);
+    const age  = _calcAge(c.date_of_birth);
+    const room = c.room_name || '';
+    const hasSen  = c.is_on_sen_register || c.send_needs;
+    const hasEhcp = c.ehcp_status || (c.sen_needs && (c.sen_needs+'').toLowerCase().includes('ehcp'));
+    const hasEal  = c.eal || (c.home_language && c.home_language.toLowerCase() !== 'english');
+    const hasPp   = c.pupil_premium || c.eypp_eligible;
+    const hasFund = parseFloat(c.funded_hours||0) > 0 || parseFloat(c.funded_hours_15||0) > 0;
+    const hasAlrg = c.allergies || c.allergens;
+    const row = document.createElement('div');
+    row.className = 'v2-list-row';
+    row.setAttribute('role', 'listitem');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-label', `${name}${room ? ', ' + room : ''}${age ? ', ' + age : ''}`);
+    row.innerHTML = `
+      <div class="v2-list-avatar" style="background:${_col(name)};color:#fff;font-weight:700">${name[0].toUpperCase()}</div>
+      <div style="flex:1;min-width:0">
+        <div class="v2-list-name">${name}</div>
+        <div class="v2-list-meta">${[room, age].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div class="v2-list-badges">
+        ${hasSen  ? '<span class="badge badge-purple">SEN</span>' : ''}
+        ${hasEhcp ? '<span class="badge badge-purple" style="background:#7c3aed22;border-color:#7c3aed">EHCP</span>' : ''}
+        ${hasEal  ? '<span class="badge badge-blue">EAL</span>' : ''}
+        ${hasPp   ? '<span class="badge badge-yellow" title="Pupil Premium / EYPP">PP</span>' : ''}
+        ${hasFund ? `<span class="badge badge-green">${c.funded_hours||c.funded_hours_15}h funded</span>` : ''}
+        ${hasAlrg ? '<span class="badge badge-red" title="Allergies">⚠</span>' : ''}
+      </div>`;
+    row.addEventListener('click', () => _openDrawer(c));
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _openDrawer(c); } });
+    return row;
+  }
+
+  function _renderBatch() {
+    const el = document.getElementById('ch-list-container');
+    if (!el) return;
+    const end = Math.min(_rendered + PAGE_SIZE, _filtered.length);
+    const frag = document.createDocumentFragment();
+    for (let i = _rendered; i < end; i++) frag.appendChild(_makeCard(_filtered[i]));
+    el.appendChild(frag);
+    _rendered = end;
+    const sentinel = document.getElementById('ch-list-sentinel');
+    if (sentinel && _rendered < _filtered.length) {
+      if (_observer) _observer.disconnect();
+      _observer = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting) { _observer.disconnect(); _renderBatch(); }
+      }, { rootMargin: '200px' });
+      _observer.observe(sentinel);
+    }
+  }
+
+  // ── Child Drawer ─────────────────────────────────────────────────────────────
+
+  const DRAWER_TABS = [
+    { id: 'profile',      label: 'Profile' },
+    { id: 'observations', label: 'Observations' },
+    { id: 'learning',     label: 'Learning' },
+    { id: 'reports',      label: 'Reports' },
+    { id: 'diary',        label: 'Diary' },
+    { id: 'accidents',    label: 'Accidents' },
+    { id: 'safeguarding', label: 'Safeguarding', dslOnly: true },
+    { id: 'sen',          label: 'SEN' },
+    { id: 'documents',    label: 'Documents' },
+    { id: 'messages',     label: 'Messages' },
+    { id: 'wren-points',  label: 'Wren Points' },
+    { id: 'assessment',   label: 'Assessment' },
+  ];
+
+  function _isMgr() {
+    const u = Wren.user;
+    return u && ['manager','deputy_manager','admin'].includes(u.role);
+  }
+
+  function _openDrawer(c) {
+    const name = _fullName(c);
+    const visibleTabs = DRAWER_TABS.filter(t => !t.dslOnly || _isMgr());
+    const tabHtml = visibleTabs.map((t, i) =>
+      `<button class="drawer-tab${i===0?' active':''}" data-dtab="${t.id}">${t.label}</button>`
+    ).join('');
+
+    const skelly = `<div class="tab-skeleton" style="padding:16px 0"><div class="tab-sk-row w80"></div><div class="tab-sk-row w60"></div></div>`;
+    const panelHtml = visibleTabs.map((t, i) =>
+      `<div class="drawer-panel${i===0?'':' hidden'}" data-dpanel="${t.id}">${skelly}</div>`
+    ).join('');
+
+    Wren.openDrawer(`
+      <nav class="drawer-tab-bar" role="tablist" aria-label="${name} tabs">${tabHtml}</nav>
+      <div class="drawer-panels">${panelHtml}</div>`, name);
+
+    setTimeout(() => _wireDrawer(c, visibleTabs), 40);
+  }
+
+  function _wireDrawer(c, tabs) {
+    const dTabs = document.querySelectorAll('.drawer-tab[data-dtab]');
+    const dPanels = document.querySelectorAll('.drawer-panel[data-dpanel]');
+    const loaded = {};
+
+    function activateDtab(id) {
+      dTabs.forEach(t => t.classList.toggle('active', t.dataset.dtab === id));
+      dPanels.forEach(p => p.classList.toggle('hidden', p.dataset.dpanel !== id));
+      if (!loaded[id]) { loaded[id] = true; _loadPanel(c, id); }
+    }
+
+    dTabs.forEach(t => t.addEventListener('click', () => activateDtab(t.dataset.dtab)));
+    activateDtab(tabs[0].id);
+  }
+
+  function _loadPanel(c, tabId) {
+    const panel = document.querySelector(`.drawer-panel[data-dpanel="${tabId}"]`);
+    if (!panel) return;
+    const skelly = `<div class="tab-skeleton" style="padding:16px 0"><div class="tab-sk-row w80"></div><div class="tab-sk-row w60"></div></div>`;
+    panel.innerHTML = skelly;
+
+    const name = _fullName(c);
+
+    if (tabId === 'profile') {
+      Wren.api(`/api/children/${c.id}/profile`).then(p => {
+        panel.innerHTML = `
+          <div style="padding:4px 0 16px">
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+              <div style="width:56px;height:56px;border-radius:50%;background:${_col(name)};display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;color:#fff;flex-shrink:0">${name[0].toUpperCase()}</div>
+              <div>
+                <div style="font-size:1.1rem;font-weight:600;color:var(--c-text)">${name}${p.preferred_name ? ` <span style="color:var(--c-muted);font-weight:400">(${p.preferred_name})</span>` : ''}</div>
+                <div style="color:var(--c-muted);font-size:.85rem">${p.room_name||''} ${p.date_of_birth ? '· DOB: ' + new Date(p.date_of_birth).toLocaleDateString('en-GB') : ''}</div>
+                ${p.is_on_sen_register ? '<span class="badge badge-purple" style="margin-top:4px">SEN – '+p.sen_type+'</span>' : ''}
+              </div>
+            </div>
+            <div class="drawer-info-grid">
+              <div class="drawer-info-row"><span>Key person</span><span>${p.key_person_first||''} ${p.key_person_last||''}</span></div>
+              <div class="drawer-info-row"><span>Funded hours</span><span>${parseFloat(p.funded_hours||0) > 0 ? p.funded_hours + 'h' : 'None'}</span></div>
+              <div class="drawer-info-row"><span>Parent 1</span><span>${p.parent_1_name||'—'} ${p.parent_1_phone ? '· '+p.parent_1_phone : ''}</span></div>
+              ${p.parent_2_name ? `<div class="drawer-info-row"><span>Parent 2</span><span>${p.parent_2_name} ${p.parent_2_phone ? '· '+p.parent_2_phone : ''}</span></div>` : ''}
+              ${p.emergency_contact_1_name ? `<div class="drawer-info-row"><span>Emergency</span><span>${p.emergency_contact_1_name} · ${p.emergency_contact_1_phone||''}</span></div>` : ''}
+              ${p.allergies ? `<div class="drawer-info-row danger"><span>⚠ Allergies</span><span>${p.allergies}</span></div>` : ''}
+              ${p.medical_notes ? `<div class="drawer-info-row warning"><span>Medical</span><span>${p.medical_notes}</span></div>` : ''}
+              ${p.collection_password ? `<div class="drawer-info-row"><span>Collection PW</span><span>${p.collection_password}</span></div>` : ''}
+            </div>
+            <a href="/ey/child/${c.id}" class="btn btn-sm btn-ghost" style="margin-top:12px">Full profile →</a>
+          </div>`;
+      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load profile.</p>`; });
+      return;
+    }
+
+    if (tabId === 'observations') {
+      Wren.api(`/api/observations?child_id=${c.id}`).then(rows => {
+        if (!rows.length) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">🔭</div><h3>No observations yet</h3></div>`; return; }
+        panel.innerHTML = `<div class="obs-timeline">` + rows.map(o => `
+          <div class="obs-item">
+            <div class="obs-meta">${new Date(o.created_at).toLocaleDateString('en-GB')} · <span style="color:var(--c-muted)">${o.staff_name||''}</span></div>
+            <div class="obs-text">${o.observation_text||o.title||'(no text)'}</div>
+            ${Array.isArray(o.eyfs_areas) && o.eyfs_areas.length ? `<div class="obs-tags">${o.eyfs_areas.map(a=>`<span class="badge badge-blue" style="font-size:.75rem">${a}</span>`).join(' ')}</div>` : ''}
+          </div>`).join('') + `</div>`;
+      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load observations.</p>`; });
+      return;
+    }
+
+    if (tabId === 'learning') {
+      Wren.api(`/api/observations/child/${c.id}/framework-summary`).then(rows => {
+        if (!rows.length) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">📚</div><h3>No learning journey data</h3><p>Observations with EYFS area tags will build this tracker.</p></div>`; return; }
+        const max = Math.max(...rows.map(r => parseInt(r.obs_count)||0)) || 1;
+        panel.innerHTML = `
+          <h4 style="color:var(--c-muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">EYFS Area Coverage</h4>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            ${rows.map(r => `
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:.85rem">
+                  <span>${r.area}</span><span style="color:var(--c-muted)">${r.obs_count} obs</span>
+                </div>
+                <div style="height:6px;background:var(--c-border);border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${Math.round((parseInt(r.obs_count)||0)/max*100)}%;background:var(--c-blue);border-radius:3px;transition:width .4s ease"></div>
+                </div>
+              </div>`).join('')}
+          </div>
+          <a href="/ey/child/${c.id}#learning" class="btn btn-sm btn-ghost" style="margin-top:16px">Full learning journey →</a>`;
+      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load learning journey.</p>`; });
+      return;
+    }
+
+    if (tabId === 'diary') {
+      Wren.api(`/api/diary/child/${c.id}?limit=7`).then(rows => {
+        if (!rows.length) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">📔</div><h3>No diary entries</h3></div>`; return; }
+        panel.innerHTML = `<div class="obs-timeline">` + rows.map(d => `
+          <div class="obs-item">
+            <div class="obs-meta">${new Date(d.date || d.created_at).toLocaleDateString('en-GB')}</div>
+            ${d.mood ? `<div style="font-size:.85rem;margin-bottom:4px">Mood: <strong>${d.mood}</strong></div>` : ''}
+            ${d.meals ? `<div style="font-size:.85rem;margin-bottom:4px">Meals: ${d.meals}</div>` : ''}
+            ${d.activities ? `<div style="font-size:.85rem">${d.activities}</div>` : ''}
+            ${d.notes ? `<div style="font-size:.85rem;color:var(--c-muted);margin-top:4px">${d.notes}</div>` : ''}
+          </div>`).join('') + `</div>`;
+      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load diary.</p>`; });
+      return;
+    }
+
+    if (tabId === 'accidents') {
+      Wren.api(`/api/incidents`).then(rows => {
+        const childRows = rows.filter(r => r.child_id === c.id || r.child_name === _fullName(c));
+        if (!childRows.length) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">🩹</div><h3>No incidents recorded</h3></div>`; return; }
+        panel.innerHTML = `<div class="obs-timeline">` + childRows.map(i => `
+          <div class="obs-item">
+            <div class="obs-meta">${new Date(i.created_at).toLocaleDateString('en-GB')} · <span style="color:var(--c-muted)">${i.reporter_name||''}</span></div>
+            <div class="obs-text">${i.description||'(no description)'}</div>
+            <div style="margin-top:6px"><span class="badge ${i.status==='signed_off'?'badge-green':'badge-yellow'}">${i.status||'pending'}</span></div>
+          </div>`).join('') + `</div>`;
+      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load incidents.</p>`; });
+      return;
+    }
+
+    if (tabId === 'safeguarding') {
+      if (!_isMgr()) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">🔒</div><h3>DSL access only</h3></div>`; return; }
+      Wren.api(`/api/safeguarding/child/${c.id}/timeline`).then(rows => {
+        const logBtn = `<button class="btn btn-sm btn-primary" style="margin-bottom:14px" data-sg-log-child="${c.id}" data-sg-child-name="${name}">+ Log concern for ${name}</button>`;
+        if (!rows.length) {
+          panel.innerHTML = logBtn + `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">🛡️</div><h3>No concerns on file</h3></div>`;
+        } else {
+          panel.innerHTML = logBtn + `<div class="obs-timeline">` + rows.map(sg => `
+            <div class="obs-item ${sg.status==='new'?'obs-item-alert':''}">
+              <div class="obs-meta">${new Date(sg.concern_date||sg.created_at).toLocaleDateString('en-GB')} · <span class="badge ${_sgBadge(sg.status)}">${sg.status}</span>${sg.severity && sg.severity!=='standard' ? ` <span class="badge badge-${sg.severity==='critical'?'red':'yellow'}">${sg.severity}</span>` : ''}</div>
+              <div class="obs-text">${sg.description||''}</div>
+              ${sg.reporter_name ? `<div style="font-size:.8rem;color:var(--c-muted);margin-top:4px">Reported by: ${sg.reporter_name}</div>` : ''}
+            </div>`).join('') + `</div>`;
+        }
+        // Wire the log button
+        panel.querySelector('[data-sg-log-child]')?.addEventListener('click', () => {
+          window._sgOpenLogConcernModal && window._sgOpenLogConcernModal(c.id, name);
+        });
+      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load safeguarding records.</p>`; });
+      return;
+    }
+
+    if (tabId === 'sen') {
+      Wren.api(`/api/sen/child/${c.id}`).then(rows => {
+        const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+        if (!list.length) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">🌟</div><h3>No SEN record</h3></div>`; return; }
+        const s = list[0];
+        panel.innerHTML = `
+          <div style="padding:4px 0">
+            <div class="drawer-info-grid">
+              ${s.sen_type ? `<div class="drawer-info-row"><span>SEN type</span><span>${s.sen_type}</span></div>` : ''}
+              ${s.primary_need ? `<div class="drawer-info-row"><span>Primary need</span><span>${s.primary_need}</span></div>` : ''}
+              ${s.ehcp_status ? `<div class="drawer-info-row"><span>EHCP</span><span class="badge badge-purple">${s.ehcp_status}</span></div>` : ''}
+              ${s.review_date ? `<div class="drawer-info-row"><span>Review date</span><span>${new Date(s.review_date).toLocaleDateString('en-GB')}</span></div>` : ''}
+              ${s.notes ? `<div class="drawer-info-row"><span>Notes</span><span>${s.notes}</span></div>` : ''}
+            </div>
+          </div>`;
+      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load SEN record.</p>`; });
+      return;
+    }
+
+    if (tabId === 'documents') {
+      panel.innerHTML = `
+        <div style="padding:4px 0 16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <span style="color:var(--c-muted);font-size:.85rem">Consent forms, medical, permissions</span>
+          </div>
+          <div class="tab-coming-soon" style="padding:24px 0">
+            <div class="coming-icon">📄</div>
+            <h3>Documents</h3>
+            <p>Upload store coming soon. Access full profile for current documents.</p>
+            <a href="/ey/child/${c.id}" class="btn btn-sm btn-ghost" style="margin-top:8px">Full profile →</a>
+          </div>
+        </div>`;
+      return;
+    }
+
+    if (tabId === 'messages') {
+      Wren.api(`/api/messages?child_id=${c.id}&limit=20`).then(rows => {
+        const list = Array.isArray(rows) ? rows : (rows.messages || []);
+        if (!list.length) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">💬</div><h3>No messages</h3></div>`; return; }
+        panel.innerHTML = `<div class="obs-timeline">` + list.map(m => `
+          <div class="obs-item">
+            <div class="obs-meta">${new Date(m.created_at).toLocaleDateString('en-GB')} · <span style="color:var(--c-muted)">${m.sender_name||'Staff'}</span></div>
+            <div class="obs-text">${m.body||m.content||''}</div>
+          </div>`).join('') + `</div>
+          <a href="/admin/communications/inbox" class="btn btn-sm btn-ghost" style="margin-top:8px">Full inbox →</a>`;
+      }).catch(() => {
+        panel.innerHTML = `<a href="/admin/communications/inbox" class="btn btn-sm btn-ghost" style="margin-top:8px">Open messaging →</a>`;
+      });
+      return;
+    }
+
+    if (tabId === 'reports') {
+      const reportLinks = [
+        { icon: '📝', label: 'Term Report', desc: 'Generate or view this child\'s end-of-term progress report.', href: `/report-writer.html?child_id=${c.id}` },
+        { icon: '📊', label: 'Development Tracker', desc: 'EYFS prime and specific area coverage from observations.', href: `/child-profile.html?id=${c.id}#learning` },
+        { icon: '📈', label: 'Attendance Record', desc: 'Full attendance history and patterns.', href: `/child-profile.html?id=${c.id}#attendance` },
+        { icon: '🤖', label: 'AI Parent Report', desc: 'Draft an AI-generated parent-facing progress report.', href: `/report-writer.html?child_id=${c.id}&ai=1` },
+      ];
+      panel.innerHTML = `
+        <div style="padding:4px 0 16px">
+          <div style="display:grid;gap:10px">
+            ${reportLinks.map(r => `
+              <a href="${r.href}" class="v2-card v2-card-link" style="display:flex;align-items:center;gap:12px;text-decoration:none;padding:12px">
+                <span style="font-size:1.6rem;flex-shrink:0">${r.icon}</span>
+                <div><div style="font-weight:600;color:var(--c-text);margin-bottom:2px">${r.label}</div>
+                <div style="font-size:.82rem;color:var(--c-muted)">${r.desc}</div></div>
+              </a>`).join('')}
+          </div>
+          <a href="/parent-reports.html" class="btn btn-sm btn-ghost" style="margin-top:12px">All reports →</a>
+        </div>`;
+      return;
+    }
+
+    if (tabId === 'wren-points') {
+      Wren.api(`/api/points?child_id=${c.id}&limit=20`).then(rows => {
+        const list = Array.isArray(rows) ? rows : (rows.points || []);
+        const total = list.reduce((s, r) => s + (parseInt(r.points||r.value||1)), 0);
+        if (!list.length) {
+          panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0">
+            <div class="coming-icon">⭐</div>
+            <h3>No Wren Points yet</h3>
+            <p>Award points from the learning portal or class display view.</p>
+          </div>`;
+          return;
+        }
+        panel.innerHTML = `
+          <div style="padding:4px 0 16px">
+            <div style="font-size:2rem;font-weight:700;color:var(--c-orange);margin-bottom:4px">${total} pts</div>
+            <div style="font-size:.8rem;color:var(--c-muted);margin-bottom:16px">Total Wren Points</div>
+            <div class="obs-timeline">` +
+          list.map(p => `
+            <div class="obs-item">
+              <div class="obs-meta">${new Date(p.created_at||p.awarded_at).toLocaleDateString('en-GB')} · <span style="color:var(--c-muted)">${p.awarded_by_name||p.teacher_name||'Staff'}</span></div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <span style="color:var(--c-orange);font-weight:600">+${p.points||p.value||1}</span>
+                <span style="font-size:.85rem">${p.reason||p.category||p.description||'Recognised'}</span>
+              </div>
+            </div>`).join('') +
+          `</div></div>`;
+      }).catch(() => {
+        panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0">
+          <div class="coming-icon">⭐</div>
+          <h3>Wren Points</h3>
+          <p>Positive recognition — available in Primary and Secondary editions.</p>
+        </div>`;
+      });
+      return;
+    }
+
+    if (tabId === 'assessment') {
+      const p2 = Promise.all([
+        Wren.api(`/api/phonics?child_id=${c.id}`).catch(() => []),
+        Wren.api(`/api/assessments?child_id=${c.id}&limit=10`).catch(() => []),
+      ]);
+      p2.then(([phonics, assessments]) => {
+        const phonicList = Array.isArray(phonics) ? phonics : [];
+        const assList    = Array.isArray(assessments) ? assessments : [];
+        if (!phonicList.length && !assList.length) {
+          panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0">
+            <div class="coming-icon">📐</div>
+            <h3>No assessment records</h3>
+            <p>Phonics progress, SATs bands, and framework assessments appear here.</p>
+          </div>`;
+          return;
+        }
+        let html = '<div style="padding:4px 0 16px">';
+        if (phonicList.length) {
+          html += `<h4 style="color:var(--c-muted);font-size:.8rem;text-transform:uppercase;margin-bottom:10px">Phonics</h4>
+            <div class="obs-timeline">` +
+            phonicList.slice(0,5).map(ph => `
+              <div class="obs-item">
+                <div class="obs-meta">${ph.phase ? 'Phase '+ph.phase : ''} ${ph.assessed_date ? '· '+new Date(ph.assessed_date).toLocaleDateString('en-GB') : ''}</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+                  ${ph.score !== undefined ? `<span style="font-size:.85rem">Score: <strong>${ph.score}</strong>${ph.pass !== undefined ? (ph.pass ? ' ✓ Pass' : ' ✗ Below') : ''}</span>` : ''}
+                  ${ph.phoneme ? `<span style="font-size:.85rem;color:var(--c-muted)">Phoneme: ${ph.phoneme}</span>` : ''}
+                </div>
+              </div>`).join('') + `</div>`;
+        }
+        if (assList.length) {
+          html += `<h4 style="color:var(--c-muted);font-size:.8rem;text-transform:uppercase;margin:16px 0 10px">Assessments</h4>
+            <div class="obs-timeline">` +
+            assList.map(a => `
+              <div class="obs-item">
+                <div class="obs-meta">${a.assessment_type||a.type||'Assessment'} ${a.term ? '· '+a.term : ''} ${a.created_at ? '· '+new Date(a.created_at).toLocaleDateString('en-GB') : ''}</div>
+                ${a.grade||a.level||a.score ? `<div style="font-size:.85rem;margin-top:4px">Result: <strong>${a.grade||a.level||a.score}</strong></div>` : ''}
+              </div>`).join('') + `</div>`;
+        }
+        html += `<a href="/ey/child/${c.id}#assessment" class="btn btn-sm btn-ghost" style="margin-top:12px">Full assessment →</a></div>`;
+        panel.innerHTML = html;
+      });
+      return;
+    }
+
+    panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">🔧</div><h3>Coming soon</h3></div>`;
+  }
+
+  function _sgBadge(s) {
+    if (!s) return '';
+    if (s === 'new') return 'badge-red';
+    if (s === 'under_review' || s === 'action_taken') return 'badge-yellow';
+    if (s === 'closed') return 'badge-green';
+    return 'badge-blue';
+  }
+
+  // ── Reports tab ──────────────────────────────────────────────────────────────
+
+  window.wrenLoadTab_children_reports = function() {
+    const grid = document.getElementById('ch-reports-grid');
+    if (!grid) return;
+    const cards = [
+      { icon: '📝', title: 'Term Reports', desc: 'Generate end-of-term progress reports for all children. AI drafts available.', href: '/parent-reports.html' },
+      { icon: '🔭', title: 'Observations Summary', desc: 'Observation counts, EYFS coverage, and activity heatmap across all rooms.', href: '/observations.html' },
+      { icon: '📊', title: 'Development Tracker', desc: 'EYFS prime and specific area progress across all children.', href: '/children/next-steps.html' },
+      { icon: '🤖', title: 'AI Report Writer', desc: 'Mass-generate parent-facing report drafts for review and sign-off.', href: '/report-writer.html' },
+    ];
+    grid.innerHTML = cards.map(c => `
+      <a class="v2-card v2-card-link" href="${c.href}" style="display:block;text-decoration:none">
+        <div style="font-size:2rem;margin-bottom:8px">${c.icon}</div>
+        <div style="font-weight:600;color:var(--c-text);margin-bottom:6px">${c.title}</div>
+        <div style="font-size:.85rem;color:var(--c-muted)">${c.desc}</div>
+      </a>`).join('');
+  };
+
+  // ── List tab loader ──────────────────────────────────────────────────────────
+
+  window.wrenLoadTab_children_list = function() {
+    const t0 = performance.now();
+    Wren.api('/api/children').then(data => {
+      _all = Array.isArray(data) ? data : (data.children || []);
+      console.log(`[Wren] children: ${_all.length} rows in ${(performance.now()-t0).toFixed(0)}ms`);
+      _filter();
+
+      const isMgr = Wren.user && ['manager','deputy_manager','admin'].includes(Wren.user.role);
+      const exportBtn = document.getElementById('ch-export-btn');
+      const bulkBtn   = document.getElementById('ch-bulk-btn');
+      if (exportBtn) {
+        exportBtn.style.display = '';
+        exportBtn.addEventListener('click', _exportCSV);
+      }
+      if (bulkBtn && isMgr) bulkBtn.style.display = '';
+
+      document.getElementById('ch-search')?.addEventListener('input', _filter);
+
+      document.querySelectorAll('#ch-filter-chips .v2-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          document.querySelectorAll('#ch-filter-chips .v2-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          _activeFilter = chip.dataset.filter;
+          _filter();
+        });
+      });
+
+      const sortEl = document.getElementById('ch-sort');
+      if (sortEl) sortEl.addEventListener('change', () => { _activeSort = sortEl.value; _filter(); });
+
+    }).catch(() => {
+      const el = document.getElementById('ch-list-container');
+      if (el) el.innerHTML = '<div class="tab-coming-soon"><div class="coming-icon">👶</div><h3>Children</h3><p>Start the admin portal to load children.</p></div>';
+    });
+  };
+
+  function _exportCSV() {
+    if (!_filtered.length) { Wren.toast('No children to export', 'warning'); return; }
+    const headers = ['First name','Last name','Room','DOB','Funded hours','SEN','EAL','PP','Allergies'];
+    const rows = _filtered.map(c => [
+      c.first_name||'', c.last_name||'', c.room_name||'',
+      c.date_of_birth ? new Date(c.date_of_birth).toLocaleDateString('en-GB') : '',
+      c.funded_hours||c.funded_hours_15||'',
+      c.is_on_sen_register||c.send_needs ? 'Yes' : '',
+      c.eal ? 'Yes' : '',
+      c.pupil_premium||c.eypp_eligible ? 'Yes' : '',
+      c.allergies||c.allergens||'',
+    ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `children-${_activeFilter||'all'}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    Wren.toast(`Exported ${_filtered.length} children`, 'success');
+  }
+
+})();
+</script>

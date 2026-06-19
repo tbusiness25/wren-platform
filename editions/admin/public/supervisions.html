@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Supervisions — Hawk</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .sup-tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+    .sup-tab{padding:10px 18px;border-radius:12px;background:#1e293b;border:1px solid #2d3748;color:#94a3b8;cursor:pointer;font-weight:600;transition:all .2s ease}
+    .sup-tab.active{background:#4a9abf;border-color:#4a9abf;color:#fff}
+    .mic-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px 12px}
+    .mic-btn{width:120px;height:120px;border-radius:50%;border:none;background:#e07820;color:#fff;font-size:2.6rem;cursor:pointer;box-shadow:0 6px 24px rgba(224,120,32,.35);transition:transform .15s ease,background .2s ease;display:flex;align-items:center;justify-content:center}
+    .mic-btn:hover{transform:scale(1.05)}
+    .mic-btn:disabled{opacity:.4;cursor:not-allowed}
+    .mic-btn.recording{background:#ef4444;animation:pulse 1.4s infinite}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.55)}70%{box-shadow:0 0 0 24px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
+    .mic-status{color:#94a3b8;font-size:.95rem;min-height:1.2em}
+    .timer{font-variant-numeric:tabular-nums;font-weight:700;color:#f1f5f9;font-size:1.4rem}
+    .agenda-q{padding:10px 0;border-top:1px solid #2d3748;color:#cbd5e1;font-size:.92rem}
+    .agenda-cat{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#4a9abf;font-weight:700}
+    .agenda-q.req .agenda-cat{color:#e07820}
+    select.staff-sel{width:100%;padding:12px;border-radius:12px;background:#0f172a;border:1px solid #2d3748;color:#f1f5f9;font-size:1rem}
+    table.matrix{width:100%;border-collapse:collapse;font-size:.82rem}
+    table.matrix th,table.matrix td{padding:8px 10px;text-align:left;border-bottom:1px solid #2d3748;vertical-align:top}
+    table.matrix th{color:#94a3b8;font-weight:700;position:sticky;top:0;background:#1e293b;white-space:nowrap}
+    table.matrix td{color:#cbd5e1;max-width:220px}
+    .rag{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+    .rag.green{background:#22c55e}.rag.amber{background:#f59e0b}.rag.red{background:#ef4444}.rag.none{background:#475569}
+    .sg-flag{color:#ef4444;font-weight:700}
+    .matrix-scroll{overflow-x:auto}
+    .pill{display:inline-block;padding:2px 8px;border-radius:8px;font-size:.72rem;font-weight:600}
+    .pill.overdue{background:#7f1d1d;color:#fecaca}.pill.ok{background:#14532d;color:#bbf7d0}.pill.never{background:#334155;color:#cbd5e1}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <h1 class="page-title">Supervisions</h1>
+  </div>
+
+  <div class="sup-tabs">
+    <div class="sup-tab active" data-tab="record" onclick="switchTab('record')">🎙 Record</div>
+    <div class="sup-tab" data-tab="overview" onclick="switchTab('overview')">📊 All Staff</div>
+    <div class="sup-tab" data-tab="history" onclick="switchTab('history')">🗂 History</div>
+  </div>
+
+  <!-- RECORD TAB -->
+  <div id="tab-record">
+    <div class="card" style="margin-bottom:16px">
+      <label style="display:block;color:#94a3b8;font-size:.85rem;margin-bottom:6px">Staff member being supervised</label>
+      <select id="staff-sel" class="staff-sel"><option value="">Loading staff…</option></select>
+    </div>
+
+    <div class="card mic-wrap">
+      <button id="mic-btn" class="mic-btn" onclick="toggleRecording()" title="Record supervision">🎙</button>
+      <div class="timer" id="timer">00:00</div>
+      <div class="mic-status" id="mic-status">Select a staff member, then press to record.</div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;color:#f1f5f9;margin-bottom:6px">Supervision agenda</div>
+      <div style="color:#64748b;font-size:.8rem;margin-bottom:8px">The AI summarises the recording against these questions automatically.</div>
+      <div id="agenda"><div style="color:#94a3b8">Loading questions…</div></div>
+    </div>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div id="tab-overview" style="display:none">
+    <div class="card matrix-scroll">
+      <div id="matrix"><div style="color:#94a3b8">Loading staff overview…</div></div>
+    </div>
+  </div>
+
+  <!-- HISTORY TAB -->
+  <div id="tab-history" style="display:none">
+    <div id="sup-list" style="display:flex;flex-direction:column;gap:10px">
+      <div style="color:#94a3b8">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', init);
+
+let questions = [];
+let mediaRecorder = null, chunks = [], recording = false, timerInt = null, seconds = 0;
+
+function switchTab(t){
+  document.querySelectorAll('.sup-tab').forEach(x=>x.classList.toggle('active', x.dataset.tab===t));
+  document.getElementById('tab-record').style.display   = t==='record'   ? '' : 'none';
+  document.getElementById('tab-overview').style.display = t==='overview' ? '' : 'none';
+  document.getElementById('tab-history').style.display  = t==='history'  ? '' : 'none';
+  if (t==='overview') loadOverview();
+  if (t==='history')  loadHistory();
+}
+
+async function init(){
+  await Promise.all([loadStaff(), loadQuestions()]);
+}
+
+async function loadStaff(){
+  try {
+    const staff = await Wren.api('/api/supervisions/staff-list');
+    const sel = document.getElementById('staff-sel');
+    sel.innerHTML = '<option value="">— select staff —</option>' +
+      staff.map(s=>`<option value="${s.id}">${escHtml(s.first_name+' '+s.last_name)}${s.role?' ('+s.role.replace(/_/g,' ')+')':''}</option>`).join('');
+  } catch(e){
+    document.getElementById('staff-sel').innerHTML = '<option>Could not load staff</option>';
+  }
+}
+
+async function loadQuestions(){
+  try {
+    questions = await Wren.api('/api/supervisions/question-templates');
+    document.getElementById('agenda').innerHTML = questions.map(q=>`
+      <div class="agenda-q ${q.is_required?'req':''}">
+        <div class="agenda-cat">${escHtml(q.category||'')}${q.is_required?' • required':''}</div>
+        ${escHtml(q.question_text)}
+      </div>`).join('');
+  } catch(e){
+    document.getElementById('agenda').innerHTML = '<div style="color:#ef4444">Could not load questions</div>';
+  }
+}
+
+function fmt(s){ const m=Math.floor(s/60), ss=s%60; return String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
+
+async function toggleRecording(){
+  if (recording){ stopRecording(); return; }
+  const staffId = document.getElementById('staff-sel').value;
+  if (!staffId){ setStatus('Please select a staff member first.', '#f59e0b'); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    chunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: pickMime() });
+    mediaRecorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    mediaRecorder.onstop = () => { stream.getTracks().forEach(t=>t.stop()); uploadRecording(staffId); };
+    mediaRecorder.start();
+    recording = true; seconds = 0;
+    document.getElementById('mic-btn').classList.add('recording');
+    document.getElementById('mic-btn').textContent = '⏹';
+    setStatus('Recording… press again to stop and summarise.', '#ef4444');
+    timerInt = setInterval(()=>{ seconds++; document.getElementById('timer').textContent = fmt(seconds); }, 1000);
+  } catch(e){
+    setStatus('Microphone access denied or unavailable: '+(e.message||''), '#ef4444');
+  }
+}
+
+function pickMime(){
+  const opts=['audio/webm;codecs=opus','audio/webm','audio/ogg'];
+  for (const o of opts) if (window.MediaRecorder && MediaRecorder.isTypeSupported(o)) return o;
+  return '';
+}
+
+function stopRecording(){
+  if (!mediaRecorder) return;
+  recording = false;
+  clearInterval(timerInt);
+  document.getElementById('mic-btn').classList.remove('recording');
+  document.getElementById('mic-btn').textContent = '🎙';
+  document.getElementById('mic-btn').disabled = true;
+  setStatus('Uploading and transcribing… this can take a minute.', '#4a9abf');
+  mediaRecorder.stop();
+}
+
+async function uploadRecording(staffId){
+  const blob = new Blob(chunks, { type: chunks[0]?.type || 'audio/webm' });
+  const fd = new FormData();
+  fd.append('staff_id', staffId);
+  fd.append('audio', blob, 'supervision.webm');
+  try {
+    // Direct fetch (NOT Wren.api) so the multipart Content-Type is set by the browser.
+    const token = sessionStorage.getItem('wrenToken');
+    const resp = await fetch('/api/supervisions/record', {
+      method:'POST', body: fd,
+      headers: token ? { Authorization: 'Bearer '+token } : {}
+    });
+    if (!resp.ok){ const d = await resp.json().catch(()=>({})); throw new Error(d.error||('HTTP '+resp.status)); }
+    const r = await resp.json();
+    setStatus('✅ Recording saved (#'+r.supervision_id+'). The AI summary is being generated against the question set — check All Staff / History shortly.', '#22c55e');
+  } catch(e){
+    setStatus('Upload failed: '+(e.message||'unknown'), '#ef4444');
+  } finally {
+    document.getElementById('mic-btn').disabled = false;
+    document.getElementById('timer').textContent = '00:00';
+  }
+}
+
+function setStatus(msg, colour){
+  const el = document.getElementById('mic-status');
+  el.textContent = msg; el.style.color = colour || '#94a3b8';
+}
+
+// ── All-staff structured matrix ───────────────────────────────────────────────
+async function loadOverview(){
+  const el = document.getElementById('matrix');
+  el.innerHTML = '<div style="color:#94a3b8">Loading…</div>';
+  try {
+    const rows = await Wren.api('/api/supervisions/overview');
+    if (!rows || !rows.length){ el.innerHTML = '<div style="color:#94a3b8">No staff.</div>'; return; }
+    el.innerHTML = `<table class="matrix">
+      <thead><tr>
+        <th>Staff</th><th>Last supervision</th><th>Wellbeing</th><th>Key children</th>
+        <th>SEN</th><th>Parents</th><th>Workload</th><th>CPD</th><th>SMART targets</th>
+        <th>Open targets</th><th>Safeguarding</th>
+      </tr></thead>
+      <tbody>${rows.map(r=>{
+        const rag = (r.wellbeing_rag||'none').toLowerCase();
+        const dateCell = r.last_supervision
+          ? `${new Date(r.last_supervision).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}` +
+            (r.days_since>=35 ? ' <span class="pill overdue">overdue</span>' : ' <span class="pill ok">ok</span>')
+          : '<span class="pill never">never</span>';
+        return `<tr>
+          <td style="font-weight:700;color:#f1f5f9;white-space:nowrap">${escHtml(r.staff_name)}</td>
+          <td style="white-space:nowrap">${dateCell}</td>
+          <td><span class="rag ${['green','amber','red'].includes(rag)?rag:'none'}"></span>${cell(r.wellbeing)}</td>
+          <td>${cell(r.key_children)}</td>
+          <td>${cell(r.sen)}</td>
+          <td>${cell(r.parents)}</td>
+          <td>${cell(r.workload)}</td>
+          <td>${cell(r.cpd)}</td>
+          <td>${cell(r.smart_targets)}</td>
+          <td style="text-align:center">${r.outstanding_targets||0}</td>
+          <td>${r.safeguarding_flag?'<span class="sg-flag">⚠ FLAG</span>':'—'}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  } catch(e){
+    el.innerHTML = '<div style="color:#ef4444">Could not load overview: '+escHtml(e.message||'')+'</div>';
+  }
+}
+
+function cell(t){
+  if (!t || t==='Not covered') return '<span style="color:#475569">—</span>';
+  const s = String(t);
+  return escHtml(s.length>90 ? s.slice(0,90)+'…' : s);
+}
+
+// ── History list ──────────────────────────────────────────────────────────────
+async function loadHistory(){
+  const el = document.getElementById('sup-list');
+  try {
+    const data = await Wren.api('/api/supervisions');
+    if (!data || !data.length){ el.innerHTML = '<div class="card" style="color:#94a3b8;text-align:center;padding:40px">No supervision records yet.</div>'; return; }
+    const grouped = {};
+    data.forEach(s=>{ const n=s.staff_name||'Unknown'; (grouped[n]=grouped[n]||[]).push(s); });
+    el.innerHTML = Object.entries(grouped).map(([name, sups])=>`
+      <div class="card">
+        <div style="font-weight:700;color:#f1f5f9;margin-bottom:12px">${escHtml(name)}</div>
+        ${sups.map(s=>{
+          const d = s.conducted_date||s.scheduled_date||s.finalized_at;
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #2d3748;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="color:#cbd5e1;font-size:.9rem">${d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'No date'}</div>
+              ${s.ai_summary?`<div style="color:#64748b;font-size:.8rem;margin-top:2px">${escHtml(String(s.ai_summary).slice(0,90))}…</div>`:''}
+            </div>
+            <span class="badge ${s.status==='completed'||s.status==='finalized'?'badge-green':s.status==='scheduled'?'badge-blue':'badge-orange'}">${escHtml(s.status||'—')}</span>
+          </div>`;
+        }).join('')}
+      </div>`).join('');
+  } catch(err){
+    el.innerHTML = '<div style="color:#ef4444">Could not load supervisions: '+escHtml(err.message||'unknown')+'</div>';
+  }
+}
+
+function escHtml(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

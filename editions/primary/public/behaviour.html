@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="wren-edition" content="primary">
+  <title>Behaviour Points — Wren Primary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Top bar ── */
+    .bp-topbar {
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      background:var(--card-bg); border-bottom:1px solid var(--border);
+      padding:12px 16px; position:sticky; top:0; z-index:100;
+    }
+    .bp-topbar select { padding:8px 12px; border-radius:8px; border:1px solid var(--border);
+      background:var(--surface); color:var(--text); font-size:14px; min-width:150px; }
+    .bp-date { font-size:13px; color:var(--text-muted); white-space:nowrap; }
+    .bp-today-total { background:var(--primary); color:#fff; border-radius:20px;
+      padding:4px 14px; font-weight:700; font-size:14px; white-space:nowrap; }
+    .bp-topbar .bp-cog { background:none; border:1px solid var(--border); border-radius:8px;
+      color:var(--text-muted); cursor:pointer; padding:8px 10px; font-size:18px;
+      min-width:44px; min-height:44px; display:flex; align-items:center; justify-content:center; }
+    .bp-cog:hover { color:var(--text); border-color:var(--text-muted); }
+    .bp-mute-btn { background:none; border:1px solid var(--border); border-radius:8px;
+      color:var(--text-muted); cursor:pointer; padding:8px 10px; font-size:16px;
+      min-width:44px; min-height:44px; display:flex; align-items:center; justify-content:center; }
+    .bp-mute-btn:hover { color:var(--text); }
+    .bp-mute-btn.muted { color:#f59e0b; border-color:#f59e0b; }
+    .bp-log-btn { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+      color:var(--text-muted); cursor:pointer; padding:8px 14px; font-size:13px;
+      min-height:44px; white-space:nowrap; }
+
+    /* ── Pupil grid ── */
+    .bp-grid { display:grid; gap:10px; padding:14px;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+    @media (min-width: 900px) { .bp-grid { grid-template-columns: repeat(6, 1fr); } }
+    @media (min-width: 1200px) { .bp-grid { grid-template-columns: repeat(8, 1fr); } }
+
+    /* ── Pupil card ── */
+    .pupil-card {
+      background:var(--card-bg); border:2px solid var(--border); border-radius:14px;
+      padding:14px 10px; display:flex; flex-direction:column; align-items:center;
+      gap:6px; cursor:pointer; transition:.15s; position:relative; user-select:none;
+      min-height:120px; -webkit-tap-highlight-color:transparent;
+    }
+    .pupil-card:hover { border-color:var(--primary); background:rgba(74,154,191,.06); }
+    .pupil-card.minus-mode { border-color:#ef4444; background:rgba(239,68,68,.08); }
+    .pupil-card.minus-mode .pc-name { color:#ef4444; }
+    .pupil-card.pulse { animation: cardPulse .35s ease; }
+    @keyframes cardPulse { 0%{transform:scale(1)} 40%{transform:scale(1.04)} 100%{transform:scale(1)} }
+
+    .pc-avatar { width:52px; height:52px; border-radius:50%; background:var(--primary);
+      display:flex; align-items:center; justify-content:center; font-size:1.2rem;
+      font-weight:700; color:#fff; flex-shrink:0; overflow:hidden; }
+    .pc-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+    .pc-name { font-size:12px; font-weight:700; text-align:center; line-height:1.3;
+      color:var(--text); word-break:break-word; }
+    .pc-total { font-size:22px; font-weight:800; color:var(--primary); line-height:1; }
+    .pc-total.zero { color:var(--text-muted); font-size:18px; }
+    .pc-minus-badge { position:absolute; top:6px; right:6px; background:#ef4444;
+      color:#fff; border-radius:50%; width:18px; height:18px; font-size:11px;
+      display:flex; align-items:center; justify-content:center; display:none; }
+    .minus-mode .pc-minus-badge { display:flex; }
+
+    /* ── Fly animation ── */
+    .fly-point {
+      position:fixed; pointer-events:none; z-index:9999; font-size:22px; font-weight:800;
+      color:var(--primary); animation:flyUp .8s ease-out forwards;
+    }
+    .fly-point.negative { color:#ef4444; }
+    @keyframes flyUp {
+      0%   { opacity:1; transform:translateY(0) scale(1); }
+      60%  { opacity:1; transform:translateY(-60px) scale(1.3); }
+      100% { opacity:0; transform:translateY(-110px) scale(0.9); }
+    }
+
+    /* ── Category drawer ── */
+    .drawer-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5);
+      z-index:500; display:none; }
+    .drawer-overlay.open { display:block; }
+    .cat-drawer {
+      position:fixed; right:-100%; top:0; bottom:0; width:min(340px,100vw);
+      background:var(--card-bg); border-left:1px solid var(--border);
+      z-index:501; padding:20px; display:flex; flex-direction:column; gap:14px;
+      transition:right .25s ease; overflow-y:auto;
+    }
+    .cat-drawer.open { right:0; }
+    .cat-drawer-header { display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+    .cat-drawer-header .pc-avatar { width:44px; height:44px; font-size:1rem; flex-shrink:0; }
+    .cat-drawer-pupil-name { font-size:17px; font-weight:700; }
+    .cat-drawer-close { margin-left:auto; background:none; border:none;
+      color:var(--text-muted); font-size:24px; cursor:pointer; padding:4px;
+      min-width:44px; min-height:44px; display:flex; align-items:center; justify-content:center; }
+    .cat-btn {
+      background:var(--surface); border:2px solid var(--border); border-radius:14px;
+      padding:18px 14px; font-size:17px; font-weight:700; color:var(--text);
+      cursor:pointer; text-align:center; transition:.15s; min-height:80px;
+      display:flex; align-items:center; justify-content:center; gap:10px;
+    }
+    .cat-btn:hover { border-color:var(--primary); background:rgba(74,154,191,.08); color:var(--primary); }
+    .cat-btn:active { transform:scale(.97); }
+    .cat-btn.negative { border-color:#374151; }
+    .cat-btn.negative:hover { border-color:#ef4444; color:#ef4444; background:rgba(239,68,68,.08); }
+    .cat-icon { font-size:24px; }
+
+    .drawer-divider { height:1px; background:var(--border); margin:4px 0; }
+    .drawer-minus-hint { font-size:12px; color:var(--text-muted); text-align:center; padding:4px 0; }
+
+    /* ── Settings modal ── */
+    .settings-modal { position:fixed; inset:0; background:rgba(0,0,0,.6);
+      z-index:600; display:none; align-items:center; justify-content:center; padding:16px; }
+    .settings-modal.open { display:flex; }
+    .settings-box { background:var(--card-bg); border:1px solid var(--border);
+      border-radius:16px; padding:24px; max-width:480px; width:100%; max-height:85vh; overflow-y:auto; }
+    .settings-box h3 { font-size:16px; font-weight:700; margin-bottom:16px; }
+    .cat-tag-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .cat-tag { background:var(--surface); border:1px solid var(--border); border-radius:20px;
+      padding:6px 14px; font-size:13px; display:flex; align-items:center; gap:6px; }
+    .cat-tag button { background:none; border:none; color:var(--text-muted); cursor:pointer;
+      font-size:14px; padding:0 0 0 4px; line-height:1; }
+    .cat-add-row { display:flex; gap:8px; margin-bottom:16px; }
+    .cat-add-row input { flex:1; padding:8px 12px; border-radius:8px; border:1px solid var(--border);
+      background:var(--surface); color:var(--text); font-size:14px; }
+
+    /* ── Log tab ── */
+    .log-section { padding:0 14px 14px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+
+  <!-- Top bar -->
+  <div class="bp-topbar">
+    <select id="class-select" onchange="onClassChange()">
+      <option value="">Loading classes…</option>
+    </select>
+    <span class="bp-date" id="today-label"></span>
+    <span class="bp-today-total" id="grand-total">0 pts today</span>
+    <button class="bp-mute-btn" id="mute-btn" onclick="toggleMute()" title="Toggle sound">🔔</button>
+    <button class="bp-cog" onclick="openSettings()" title="Settings">⚙️</button>
+    <button class="bp-log-btn" onclick="showTab('log')">📋 Log</button>
+    <button class="bp-log-btn" onclick="showTab('grid')" id="grid-tab-btn">👥 Grid</button>
+  </div>
+
+  <!-- Grid view -->
+  <div id="view-grid">
+    <div id="bp-grid" class="bp-grid">
+      <div class="empty-state">Select a class to begin</div>
+    </div>
+  </div>
+
+  <!-- Log view -->
+  <div id="view-log" style="display:none">
+    <div class="log-section">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 10px;align-items:center">
+        <input type="date" class="form-control" id="log-date" style="max-width:160px">
+        <select class="form-control" id="log-type-filter" style="max-width:150px">
+          <option value="">All types</option>
+          <option value="positive">Positive</option>
+          <option value="negative">Concern</option>
+        </select>
+        <button class="btn btn-primary" onclick="loadLog()">Load</button>
+      </div>
+      <div id="log-area"><div class="empty-state">Select filters and load</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Drawer overlay -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+
+<!-- Category drawer -->
+<div class="cat-drawer" id="cat-drawer">
+  <div class="cat-drawer-header">
+    <div class="pc-avatar" id="drawer-avatar"></div>
+    <div class="cat-drawer-pupil-name" id="drawer-name"></div>
+    <button class="cat-drawer-close" onclick="closeDrawer()">×</button>
+  </div>
+  <div id="cat-buttons"></div>
+  <div class="drawer-divider"></div>
+  <div class="drawer-minus-hint">Long-press a pupil card to enter minus mode</div>
+</div>
+
+<!-- Settings modal -->
+<div class="settings-modal" id="settings-modal">
+  <div class="settings-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0">Behaviour Settings</h3>
+      <button onclick="closeSettings()" style="background:none;border:none;color:var(--text-muted);font-size:22px;cursor:pointer">×</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Award categories (5 Rs)</label>
+      <div class="cat-tag-row" id="settings-cat-tags"></div>
+      <div class="cat-add-row">
+        <input type="text" id="new-cat-input" placeholder="Add category…" onkeydown="if(event.key==='Enter')addCategory()">
+        <button class="btn btn-secondary" onclick="addCategory()">Add</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Notification mode</label>
+      <select class="form-control" id="notif-mode">
+        <option value="digest">Daily digest (17:00)</option>
+        <option value="instant">Instant (on award)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Digest time</label>
+      <input type="time" class="form-control" id="notif-time" value="17:00" style="max-width:140px">
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="notif-enabled" checked> Notifications enabled
+      </label>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let CLASSES = [], PUPILS = [], CATEGORIES = ['Respectful','Resilient','Ready','Reflective','Resourceful'];
+let TOTALS = {}; // pupil_id → total_today
+let CURRENT_CLASS = null;
+let DRAWER_PUPIL = null;
+let MINUS_MODE_PUPIL = null;
+let MUTED = false;
+let LONG_PRESS_TIMER = null;
+
+const CAT_ICONS = ['🤝','💪','✅','🤔','📚'];
+const NEG_CATS = ['Disruption','Unkindness','Defiance','Off-task','Language'];
+
+// ── Chime (Web Audio API) ──
+function playChime(negative = false) {
+  if (MUTED) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = negative ? 330 : 660;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (_) {}
+}
+
+function toggleMute() {
+  MUTED = !MUTED;
+  const btn = document.getElementById('mute-btn');
+  btn.textContent = MUTED ? '🔇' : '🔔';
+  btn.classList.toggle('muted', MUTED);
+}
+
+// ── Init ──
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  // Set today label
+  const today = new Date();
+  document.getElementById('today-label').textContent = today.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' });
+  document.getElementById('log-date').value = today.toISOString().slice(0,10);
+
+  // Load classes
+  CLASSES = await fetch('/api/classes').then(r=>r.json()).catch(()=>[]);
+  const sel = document.getElementById('class-select');
+  sel.innerHTML = '<option value="">Choose class…</option>' +
+    CLASSES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+  // Load settings (categories)
+  const s = await fetch('/api/behaviour-points/settings').then(r=>r.json()).catch(()=>({}));
+  if (s.categories && s.categories.length) CATEGORIES = s.categories;
+
+  // Restore saved class
+  const saved = sessionStorage.getItem('bp_class');
+  if (saved) { sel.value = saved; onClassChange(); }
+}
+
+async function onClassChange() {
+  const classId = document.getElementById('class-select').value;
+  if (!classId) { document.getElementById('bp-grid').innerHTML = '<div class="empty-state">Select a class to begin</div>'; return; }
+  CURRENT_CLASS = classId;
+  sessionStorage.setItem('bp_class', classId);
+  await refreshGrid();
+}
+
+async function refreshGrid() {
+  if (!CURRENT_CLASS) return;
+  const data = await fetch(`/api/behaviour-points/today-totals?class_id=${CURRENT_CLASS}`).then(r=>r.json()).catch(()=>[]);
+  PUPILS = data;
+  TOTALS = {};
+  data.forEach(p => { TOTALS[p.pupil_id] = parseInt(p.total_today)||0; });
+  const total = data.reduce((sum,p)=>sum+(parseInt(p.total_today)||0),0);
+  document.getElementById('grand-total').textContent = `${total} pts today`;
+  renderGrid();
+}
+
+function renderGrid() {
+  const grid = document.getElementById('bp-grid');
+  if (!PUPILS.length) { grid.innerHTML = '<div class="empty-state">No pupils found for this class</div>'; return; }
+  grid.innerHTML = PUPILS.map(p => {
+    const t = TOTALS[p.pupil_id] || 0;
+    const initials = (p.first_name||'?')[0] + (p.last_name||'?')[0];
+    const avatar = p.photo_url
+      ? `<div class="pc-avatar"><img src="${p.photo_url}" alt="${escHtml(p.name)}"></div>`
+      : `<div class="pc-avatar">${escHtml(initials)}</div>`;
+    return `<div class="pupil-card" id="pc-${p.pupil_id}"
+        data-id="${p.pupil_id}" data-name="${escHtml(p.name)}" data-initials="${escHtml(initials)}"
+        onclick="onCardTap(event, ${p.pupil_id})"
+        ontouchstart="startLongPress(event, ${p.pupil_id})" ontouchend="cancelLongPress()"
+        ontouchcancel="cancelLongPress()"
+        onmousedown="startLongPress(event, ${p.pupil_id})" onmouseup="cancelLongPress()" onmouseleave="cancelLongPress()">
+      <div class="pc-minus-badge">−</div>
+      ${avatar}
+      <div class="pc-name">${escHtml(shortName(p.name))}</div>
+      <div class="pc-total ${t===0?'zero':''}" id="pt-${p.pupil_id}">${t===0?'—':t}</div>
+    </div>`;
+  }).join('');
+}
+
+function shortName(name) {
+  const parts = name.trim().split(' ');
+  if (parts.length < 2) return name;
+  return parts[0] + ' ' + parts[parts.length-1][0] + '.';
+}
+
+// ── Long-press for minus mode ──
+function startLongPress(e, pupilId) {
+  cancelLongPress();
+  LONG_PRESS_TIMER = setTimeout(() => {
+    LONG_PRESS_TIMER = null;
+    toggleMinusMode(pupilId);
+  }, 600);
+}
+function cancelLongPress() {
+  if (LONG_PRESS_TIMER) { clearTimeout(LONG_PRESS_TIMER); LONG_PRESS_TIMER = null; }
+}
+
+function toggleMinusMode(pupilId) {
+  if (MINUS_MODE_PUPIL === pupilId) {
+    MINUS_MODE_PUPIL = null;
+    document.querySelectorAll('.pupil-card').forEach(c => c.classList.remove('minus-mode'));
+  } else {
+    MINUS_MODE_PUPIL = pupilId;
+    document.querySelectorAll('.pupil-card').forEach(c => c.classList.remove('minus-mode'));
+    const card = document.getElementById('pc-' + pupilId);
+    if (card) card.classList.add('minus-mode');
+    if (navigator.vibrate) navigator.vibrate(80);
+  }
+}
+
+// ── Card tap → open drawer ──
+function onCardTap(e, pupilId) {
+  if (LONG_PRESS_TIMER) { cancelLongPress(); return; }
+  const p = PUPILS.find(x => x.pupil_id == pupilId);
+  if (!p) return;
+  DRAWER_PUPIL = p;
+  openDrawer(p, MINUS_MODE_PUPIL === pupilId);
+}
+
+function openDrawer(pupil, isNegative) {
+  const initials = (pupil.first_name||'?')[0] + (pupil.last_name||'?')[0];
+  const avatarEl = document.getElementById('drawer-avatar');
+  if (pupil.photo_url) {
+    avatarEl.innerHTML = `<img src="${pupil.photo_url}" alt="${escHtml(pupil.name)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    avatarEl.textContent = initials;
+  }
+  document.getElementById('drawer-name').textContent = pupil.name;
+
+  const btnContainer = document.getElementById('cat-buttons');
+  const cats = isNegative ? NEG_CATS : CATEGORIES;
+  btnContainer.innerHTML = cats.map((cat, i) => `
+    <button class="cat-btn ${isNegative ? 'negative' : ''}"
+      onclick="awardPoint('${escHtml(cat)}', '${isNegative ? 'negative' : 'positive'}')">
+      <span class="cat-icon">${isNegative ? '⚠️' : (CAT_ICONS[i] || '⭐')}</span>
+      ${escHtml(cat)}
+    </button>
+  `).join('');
+
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('cat-drawer').classList.add('open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawer-overlay').classList.remove('open');
+  document.getElementById('cat-drawer').classList.remove('open');
+  DRAWER_PUPIL = null;
+}
+
+// ── Award point ──
+async function awardPoint(category, type) {
+  if (!DRAWER_PUPIL) return;
+  const pupilId = DRAWER_PUPIL.pupil_id;
+  closeDrawer();
+
+  // Optimistic update
+  if (type === 'positive') {
+    TOTALS[pupilId] = (TOTALS[pupilId] || 0) + 1;
+    updateCardTotal(pupilId);
+    updateGrandTotal();
+  }
+
+  // Fly animation on card
+  flyAnimation(pupilId, type === 'negative');
+  playChime(type === 'negative');
+
+  // Pulse card
+  const card = document.getElementById('pc-' + pupilId);
+  if (card) { card.classList.add('pulse'); setTimeout(()=>card.classList.remove('pulse'),400); }
+
+  // Exit minus mode after use
+  if (type === 'negative' && MINUS_MODE_PUPIL === pupilId) {
+    MINUS_MODE_PUPIL = null;
+    if (card) card.classList.remove('minus-mode');
+  }
+
+  try {
+    const r = await fetch('/api/behaviour-points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pupil_id: pupilId, type, category, points: 1, reason: category })
+    });
+    if (!r.ok) {
+      // Rollback
+      if (type === 'positive') { TOTALS[pupilId] = Math.max(0, (TOTALS[pupilId]||1)-1); updateCardTotal(pupilId); updateGrandTotal(); }
+      wrenToast('Failed to save point', 'error');
+    }
+  } catch (_) {
+    if (type === 'positive') { TOTALS[pupilId] = Math.max(0, (TOTALS[pupilId]||1)-1); updateCardTotal(pupilId); updateGrandTotal(); }
+    wrenToast('Network error — point not saved', 'error');
+  }
+}
+
+function updateCardTotal(pupilId) {
+  const el = document.getElementById('pt-' + pupilId);
+  if (!el) return;
+  const t = TOTALS[pupilId] || 0;
+  el.textContent = t === 0 ? '—' : t;
+  el.className = 'pc-total' + (t === 0 ? ' zero' : '');
+}
+
+function updateGrandTotal() {
+  const total = Object.values(TOTALS).reduce((s,v)=>s+v, 0);
+  document.getElementById('grand-total').textContent = `${total} pts today`;
+}
+
+// ── Fly animation ──
+function flyAnimation(pupilId, negative) {
+  const card = document.getElementById('pc-' + pupilId);
+  if (!card) return;
+  const rect = card.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'fly-point' + (negative ? ' negative' : '');
+  el.textContent = negative ? '−1' : '+1';
+  el.style.left = (rect.left + rect.width/2 - 16) + 'px';
+  el.style.top = (rect.top + rect.height/2 - 14) + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 850);
+}
+
+// ── Tab switch ──
+function showTab(tab) {
+  document.getElementById('view-grid').style.display = tab === 'grid' ? 'block' : 'none';
+  document.getElementById('view-log').style.display = tab === 'log' ? 'block' : 'none';
+  if (tab === 'log') loadLog();
+}
+
+async function loadLog() {
+  const date = document.getElementById('log-date').value;
+  const type = document.getElementById('log-type-filter').value;
+  let url = '/api/behaviour-points?';
+  if (CURRENT_CLASS) url += `class_id=${CURRENT_CLASS}&`;
+  if (date) url += `date_from=${date}&date_to=${date}&`;
+  if (type) url += `type=${type}&`;
+  const area = document.getElementById('log-area');
+  area.innerHTML = '<div class="empty-state">Loading…</div>';
+  const rows = await fetch(url).then(r=>r.json()).catch(()=>[]);
+  if (!rows.length) { area.innerHTML = '<div class="empty-state">No entries found</div>'; return; }
+  area.innerHTML = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Time</th><th>Pupil</th><th>Type</th><th>Category</th><th>Points</th></tr></thead><tbody>' +
+    rows.map(r => `<tr>
+      <td style="white-space:nowrap;font-size:12px">${new Date(r.awarded_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td><strong>${escHtml(r.pupil_name||'—')}</strong></td>
+      <td>${r.type==='positive'?'<span class="badge badge-green">Positive</span>':'<span class="badge badge-red">Concern</span>'}</td>
+      <td>${escHtml(r.category||'—')}</td>
+      <td>${r.points||1}</td>
+    </tr>`).join('') +
+    '</tbody></table></div>';
+}
+
+// ── Settings ──
+let SETTINGS_CATS = [...CATEGORIES];
+
+async function openSettings() {
+  const s = await fetch('/api/behaviour-points/settings').then(r=>r.json()).catch(()=>({}));
+  SETTINGS_CATS = s.categories ? [...s.categories] : [...CATEGORIES];
+  if (s.notification) {
+    document.getElementById('notif-mode').value = s.notification.mode || 'digest';
+    document.getElementById('notif-time').value = s.notification.time || '17:00';
+    document.getElementById('notif-enabled').checked = s.notification.enabled !== false;
+  }
+  renderSettingsCats();
+  document.getElementById('settings-modal').classList.add('open');
+}
+
+function renderSettingsCats() {
+  document.getElementById('settings-cat-tags').innerHTML = SETTINGS_CATS.map((c, i) =>
+    `<div class="cat-tag">${escHtml(c)} <button onclick="removeCat(${i})">×</button></div>`
+  ).join('');
+}
+
+function addCategory() {
+  const inp = document.getElementById('new-cat-input');
+  const val = inp.value.trim();
+  if (!val || SETTINGS_CATS.includes(val)) return;
+  SETTINGS_CATS.push(val);
+  inp.value = '';
+  renderSettingsCats();
+}
+
+function removeCat(i) {
+  SETTINGS_CATS.splice(i, 1);
+  renderSettingsCats();
+}
+
+async function saveSettings() {
+  const notification = {
+    mode: document.getElementById('notif-mode').value,
+    time: document.getElementById('notif-time').value,
+    enabled: document.getElementById('notif-enabled').checked
+  };
+  await fetch('/api/behaviour-points/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ categories: SETTINGS_CATS, notification })
+  });
+  CATEGORIES = [...SETTINGS_CATS];
+  closeSettings();
+  wrenToast('Settings saved', 'success');
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+</script>
+</body>
+</html>

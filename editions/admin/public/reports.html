@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Reports — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Tab bar ── */
+    .rpt-tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--c-border);padding-bottom:0}
+    .rpt-tab{padding:8px 18px;border-radius:8px 8px 0 0;font-size:.875rem;font-weight:600;cursor:pointer;
+             color:var(--c-muted);background:none;border:none;font-family:inherit;
+             border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+    .rpt-tab.active{color:var(--c-blue);border-bottom-color:var(--c-blue)}
+    .rpt-tab:hover:not(.active){color:var(--c-text)}
+    .rpt-pane{display:none}.rpt-pane.active{display:block}
+    /* ── Parent-reports styles ── */
+    .steps{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+    .step-pill{padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;
+               background:rgba(255,255,255,.05);color:var(--c-muted);border:1px solid var(--c-border)}
+    .step-pill.active{background:rgba(74,154,191,.12);color:var(--c-blue);border-color:rgba(74,154,191,.3)}
+    .step-pill.done{background:rgba(34,197,94,.08);color:var(--c-green);border-color:rgba(34,197,94,.25)}
+    .child-search{width:100%;background:var(--c-bg);border:1px solid var(--c-border);border-radius:9px;
+                  color:var(--c-text);padding:10px 14px;font-size:14px;margin-bottom:10px;
+                  transition:border-color .15s;font-family:inherit}
+    .child-search:focus{outline:none;border-color:var(--c-blue)}
+    .child-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;max-height:220px;overflow-y:auto}
+    .child-btn{padding:10px 12px;background:var(--c-bg);border:2px solid var(--c-border);border-radius:10px;
+               color:var(--c-muted);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+               text-align:left;transition:all .15s;line-height:1.3}
+    .child-btn:hover{border-color:var(--c-blue);color:var(--c-blue)}
+    .child-btn.active{background:rgba(74,154,191,.12);border-color:var(--c-blue);color:var(--c-blue)}
+    .child-btn .child-room{font-size:11px;font-weight:500;color:var(--c-muted);margin-top:2px}
+    .type-grid{display:flex;flex-wrap:wrap;gap:8px}
+    .type-btn{padding:8px 14px;background:var(--c-bg);border:2px solid var(--c-border);border-radius:8px;
+              color:var(--c-muted);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+    .type-btn:hover{border-color:var(--c-orange);color:var(--c-orange)}
+    .type-btn.active{background:rgba(224,120,32,.12);border-color:var(--c-orange);color:var(--c-orange)}
+    .obs-list{display:flex;flex-direction:column;gap:8px}
+    .obs-item{background:var(--c-bg);border:1px solid var(--c-border);border-radius:9px;padding:10px 13px}
+    .obs-item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px}
+    .obs-item-title{font-size:13px;font-weight:700}
+    .obs-item-date{font-size:11px;color:var(--c-muted);white-space:nowrap}
+    .obs-item-areas{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+    .obs-area{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;
+              background:rgba(74,154,191,.12);color:var(--c-blue)}
+    .obs-item-text{font-size:12px;color:var(--c-muted);margin-top:5px;line-height:1.5}
+    .b25-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media(max-width:500px){.b25-grid{grid-template-columns:1fr}}
+    .b25-item{background:var(--c-bg);border:1px solid var(--c-border);border-radius:9px;padding:10px 13px}
+    .b25-name{font-size:12px;font-weight:700;margin-bottom:6px}
+    .b25-bar-wrap{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden}
+    .b25-bar{height:100%;border-radius:3px;background:var(--c-green);transition:width .4s ease}
+    .b25-counts{font-size:11px;color:var(--c-muted);margin-top:5px;display:flex;gap:8px}
+    .draft-area{width:100%;min-height:340px;background:var(--c-bg);border:1px solid var(--c-border);
+                border-radius:10px;color:var(--c-text);padding:16px;font-size:14px;
+                font-family:inherit;line-height:1.8;resize:vertical;transition:border-color .15s}
+    .draft-area:focus{outline:none;border-color:var(--c-blue)}
+    .report-item{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;
+                 padding:13px 16px;display:flex;justify-content:space-between;align-items:flex-start;
+                 gap:12px;flex-wrap:wrap;margin-bottom:8px}
+    .report-item-name{font-size:14px;font-weight:700}
+    .report-item-meta{font-size:12px;color:var(--c-muted);margin-top:3px}
+    .ai-loading{display:none;align-items:center;gap:10px;color:var(--c-muted);font-size:14px;margin-top:12px;justify-content:center}
+    .ai-loading.visible{display:flex}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📊 Reports</div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="rpt-tabs">
+    <button class="rpt-tab" data-tab="generated">📊 Generated reports</button>
+    <button class="rpt-tab" data-tab="write">✍️ Write new report</button>
+    <button class="rpt-tab" data-tab="parent">📝 Parent reports</button>
+  </div>
+
+  <!-- ══ TAB: Generated reports ══ -->
+  <div class="rpt-pane" id="pane-generated">
+    <div class="card-grid" style="margin-bottom:20px">
+      <div class="stat-card blue"   id="s-enrolled"></div>
+      <div class="stat-card green"  id="s-present"></div>
+      <div class="stat-card orange" id="s-incidents"></div>
+      <div class="stat-card amber"  id="s-absences"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Room Occupancy</div></div>
+      <div id="room-report"><div class="loading-state"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: Write new report (AI chat) ══ -->
+  <div class="rpt-pane" id="pane-write">
+    <div class="page-header" style="margin-bottom:16px">
+      <div>
+        <div style="font-size:1rem;font-weight:700;color:var(--c-text)">AI-assisted progress reports for parents</div>
+      </div>
+      <button class="btn btn-primary" id="btn-rw-new-session">+ New Report</button>
+    </div>
+    <div id="rw-sessions-area">
+      <div class="loading-state"><div class="spinner"></div></div>
+    </div>
+    <div id="rw-chat-area" style="display:none">
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <div id="rw-chat-child-name" style="font-size:16px;font-weight:700;color:var(--c-text)"></div>
+            <div id="rw-chat-context" style="color:var(--c-muted);font-size:13px"></div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-rw-back">← Back to sessions</button>
+        </div>
+        <div id="rw-chat-messages" style="min-height:200px;max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;align-items:flex-end">
+          <textarea class="form-control" id="rw-chat-input" rows="2"
+            placeholder="Type your answer…"
+            style="flex:1;resize:vertical"
+
+            "></textarea>
+          <button class="btn btn-primary" id="rw-send-btn" style="height:40px">Send</button>
+        </div>
+      </div>
+      <div id="rw-report-output" style="display:none" class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:16px;font-weight:700;color:var(--c-text)">Generated Report</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" id="btn-rw-copy-report">📋 Copy</button>
+            <button class="btn btn-ghost btn-sm" id="btn-rw-print-report">🖨️ Print</button>
+          </div>
+        </div>
+        <div id="rw-report-text" style="white-space:pre-wrap;line-height:1.7;color:var(--c-text)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: Parent reports ══ -->
+  <div class="rpt-pane" id="pane-parent">
+    <div class="steps">
+      <div class="step-pill active" id="pr-step1Pill">1 Select Child</div>
+      <div class="step-pill" id="pr-step2Pill">2 Report Type</div>
+      <div class="step-pill" id="pr-step3Pill">3 Review Data</div>
+      <div class="step-pill" id="pr-step4Pill">4 Edit Draft</div>
+      <div class="step-pill" id="pr-step5Pill">5 Send</div>
+    </div>
+    <div class="card" id="pr-step1Card">
+      <div class="card-label">Select Child</div>
+      <input class="child-search" type="text" id="pr-childSearch" placeholder="Search by name…">
+      <div class="child-grid" id="pr-childGrid"><div class="spinner"></div></div>
+    </div>
+    <div class="card" id="pr-step2Card" style="display:none">
+      <div class="card-label">Report Type</div>
+      <div class="type-grid" id="pr-typeGrid">
+        <button class="type-btn active" data-type="progress">Half-Termly Progress</button>
+        <button class="type-btn" data-type="end-of-year">End of Year Report</button>
+        <button class="type-btn" data-type="2-year check">2-Year Check</button>
+        <button class="type-btn" data-type="settling-in">Settling-In Report</button>
+        <button class="type-btn" data-type="leaving">Leaving Report</button>
+      </div>
+      <div style="margin-top:14px">
+        <button class="btn btn-primary" id="pr-loadDataBtn">Load child data →</button>
+      </div>
+    </div>
+    <div class="card" id="pr-step3Card" style="display:none">
+      <div id="pr-obsDateChip" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+      <div class="card-label">Recent Observations</div>
+      <div class="obs-list" id="pr-obsList"><div class="spinner"></div></div>
+      <div class="card-label" style="margin-top:16px">Framework Tracker</div>
+      <div class="b25-grid" id="pr-b25Grid"><div class="spinner"></div></div>
+      <div style="margin-top:16px">
+        <button class="btn btn-primary" id="pr-generateBtn">✨ Generate AI Draft</button>
+      </div>
+      <div class="ai-loading" id="pr-aiLoading">
+        <div class="spinner"></div>
+        <span>Generating report — this takes 30–90 seconds…</span>
+      </div>
+    </div>
+    <div class="card" id="pr-step4Card" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div class="card-label" style="margin:0">Draft Report</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="pr-wordCountBadge" style="font-size:12px;color:var(--c-muted)">0 words</span>
+          <button class="btn btn-ghost btn-sm" id="pr-regenBtn">↩ Regenerate</button>
+        </div>
+      </div>
+      <textarea class="draft-area" id="pr-draftArea" placeholder="AI-generated report will appear here…"></textarea>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center">
+        <button class="btn btn-primary" id="pr-saveBtn">💾 Save draft</button>
+        <button class="btn btn-success" id="pr-finaliseBtn" style="display:none">✓ Finalise</button>
+        <button class="btn btn-success" id="pr-downloadBtn" style="display:none">📄 Download PDF</button>
+        <button class="btn btn-success" id="pr-sendBtn" style="display:none">📧 Send to parent</button>
+        <div id="pr-savedBadge" style="display:none">
+          <span class="badge badge-success">Saved #<span id="pr-savedId"></span></span>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="pr-savedReportsCard" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer"
+           id="pr-savedReportsToggle">
+        <div class="card-label" style="margin:0">Previously Saved Reports</div>
+        <span id="pr-savedArrow" style="color:var(--c-muted)">▾</span>
+      </div>
+      <div id="pr-savedReportsInner" style="display:none;margin-top:12px">
+        <div id="pr-reportsList"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+const _initDone = {};
+
+function switchTab(tab) {
+  document.querySelectorAll('.rpt-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('.rpt-pane').forEach(el => el.classList.toggle('active', el.id === 'pane-' + tab));
+  const url = new URL(window.location);
+  url.searchParams.set('tab', tab);
+  history.replaceState(null, '', url);
+  if (!_initDone[tab]) {
+    _initDone[tab] = true;
+    if (tab === 'generated') mgmt_loadData();
+    if (tab === 'write')     rw_init();
+    if (tab === 'parent')    pr_init();
+  }
+}
+
+// ── TAB: Generated reports ───────────────────────────────────────────────────
+async function mgmt_loadData() {
+  try {
+    const data = await Wren.api('/api/admin/overview');
+    document.getElementById('s-enrolled').innerHTML  = `<span class="stat-value">${data.children}</span><span class="stat-label">Enrolled Children</span>`;
+    document.getElementById('s-present').innerHTML   = `<span class="stat-value">${data.present_today}</span><span class="stat-label">Present Today</span>`;
+    document.getElementById('s-incidents').innerHTML = `<span class="stat-value">${data.open_incidents}</span><span class="stat-label">Open Incidents</span>`;
+    document.getElementById('s-absences').innerHTML  = `<span class="stat-value">${data.pending_absences}</span><span class="stat-label">Pending Leave</span>`;
+    const roomEl = document.getElementById('room-report');
+    roomEl.innerHTML = `<div class="table-wrapper"><table>
+      <thead><tr><th>Room</th><th>Capacity</th><th>Enrolled</th><th>Present Today</th><th>Occupancy %</th></tr></thead>
+      <tbody>${(data.rooms||[]).map(r => `<tr>
+        <td><strong>${r.name}</strong></td>
+        <td>${r.capacity}</td><td>${r.enrolled||0}</td><td>${r.present||0}</td>
+        <td><div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:8px;background:#e2e8f0;border-radius:4px">
+            <div style="height:100%;width:${Math.min(100,(r.enrolled/r.capacity)*100)}%;background:var(--c-blue);border-radius:4px"></div>
+          </div>${Math.round((r.enrolled/r.capacity)*100)||0}%</div></td>
+      </tr>`).join('')}</tbody></table></div>`;
+  } catch(e) {}
+}
+
+// ── TAB: Write new report (AI chat) ─────────────────────────────────────────
+let rw_children = [], rw_currentSession = null;
+
+async function rw_init() {
+  rw_children = await Wren.api('/api/children').catch(() => []);
+  rw_loadSessions();
+}
+
+async function rw_loadSessions() {
+  try {
+    const sessions = await Wren.api('/api/ai/report/sessions');
+    const area = document.getElementById('rw-sessions-area');
+    if (!sessions.length) {
+      area.innerHTML = `<div class="empty-state"><div class="empty-icon">📝</div>
+        <div class="empty-title">No reports yet</div>
+        <div class="empty-body">Start a new report to begin a guided AI conversation</div></div>`;
+      return;
+    }
+    area.innerHTML = `<div style="display:grid;gap:10px">` +
+      sessions.map(s => `<div class="card" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" data-action="resume" data-id="${s.id}">
+        <div><div style="font-weight:700">${s.child_full_name || s.child_name || 'Unknown child'}</div>
+          <div style="color:var(--c-muted);font-size:12px">${s.room||''} · Started ${new Date(s.created_at).toLocaleDateString('en-GB')}</div></div>
+        <div>${s.report_generated_at
+          ? `<span class="badge badge-success">Report ready</span>`
+          : `<span class="badge badge-grey">In progress</span>`}</div>
+      </div>`).join('') + `</div>`;
+  } catch(e) {
+    document.getElementById('rw-sessions-area').innerHTML = '<div class="alert alert-danger">Failed to load sessions</div>';
+  }
+}
+
+function rw_showNewSession() {
+  Wren.modal('New Progress Report', `
+    <div class="form-group">
+      <label class="form-label">Child <span style="color:var(--c-red)">*</span></label>
+      <select class="form-control" id="rw-modal-child">
+        <option value="">Select child...</option>
+        ${rw_children.map(c => `<option value="${c.id}" data-name="${c.first_name} ${c.last_name}" data-age="${c.age_months||0}" data-room="${c.room_name||''}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Room</label>
+      <select class="form-control" id="rw-modal-room">
+        <option value="Baby Room">Baby Room</option>
+        <option value="Pre-school">Pre-school</option>
+      </select>
+    </div>
+  `, [
+    { label: 'Start Report', class: 'btn-primary', close: true, action: async () => {
+      const sel = document.getElementById('rw-modal-child');
+      const opt = sel.selectedOptions[0];
+      if (!sel.value) { Wren.toast('Please select a child', 'warning'); return; }
+      try {
+        const resp = await Wren.api('/api/ai/report/start', { method: 'POST', body: {
+          child_id: parseInt(sel.value), child_name: opt.dataset.name,
+          age_months: parseInt(opt.dataset.age)||0, room: document.getElementById('rw-modal-room').value
+        }});
+        rw_openChatSession(resp.session_id, opt.dataset.name, document.getElementById('rw-modal-room').value, resp.message);
+        rw_loadSessions();
+      } catch(e) { Wren.toast('Failed: ' + e.message, 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+async function rw_resumeSession(id) {
+  try {
+    const session = await Wren.api(`/api/ai/report/${id}`);
+    const convs = session.conversation || [];
+    rw_openChatSession(id, session.child_name, session.room, null, convs, session.final_report);
+  } catch(e) { Wren.toast('Failed to load session', 'error'); }
+}
+
+function rw_openChatSession(sessionId, childName, room, firstMsg, existingConv, finalReport) {
+  rw_currentSession = sessionId;
+  document.getElementById('rw-sessions-area').style.display = 'none';
+  document.getElementById('rw-chat-area').style.display = '';
+  document.getElementById('rw-chat-child-name').textContent = childName || 'Progress Report';
+  document.getElementById('rw-chat-context').textContent = room || '';
+  const msgs = document.getElementById('rw-chat-messages');
+  msgs.innerHTML = '';
+  if (existingConv && existingConv.length) {
+    existingConv.forEach(m => rw_appendMessage(m.role === 'assistant' ? 'ai' : 'user', m.content));
+  } else if (firstMsg) {
+    rw_appendMessage('ai', firstMsg);
+  }
+  if (finalReport) {
+    document.getElementById('rw-report-output').style.display = '';
+    document.getElementById('rw-report-text').textContent = finalReport;
+    document.getElementById('rw-chat-input').disabled = true;
+    document.getElementById('rw-send-btn').disabled = true;
+  }
+}
+
+function rw_closeChatArea() {
+  rw_currentSession = null;
+  document.getElementById('rw-chat-area').style.display = 'none';
+  document.getElementById('rw-sessions-area').style.display = '';
+  document.getElementById('rw-report-output').style.display = 'none';
+  document.getElementById('rw-chat-messages').innerHTML = '';
+}
+
+function rw_appendMessage(role, content) {
+  const msgs = document.getElementById('rw-chat-messages');
+  const div = document.createElement('div');
+  div.style.cssText = role === 'ai'
+    ? 'background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:12px 14px;max-width:85%;align-self:flex-start'
+    : 'background:rgba(74,154,191,0.15);border:1px solid rgba(74,154,191,0.3);border-radius:12px;padding:12px 14px;max-width:85%;align-self:flex-end;margin-left:auto';
+  div.style.whiteSpace = 'pre-wrap';
+  div.style.lineHeight = '1.6';
+  div.style.fontSize = '14px';
+  div.textContent = content;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function rw_sendChat() {
+  if (!rw_currentSession) return;
+  const input = document.getElementById('rw-chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = '';
+  rw_appendMessage('user', message);
+  const btn = document.getElementById('rw-send-btn');
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const resp = await Wren.api('/api/ai/report/chat', { method: 'POST', body: { session_id: rw_currentSession, message } });
+    rw_appendMessage('ai', resp.message);
+    if (resp.reportGenerated && resp.report) {
+      document.getElementById('rw-report-output').style.display = '';
+      document.getElementById('rw-report-text').textContent = resp.report;
+      input.disabled = true; btn.disabled = true; btn.textContent = 'Done';
+      rw_loadSessions();
+    } else { btn.disabled = false; btn.textContent = 'Send'; }
+  } catch(e) {
+    rw_appendMessage('ai', '⚠ Error: ' + e.message);
+    btn.disabled = false; btn.textContent = 'Send';
+  }
+}
+
+function rw_copyReport() {
+  navigator.clipboard.writeText(document.getElementById('rw-report-text').textContent)
+    .then(() => Wren.toast('Copied to clipboard ✓', 'success'));
+}
+
+function rw_printReport() {
+  const text = document.getElementById('rw-report-text').textContent;
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>Progress Report</title><style>body{font-family:Arial,sans-serif;padding:40px;line-height:1.8;white-space:pre-wrap}</style></head><body>${text}</body></html>`);
+  w.document.close(); w.print();
+}
+
+// ── TAB: Parent reports ──────────────────────────────────────────────────────
+let pr_allChildren = [], pr_selectedChild = null, pr_selectedType = 'progress',
+    pr_childData = null, pr_currentReportId = null, pr_savedVisible = false;
+
+const pr$ = id => document.getElementById(id);
+
+function pr_escH(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function pr_setStep(n) {
+  ['pr-step1Pill','pr-step2Pill','pr-step3Pill','pr-step4Pill','pr-step5Pill'].forEach((id,i) => {
+    const el = pr$(id); if (!el) return;
+    el.className = 'step-pill' + (i+1<n?' done':i+1===n?' active':'');
+  });
+}
+
+async function pr_init() {
+  try {
+    const d = await Wren.api('/api/parent-reports/children');
+    pr_allChildren = d.children || [];
+    pr_renderChildren(pr_allChildren);
+    pr_loadSavedReports();
+  } catch(e) {
+    pr$('pr-childGrid').innerHTML = `<div class="alert alert-danger">Failed: ${pr_escH(e.message)}</div>`;
+  }
+
+  pr$('pr-childSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    pr_renderChildren(pr_allChildren.filter(c => {
+      const nm = (c.preferred_name||c.first_name)+' '+c.last_name;
+      return nm.toLowerCase().includes(q);
+    }));
+  });
+
+  pr$('pr-typeGrid').addEventListener('click', e => {
+    const btn = e.target.closest('.type-btn'); if (!btn) return;
+    document.querySelectorAll('#pane-parent .type-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active'); pr_selectedType = btn.dataset.type;
+  });
+
+  pr$('pr-loadDataBtn').addEventListener('click', async () => {
+    if (!pr_selectedChild) { Wren.toast('Select a child first','warning'); return; }
+    pr_setStep(3); pr$('pr-step3Card').style.display = '';
+    pr$('pr-step4Card').style.display = 'none';
+    pr$('pr-obsList').innerHTML = '<div class="spinner"></div>';
+    pr$('pr-b25Grid').innerHTML  = '<div class="spinner"></div>';
+    try {
+      pr_childData = await Wren.api(`/api/parent-reports/child/${pr_selectedChild.id}?report_type=${encodeURIComponent(pr_selectedType)}`);
+      pr_renderChildData();
+      pr$('pr-step3Card').scrollIntoView({behavior:'smooth',block:'nearest'});
+    } catch(e) { Wren.toast('Failed: '+e.message,'error'); }
+  });
+
+  pr$('pr-generateBtn').addEventListener('click', pr_generateDraft);
+  pr$('pr-regenBtn').addEventListener('click', pr_generateDraft);
+  pr$('pr-draftArea').addEventListener('input', pr_updateWordCount);
+
+  pr$('pr-saveBtn').addEventListener('click', async () => {
+    const content = pr$('pr-draftArea').value.trim();
+    if (!content) { Wren.toast('Nothing to save','warning'); return; }
+    pr$('pr-saveBtn').disabled = true;
+    try {
+      let d;
+      if (pr_currentReportId) {
+        d = await Wren.api(`/api/parent-reports/${pr_currentReportId}`,{method:'PUT',body:{content}});
+      } else {
+        d = await Wren.api('/api/parent-reports/generate',{method:'POST',body:{child_id:pr_selectedChild.id,report_type:pr_selectedType}});
+        pr_currentReportId = d.id;
+      }
+      pr$('pr-savedId').textContent = pr_currentReportId;
+      pr$('pr-savedBadge').style.display = '';
+      pr$('pr-sendBtn').style.display = '';
+      pr$('pr-finaliseBtn').style.display = '';
+      Wren.toast('Saved!','success');
+      pr_loadSavedReports();
+    } catch(e) { Wren.toast('Save failed: '+e.message,'error'); }
+    finally { pr$('pr-saveBtn').disabled = false; }
+  });
+
+  pr$('pr-finaliseBtn').addEventListener('click', async () => {
+    if (!pr_currentReportId) { Wren.toast('Save first','warning'); return; }
+    try {
+      await Wren.api(`/api/parent-reports/${pr_currentReportId}/finalise`,{method:'POST',body:{content:pr$('pr-draftArea').value.trim()}});
+      Wren.toast('Report finalised!','success');
+      pr$('pr-downloadBtn').style.display = '';
+      pr_setStep(5); pr_loadSavedReports();
+    } catch(e) { Wren.toast('Finalise failed: '+e.message,'error'); }
+  });
+
+  pr$('pr-downloadBtn').addEventListener('click', async () => {
+    if (!pr_currentReportId) return;
+    try {
+      const resp = await fetch(`/api/parent-reports/${pr_currentReportId}/send`, {
+        method:'POST', headers:{'Authorization':'Bearer '+sessionStorage.getItem('wrenToken')}
+      });
+      const ct = resp.headers.get('Content-Type')||'';
+      if (ct.includes('pdf')) {
+        const blob = await resp.blob();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'report.pdf'; a.click();
+      } else { const d = await resp.json(); Wren.toast(`Sent to ${d.parent_email||'parent'}!`,'success'); }
+      pr_loadSavedReports();
+    } catch(e) { Wren.toast('Failed: '+e.message,'error'); }
+  });
+
+  pr$('pr-sendBtn').addEventListener('click', async () => {
+    if (!pr_currentReportId) { Wren.toast('Save first','warning'); return; }
+    if (!confirm('Send this report to the parent by email?')) return;
+    pr$('pr-sendBtn').disabled = true;
+    try {
+      const resp = await fetch(`/api/parent-reports/${pr_currentReportId}/send`, {
+        method:'POST', headers:{'Authorization':'Bearer '+sessionStorage.getItem('wrenToken')}
+      });
+      const ct = resp.headers.get('Content-Type')||'';
+      if (ct.includes('pdf')) {
+        const blob = await resp.blob();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'report.pdf'; a.click();
+        Wren.toast('PDF downloaded (SMTP not configured)','info');
+      } else {
+        const d = await resp.json();
+        if (!resp.ok) throw new Error(d.error||'Failed');
+        Wren.toast(`Sent to ${d.parent_email||'parent'}!`,'success');
+      }
+      pr$('pr-sendBtn').textContent = '✓ Sent';
+      pr_loadSavedReports();
+    } catch(e) { Wren.toast('Send failed: '+e.message,'error'); pr$('pr-sendBtn').disabled = false; }
+  });
+}
+
+function pr_renderChildren(list) {
+  const grid = pr$('pr-childGrid');
+  if (!list.length) { grid.innerHTML = '<div style="color:var(--c-muted);font-size:13px">No active children</div>'; return; }
+  grid.innerHTML = list.map(c => {
+    const nm = (c.preferred_name||c.first_name)+' '+c.last_name;
+    return `<button class="child-btn${pr_selectedChild?.id===c.id?' active':''}" data-action="select" data-id="${c.id}">
+      <div>${pr_escH(nm)}</div><div class="child-room">${pr_escH(c.room_name||'—')}</div>
+    </button>`;
+  }).join('');
+}
+
+function pr_selectChild(id) {
+  pr_selectedChild = pr_allChildren.find(c => c.id === id);
+  pr_renderChildren(pr_allChildren);
+  pr$('pr-step2Card').style.display = '';
+  pr$('pr-step3Card').style.display = 'none';
+  pr$('pr-step4Card').style.display = 'none';
+  pr_currentReportId = null;
+  pr$('pr-savedBadge').style.display = 'none';
+  pr$('pr-sendBtn').style.display = 'none';
+  pr$('pr-finaliseBtn').style.display = 'none';
+  pr$('pr-downloadBtn').style.display = 'none';
+  pr_setStep(2);
+  pr$('pr-step2Card').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function pr_renderChildData() {
+  if (!pr_childData) return;
+  const dr = pr_childData.date_range||{};
+  pr$('pr-obsDateChip').innerHTML =
+    `<span class="badge badge-grey">📅 ${pr_escH(dr.from||'')} → ${pr_escH(dr.to||'')}</span>
+     <span class="badge badge-blue">${pr_escH(pr_selectedType)}</span>
+     <span class="badge badge-orange">${pr_escH((pr_childData.child.preferred_name||pr_childData.child.first_name)+' '+pr_childData.child.last_name)}</span>`;
+  const obs = pr_childData.observations||[];
+  pr$('pr-obsList').innerHTML = !obs.length
+    ? '<div style="color:var(--c-muted);font-size:13px;padding:8px">No observations in this period</div>'
+    : obs.map(o=>`<div class="obs-item">
+        <div class="obs-item-head">
+          <div class="obs-item-title">${pr_escH(o.title||'Observation')}</div>
+          <div class="obs-item-date">${pr_escH(o.observation_date||'')}</div>
+        </div>
+        <div class="obs-item-areas">${(o.eyfs_areas||[]).map(a=>`<span class="obs-area">${pr_escH(a)}</span>`).join('')}</div>
+        <div class="obs-item-text">${pr_escH((o.description||'').slice(0,280))}${(o.description||'').length>280?'…':''}</div>
+      </div>`).join('');
+  const b25 = pr_childData.b25||[];
+  pr$('pr-b25Grid').innerHTML = !b25.length
+    ? '<div style="color:var(--c-muted);font-size:13px">No framework tracker data</div>'
+    : b25.map(a=>{
+        const total=parseInt(a.total_descriptors)||1, secure=parseInt(a.secure_count)||0, dev=parseInt(a.developing_count)||0;
+        return `<div class="b25-item">
+          <div class="b25-name">${pr_escH(a.name)}</div>
+          <div class="b25-bar-wrap"><div class="b25-bar" style="width:${Math.round(((secure+dev)/total)*100)}%"></div></div>
+          <div class="b25-counts">${a.secure_count} secure · ${a.developing_count} developing</div>
+        </div>`;
+      }).join('');
+}
+
+async function pr_generateDraft() {
+  if (!pr_selectedChild) { Wren.toast('Select a child first','warning'); return; }
+  pr$('pr-aiLoading').classList.add('visible');
+  pr$('pr-generateBtn').disabled = true; pr$('pr-regenBtn').disabled = true;
+  try {
+    const d = await Wren.api('/api/parent-reports/generate', {method:'POST',body:{child_id:pr_selectedChild.id,report_type:pr_selectedType}});
+    pr_currentReportId = d.id;
+    pr$('pr-draftArea').value = d.draft||'';
+    pr_updateWordCount();
+    pr$('pr-step4Card').style.display = '';
+    pr$('pr-savedBadge').style.display = '';
+    pr$('pr-savedId').textContent = d.id;
+    pr$('pr-sendBtn').style.display = '';
+    pr$('pr-finaliseBtn').style.display = '';
+    pr$('pr-downloadBtn').style.display = 'none';
+    pr_setStep(4);
+    pr$('pr-step4Card').scrollIntoView({behavior:'smooth',block:'nearest'});
+    Wren.toast('Draft generated!','success');
+  } catch(e) { Wren.toast('Generation failed: '+e.message,'error'); }
+  finally {
+    pr$('pr-aiLoading').classList.remove('visible');
+    pr$('pr-generateBtn').disabled = false; pr$('pr-regenBtn').disabled = false;
+  }
+}
+
+function pr_updateWordCount() {
+  const text = pr$('pr-draftArea').value.trim();
+  pr$('pr-wordCountBadge').textContent = (text ? text.split(/\s+/).length : 0)+' words';
+}
+
+let pr_savedVisible2 = false;
+function pr_toggleSavedReports() {
+  pr_savedVisible2 = !pr_savedVisible2;
+  pr$('pr-savedReportsInner').style.display = pr_savedVisible2 ? '' : 'none';
+  pr$('pr-savedArrow').textContent = pr_savedVisible2 ? '▴' : '▾';
+  if (pr_savedVisible2) pr_loadSavedReports();
+}
+
+async function pr_loadSavedReports() {
+  try {
+    const d = await Wren.api('/api/parent-reports');
+    pr_renderSavedReports(d.reports||[]);
+  } catch(e) {}
+}
+
+function pr_renderSavedReports(reports) {
+  const list = pr$('pr-reportsList');
+  if (!reports.length) { list.innerHTML = '<div style="color:var(--c-muted);font-size:13px">No reports yet</div>'; return; }
+  list.innerHTML = reports.map(r => {
+    const nm = (r.preferred_name||r.first_name||'')+' '+(r.last_name||'');
+    const dt = new Date(r.generated_at||r.id).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+    const badge = r.sent_at
+      ? `<span class="badge badge-success" style="font-size:10px">✓ Sent</span>`
+      : r.status==='finalised'
+        ? `<span class="badge badge-blue" style="font-size:10px">Finalised</span>`
+        : `<span class="badge badge-grey" style="font-size:10px">Draft</span>`;
+    return `<div class="report-item">
+      <div><div class="report-item-name">${pr_escH(nm.trim())} — ${pr_escH(r.report_type)}</div>
+        <div class="report-item-meta">${pr_escH(r.room_name||'')} · ${dt} · by ${pr_escH(r.created_by||'Staff')}</div>
+        <div style="margin-top:4px">${badge}</div></div>
+      <button class="btn btn-ghost btn-sm" data-action="load" data-id="${r.id}">Open</button>
+    </div>`;
+  }).join('');
+}
+
+async function pr_loadReport(id) {
+  try {
+    const r = await Wren.api(`/api/parent-reports/${id}`);
+    pr_selectedChild = pr_allChildren.find(c=>c.id===r.child_id)||{id:r.child_id,first_name:r.first_name,last_name:r.last_name};
+    pr_selectedType  = r.report_type;
+    pr_currentReportId = r.id;
+    pr$('pr-draftArea').value = r.content||r.final_content||r.draft_content||'';
+    pr_updateWordCount();
+    pr$('pr-step4Card').style.display = '';
+    pr$('pr-savedBadge').style.display = '';
+    pr$('pr-savedId').textContent = r.id;
+    pr$('pr-sendBtn').style.display = r.sent_at ? 'none' : '';
+    pr$('pr-finaliseBtn').style.display = r.status==='finalised' ? 'none' : '';
+    pr$('pr-downloadBtn').style.display = r.status==='finalised' ? '' : 'none';
+    pr_setStep(r.status==='sent' ? 5 : 4);
+    pr$('pr-step4Card').scrollIntoView({behavior:'smooth',block:'start'});
+  } catch(e) { Wren.toast('Failed: '+e.message,'error'); }
+}
+
+// ── Init: pick tab from URL ───────────────────────────────────────────────────
+document.querySelector('.rpt-tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.rpt-tab');
+  if (tab) switchTab(tab.dataset.tab);
+});
+document.getElementById('btn-rw-new-session').addEventListener('click', rw_showNewSession);
+document.getElementById('btn-rw-back').addEventListener('click', rw_closeChatArea);
+document.getElementById('rw-chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); rw_sendChat(); }
+});
+document.getElementById('rw-send-btn').addEventListener('click', rw_sendChat);
+document.getElementById('btn-rw-copy-report').addEventListener('click', rw_copyReport);
+document.getElementById('btn-rw-print-report').addEventListener('click', rw_printReport);
+document.getElementById('pr-savedReportsToggle').addEventListener('click', pr_toggleSavedReports);
+document.getElementById('rw-sessions-area').addEventListener('click', e => {
+  const card = e.target.closest('[data-action="resume"]');
+  if (card) rw_resumeSession(parseInt(card.dataset.id));
+});
+document.getElementById('pr-childGrid').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action="select"]');
+  if (btn) pr_selectChild(parseInt(btn.dataset.id));
+});
+document.getElementById('pr-reportsList').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action="load"]');
+  if (btn) pr_loadReport(parseInt(btn.dataset.id));
+});
+
+document.addEventListener('wren:ready', () => {
+  const tab = new URLSearchParams(window.location.search).get('tab') || 'generated';
+  switchTab(tab);
+});
+</script>
+<script src="/js/wren-voice.js"></script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

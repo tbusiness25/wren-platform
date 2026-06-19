@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <title>Clock In/Out — Your Nursery</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    body{background:#0f172a;color:#f1f5f9;font-family:system-ui,Arial,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px;overflow-x:hidden}
+    .clock-header{text-align:center;padding:20px 0 10px}
+    .clock-time{font-size:56px;font-weight:700;color:#f1f5f9;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+    .clock-date{font-size:18px;color:#94a3b8;margin-top:4px}
+    .logo{width:120px;margin:0 auto 16px;display:block}
+    .staff-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;width:100%;max-width:700px;margin-top:16px}
+    .staff-btn{background:#1e293b;border:2px solid #2d3748;border-radius:12px;padding:16px 10px;text-align:center;cursor:pointer;transition:.15s;position:relative}
+    .staff-btn:active{transform:scale(.96)}
+    .staff-btn.in{border-color:#22c55e}
+    .staff-btn.break{border-color:#f59e0b}
+    .staff-btn.out{border-color:#2d3748}
+    .staff-initial{width:52px;height:52px;border-radius:50%;background:#4a9abf;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;color:#fff;margin:0 auto 8px}
+    .staff-name{font-size:13px;font-weight:600;color:#f1f5f9}
+    .staff-status{font-size:11px;margin-top:3px}
+    .status-in{color:#22c55e}.status-break{color:#f59e0b}.status-out{color:#94a3b8}
+    .staff-time{font-size:10px;color:#94a3b8;margin-top:2px}
+    /* PIN Pad */
+    .pin-overlay{position:fixed;inset:0;background:#0f172aee;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+    .pin-modal{background:#1e293b;border:1px solid #2d3748;border-radius:20px;padding:24px;width:100%;max-width:360px;text-align:center}
+    .pin-staff-name{font-size:20px;font-weight:700;color:#f1f5f9;margin-bottom:4px}
+    .pin-action-label{font-size:14px;color:#94a3b8;margin-bottom:16px}
+    .pin-dots{display:flex;gap:12px;justify-content:center;margin-bottom:20px}
+    .pin-dot{width:16px;height:16px;border-radius:50%;background:#2d3748;transition:.15s}
+    .pin-dot.filled{background:#4a9abf}
+    .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:240px;margin:0 auto}
+    .pin-key{background:#0f172a;border:1px solid #2d3748;border-radius:12px;padding:16px;font-size:22px;font-weight:700;color:#f1f5f9;cursor:pointer;transition:.15s;border:none}
+    .pin-key:active{background:#2d3748;transform:scale(.93)}
+    .pin-key.del{font-size:16px;color:#94a3b8}
+    .pin-key.cancel-btn{background:transparent;border:1px solid #2d3748;color:#94a3b8;font-size:14px}
+    /* Confirm overlay */
+    .confirm-overlay{position:fixed;inset:0;background:#0f172aee;z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+    .confirm-card{background:#1e293b;border:1px solid #2d3748;border-radius:20px;padding:32px 24px;text-align:center;max-width:360px;width:100%}
+    .confirm-icon{font-size:56px;margin-bottom:12px}
+    .confirm-msg{font-size:22px;font-weight:700;color:#f1f5f9;margin-bottom:6px}
+    .confirm-sub{font-size:15px;color:#94a3b8}
+    /* Action choice */
+    .action-overlay{position:fixed;inset:0;background:#0f172aee;z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+    .action-card{background:#1e293b;border:1px solid #2d3748;border-radius:20px;padding:24px;width:100%;max-width:360px;text-align:center}
+    .action-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px}
+    .action-btns{display:flex;flex-direction:column;gap:10px}
+    .action-btn{padding:14px;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;border:none;transition:.15s}
+    .action-btn:active{transform:scale(.97)}
+    .action-btn-green{background:#22c55e22;color:#22c55e;border:1px solid #22c55e44}
+    .action-btn-amber{background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44}
+    .action-btn-red{background:#ef444422;color:#ef4444;border:1px solid #ef444444}
+    .action-btn-grey{background:transparent;color:#94a3b8;border:1px solid #2d3748;margin-top:4px}
+  </style>
+  <meta name="wren-hide-modules" content="HR,Staff,IT Settings,Reports,Action Plans,Supervisions,CPD">
+</head>
+<body>
+
+<div class="clock-header">
+  <div class="clock-time" id="clock-display">--:--:--</div>
+  <div class="clock-date" id="date-display"></div>
+</div>
+
+<p style="font-size:12px;color:#94a3b8;text-align:center;margin-top:8px">Tap your name to clock in or out</p>
+
+<div class="staff-grid" id="staff-grid">
+  <div style="grid-column:1/-1;text-align:center;padding:40px;color:#94a3b8">Loading staff...</div>
+</div>
+
+<!-- PIN PAD -->
+<div class="pin-overlay" id="pin-overlay" style="display:none">
+  <div class="pin-modal">
+    <div class="pin-staff-name" id="pin-name"></div>
+    <div class="pin-action-label" id="pin-action-label">Enter your PIN</div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div><div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-pad">
+      ${[1,2,3,4,5,6,7,8,9,'','0','del'].map(k=>`<button class="pin-key${k===''?' pin-key pin-key-empty':k==='del'?' del':''}" data-key="${k}">${k==='del'?'⌫':k===''?'':k}</button>`).join('')}
+    </div>
+    <button class="pin-key cancel-btn" id="btn-pin-cancel" style="margin-top:12px;width:100%;padding:10px">Cancel</button>
+  </div>
+</div>
+
+<!-- ACTION CHOICE -->
+<div class="action-overlay" id="action-overlay" style="display:none">
+  <div class="action-card">
+    <div class="action-title" id="action-staff-name"></div>
+    <div class="action-btns" id="action-btns"></div>
+  </div>
+</div>
+
+<!-- CONFIRM OVERLAY -->
+<div class="confirm-overlay" id="confirm-overlay" style="display:none">
+  <div class="confirm-card">
+    <div class="confirm-icon" id="confirm-icon">✅</div>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-sub" id="confirm-sub"></div>
+  </div>
+</div>
+
+<script>
+let allStaff=[], selectedStaff=null, pendingAction=null, pinBuffer='';
+
+// ── CLOCK ──
+function updateClock(){
+  const now=new Date();
+  document.getElementById('clock-display').textContent=now.toLocaleTimeString('en-GB');
+  document.getElementById('date-display').textContent=now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+}
+setInterval(updateClock,1000);
+updateClock();
+
+// ── AUTO CLOCK-OUT at 18:30 ──
+function scheduleAutoClockOut(){
+  const now=new Date();
+  const target=new Date(now.getFullYear(),now.getMonth(),now.getDate(),18,30,0);
+  if(target<=now) return; // already past
+  const ms=target-now;
+  setTimeout(async()=>{
+    for(const s of allStaff){
+      if(s.clock_in&&!s.clock_out){
+        try{await fetch('/api/attendance/staff/clock-out',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({staff_id:s.id})});}catch{}
+      }
+    }
+  },ms);
+}
+
+// ── LOAD STAFF ──
+async function loadStaff(){
+  try{
+    const resp=await fetch('/api/attendance/staff/today');
+    if(!resp.ok)throw new Error('Failed');
+    allStaff=await resp.json();
+    renderGrid();
+    scheduleAutoClockOut();
+  }catch(e){
+    document.getElementById('staff-grid').innerHTML='<div style="grid-column:1/-1;text-align:center;color:#ef4444;padding:40px">Failed to load staff. '+e.message+'</div>';
+  }
+}
+
+setInterval(loadStaff,60000); // refresh every minute
+loadStaff();
+
+function getStatus(s){
+  if(!s.clock_in)return{label:'Not In',cls:'status-out',card:'out'};
+  if(s.break_start&&!s.break_end)return{label:'On Break',cls:'status-break',card:'break'};
+  if(s.clock_out)return{label:'Left',cls:'status-out',card:'out'};
+  // Calculate hours
+  const hrs=((Date.now()-new Date(s.clock_in).getTime())/3600000).toFixed(1);
+  return{label:`In — ${hrs}h`,cls:'status-in',card:'in',time:new Date(s.clock_in).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})};
+}
+
+function renderGrid(){
+  const grid=document.getElementById('staff-grid');
+  grid.innerHTML=allStaff.map(s=>{
+    const st=getStatus(s);
+    const ini=(s.first_name[0]+(s.last_name[0]||'')).toUpperCase();
+    return `<div class="staff-btn ${st.card}" data-action="tap-staff" data-id="${s.id}">
+      <div class="staff-initial">${ini}</div>
+      <div class="staff-name">${s.first_name}</div>
+      <div class="staff-status ${st.cls}">${st.label}</div>
+      ${st.time?`<div class="staff-time">In: ${st.time}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ── TAP STAFF ──
+function tapStaff(id){
+  selectedStaff=allStaff.find(s=>s.id===id);
+  if(!selectedStaff)return;
+  const st=getStatus(selectedStaff);
+  // Show action choice
+  const nameEl=document.getElementById('action-staff-name');
+  nameEl.textContent=selectedStaff.first_name+' '+selectedStaff.last_name;
+  const btns=document.getElementById('action-btns');
+
+  if(!selectedStaff.clock_in){
+    // Not in — just clock in
+    pendingAction='clock_in';
+    closePinPad();
+    openPinPad('clock_in');
+    return;
+  }
+  if(selectedStaff.break_start&&!selectedStaff.break_end){
+    // On break — end break
+    pendingAction='break_end';
+    openPinPad('break_end');
+    return;
+  }
+  if(selectedStaff.clock_out){
+    // Already left — do nothing
+    showConfirm('👋',selectedStaff.first_name+' has already left today','');
+    return;
+  }
+  // Clocked in — show options
+  btns.innerHTML=`
+    <button class="action-btn action-btn-amber" data-action="do-break-start">Take a Break</button>
+    <button class="action-btn action-btn-red" data-action="do-clock-out">Clock Out</button>
+    <button class="action-btn action-btn-grey" data-action="do-cancel">Cancel</button>`;
+  document.getElementById('action-overlay').style.display='flex';
+}
+
+function closeAction(){document.getElementById('action-overlay').style.display='none';}
+
+// ── PIN PAD ──
+function openPinPad(action){
+  pendingAction=action;
+  pinBuffer='';
+  updatePinDots();
+  const labels={clock_in:'Good morning! Clock in?',clock_out:'Clock out?',break_start:'Take a break?',break_end:'End break? Welcome back!'};
+  document.getElementById('pin-name').textContent=selectedStaff?.first_name+' '+selectedStaff?.last_name;
+  document.getElementById('pin-action-label').textContent=labels[action]||'Enter PIN';
+  document.getElementById('pin-overlay').style.display='flex';
+}
+
+function closePinPad(){document.getElementById('pin-overlay').style.display='none';pinBuffer='';}
+
+function pinPress(k){
+  if(k==='del'){pinBuffer=pinBuffer.slice(0,-1);updatePinDots();return;}
+  if(k===''||pinBuffer.length>=4)return;
+  pinBuffer+=k;
+  updatePinDots();
+  if(pinBuffer.length===4)submitPin();
+}
+
+function updatePinDots(){
+  for(let i=0;i<4;i++){document.getElementById('pd'+i)?.classList.toggle('filled',i<pinBuffer.length);}
+}
+
+async function submitPin(){
+  const pin=pinBuffer;
+  pinBuffer='';
+  updatePinDots();
+  try{
+    const resp=await fetch('/api/attendance/staff/kiosk-action',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({staff_id:selectedStaff.id,pin,action:pendingAction})
+    });
+    const data=await resp.json();
+    if(!resp.ok)throw new Error(data.error||'Error');
+    closePinPad();
+    const msgs={clock_in:'Good morning, '+data.staff_name+'!',clock_out:'Goodbye, '+data.staff_name+'! See you tomorrow.',break_start:'Enjoy your break, '+data.staff_name+'!',break_end:'Welcome back, '+data.staff_name+'!'};
+    const icons={clock_in:'✅',clock_out:'👋',break_start:'☕',break_end:'👍'};
+    showConfirm(icons[pendingAction]||'✅',msgs[pendingAction]||'Done!','');
+    await loadStaff();
+  }catch(e){
+    closePinPad();
+    showConfirm('❌','Incorrect PIN — try again','');
+  }
+}
+
+function showConfirm(icon,msg,sub){
+  document.getElementById('confirm-icon').textContent=icon;
+  document.getElementById('confirm-msg').textContent=msg;
+  document.getElementById('confirm-sub').textContent=sub;
+  const el=document.getElementById('confirm-overlay');
+  el.style.display='flex';
+  setTimeout(()=>{el.style.display='none';},3000);
+}
+
+// Event delegation — no inline handlers
+document.getElementById('btn-pin-cancel').addEventListener('click', closePinPad);
+document.querySelector('.pin-pad').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-key]');
+  if (btn) pinPress(btn.dataset.key);
+});
+document.getElementById('staff-grid').addEventListener('click', function(e) {
+  const card = e.target.closest('[data-action="tap-staff"]');
+  if (card) tapStaff(parseInt(card.dataset.id));
+});
+document.getElementById('action-btns').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const a = btn.dataset.action;
+  if (a === 'do-break-start') { closeAction(); openPinPad('break_start'); }
+  else if (a === 'do-clock-out') { closeAction(); openPinPad('clock_out'); }
+  else if (a === 'do-cancel') { closeAction(); }
+});
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

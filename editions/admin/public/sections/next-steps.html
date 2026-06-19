@@ -1,0 +1,297 @@
+<div class="v2-section" data-section="next-steps">
+
+  <nav class="wren-tab-bar" role="tablist" aria-label="Next Steps tabs">
+    <div class="tab-bar-track">
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="list"      id="tab-ns-list"      aria-controls="panel-ns-list">Pending</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="completed" id="tab-ns-done"      aria-controls="panel-ns-done">Completed</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="overdue"   id="tab-ns-overdue"  aria-controls="panel-ns-overdue">Overdue</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+  <div class="wren-tab-panels">
+
+    <!-- PENDING / ALL -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ns-list" data-tab="list" aria-labelledby="tab-ns-list">
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+        <select class="v2-sort-select" id="ns-room-filter" aria-label="Filter by room">
+          <option value="">All rooms</option>
+        </select>
+        <select class="v2-sort-select" id="ns-child-filter" aria-label="Filter by child">
+          <option value="">All children</option>
+        </select>
+        <select class="v2-sort-select" id="ns-status-filter" aria-label="Filter by status">
+          <option value="pending">Pending</option>
+          <option value="planned">Planned</option>
+          <option value="">All (inc. completed)</option>
+        </select>
+        <button class="btn btn-sm btn-ghost" id="ns-refresh-btn">Refresh</button>
+      </div>
+
+      <div id="ns-list-container">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+    <!-- COMPLETED -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ns-done" data-tab="completed" aria-labelledby="tab-ns-done" hidden>
+      <div id="ns-done-container">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+    <!-- OVERDUE -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ns-overdue" data-tab="overdue" aria-labelledby="tab-ns-overdue" hidden>
+      <p style="color:var(--c-muted);font-size:.85rem;margin-bottom:16px">Next steps with a due date in the past that are not yet completed.</p>
+      <div id="ns-overdue-container">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+  </div><!-- /.wren-tab-panels -->
+</div><!-- /.v2-section -->
+
+<style>
+.ns-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.ns-card-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.ns-child-name{font-weight:700;font-size:.95rem;color:var(--c-text)}
+.ns-room-badge{font-size:.72rem;color:var(--c-muted);background:var(--c-bg);border:1px solid var(--c-border);border-radius:4px;padding:2px 7px}
+.ns-status-chip{font-size:.72rem;font-weight:700;border-radius:20px;padding:3px 10px;text-transform:uppercase;letter-spacing:.04em}
+.ns-status-pending{background:#4a9abf22;color:#4a9abf}
+.ns-status-planned{background:#e0782022;color:#e07820}
+.ns-status-completed{background:#22c55e22;color:#22c55e}
+.ns-status-cancelled{background:#ef444422;color:#ef4444}
+.ns-description{font-size:.9rem;color:var(--c-text);margin-bottom:8px;line-height:1.5}
+.ns-meta{font-size:.78rem;color:var(--c-muted);margin-bottom:10px;line-height:1.6}
+.ns-actions{display:flex;gap:8px;flex-wrap:wrap}
+.ns-empty{text-align:center;padding:40px 16px;color:var(--c-muted)}
+.ns-group-header{font-size:.8rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin:20px 0 8px}
+</style>
+
+<script>
+(function(){
+  let _nsData = [], _rooms = [], _children = [];
+
+  async function _nsLoad() {
+    window._nsLoad = _nsLoad;
+    const statusEl = document.getElementById('ns-status-filter');
+    const roomEl   = document.getElementById('ns-room-filter');
+    const childEl  = document.getElementById('ns-child-filter');
+    const status   = statusEl?.value;
+    const roomId   = roomEl?.value;
+    const childId  = childEl?.value;
+
+    const params = new URLSearchParams({ limit: 200 });
+    if (status)  params.set('status',   status);
+    if (roomId)  params.set('room_id',  roomId);
+    if (childId) params.set('child_id', childId);
+
+    try {
+      _nsData = await Wren.api('/api/next-steps?' + params.toString());
+      renderNsList(_nsData, 'ns-list-container');
+    } catch(e) {
+      document.getElementById('ns-list-container').innerHTML = '<div class="ns-empty">Failed to load</div>';
+    }
+  }
+
+  async function loadFilters() {
+    try {
+      const [rooms, children] = await Promise.all([
+        Wren.api('/api/children').catch(() => []),
+        Wren.api('/api/children').catch(() => [])
+      ]);
+      const roomMap = {};
+      children.forEach(c => { if (c.room_id && c.room_name) roomMap[c.room_id] = c.room_name; });
+      const roomEl  = document.getElementById('ns-room-filter');
+      const childEl = document.getElementById('ns-child-filter');
+      if (roomEl) {
+        Object.entries(roomMap).forEach(([id, name]) => {
+          roomEl.innerHTML += `<option value="${id}">${name}</option>`;
+        });
+      }
+      if (childEl) {
+        children.forEach(c => {
+          childEl.innerHTML += `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`;
+        });
+      }
+    } catch(e) {}
+  }
+
+  function statusChip(status) {
+    return `<span class="ns-status-chip ns-status-${status}">${status}</span>`;
+  }
+
+  function renderNsList(items, containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!items.length) { el.innerHTML = '<div class="ns-empty">No next steps here</div>'; return; }
+    // Group by child
+    const byChild = {};
+    items.forEach(ns => {
+      const k = ns.child_id;
+      if (!byChild[k]) byChild[k] = { name: ns.child_name, room: ns.room_name, items: [] };
+      byChild[k].items.push(ns);
+    });
+    el.innerHTML = Object.values(byChild).map(group => `
+      <div class="ns-group-header">${group.name}${group.room ? ` · ${group.room}` : ''}</div>
+      ${group.items.map(ns => nsCard(ns)).join('')}
+    `).join('');
+  }
+
+  function nsCard(ns) {
+    const dueText   = ns.due_by ? `Due ${new Date(ns.due_by).toLocaleDateString('en-GB')}` : '';
+    const sourceText = ns.source_obs_date ? `From obs ${new Date(ns.source_obs_date).toLocaleDateString('en-GB')}` : '';
+    const fwText    = ns.framework_statement_text ? `<span title="${ns.framework_statement_text}">📚 ${ns.framework_area || 'EYFS'}</span> · ` : '';
+    return `
+      <div class="ns-card" data-ns-id="${ns.id}">
+        <div class="ns-card-header">
+          <span class="ns-child-name">${ns.child_first_name || ns.child_name}</span>
+          ${ns.room_name ? `<span class="ns-room-badge">${ns.room_name}</span>` : ''}
+          ${statusChip(ns.status)}
+          ${ns.planned_date ? `<span class="ns-room-badge" style="color:#e07820">📅 ${new Date(ns.planned_date).toLocaleDateString('en-GB')}</span>` : ''}
+        </div>
+        <div class="ns-description">${ns.description}</div>
+        <div class="ns-meta">${fwText}${sourceText}${dueText ? ` · ${dueText}` : ''} · ${ns.staff_name || 'Unknown staff'}</div>
+        <div class="ns-actions">
+          ${ns.status === 'pending' ? `
+            <button class="btn btn-sm btn-primary" data-action="ns-promote" data-id="${ns.id}" data-child="${encodeURIComponent(ns.child_first_name||'')}">Plan as Activity</button>
+            <button class="btn btn-sm btn-ghost" data-action="ns-complete" data-id="${ns.id}">Mark Complete</button>
+          ` : ''}
+          ${ns.status === 'planned' ? `
+            <button class="btn btn-sm btn-ghost" data-action="ns-complete" data-id="${ns.id}">Mark Complete</button>
+          ` : ''}
+          ${['pending','planned'].includes(ns.status) ? `
+            <button class="btn btn-sm btn-ghost" style="color:#ef4444" data-action="ns-cancel" data-id="${ns.id}">Cancel</button>
+          ` : ''}
+        </div>
+      </div>`;
+  }
+
+  window._nsPromote = function(nsId, childName) {
+    const today = new Date().toISOString().slice(0,10);
+    Wren.modal(`Plan Activity for ${childName}`, `
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input class="form-control" type="date" id="ns-pa-date" value="${today}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Slot</label>
+        <select class="form-control" id="ns-pa-slot">
+          <option value="morning">Morning</option>
+          <option value="afternoon">Afternoon</option>
+          <option value="anytime">Any time</option>
+        </select>
+      </div>
+    `, [
+      { label: 'Promote', class: 'btn-primary', close: false, action: async () => {
+        try {
+          await Wren.api(`/api/next-steps/${nsId}/promote-to-activity`, { method: 'POST', body: {
+            plan_date: document.getElementById('ns-pa-date').value,
+            slot: document.getElementById('ns-pa-slot').value
+          }});
+          Wren.toast('Activity planned ✓', 'success');
+          document.querySelector('.wren-modal-overlay')?.remove();
+          _nsLoad();
+        } catch(e) { Wren.toast('Failed to promote', 'error'); }
+      }},
+      { label: 'Cancel', class: 'btn-ghost' }
+    ]);
+  };
+
+  window._nsComplete = function(nsId) {
+    Wren.modal('Mark as Complete', `
+      <p style="color:var(--c-muted);font-size:.88rem">Optionally link to an observation that evidences this was met:</p>
+      <div class="form-group">
+        <label class="form-label">Observation ID (optional)</label>
+        <input class="form-control" type="number" id="ns-comp-obs" placeholder="Leave blank if no observation">
+      </div>
+    `, [
+      { label: 'Mark Complete', class: 'btn-primary', close: false, action: async () => {
+        try {
+          const obsId = document.getElementById('ns-comp-obs').value;
+          await Wren.api(`/api/next-steps/${nsId}/mark-completed`, { method: 'POST',
+            body: { completed_observation_id: obsId ? parseInt(obsId) : null }
+          });
+          Wren.toast('Marked complete ✓', 'success');
+          document.querySelector('.wren-modal-overlay')?.remove();
+          _nsLoad();
+        } catch(e) { Wren.toast('Failed', 'error'); }
+      }},
+      { label: 'Cancel', class: 'btn-ghost' }
+    ]);
+  };
+
+  window._nsCancel = async function(nsId) {
+    if (!confirm('Cancel this next step?')) return;
+    try {
+      await Wren.api(`/api/next-steps/${nsId}`, { method: 'PATCH', body: { status: 'cancelled' }});
+      Wren.toast('Cancelled', 'info');
+      _nsLoad();
+    } catch(e) { Wren.toast('Failed', 'error'); }
+  };
+
+  document.addEventListener('wren:section-loaded', async e => {
+    if (e.detail?.section !== 'next-steps') return;
+    await loadFilters();
+    _nsLoad();
+    document.getElementById('ns-refresh-btn')?.addEventListener('click', _nsLoad);
+    document.getElementById('ns-status-filter')?.addEventListener('change', _nsLoad);
+    document.getElementById('ns-room-filter')?.addEventListener('change',   _nsLoad);
+    document.getElementById('ns-child-filter')?.addEventListener('change',  _nsLoad);
+
+    // Delegation for ns-card action buttons
+    document.getElementById('ns-list-container')?.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const id = parseInt(btn.dataset.id);
+      if (btn.dataset.action === 'ns-promote') {
+        window._nsPromote(id, decodeURIComponent(btn.dataset.child || ''));
+      } else if (btn.dataset.action === 'ns-complete') {
+        window._nsComplete(id);
+      } else if (btn.dataset.action === 'ns-cancel') {
+        window._nsCancel(id);
+      }
+    });
+
+    // Completed tab
+    document.querySelector('[data-tab="completed"]')?.addEventListener('click', async () => {
+      try {
+        const data = await Wren.api('/api/next-steps?status=completed&limit=100');
+        renderNsList(data, 'ns-done-container');
+      } catch(e) {}
+    });
+
+    // Overdue tab
+    document.querySelector('[data-tab="overdue"]')?.addEventListener('click', async () => {
+      try {
+        const all = await Wren.api('/api/next-steps?limit=200');
+        const today = new Date().toISOString().slice(0,10);
+        const overdue = all.filter(ns =>
+          ns.due_by && ns.due_by < today && !['completed','cancelled'].includes(ns.status)
+        );
+        renderNsList(overdue, 'ns-overdue-container');
+      } catch(e) {}
+    });
+  });
+
+  // Also fire on first paint if section already loaded
+  if (document.querySelector('.v2-section[data-section="next-steps"]')) {
+    loadFilters().then(() => _nsLoad());
+    document.getElementById('ns-refresh-btn')?.addEventListener('click', _nsLoad);
+    document.getElementById('ns-list-container')?.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const id = parseInt(btn.dataset.id);
+      if (btn.dataset.action === 'ns-promote') {
+        window._nsPromote(id, decodeURIComponent(btn.dataset.child || ''));
+      } else if (btn.dataset.action === 'ns-complete') {
+        window._nsComplete(id);
+      } else if (btn.dataset.action === 'ns-cancel') {
+        window._nsCancel(id);
+      }
+    });
+  }
+})();
+</script>

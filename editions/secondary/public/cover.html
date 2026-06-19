@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Cover Management — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .cover-section { margin-bottom:24px; }
+    .affected-day { background:var(--card); border:1px solid var(--border); border-radius:10px; margin-bottom:16px; overflow:hidden; }
+    .affected-day-header { background:var(--surface); padding:12px 16px; font-weight:700; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); }
+    .period-row { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+    .period-row:last-child { border-bottom:none; }
+    .period-badge { background:var(--accent); color:#fff; border-radius:5px; padding:3px 9px; font-size:12px; font-weight:700; white-space:nowrap; }
+    .period-info { flex:1; min-width:160px; }
+    .period-subject { font-weight:600; }
+    .period-meta { font-size:12px; color:var(--text-muted); margin-top:2px; }
+    .suggestions { flex:2; min-width:240px; }
+    .suggestion-item { display:flex; gap:8px; align-items:center; padding:6px 8px; border:1px solid var(--border); border-radius:6px; margin-bottom:6px; background:var(--card); transition:background .15s; }
+    .suggestion-item:hover { background:rgba(74,154,191,.1); }
+    .suggestion-score { width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .suggestion-name { font-weight:600; font-size:13px; flex:1; }
+    .suggestion-tags { display:flex; gap:4px; flex-wrap:wrap; }
+    .suggestion-tag { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:1px 6px; font-size:10px; color:var(--text-muted); }
+    .suggestion-tag.free { border-color:#22c55e; color:#22c55e; }
+    .suggestion-tag.match { border-color:var(--accent); color:var(--accent); }
+    .btn-assign { padding:4px 10px; font-size:12px; border-radius:5px; }
+    .cover-log-row { display:flex; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .cover-log-row:last-child { border-bottom:none; }
+    .cover-date-badge { background:var(--surface); border:1px solid var(--border); border-radius:5px; padding:2px 8px; font-size:12px; font-weight:600; white-space:nowrap; }
+    .absent-chip { background:#fee2e2; color:#991b1b; border-radius:4px; padding:2px 8px; font-size:12px; font-weight:600; }
+    .cover-chip { background:#dcfce7; color:#166534; border-radius:4px; padding:2px 8px; font-size:12px; font-weight:600; }
+    .nocov-chip { background:#f1f5f9; color:#64748b; border-radius:4px; padding:2px 8px; font-size:12px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div><div class="page-title">Cover Management</div><div class="page-subtitle">Mark absences · assign cover · log</div></div>
+  </div>
+
+  <div style="display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid var(--border)">
+    <button class="tab-btn active" id="tab-absent" data-tab="absent">Mark Absent</button>
+    <button class="tab-btn" id="tab-log" data-tab="log">Cover Log</button>
+  </div>
+
+  <!-- Mark Absent tab -->
+  <div id="pane-absent">
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header">Who is absent?</div>
+      <div class="card-body">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;flex:1;min-width:200px">
+            <label class="form-label">Teacher</label>
+            <select class="form-control" id="absent-teacher">
+              <option value="">Select teacher…</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:160px">
+            <label class="form-label">Date(s)</label>
+            <input type="date" class="form-control" id="absent-date-from" min="">
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:160px">
+            <label class="form-label">To (optional)</label>
+            <input type="date" class="form-control" id="absent-date-to">
+          </div>
+          <div class="form-group" style="margin:0;flex:1;min-width:160px">
+            <label class="form-label">Reason</label>
+            <select class="form-control" id="absent-reason">
+              <option value="sick">Sick</option>
+              <option value="training">Training / CPD</option>
+              <option value="compassionate">Compassionate leave</option>
+              <option value="unauthorised">Unauthorised</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <button class="btn btn-primary" id="btn-find-cover">Find cover</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="cover-results"></div>
+  </div>
+
+  <!-- Cover log tab -->
+  <div id="pane-log" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <input type="date" class="form-control" id="log-from" style="width:160px">
+      <input type="date" class="form-control" id="log-to"   style="width:160px">
+      <button class="btn btn-secondary" id="btn-load-log">Filter</button>
+      <button class="btn btn-secondary" id="btn-clear-log-filter">This week</button>
+    </div>
+    <div id="log-container">
+      <div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAY_NAMES = ['','Monday','Tuesday','Wednesday','Thursday','Friday'];
+let staffList = [];
+
+document.querySelectorAll('[data-tab]').forEach(function(btn) {
+  btn.addEventListener('click', function() { showTab(this.dataset.tab); });
+});
+document.getElementById('btn-find-cover').addEventListener('click', findCover);
+document.getElementById('btn-load-log').addEventListener('click', loadLog);
+document.getElementById('btn-clear-log-filter').addEventListener('click', clearLogFilter);
+document.getElementById('cover-results').addEventListener('click', function(e) {
+  const ac = e.target.closest('[data-action="assign-cover"]');
+  if (ac) {
+    assignCover(
+      parseInt(ac.dataset.actId), ac.dataset.date,
+      parseInt(ac.dataset.absentId), parseInt(ac.dataset.coverId),
+      decodeURIComponent(ac.dataset.coverName), decodeURIComponent(ac.dataset.reason)
+    );
+    return;
+  }
+  const an = e.target.closest('[data-action="assign-noone"]');
+  if (an) assignNoOne(parseInt(an.dataset.actId), an.dataset.date, parseInt(an.dataset.absentId), decodeURIComponent(an.dataset.reason));
+});
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  // Manager-only page
+  if (!['manager','deputy_manager','headteacher','deputy_headteacher'].includes(Wren.user?.role)) {
+    document.getElementById('wren-content').innerHTML =
+      '<div class="empty-state">Cover management is only available to managers.</div>';
+    return;
+  }
+
+  // Set date defaults
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('absent-date-from').value = today;
+
+  // This week for log
+  const mon = getMonday(new Date());
+  const fri = new Date(mon); fri.setDate(fri.getDate()+4);
+  document.getElementById('log-from').value = mon.toISOString().slice(0,10);
+  document.getElementById('log-to').value   = fri.toISOString().slice(0,10);
+
+  try {
+    staffList = await Wren.api('/api/staff?active=true');
+    const sel = document.getElementById('absent-teacher');
+    (staffList||[]).filter(s=>['practitioner','manager','deputy_manager'].includes(s.role))
+      .sort((a,b)=>a.last_name.localeCompare(b.last_name))
+      .forEach(s => {
+        sel.insertAdjacentHTML('beforeend', `<option value="${s.id}">${s.last_name}, ${s.first_name}</option>`);
+      });
+  } catch(e) {}
+
+  loadLog();
+}
+
+function showTab(t) {
+  ['absent','log'].forEach(id => {
+    document.getElementById('tab-'+id).classList.toggle('active', id===t);
+    document.getElementById('pane-'+id).style.display = id===t ? 'block' : 'none';
+  });
+}
+
+function getMonday(d) {
+  const day = d.getDay(), diff = d.getDate() - day + (day===0?-6:1);
+  return new Date(d.setDate(diff));
+}
+
+function dateRange(from, to) {
+  const dates = [];
+  const start = new Date(from), end = new Date(to || from);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+    dates.push(d.toISOString().slice(0,10));
+  }
+  return dates;
+}
+
+async function findCover() {
+  const teacherId = document.getElementById('absent-teacher').value;
+  const dateFrom  = document.getElementById('absent-date-from').value;
+  const dateTo    = document.getElementById('absent-date-to').value || dateFrom;
+  const reason    = document.getElementById('absent-reason').value;
+
+  if (!teacherId) return alert('Please select a teacher');
+  if (!dateFrom)  return alert('Please enter a date');
+
+  const dates = dateRange(dateFrom, dateTo).slice(0,10); // max 10 days
+  const container = document.getElementById('cover-results');
+  container.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Finding affected periods…</span></div>';
+
+  try {
+    const data = await Wren.api('/api/secondary-timetable/absent', {
+      method: 'POST',
+      body: JSON.stringify({ teacher_id: parseInt(teacherId), dates, absence_reason: reason }),
+    });
+
+    if (!data.affected?.length) {
+      container.innerHTML = '<div class="empty-state">No timetable entries found for this teacher on the selected date(s).</div>';
+      return;
+    }
+
+    const teacherName = staffList.find(s=>s.id==teacherId);
+    const tName = teacherName ? `${teacherName.first_name} ${teacherName.last_name}` : 'Teacher';
+
+    let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div class="absent-chip">Absent: ${esc(tName)}</div>
+      <div style="font-size:13px;color:var(--text-muted)">${dates.length > 1 ? dates[0]+' → '+dates[dates.length-1] : dates[0]}</div>
+    </div>`;
+
+    for (const day of data.affected) {
+      if (!day.periods?.length) continue;
+      html += `<div class="affected-day">
+        <div class="affected-day-header">
+          <span>${day.day_name} ${day.date}</span>
+          <span style="font-size:12px;color:var(--text-muted)">${day.periods.length} period${day.periods.length!==1?'s':''} affected</span>
+        </div>`;
+
+      for (const p of day.periods) {
+        const act = p.activity;
+        const periodLabel = `P${act.period_num||'?'}`;
+        const timeStr = act.period_start ? ` ${act.period_start?.slice(0,5)}–${act.period_end?.slice(0,5)}` : '';
+
+        html += `<div class="period-row">
+          <div><div class="period-badge">${periodLabel}${timeStr}</div></div>
+          <div class="period-info">
+            <div class="period-subject">${esc(act.subject_name||act.subject_name_ref||'—')}</div>
+            <div class="period-meta">
+              ${act.class_name?'Class: '+esc(act.class_name)+'<br>':''}
+              Room: ${esc(act.room_code||act.room_code_ref||'—')}
+            </div>
+          </div>
+          <div class="suggestions">
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Cover suggestions</div>`;
+
+        if (!p.suggestions?.length) {
+          html += `<div style="font-size:12px;color:var(--text-muted)">No suggestions available — assign manually</div>`;
+        } else {
+          for (const sug of p.suggestions) {
+            const tags = sug.reasons?.map(r =>
+              `<span class="suggestion-tag ${r==='subject match'?'match':r==='free period'?'free':''}">${esc(r)}</span>`
+            ).join('') || '';
+            html += `<div class="suggestion-item">
+              <div class="suggestion-score">${sug.score}</div>
+              <div style="flex:1">
+                <div class="suggestion-name">${esc(sug.name)}</div>
+                <div class="suggestion-tags">${tags}</div>
+              </div>
+              <button class="btn btn-primary btn-assign"
+                data-action="assign-cover"
+                data-act-id="${act.id}" data-date="${day.date}"
+                data-absent-id="${teacherId}" data-cover-id="${sug.id}"
+                data-cover-name="${encodeURIComponent(sug.name)}" data-reason="${encodeURIComponent(reason)}">
+                Assign
+              </button>
+            </div>`;
+          }
+        }
+
+        html += `<div style="margin-top:8px">
+          <button class="btn btn-secondary btn-assign" style="width:100%"
+            data-action="assign-noone"
+            data-act-id="${act.id}" data-date="${day.date}"
+            data-absent-id="${teacherId}" data-reason="${encodeURIComponent(reason)}">
+            Mark as no cover
+          </button>
+        </div>`;
+        html += `</div></div>`;
+      }
+      html += `</div>`;
+    }
+
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function assignCover(actId, date, absentId, coverId, coverName, reason) {
+  try {
+    await Wren.api('/api/secondary-timetable/cover', {
+      method: 'POST',
+      body: JSON.stringify({
+        activity_id: actId, cover_date: date,
+        absent_teacher_id: absentId, cover_teacher_id: coverId,
+        cover_type: 'cover', absence_reason: reason,
+      }),
+    });
+    Wren.toast(`✓ ${coverName} assigned as cover`, 'success');
+    // Reload cover results to update state
+    await findCover();
+  } catch(e) { Wren.toast('Error: ' + e.message, 'error'); }
+}
+
+async function assignNoOne(actId, date, absentId, reason) {
+  try {
+    await Wren.api('/api/secondary-timetable/cover', {
+      method: 'POST',
+      body: JSON.stringify({
+        activity_id: actId, cover_date: date,
+        absent_teacher_id: absentId, cover_teacher_id: null,
+        cover_type: 'free', absence_reason: reason, notes: 'No cover assigned',
+      }),
+    });
+    Wren.toast('Marked as no cover', 'success');
+    await findCover();
+  } catch(e) { Wren.toast('Error: ' + e.message, 'error'); }
+}
+
+async function loadLog() {
+  const dateFrom = document.getElementById('log-from').value;
+  const dateTo   = document.getElementById('log-to').value;
+  const params   = new URLSearchParams();
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo)   params.set('date_to', dateTo);
+
+  const container = document.getElementById('log-container');
+  container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  try {
+    const rows = await Wren.api('/api/secondary-timetable/cover?' + params);
+    if (!rows?.length) {
+      container.innerHTML = '<div class="empty-state">No cover records for this period.</div>';
+      return;
+    }
+
+    let html = '';
+    for (const r of rows) {
+      const typeColor = r.cover_type === 'cover' ? '#22c55e' : r.cover_type === 'free' ? '#94a3b8' : '#f59e0b';
+      html += `<div class="cover-log-row">
+        <div class="cover-date-badge">${r.cover_date}</div>
+        <div class="absent-chip">${esc(r.absent_teacher_name||'Unknown')}</div>
+        <div style="flex:1;font-size:13px">
+          <strong>${esc(r.subject_name||'—')}</strong>
+          <span style="color:var(--text-muted)"> · ${esc(r.class_name||'')} · ${esc(r.period_label||'')}</span>
+        </div>
+        ${r.cover_teacher_name
+          ? `<div class="cover-chip">→ ${esc(r.cover_teacher_name)}</div>`
+          : `<div class="nocov-chip">No cover</div>`}
+        <div style="font-size:11px;background:var(--surface);padding:2px 6px;border-radius:4px;color:${typeColor}">${r.cover_type}</div>
+        ${r.set_by_name?`<div style="font-size:11px;color:var(--text-muted)">by ${esc(r.set_by_name)}</div>`:''}
+      </div>`;
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state">Error loading cover log: ${esc(e.message)}</div>`;
+  }
+}
+
+function clearLogFilter() {
+  const mon = getMonday(new Date());
+  const fri = new Date(mon); fri.setDate(fri.getDate()+4);
+  document.getElementById('log-from').value = mon.toISOString().slice(0,10);
+  document.getElementById('log-to').value   = fri.toISOString().slice(0,10);
+  loadLog();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

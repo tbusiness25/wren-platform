@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>State View — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Layout ── */
+    .sv-controls {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .sv-controls label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: #94a3b8; }
+    .sv-controls input[type="date"] {
+      background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 7px 10px; font-size: .875rem;
+    }
+
+    /* ── Alerts banner ── */
+    .sv-alert-banner {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;
+    }
+    .sv-alert {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.4);
+      color: #fca5a5; border-radius: 8px; padding: 8px 14px; font-size: .85rem;
+    }
+    .sv-alert.warn {
+      background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.35); color: #fcd34d;
+    }
+    .sv-alert.ok {
+      background: rgba(34,197,94,.1); border-color: rgba(34,197,94,.35); color: #86efac;
+    }
+
+    /* ── Room cards ── */
+    .sv-rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .sv-room-card { background: #1e293b; border: 1px solid #2d3748; border-radius: 12px; padding: 18px; }
+    .sv-room-name { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; margin-bottom: 14px; }
+
+    /* Capacity bar */
+    .sv-cap-row { margin-bottom: 12px; }
+    .sv-cap-label { display: flex; justify-content: space-between; font-size: .8rem; color: #94a3b8; margin-bottom: 5px; }
+    .sv-cap-bar { height: 10px; background: #0f172a; border-radius: 99px; overflow: hidden; }
+    .sv-cap-fill { height: 100%; border-radius: 99px; background: #4a9abf; transition: width .3s ease; }
+    .sv-cap-fill.warn { background: #f59e0b; }
+    .sv-cap-fill.danger { background: #ef4444; }
+
+    /* Ratio traffic light */
+    .sv-ratio-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .sv-ratio-light {
+      width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+    }
+    .sv-ratio-light.green { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    .sv-ratio-light.red   { background: #ef4444; box-shadow: 0 0 6px #ef444488; }
+    .sv-ratio-light.grey  { background: #475569; }
+    .sv-ratio-text { font-size: .9rem; color: #f1f5f9; }
+    .sv-ratio-sub  { font-size: .78rem; color: #94a3b8; }
+
+    /* Tightest hour callout */
+    .sv-tight {
+      background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);
+      border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: .82rem;
+    }
+    .sv-tight.ok  { background: rgba(34,197,94,.08); border-color: rgba(34,197,94,.25); }
+    .sv-tight.low { background: rgba(71,85,105,.2); border-color: #2d3748; color: #94a3b8; }
+    .sv-tight-title { font-weight: 600; margin-bottom: 4px; color: #fca5a5; }
+    .sv-tight.ok  .sv-tight-title { color: #86efac; }
+    .sv-tight.low .sv-tight-title { color: #94a3b8; }
+
+    /* ── Hourly chart ── */
+    .sv-chart-section { margin-bottom: 20px; }
+    .sv-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+    .sv-chart-card { background: #1e293b; border: 1px solid #2d3748; border-radius: 12px; padding: 18px; }
+    .sv-chart-title { font-size: .9rem; font-weight: 700; color: #94a3b8; margin-bottom: 14px; text-transform: uppercase; letter-spacing: .04em; }
+
+    .sv-slot-row {
+      display: grid;
+      grid-template-columns: 44px 1fr 1fr 52px 18px;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 3px;
+      min-height: 22px;
+    }
+    .sv-slot-time { font-size: .73rem; color: #94a3b8; font-variant-numeric: tabular-nums; }
+    .sv-bar-wrap { background: #0f172a; border-radius: 3px; height: 10px; overflow: hidden; }
+    .sv-bar-staff    { height: 100%; background: #4a9abf; border-radius: 3px; transition: width .2s ease; }
+    .sv-bar-children { height: 100%; background: #e07820; border-radius: 3px; transition: width .2s ease; }
+    .sv-slot-counts  { font-size: .7rem; color: #94a3b8; text-align: right; font-variant-numeric: tabular-nums; }
+    .sv-slot-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .sv-slot-dot.ok  { background: #22c55e; }
+    .sv-slot-dot.bad { background: #ef4444; }
+    .sv-slot-dot.nil { background: #2d3748; }
+
+    .sv-chart-legend {
+      display: flex; gap: 14px; margin-bottom: 10px;
+    }
+    .sv-legend-item { display: flex; align-items: center; gap: 5px; font-size: .75rem; color: #94a3b8; }
+    .sv-legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+    /* ── Lists below ── */
+    .sv-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .sv-list-card { background: #1e293b; border: 1px solid #2d3748; border-radius: 12px; padding: 16px; }
+    .sv-list-title { font-size: .85rem; font-weight: 600; color: #94a3b8; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .04em; }
+    .sv-list-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; border-bottom: 1px solid #0f172a; font-size: .85rem; color: #f1f5f9;
+    }
+    .sv-list-item:last-child { border-bottom: none; }
+    .sv-chip { font-size: .7rem; padding: 2px 7px; border-radius: 99px; font-weight: 600; margin-left: auto; white-space: nowrap; }
+    .sv-chip-room  { background: rgba(74,154,191,.2); color: #7dd3fc; }
+    .sv-chip-abs   { background: rgba(239,68,68,.15); color: #fca5a5; }
+    .sv-chip-role  { background: rgba(148,163,184,.1); color: #94a3b8; }
+
+    /* ── Empty / loading ── */
+    .sv-info { color: #94a3b8; font-size: .9rem; padding: 24px 0; text-align: center; }
+    .sv-conf-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .72rem; padding: 2px 8px; border-radius: 99px; font-weight: 600; margin-left: 6px;
+    }
+    .sv-conf-high   { background: rgba(34,197,94,.15);  color: #86efac; }
+    .sv-conf-medium { background: rgba(245,158,11,.12); color: #fcd34d; }
+    .sv-conf-low    { background: rgba(148,163,184,.1); color: #94a3b8; }
+
+    /* ── Meta header ── */
+    .sv-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; font-size: .85rem; color: #94a3b8; }
+    .sv-meta-pill { background: #0f172a; border: 1px solid #2d3748; border-radius: 99px; padding: 3px 12px; }
+    .sv-meta-pill.active { border-color: #4a9abf; color: #4a9abf; }
+    .sv-meta-pill.term   { border-color: #22c55e; color: #86efac; }
+    .sv-meta-pill.hol    { border-color: #f59e0b; color: #fcd34d; }
+    .sv-meta-pill.closed { border-color: #ef4444; color: #fca5a5; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">State View</div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="sv-controls">
+      <label>Date
+        <input type="date" id="sv-date">
+      </label>
+      <button class="btn btn-primary" id="sv-load-btn">Load forecast</button>
+    </div>
+  </div>
+
+  <div id="sv-output"></div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', init);
+
+function init() {
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('sv-date').value = today;
+  document.getElementById('sv-load-btn').addEventListener('click', loadForecast);
+  loadForecast();
+}
+
+async function loadForecast() {
+  const dateStr = document.getElementById('sv-date').value;
+  if (!dateStr) return;
+
+  const out = document.getElementById('sv-output');
+  out.innerHTML = '<div class="sv-info"><div class="spinner"></div></div>';
+
+  try {
+    const data = await Wren.api(`/api/state/forecast?date=${dateStr}&hourly=true`);
+    renderForecast(data);
+  } catch (err) {
+    out.innerHTML = `<div class="sv-info" style="color:#ef4444">Failed to load forecast: ${err?.error || 'Unknown error'}</div>`;
+  }
+}
+
+function renderForecast(data) {
+  const out = document.getElementById('sv-output');
+  const html = [];
+
+  // ── Meta header ──
+  html.push('<div class="sv-meta">');
+  const dayName = new Date(data.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  html.push(`<span class="sv-meta-pill active">${dayName}</span>`);
+
+  if (data.is_closed) {
+    html.push('<span class="sv-meta-pill closed">Closed (weekend)</span>');
+  } else if (data.is_term_time === true) {
+    html.push('<span class="sv-meta-pill term">Term time</span>');
+  } else if (data.is_term_time === false) {
+    html.push('<span class="sv-meta-pill hol">School holidays</span>');
+  } else {
+    html.push('<span class="sv-meta-pill">Term dates unknown</span>');
+  }
+
+  const confClass = { high: 'sv-conf-high', medium: 'sv-conf-medium', low: 'sv-conf-low' }[data.data_confidence] || 'sv-conf-low';
+  html.push(`<span class="sv-conf-badge ${confClass}">Data: ${data.data_confidence}</span>`);
+  html.push('</div>');
+
+  // ── Alert banner ──
+  const breaches = (data.ratios?.by_room || []).filter(r => !r.compliant);
+  const tightBreaches = (data.ratios?.by_room || []).filter(r => r.tightest_hour && !r.tightest_hour.compliant);
+
+  if (!data.ratios?.site_compliant) {
+    html.push('<div class="sv-alert-banner">');
+    breaches.forEach(r => {
+      html.push(`<div class="sv-alert">&#9888; ${escH(r.room)}: ratio breach (${r.scheduled_staff} staff / ${r.expected_children} children)</div>`);
+    });
+    tightBreaches.filter(r => r.compliant).forEach(r => {
+      html.push(`<div class="sv-alert warn">&#9888; ${escH(r.room)}: ${escH(r.tightest_hour.concern)}</div>`);
+    });
+    html.push('</div>');
+  } else if (tightBreaches.length > 0) {
+    html.push('<div class="sv-alert-banner">');
+    tightBreaches.forEach(r => {
+      html.push(`<div class="sv-alert warn">&#9888; ${escH(r.room)}: ${escH(r.tightest_hour.concern)}</div>`);
+    });
+    html.push('</div>');
+  } else if (!data.is_closed) {
+    html.push('<div class="sv-alert-banner"><div class="sv-alert ok">&#10003; All ratios compliant</div></div>');
+  }
+
+  // ── Room cards ──
+  html.push('<div class="sv-rooms">');
+  for (const room of (data.ratios?.by_room || [])) {
+    const roomChild = data.children.by_room.find(r => r.room === room.room);
+    const cap = roomChild?.capacity || 1;
+    const exp = room.expected_children;
+    const pct = cap > 0 ? Math.min(100, Math.round(exp / cap * 100)) : 0;
+    const barClass = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : '';
+
+    html.push(`<div class="sv-room-card">`);
+    html.push(`<div class="sv-room-name">${escH(room.room)}</div>`);
+
+    // Capacity bar
+    html.push(`<div class="sv-cap-row">
+      <div class="sv-cap-label"><span>Capacity</span><span>${exp} / ${cap}</span></div>
+      <div class="sv-cap-bar"><div class="sv-cap-fill ${barClass}" style="width:${pct}%"></div></div>
+    </div>`);
+
+    // Ratio traffic light
+    const lightClass = room.compliant ? 'green' : 'red';
+    html.push(`<div class="sv-ratio-row">
+      <div class="sv-ratio-light ${lightClass}"></div>
+      <div>
+        <div class="sv-ratio-text">${escH(room.required_ratio)} &mdash; ${room.scheduled_staff} staff scheduled</div>
+        <div class="sv-ratio-sub">Needs ${room.required_min_staff} min &bull; ${room.expected_children} children</div>
+      </div>
+    </div>`);
+
+    // Tightest hour callout
+    if (room.data_confidence === 'low' && !room.tightest_hour) {
+      html.push(`<div class="sv-tight low"><div class="sv-tight-title">Tightest hour</div>No shift-time data &mdash; hourly breakdown unavailable</div>`);
+    } else if (room.tightest_hour) {
+      const th = room.tightest_hour;
+      const tClass = th.compliant ? 'ok' : '';
+      const icon = th.compliant ? '&#10003;' : '&#9888;';
+      html.push(`<div class="sv-tight ${tClass}">
+        <div class="sv-tight-title">${icon} Tightest hour: ${escH(th.slot)}</div>
+        <div>${th.staff_present} staff &bull; ${th.children_present} children${th.concern ? ` &mdash; ${escH(th.concern)}` : ''}</div>
+      </div>`);
+    }
+
+    html.push('</div>'); // sv-room-card
+  }
+  html.push('</div>'); // sv-rooms
+
+  // ── Hourly charts (only for rooms with slot data) ──
+  const roomsWithSlots = (data.ratios?.by_room || []).filter(r => r.slots);
+  if (roomsWithSlots.length > 0) {
+    html.push('<div class="sv-chart-section">');
+    html.push('<div class="sv-chart-grid">');
+
+    for (const room of roomsWithSlots) {
+      const maxStaff = Math.max(1, ...room.slots.map(s => s.staff));
+      const maxChildren = Math.max(1, ...room.slots.map(s => s.children));
+      const maxVal = Math.max(maxStaff, maxChildren);
+
+      html.push(`<div class="sv-chart-card">
+        <div class="sv-chart-title">${escH(room.room)} — Hourly breakdown</div>
+        <div class="sv-chart-legend">
+          <div class="sv-legend-item"><div class="sv-legend-dot" style="background:#4a9abf"></div>Staff</div>
+          <div class="sv-legend-item"><div class="sv-legend-dot" style="background:#e07820"></div>Children</div>
+        </div>`);
+
+      for (const slot of room.slots) {
+        const staffPct  = maxVal > 0 ? Math.round(slot.staff    / maxVal * 100) : 0;
+        const childPct  = maxVal > 0 ? Math.round(slot.children / maxVal * 100) : 0;
+        const dotClass  = slot.children === 0 ? 'nil' : slot.compliant ? 'ok' : 'bad';
+
+        html.push(`<div class="sv-slot-row">
+          <div class="sv-slot-time">${escH(slot.time)}</div>
+          <div class="sv-bar-wrap"><div class="sv-bar-staff"    style="width:${staffPct}%"></div></div>
+          <div class="sv-bar-wrap"><div class="sv-bar-children" style="width:${childPct}%"></div></div>
+          <div class="sv-slot-counts">${slot.staff}s/${slot.children}c</div>
+          <div class="sv-slot-dot ${dotClass}"></div>
+        </div>`);
+      }
+
+      html.push('</div>'); // sv-chart-card
+    }
+
+    html.push('</div></div>'); // sv-chart-grid, sv-chart-section
+  }
+
+  // ── Lists ──
+  html.push('<div class="sv-lists">');
+
+  // Expected children (flat, all rooms)
+  html.push('<div class="sv-list-card">');
+  html.push(`<div class="sv-list-title">Expected children (${data.children.expected_count})</div>`);
+  const allKids = (data.children.by_room || []).flatMap(r => r.expected_children.map(c => ({ ...c, room: r.room })));
+  if (allKids.length === 0) {
+    html.push('<div class="sv-info" style="padding:8px 0">None expected</div>');
+  } else {
+    allKids.forEach(c => {
+      html.push(`<div class="sv-list-item">${escH(c.name)}<span class="sv-chip sv-chip-room">${escH(c.room)}</span></div>`);
+    });
+  }
+  html.push('</div>');
+
+  // Scheduled staff
+  html.push('<div class="sv-list-card">');
+  html.push(`<div class="sv-list-title">Scheduled staff (${data.staff.scheduled_count})</div>`);
+  if (data.staff.scheduled.length === 0) {
+    html.push('<div class="sv-info" style="padding:8px 0">None scheduled</div>');
+  } else {
+    data.staff.scheduled.forEach(s => {
+      html.push(`<div class="sv-list-item">${escH(s.name)}<span class="sv-chip sv-chip-room">${escH(s.room)}</span></div>`);
+    });
+  }
+  html.push('</div>');
+
+  // Absent staff
+  html.push('<div class="sv-list-card">');
+  html.push(`<div class="sv-list-title">Absent staff (${data.staff.absent.length})</div>`);
+  if (data.staff.absent.length === 0) {
+    html.push('<div class="sv-info" style="padding:8px 0">No absences recorded</div>');
+  } else {
+    data.staff.absent.forEach(s => {
+      html.push(`<div class="sv-list-item">${escH(s.name)}<span class="sv-chip sv-chip-abs">${escH(s.type || 'absent')}</span></div>`);
+    });
+  }
+  html.push('</div>');
+
+  html.push('</div>'); // sv-lists
+
+  out.innerHTML = html.join('');
+}
+
+function escH(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>

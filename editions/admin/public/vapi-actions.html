@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Vapi Actions — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .va-page { max-width: 900px; }
+
+    /* Header badges */
+    .va-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .va-title { font-size: 1.2rem; font-weight: 700; color: var(--c-text,#f1f5f9); flex: 1; }
+    .va-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+      border-radius: 20px; font-size: .82rem; font-weight: 700; }
+    .va-badge.red    { background: rgba(239,68,68,.15);  color: #ef4444; }
+    .va-badge.amber  { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .va-badge.green  { background: rgba(34,197,94,.12);  color: #22c55e; }
+
+    /* Filter chips */
+    .va-filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+    .va-chip {
+      padding: 6px 14px; border-radius: 20px; border: 1.5px solid #2d3748;
+      background: transparent; color: #94a3b8; font-size: .78rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    .va-chip.active { border-color: #4a9abf; background: rgba(74,154,191,.15); color: #4a9abf; }
+
+    /* Action cards */
+    .va-card {
+      background: #1e293b; border: 1px solid #2d3748; border-radius: 12px;
+      padding: 16px 18px; margin-bottom: 10px; cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .va-card:hover { border-color: #4a9abf; background: rgba(74,154,191,.03); }
+    .va-card-head { display: flex; align-items: flex-start; gap: 12px; }
+    .va-card-body { flex: 1; min-width: 0; }
+    .va-card-time { font-size: .75rem; color: #64748b; white-space: nowrap; }
+    .va-card-caller { font-size: .9rem; font-weight: 700; color: #f1f5f9; }
+    .va-card-summary { font-size: .82rem; color: #94a3b8; margin-top: 4px; line-height: 1.4; }
+    .va-card-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+    .va-btn {
+      padding: 5px 12px; border-radius: 8px; border: none; font-size: .75rem;
+      font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s;
+    }
+    .va-btn-progress { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .va-btn-done     { background: rgba(34,197,94,.12);  color: #22c55e; }
+    .va-btn-no-action{ background: rgba(100,116,139,.12);color: #94a3b8; }
+    .va-btn-archive  { background: rgba(100,116,139,.08);color: #64748b; }
+    .va-btn-progress:hover { background: rgba(245,158,11,.25); }
+    .va-btn-done:hover     { background: rgba(34,197,94,.22); }
+
+    /* Status pill */
+    .va-status { font-size: .7rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 99px; white-space: nowrap; flex-shrink: 0; }
+    .va-status.pending      { background: rgba(239,68,68,.15);  color: #ef4444; }
+    .va-status.in_progress  { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .va-status.done         { background: rgba(34,197,94,.12);  color: #22c55e; }
+    .va-status.no_action_needed { background: rgba(100,116,139,.1); color: #94a3b8; }
+    .va-status.archived     { background: rgba(100,116,139,.08);color: #64748b; }
+
+    .va-empty { text-align: center; padding: 48px 24px; color: #64748b; font-size: .9rem; }
+
+    /* Detail modal */
+    .va-modal-bg {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 3000; align-items: flex-start; justify-content: center; padding: 24px 16px;
+      overflow-y: auto;
+    }
+    .va-modal-bg.open { display: flex; }
+    .va-modal {
+      background: #1e293b; border: 1px solid #2d3748; border-radius: 16px;
+      width: 100%; max-width: 640px; box-shadow: 0 16px 48px rgba(0,0,0,.6);
+    }
+    .va-modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; border-bottom: 1px solid #2d3748;
+    }
+    .va-modal-title { font-weight: 700; font-size: 1rem; color: #f1f5f9; }
+    .va-modal-close { background: none; border: none; color: #64748b; font-size: 1.2rem; cursor: pointer; }
+    .va-modal-body { padding: 20px; }
+    .va-detail-row { display: flex; gap: 12px; margin-bottom: 10px; font-size: .85rem; }
+    .va-detail-label { color: #64748b; font-weight: 600; min-width: 100px; }
+    .va-detail-val { color: #f1f5f9; flex: 1; line-height: 1.5; }
+    .va-transcript { background: #0f172a; border-radius: 8px; padding: 14px; font-size: .8rem;
+      color: #94a3b8; line-height: 1.6; max-height: 300px; overflow-y: auto;
+      white-space: pre-wrap; margin: 12px 0; }
+    .va-notes-area { width: 100%; background: #0f172a; border: 1px solid #2d3748;
+      color: #f1f5f9; border-radius: 8px; padding: 10px; font-size: .85rem;
+      font-family: inherit; resize: vertical; min-height: 80px; box-sizing: border-box;
+      margin-top: 8px; }
+    .va-modal-foot { padding: 14px 20px; border-top: 1px solid #2d3748;
+      display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+<div class="va-page">
+
+  <div class="va-header">
+    <div class="va-title">📞 Vapi Actions</div>
+    <span class="va-badge red"   id="badge-pending">— pending</span>
+    <span class="va-badge amber" id="badge-inprog">— in progress</span>
+    <span class="va-badge green" id="badge-done">— done today</span>
+    <button class="btn btn-ghost btn-sm" id="btn-refresh">↻ Refresh</button>
+  </div>
+
+  <div class="va-filters">
+    <button class="va-chip active" data-filter="">All open</button>
+    <button class="va-chip" data-filter="pending">New</button>
+    <button class="va-chip" data-filter="in_progress">In progress</button>
+    <button class="va-chip" data-filter="done">Done</button>
+    <button class="va-chip" data-filter="no_action_needed">No action</button>
+  </div>
+
+  <div id="va-list">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+
+</div>
+
+<!-- ── Detail modal ── -->
+<div class="va-modal-bg" id="va-modal-bg">
+  <div class="va-modal">
+    <div class="va-modal-head">
+      <span class="va-modal-title" id="detail-title">Call detail</span>
+      <button class="va-modal-close" id="btn-close-detail">✕</button>
+    </div>
+    <div class="va-modal-body" id="detail-body"></div>
+    <div class="va-modal-foot" id="detail-foot"></div>
+  </div>
+</div>
+</div>
+
+<script>
+let allActions = [];
+let currentFilter = '';
+let currentDetailId = null;
+
+document.addEventListener('wren:ready', () => {
+  document.getElementById('btn-refresh').addEventListener('click', loadAll);
+  document.getElementById('btn-close-detail').addEventListener('click', closeDetail);
+
+  document.getElementById('va-modal-bg').addEventListener('click', function(e) {
+    if (e.target === this) closeDetail();
+  });
+
+  document.querySelector('.va-filters').addEventListener('click', function(e) {
+    const chip = e.target.closest('.va-chip[data-filter]');
+    if (!chip) return;
+    setFilter(chip, chip.dataset.filter);
+  });
+
+  document.getElementById('va-list').addEventListener('click', function(e) {
+    if (e.target.closest('[data-tel]')) return;
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    const id = parseInt(el.dataset.id);
+    if (action === 'open-detail') openDetail(id);
+    else if (action === 'update-status') updateAction(id, el.dataset.status);
+    else if (action === 'archive') archiveAction(id);
+  });
+
+  document.getElementById('detail-foot').addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    const id = el.dataset.id ? parseInt(el.dataset.id) : null;
+    if (action === 'close-detail') closeDetail();
+    else if (action === 'save-notes') saveNotes(id);
+    else if (action === 'update-status') updateAction(id, el.dataset.status);
+  });
+
+  loadAll();
+});
+
+async function loadAll() {
+  try {
+    const [actions, stats] = await Promise.all([
+      Wren.api('/api/vapi-actions'),
+      Wren.api('/api/vapi-actions/stats/summary'),
+    ]);
+    allActions = actions;
+    document.getElementById('badge-pending').textContent = `${stats.pending||0} pending`;
+    document.getElementById('badge-inprog').textContent  = `${stats.in_progress||0} in progress`;
+    document.getElementById('badge-done').textContent    = `${stats.done_today||0} done today`;
+    renderList();
+  } catch(e) {
+    document.getElementById('va-list').innerHTML = '<div style="color:#ef4444;padding:24px">Failed to load</div>';
+  }
+}
+
+function setFilter(btn, filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.va-chip').forEach(c => c.classList.toggle('active', c === btn));
+  renderList();
+}
+
+function renderList() {
+  let items = allActions;
+  if (currentFilter) {
+    items = items.filter(a => a.action_status === currentFilter || (!a.action_status && currentFilter === 'pending'));
+  } else {
+    items = items.filter(a => !a.action_status || !['archived','no_action_needed','done'].includes(a.action_status));
+  }
+  if (!items.length) {
+    document.getElementById('va-list').innerHTML = '<div class="va-empty">No actions pending — Aria\'s keeping the inbox clear ✨</div>';
+    return;
+  }
+  document.getElementById('va-list').innerHTML = items.map(a => {
+    const time = a.started_at ? new Date(a.started_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+    const caller = a.from_number || 'Unknown caller';
+    const status = a.action_status || 'pending';
+    const statusLabel = {pending:'New',in_progress:'In progress',done:'Done',no_action_needed:'No action',archived:'Archived'}[status]||status;
+    return `<div class="va-card" data-action="open-detail" data-id="${a.id}">
+      <div class="va-card-head">
+        <div class="va-card-body">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span class="va-card-caller"><a href="tel:${caller}" data-tel style="color:inherit;text-decoration:none">${caller}</a></span>
+            <span class="va-status ${status}">${statusLabel}</span>
+          </div>
+          ${a.action_summary ? `<div class="va-card-summary">${a.action_summary}</div>` :
+            a.summary ? `<div class="va-card-summary">${a.summary}</div>` : ''}
+        </div>
+        <div class="va-card-time">${time}</div>
+      </div>
+      <div class="va-card-actions">
+        ${status === 'pending' ? `<button class="va-btn va-btn-progress" data-action="update-status" data-id="${a.id}" data-status="in_progress">In progress</button>` : ''}
+        ${['pending','in_progress'].includes(status) ? `<button class="va-btn va-btn-done" data-action="update-status" data-id="${a.id}" data-status="done">Mark done</button>` : ''}
+        ${['pending','in_progress'].includes(status) ? `<button class="va-btn va-btn-no-action" data-action="update-status" data-id="${a.id}" data-status="no_action_needed">No action</button>` : ''}
+        <button class="va-btn va-btn-archive" data-action="archive" data-id="${a.id}">Archive</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function updateAction(id, status) {
+  try {
+    await Wren.api(`/api/vapi-actions/${id}`, { method: 'PATCH', body: { action_status: status } });
+    await loadAll();
+    if (currentDetailId === id) { closeDetail(); }
+  } catch(e) { Wren.toast && Wren.toast('Update failed', 'error'); }
+}
+
+async function archiveAction(id) {
+  try {
+    await Wren.api(`/api/vapi-actions/${id}/archive`, { method: 'POST' });
+    await loadAll();
+    if (currentDetailId === id) closeDetail();
+  } catch(e) { Wren.toast && Wren.toast('Archive failed', 'error'); }
+}
+
+async function openDetail(id) {
+  currentDetailId = id;
+  document.getElementById('va-modal-bg').classList.add('open');
+  document.getElementById('detail-body').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const d = await Wren.api(`/api/vapi-actions/${id}`);
+    const time = d.started_at ? new Date(d.started_at).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+    const status = d.action_status || 'pending';
+    document.getElementById('detail-title').textContent = `Call — ${d.from_number || 'Unknown'}`;
+    document.getElementById('detail-body').innerHTML = `
+      <div class="va-detail-row"><span class="va-detail-label">Time</span><span class="va-detail-val">${time}</span></div>
+      <div class="va-detail-row"><span class="va-detail-label">Caller</span><span class="va-detail-val"><a href="tel:${d.from_number||''}" style="color:#4a9abf">${d.from_number||'Unknown'}</a></span></div>
+      <div class="va-detail-row"><span class="va-detail-label">Status</span><span class="va-detail-val"><span class="va-status ${status}">${status}</span></span></div>
+      ${d.action_summary ? `<div class="va-detail-row"><span class="va-detail-label">AI suggestion</span><span class="va-detail-val">${d.action_summary}</span></div>` : ''}
+      ${d.summary ? `<div class="va-detail-row"><span class="va-detail-label">Summary</span><span class="va-detail-val">${d.summary}</span></div>` : ''}
+      ${d.transcript ? `<div style="font-size:.75rem;color:#64748b;margin-bottom:4px;font-weight:600">TRANSCRIPT</div><div class="va-transcript">${d.transcript}</div>` : ''}
+      <div style="font-size:.75rem;color:#64748b;margin-bottom:4px;font-weight:600">YOUR NOTES</div>
+      <textarea class="va-notes-area" id="detail-notes" placeholder="Add notes…">${d.action_notes||''}</textarea>
+    `;
+    document.getElementById('detail-foot').innerHTML = `
+      <button class="btn btn-ghost btn-sm" data-action="close-detail">Close</button>
+      <button class="btn btn-secondary btn-sm" data-action="save-notes" data-id="${id}">Save notes</button>
+      ${['pending','in_progress'].includes(status) ? `<button class="btn btn-primary btn-sm" data-action="update-status" data-id="${id}" data-status="done">Mark done</button>` : ''}
+    `;
+  } catch(e) {
+    document.getElementById('detail-body').innerHTML = '<div style="color:#ef4444">Failed to load detail</div>';
+  }
+}
+
+async function saveNotes(id) {
+  const notes = document.getElementById('detail-notes')?.value;
+  try {
+    await Wren.api(`/api/vapi-actions/${id}`, { method: 'PATCH', body: { action_notes: notes } });
+    Wren.toast && Wren.toast('Notes saved', 'success');
+    await loadAll();
+  } catch(e) { Wren.toast && Wren.toast('Save failed', 'error'); }
+}
+
+function closeDetail() {
+  currentDetailId = null;
+  document.getElementById('va-modal-bg').classList.remove('open');
+}
+</script>
+</body>
+</html>

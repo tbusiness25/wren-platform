@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="wren-edition" content="admin">
+<title>Kitchen Menu — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js"></script>
+<style>
+.kitchen-tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:1px solid var(--c-border); padding-bottom:0; }
+.kitchen-tab { padding:10px 18px; border:none; background:none; color:var(--c-muted); font-size:.875rem; font-weight:600; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:.15s; }
+.kitchen-tab.active { color:#4a9abf; border-bottom-color:#4a9abf; }
+.kitchen-pane { display:none; }
+.kitchen-pane.active { display:block; }
+
+/* Menu grid */
+.menu-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:0; border:1px solid var(--c-border); border-radius:12px; overflow:hidden; }
+@media(max-width:900px){ .menu-grid{grid-template-columns:1fr} }
+.menu-day { border-right:1px solid var(--c-border); }
+.menu-day:last-child { border-right:none; }
+.menu-day-hd { padding:12px; background:#0f172a; font-size:.8rem; font-weight:800; color:#4a9abf; text-transform:uppercase; letter-spacing:.06em; text-align:center; border-bottom:1px solid var(--c-border); }
+.menu-slot { border-bottom:1px solid var(--c-border); padding:10px; min-height:80px; }
+.menu-slot:last-child { border-bottom:none; }
+.slot-label { font-size:.65rem; font-weight:700; color:var(--c-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; display:flex; align-items:center; gap:4px; }
+.slot-icon { font-size:.85rem; }
+.menu-desc { font-size:.8rem; color:var(--c-text); line-height:1.4; }
+.menu-desc.empty { color:var(--c-muted); font-style:italic; }
+.allergen-tags { display:flex; gap:3px; flex-wrap:wrap; margin-top:5px; }
+.allergen-tag { font-size:.62rem; font-weight:700; padding:2px 5px; border-radius:4px; background:rgba(245,158,11,.15); color:#f59e0b; }
+.menu-edit-btn { font-size:.62rem; color:#4a9abf; background:none; border:none; cursor:pointer; padding:2px 4px; display:block; margin-top:4px; opacity:.6; }
+.menu-edit-btn:hover { opacity:1; }
+
+/* Edit inline */
+.slot-edit-ta { width:100%; background:#1e293b; border:1.5px solid #4a9abf; border-radius:6px; padding:6px 8px; color:var(--c-text); font-size:.8rem; font-family:inherit; resize:vertical; min-height:52px; outline:none; }
+.allergen-checks { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.allergen-check { display:flex; align-items:center; gap:4px; font-size:.68rem; color:var(--c-muted); cursor:pointer; }
+.allergen-check input { width:12px; height:12px; cursor:pointer; }
+.slot-save-btn { margin-top:6px; padding:4px 10px; background:#4a9abf; border:none; border-radius:6px; color:#fff; font-size:.72rem; font-weight:700; cursor:pointer; }
+.slot-cancel-btn { margin-top:6px; margin-left:4px; padding:4px 10px; background:#2d3748; border:none; border-radius:6px; color:var(--c-muted); font-size:.72rem; cursor:pointer; }
+
+/* Week selector */
+.week-bar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+.week-pill { padding:6px 14px; border:1.5px solid var(--c-border); border-radius:20px; background:none; color:var(--c-muted); font-size:.8rem; font-weight:600; cursor:pointer; transition:.15s; }
+.week-pill.active, .week-pill:hover { border-color:#4a9abf; color:#4a9abf; background:rgba(74,154,191,.08); }
+.week-name { font-size:.875rem; font-weight:700; color:var(--c-text); }
+
+/* Allergen summary */
+.allergen-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.allergen-table th { padding:10px 12px; font-size:.72rem; color:var(--c-muted); font-weight:700; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--c-border); text-align:left; }
+.allergen-table td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:middle; }
+.allergen-table tr:last-child td { border-bottom:none; }
+
+/* Print */
+@media print {
+  #wren-shell, .kitchen-tabs, .week-bar, .menu-edit-btn, button { display:none !important; }
+  .kitchen-pane { display:block !important; }
+  #pane-allergens { display:none !important; }
+  .menu-grid { border:1px solid #ccc; }
+  .menu-day-hd { color:#000; background:#f0f0f0; }
+  .menu-slot { border-color:#ccc; }
+  .menu-desc { color:#000; }
+  .allergen-tag { background:#fef3c7; color:#92400e; }
+}
+</style>
+</head>
+<body>
+<div id="wren-shell"></div>
+<div class="page-content" data-role="manager deputy_manager">
+
+  <div class="kitchen-tabs">
+    <button class="kitchen-tab active" data-tab="menu">Weekly Menu (legacy)</button>
+    <button class="kitchen-tab" data-tab="allergens">Allergen Summary</button>
+    <button class="kitchen-tab" data-tab="planner">📅 Recipe Planner</button>
+    <button class="kitchen-tab" data-tab="recipes">🍽 Recipe Library</button>
+    <button class="kitchen-tab" data-tab="ingredients">🛒 Ingredients</button>
+    <button class="kitchen-tab" data-tab="shopping">📋 Shopping Lists</button>
+    <button class="kitchen-tab" data-tab="sfbb">🌡️ SFBB Diary</button>
+  </div>
+
+  <!-- ── WEEKLY MENU ── -->
+  <div class="kitchen-pane active" id="pane-menu">
+    <div class="week-bar" id="week-bar">
+      <span style="font-size:.8rem;color:var(--c-muted)">Week:</span>
+      <div id="week-pills"></div>
+      <button id="btn-new-week" style="margin-left:auto;padding:7px 14px;background:#4a9abf;border:none;border-radius:8px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer">+ New week</button>
+      <button id="btn-print-menu" style="padding:7px 14px;background:#2d3748;border:none;border-radius:8px;color:var(--c-text);font-size:.8rem;cursor:pointer">🖨 Print</button>
+    </div>
+
+    <div id="new-week-form" style="display:none;background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:16px;margin-bottom:16px;max-width:480px">
+      <div style="font-size:.875rem;font-weight:700;color:var(--c-text);margin-bottom:12px">New Menu Week</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end">
+        <div><label class="f-label" style="font-size:.72rem;color:var(--c-muted);font-weight:700">Week name</label><input id="nw-name" class="f-input" placeholder="e.g. Summer Wk 2" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9;border-radius:7px;padding:7px 10px;font-size:.8rem"></div>
+        <div><label class="f-label" style="font-size:.72rem;color:var(--c-muted);font-weight:700">From</label><input type="date" id="nw-from" class="f-input" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9;border-radius:7px;padding:7px 10px;font-size:.8rem"></div>
+        <div><label class="f-label" style="font-size:.72rem;color:var(--c-muted);font-weight:700">To</label><input type="date" id="nw-to" class="f-input" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9;border-radius:7px;padding:7px 10px;font-size:.8rem"></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button id="btn-create-week" style="padding:7px 14px;background:#4a9abf;border:none;border-radius:8px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer">Create</button>
+        <button id="btn-cancel-week" style="padding:7px 14px;background:#2d3748;border:none;border-radius:8px;color:var(--c-text);font-size:.8rem;cursor:pointer">Cancel</button>
+      </div>
+    </div>
+
+    <div id="week-name-display" style="font-size:.9rem;font-weight:700;color:var(--c-text);margin-bottom:14px"></div>
+    <div id="menu-grid-container">
+      <div style="color:var(--c-muted);font-size:.875rem">Loading menu...</div>
+    </div>
+  </div>
+
+  <!-- ── ALLERGEN SUMMARY ── -->
+  <div class="kitchen-pane" id="pane-allergens">
+    <div style="margin-bottom:14px;font-size:.85rem;color:var(--c-muted);background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:10px 14px">
+      ⚠️ Children below have recorded allergies or dietary requirements. Always cross-reference with this week's menu allergen tags before serving.
+    </div>
+    <table class="allergen-table">
+      <thead><tr><th>Child</th><th>Room</th><th>Allergies</th><th>Dietary requirements</th></tr></thead>
+      <tbody id="allergen-tbody"></tbody>
+    </table>
+    <div id="allergen-empty" style="display:none;color:var(--c-muted);text-align:center;padding:40px;font-size:.875rem">No children with recorded allergies</div>
+  </div>
+
+  <!-- ── RECIPE PLANNER ── -->
+  <div class="kitchen-pane" id="pane-planner">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <div>
+        <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:4px">Week starting (Monday)</label>
+        <input type="date" id="planner-week" style="background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:8px 12px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:4px">Room</label>
+        <select id="planner-room" style="background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:8px 12px;font-size:.85rem">
+          <option value="preschool">Pre-school</option>
+          <option value="baby">Baby Room</option>
+        </select>
+      </div>
+      <button id="btn-load-planner" style="margin-top:18px;padding:8px 16px;background:#4a9abf;border:none;border-radius:8px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer">Load</button>
+      <button id="btn-generate-shopping" style="margin-top:18px;padding:8px 16px;background:#e07820;border:none;border-radius:8px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer">Generate Shopping List</button>
+    </div>
+    <div id="planner-weeks-quick" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
+    <div id="planner-grid" style="overflow-x:auto">
+      <div style="color:var(--c-muted);font-size:.875rem;padding:20px">Select a week and click Load</div>
+    </div>
+  </div>
+
+  <!-- ── RECIPE LIBRARY ── -->
+  <div class="kitchen-pane" id="pane-recipes">
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+      <input id="recipe-search" placeholder="Search recipes…" style="background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:8px 12px;font-size:.85rem;width:220px">
+      <select id="recipe-filter-allergen" style="background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:8px 12px;font-size:.82rem">
+        <option value="">All allergens</option>
+        <option value="gluten">No Gluten</option>
+        <option value="milk">No Milk</option>
+        <option value="eggs">No Eggs</option>
+        <option value="fish">No Fish</option>
+      </select>
+      <button id="btn-new-recipe" style="margin-left:auto;padding:8px 16px;background:#4a9abf;border:none;border-radius:8px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer">+ New Recipe</button>
+    </div>
+    <div id="recipe-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+      <div style="color:var(--c-muted);font-size:.875rem">Loading recipes…</div>
+    </div>
+
+    <!-- Recipe Editor Modal -->
+    <div id="recipe-editor-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:1000;overflow-y:auto;padding:20px">
+      <div style="background:#1e293b;border:1px solid #2d3748;border-radius:16px;max-width:700px;margin:0 auto;padding:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h2 style="margin:0;font-size:1.1rem;color:#f1f5f9" id="editor-title">Edit Recipe</h2>
+          <button id="btn-close-recipe-editor" style="background:none;border:none;color:#94a3b8;font-size:1.2rem;cursor:pointer">✕</button>
+        </div>
+        <div style="display:grid;gap:14px">
+          <div>
+            <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:4px">Recipe Name *</label>
+            <input id="re-name" placeholder="e.g. Fish fingers, chips & peas" style="width:100%;background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:9px 12px;font-size:.875rem;box-sizing:border-box">
+          </div>
+          <div>
+            <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:4px">Description (shown to parents)</label>
+            <textarea id="re-desc" rows="3" placeholder="Describe the dish and dessert…" style="width:100%;background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:9px 12px;font-size:.875rem;resize:vertical;box-sizing:border-box"></textarea>
+          </div>
+          <div>
+            <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:6px">Allergens (LADN codes — tick all present)</label>
+            <div style="display:flex;flex-wrap:wrap;gap:8px" id="re-allergen-checks"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:4px">Serves (default 22)</label>
+              <input id="re-serves" type="number" value="22" style="width:100%;background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:9px 12px;font-size:.875rem;box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:4px">Tags (comma-separated)</label>
+              <input id="re-tags" placeholder="summer-rotation-week-1" style="width:100%;background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:9px 12px;font-size:.875rem;box-sizing:border-box">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:4px">Cooking instructions (internal — not shown to parents)</label>
+            <textarea id="re-instructions" rows="4" placeholder="Step by step instructions for the chef…" style="width:100%;background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:9px 12px;font-size:.875rem;resize:vertical;box-sizing:border-box"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button id="btn-cancel-recipe" style="padding:9px 18px;background:#2d3748;border:none;border-radius:8px;color:#f1f5f9;font-size:.85rem;cursor:pointer">Cancel</button>
+            <button id="btn-save-recipe" style="padding:9px 18px;background:#4a9abf;border:none;border-radius:8px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer">Save Recipe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── INGREDIENTS ── -->
+  <div class="kitchen-pane" id="pane-ingredients">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:.85rem;color:var(--c-muted)">Manage ingredient SKUs, Sainsbury's links and prices. Chef fills in missing SKUs over time.</div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead>
+          <tr style="border-bottom:2px solid #2d3748">
+            <th style="padding:10px 8px;text-align:left;color:var(--c-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">Ingredient</th>
+            <th style="padding:10px 8px;text-align:left;color:var(--c-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">Allergens</th>
+            <th style="padding:10px 8px;text-align:left;color:var(--c-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">Sainsbury's SKU</th>
+            <th style="padding:10px 8px;text-align:left;color:var(--c-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">Last Price</th>
+            <th style="padding:10px 8px;text-align:left;color:var(--c-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="ingredients-tbody">
+          <tr><td colspan="5" style="padding:20px;color:var(--c-muted);text-align:center">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── SHOPPING LISTS ── -->
+  <div class="kitchen-pane" id="pane-shopping">
+    <div id="shopping-list-container">
+      <div style="color:var(--c-muted);font-size:.875rem;padding:20px">Loading shopping lists…</div>
+    </div>
+  </div>
+
+  <!-- ── SFBB DIARY (Safer Food Better Business) ── -->
+  <div class="kitchen-pane" id="pane-sfbb">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <label style="font-size:.72rem;color:var(--c-muted);font-weight:700">Date
+        <input type="date" id="sfbb-date" style="background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:7px 10px;font-size:.8rem;margin-left:6px"></label>
+      <div style="display:flex;gap:4px">
+        <button class="sfbb-shift active" data-shift="opening" style="padding:7px 14px;background:#4a9abf;border:none;border-radius:8px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer">Opening</button>
+        <button class="sfbb-shift" data-shift="closing" style="padding:7px 14px;background:#2d3748;border:none;border-radius:8px;color:var(--c-text);font-size:.8rem;font-weight:700;cursor:pointer">Closing</button>
+      </div>
+      <button id="sfbb-save" style="margin-left:auto;padding:8px 16px;background:#e07820;border:none;border-radius:8px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer">💾 Save diary</button>
+    </div>
+
+    <!-- live temps -->
+    <div id="sfbb-temps" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:16px"></div>
+
+    <!-- checklist -->
+    <div id="sfbb-checklist"><div style="color:var(--c-muted);font-size:.875rem;padding:20px">Loading…</div></div>
+
+    <!-- cleaning schedule -->
+    <div style="font-size:.95rem;font-weight:700;color:var(--c-text);margin:22px 0 10px">🧽 Cleaning schedule</div>
+    <div id="sfbb-cleaning"><div style="color:var(--c-muted);font-size:.85rem">Loading…</div></div>
+
+    <div id="sfbb-status" style="margin-top:12px;font-size:.8rem;color:var(--c-muted)"></div>
+  </div>
+
+</div>
+
+<script>
+const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+const MEALS = [
+  { type:'breakfast', icon:'☕', label:'Breakfast' },
+  { type:'lunch',     icon:'🍽', label:'Lunch' },
+  { type:'snack',     icon:'🍎', label:'Snack' },
+];
+const ALLERGENS = ['G','M','E','N','F','S','C','Se'];
+const ALLERGEN_NAMES = { G:'Gluten',M:'Milk',E:'Eggs',N:'Nuts',F:'Fish',S:'Soy',C:'Celery',Se:'Sesame' };
+
+let currentGroup = null;
+let currentItems = [];
+let allGroups = [];
+
+function setTab(tab, el) {
+  document.querySelectorAll('.kitchen-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.kitchen-pane').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('pane-'+tab).classList.add('active');
+  if (tab==='allergens') loadAllergens();
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function itemFor(dayIdx, mealType) {
+  return currentItems.find(i => i.day_of_week===(dayIdx+1) && i.meal_type===mealType);
+}
+
+function renderMenu() {
+  if (!currentGroup) {
+    document.getElementById('menu-grid-container').innerHTML = '<div style="color:var(--c-muted);font-size:.875rem">No menu for this week yet. Create one above.</div>';
+    return;
+  }
+  document.getElementById('week-name-display').textContent = currentGroup.name + ' (' + new Date(currentGroup.date_from).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) + ' – ' + new Date(currentGroup.date_to).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) + ')';
+  let html = '<div class="menu-grid">';
+  for (let d=0;d<5;d++) {
+    html += `<div class="menu-day">
+      <div class="menu-day-hd">${DAYS[d]}</div>`;
+    for (const meal of MEALS) {
+      const item = itemFor(d, meal.type);
+      const allergens = item ? (item.allergens||[]) : [];
+      html += `<div class="menu-slot" id="slot-${d}-${meal.type}">
+        <div class="slot-label"><span class="slot-icon">${meal.icon}</span>${meal.label}</div>
+        <div class="menu-desc${item?.description?'':' empty'}" id="desc-${d}-${meal.type}">${esc(item?.description||'Not set')}</div>
+        <div class="allergen-tags" id="tags-${d}-${meal.type}">
+          ${allergens.map(a=>`<span class="allergen-tag" title="${ALLERGEN_NAMES[a]||a}">${a}</span>`).join('')}
+        </div>
+        <button class="menu-edit-btn" data-day="${d}" data-meal="${meal.type}">✏ Edit</button>
+      </div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  document.getElementById('menu-grid-container').innerHTML = html;
+}
+
+function editSlot(dayIdx, mealType) {
+  const item = itemFor(dayIdx, mealType);
+  const allergens = item ? (item.allergens||[]) : [];
+  const slotEl = document.getElementById(`slot-${dayIdx}-${mealType}`);
+  slotEl.innerHTML = `
+    <div class="slot-label"><span class="slot-icon">${MEALS.find(m=>m.type===mealType)?.icon||''}</span>${MEALS.find(m=>m.type===mealType)?.label||mealType}</div>
+    <textarea class="slot-edit-ta" id="edit-ta-${dayIdx}-${mealType}" placeholder="Describe the meal...">${esc(item?.description||'')}</textarea>
+    <div style="font-size:.68rem;color:var(--c-muted);margin-top:6px;font-weight:700">Allergens present:</div>
+    <div class="allergen-checks">
+      ${ALLERGENS.map(a=>`<label class="allergen-check"><input type="checkbox" id="al-${dayIdx}-${mealType}-${a}" ${allergens.includes(a)?'checked':''}>${a} (${ALLERGEN_NAMES[a]})</label>`).join('')}
+    </div>
+    <button class="slot-save-btn" data-slot-action="save" data-day="${dayIdx}" data-meal="${mealType}" data-item-id="${item?.id||''}">Save</button>
+    <button class="slot-cancel-btn" data-slot-action="cancel">Cancel</button>
+  `;
+}
+
+async function saveSlot(dayIdx, mealType, itemId) {
+  const desc = document.getElementById(`edit-ta-${dayIdx}-${mealType}`)?.value||'';
+  const allergens = ALLERGENS.filter(a=>document.getElementById(`al-${dayIdx}-${mealType}-${a}`)?.checked);
+  try {
+    if (itemId) {
+      const updated = await Wren.api(`/api/kitchen/items/${itemId}`, { method:'PUT', body:{description:desc, allergens} });
+      const idx = currentItems.findIndex(i=>i.id===itemId);
+      if (idx>=0) currentItems[idx]={...currentItems[idx],...updated};
+    } else {
+      const created = await Wren.api('/api/kitchen/items', { method:'POST', body:{menu_group_id:currentGroup.id, day_of_week:dayIdx+1, meal_type:mealType, description:desc, allergens} });
+      if (created.id) currentItems.push(created);
+    }
+    Wren.toast('Menu saved','success');
+    renderMenu();
+  } catch(e){ Wren.toast('Save failed: '+(e.error||''),'error'); renderMenu(); }
+}
+
+async function loadGroups() {
+  try {
+    allGroups = await Wren.api('/api/kitchen/groups');
+    const pills = document.getElementById('week-pills');
+    pills.innerHTML = allGroups.map((g,i)=>`<button class="week-pill${i===0?' active':''}" data-group-id="${g.id}">${esc(g.name)}</button>`).join('');
+    if (allGroups.length) await selectGroup(allGroups[0].id, pills.querySelector('.week-pill'));
+  } catch(e){ document.getElementById('menu-grid-container').innerHTML=`<div style="color:#ef4444">Error: ${esc(e.error||'')}</div>`; }
+}
+
+async function selectGroup(groupId, el) {
+  document.querySelectorAll('.week-pill').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  try {
+    const data = await Wren.api('/api/kitchen/current');
+    // find requested group
+    const grp = allGroups.find(g=>g.id===groupId);
+    if (grp) {
+      const { items } = await Wren.api('/api/kitchen/current').catch(()=>({items:[]}));
+      // re-fetch for specific group by using current — we only have current endpoint
+      currentGroup = grp;
+      currentItems = items.filter ? items : [];
+      // If selected group is not current, fetch all items for it differently
+      // For simplicity, reload full current and match
+      const full = await Wren.api('/api/kitchen/current').catch(()=>null);
+      if (full && full.group && full.group.id===groupId) {
+        currentGroup = full.group;
+        currentItems = full.items || [];
+      } else {
+        currentGroup = grp;
+        currentItems = [];
+      }
+    }
+    renderMenu();
+  } catch(e){ document.getElementById('menu-grid-container').innerHTML=`<div style="color:#ef4444">Error loading menu</div>`; }
+}
+
+function showNewWeekForm() {
+  const f = document.getElementById('new-week-form');
+  f.style.display = f.style.display==='none' ? 'block' : 'none';
+}
+
+async function createWeek() {
+  const name = document.getElementById('nw-name').value.trim();
+  const date_from = document.getElementById('nw-from').value;
+  const date_to = document.getElementById('nw-to').value;
+  if (!name || !date_from || !date_to) return Wren.toast('Fill in all fields','error');
+  try {
+    await Wren.api('/api/kitchen/groups', { method:'POST', body:{name,date_from,date_to} });
+    Wren.toast('Week created','success');
+    document.getElementById('new-week-form').style.display='none';
+    await loadGroups();
+  } catch(e){ Wren.toast('Failed: '+(e.error||''),'error'); }
+}
+
+async function loadAllergens() {
+  const tbody = document.getElementById('allergen-tbody');
+  const empty = document.getElementById('allergen-empty');
+  try {
+    const rows = await Wren.api('/api/kitchen/allergen-summary');
+    if (!rows.length) { tbody.innerHTML=''; empty.style.display=''; return; }
+    empty.style.display='none';
+    tbody.innerHTML = rows.map(c=>`
+      <tr>
+        <td style="font-weight:600;color:var(--c-text)">${esc(c.name)}</td>
+        <td style="color:var(--c-muted)">${esc(c.room_name||'—')}</td>
+        <td>
+          ${(c.allergies&&c.allergies!=='{}') ? `<div style="color:#f59e0b;font-size:.85rem">${esc(c.allergies)}</div>` : '<span style="color:var(--c-muted);font-size:.82rem">—</span>'}
+        </td>
+        <td style="color:var(--c-muted);font-size:.85rem">${esc(c.dietary_requirements||'—')}</td>
+      </tr>
+    `).join('');
+  } catch(e){ tbody.innerHTML=`<tr><td colspan="4" style="color:#ef4444">Error: ${esc(e.error||'')}</td></tr>`; }
+}
+
+document.addEventListener('wren:ready', function() {
+  // Tab delegation
+  document.querySelector('.kitchen-tabs').addEventListener('click', function(e) {
+    const btn = e.target.closest('.kitchen-tab[data-tab]');
+    if (btn) setTab(btn.dataset.tab, btn);
+  });
+  // Week bar buttons
+  document.getElementById('btn-new-week').addEventListener('click', showNewWeekForm);
+  document.getElementById('btn-print-menu').addEventListener('click', () => window.print());
+  // New week form
+  document.getElementById('btn-create-week').addEventListener('click', createWeek);
+  document.getElementById('btn-cancel-week').addEventListener('click', () => document.getElementById('new-week-form').style.display='none');
+  // Planner
+  document.getElementById('btn-load-planner').addEventListener('click', loadPlanner);
+  document.getElementById('btn-generate-shopping').addEventListener('click', generateShopping);
+  // Recipe library
+  document.getElementById('recipe-search').addEventListener('input', filterRecipes);
+  document.getElementById('recipe-filter-allergen').addEventListener('change', filterRecipes);
+  document.getElementById('btn-new-recipe').addEventListener('click', () => showRecipeEditor(null));
+  document.getElementById('btn-close-recipe-editor').addEventListener('click', closeRecipeEditor);
+  document.getElementById('btn-cancel-recipe').addEventListener('click', closeRecipeEditor);
+  document.getElementById('btn-save-recipe').addEventListener('click', saveRecipe);
+  // Menu grid delegation (edit/save/cancel slot)
+  document.getElementById('menu-grid-container').addEventListener('click', function(e) {
+    const editBtn = e.target.closest('.menu-edit-btn');
+    if (editBtn) { editSlot(parseInt(editBtn.dataset.day), editBtn.dataset.meal); return; }
+    const saveBtn = e.target.closest('[data-slot-action="save"]');
+    if (saveBtn) { saveSlot(parseInt(saveBtn.dataset.day), saveBtn.dataset.meal, saveBtn.dataset.itemId ? parseInt(saveBtn.dataset.itemId) : null); return; }
+    if (e.target.closest('[data-slot-action="cancel"]')) { renderMenu(); }
+  });
+  // Week pills delegation
+  document.getElementById('week-pills').addEventListener('click', function(e) {
+    const btn = e.target.closest('.week-pill[data-group-id]');
+    if (btn) selectGroup(parseInt(btn.dataset.groupId), btn);
+  });
+  // Planner quick weeks delegation
+  document.getElementById('planner-weeks-quick').addEventListener('click', function(e) {
+    const btn = e.target.closest('.week-pill[data-date]');
+    if (btn) selectPlannerWeek(btn.dataset.date, btn);
+  });
+  // Planner grid slot delegation
+  document.getElementById('planner-grid').addEventListener('click', function(e) {
+    const cell = e.target.closest('[data-plan-action="open"]');
+    if (cell) openPlanSlot(cell.dataset.week, parseInt(cell.dataset.day), cell.dataset.meal, cell.dataset.planId ? parseInt(cell.dataset.planId) : null);
+  });
+  // Recipe grid delegation
+  document.getElementById('recipe-grid').addEventListener('click', function(e) {
+    const card = e.target.closest('[data-action="edit-recipe"]');
+    if (card) showRecipeEditor(parseInt(card.dataset.recipeId));
+  });
+  // Ingredients table delegation
+  document.getElementById('ingredients-tbody').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="save-ingredient"]');
+    if (btn) saveIngredient(parseInt(btn.dataset.ingredientId));
+  });
+  // Init
+  loadGroups();
+  loadPlannerWeeks();
+  loadIngredientsTab();
+  loadShoppingLists();
+  loadRecipes();
+  initRecipeEditorAllergenChecks();
+  const today = new Date();
+  const dow = today.getDay();
+  const daysToMon = dow === 0 ? 1 : 8 - dow;
+  const nextMon = new Date(today); nextMon.setDate(today.getDate() + (dow===1?0:daysToMon));
+  document.getElementById('planner-week').value = nextMon.toISOString().split('T')[0];
+});
+
+// ── Recipe Planner ────────────────────────────────────────────────────────
+
+const ALL_LADN_ALLERGENS = [
+  {code:'G',name:'Gluten'},{code:'M',name:'Milk'},{code:'E',name:'Eggs'},
+  {code:'F',name:'Fish'},{code:'P',name:'Peanuts'},{code:'S',name:'Soyabeans'},
+  {code:'CY',name:'Celery'},{code:'MS',name:'Mustard'},{code:'SS',name:'Sesame'},
+  {code:'SL',name:'Sulphites'},{code:'L',name:'Lupin'},{code:'N',name:'Tree nuts'},
+  {code:'C',name:'Crustaceans'},{code:'ML',name:'Molluscs'}
+];
+
+let plannerData = [];
+let allRecipes = [];
+let editingRecipeId = null;
+
+async function loadPlannerWeeks() {
+  try {
+    const weeks = await Wren.api('/api/menus/plans/weeks');
+    const container = document.getElementById('planner-weeks-quick');
+    container.innerHTML = weeks.slice(-8).map(w => {
+      const d = new Date(w); const label = d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+      return `<button class="week-pill" data-date="${w}">${label}</button>`;
+    }).join('');
+  } catch(e) { console.warn('No planner weeks:', e.message); }
+}
+
+async function selectPlannerWeek(date, el) {
+  document.querySelectorAll('#planner-weeks-quick .week-pill').forEach(b=>b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById('planner-week').value = date;
+  await loadPlanner();
+}
+
+async function loadPlanner() {
+  const week = document.getElementById('planner-week').value;
+  const room = document.getElementById('planner-room').value;
+  if (!week) return Wren.toast('Select a week','error');
+  document.getElementById('planner-grid').innerHTML = '<div style="color:var(--c-muted);padding:20px">Loading…</div>';
+  try {
+    plannerData = await Wren.api(`/api/menus/plans?week_start_date=${week}&room=${room}`);
+    if (!allRecipes.length) allRecipes = await Wren.api('/api/menus/recipes');
+    renderPlannerGrid(plannerData, week);
+  } catch(e) { document.getElementById('planner-grid').innerHTML = `<div style="color:#ef4444">Error: ${esc(e.error||e.message||'')}</div>`; }
+}
+
+function renderPlannerGrid(plans, weekStart) {
+  const meals = ['breakfast','snack_am','lunch','snack_pm','tea'];
+  const mealLabels = {breakfast:'Breakfast',snack_am:'AM Snack',lunch:'Lunch',snack_pm:'PM Snack',tea:'Tea'};
+  const wDate = new Date(weekStart);
+
+  let html = `<table style="width:100%;border-collapse:collapse;min-width:700px">
+    <thead><tr style="background:#0f172a">
+      <th style="padding:10px;text-align:left;color:var(--c-muted);font-size:.72rem;text-transform:uppercase;width:90px">Meal</th>`;
+  for (let d=0;d<5;d++) {
+    const dd = new Date(wDate); dd.setDate(wDate.getDate()+d);
+    html += `<th style="padding:10px;text-align:center;color:#4a9abf;font-size:.8rem;font-weight:700">${DAYS[d]}<br><span style="color:var(--c-muted);font-weight:400;font-size:.7rem">${dd.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const mt of meals) {
+    html += `<tr style="border-bottom:1px solid #1e293b">
+      <td style="padding:10px 8px;font-size:.75rem;font-weight:700;color:var(--c-muted);text-transform:uppercase">${mealLabels[mt]}</td>`;
+    for (let d=0;d<5;d++) {
+      const plan = plans.find(p => p.day_of_week===(d+1) && p.meal_type===mt);
+      const id = plan?.id; const recipeName = plan?.recipe_name;
+      const codes = (plan?.allergen_codes_display||[]).join(' ');
+      const status = plan?.status||'';
+      html += `<td style="padding:6px;vertical-align:top">
+        <div style="background:${status==='served'?'rgba(34,197,94,.08)':status==='approved'?'rgba(74,154,191,.08)':'rgba(255,255,255,.03)'};border:1px solid ${status==='served'?'#22c55e':status==='approved'?'#4a9abf':'#2d3748'};border-radius:8px;padding:8px;min-height:70px;cursor:pointer" data-plan-action="open" data-week="${weekStart}" data-day="${d+1}" data-meal="${mt}" data-plan-id="${id||''}">
+          ${recipeName ? `
+            <div style="font-size:.75rem;font-weight:600;color:#f1f5f9;line-height:1.3">${esc(recipeName)}</div>
+            ${codes?`<div style="font-size:.62rem;color:#f59e0b;margin-top:4px">${esc(codes)}</div>`:''}
+            <div style="font-size:.6rem;color:${status==='served'?'#22c55e':status==='approved'?'#4a9abf':'#64748b'};margin-top:3px;text-transform:uppercase;font-weight:700">${status||'draft'}</div>
+          ` : `<div style="font-size:.72rem;color:#334155;font-style:italic">+ Add recipe</div>`}
+        </div>
+      </td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('planner-grid').innerHTML = html;
+}
+
+async function openPlanSlot(weekStart, day, mealType, existingId) {
+  if (!allRecipes.length) allRecipes = await Wren.api('/api/menus/recipes');
+  const opts = allRecipes.map(r=>`<option value="${r.id}">${esc(r.name.slice(0,60))}</option>`).join('');
+  const current = plannerData.find(p=>p.day_of_week===day && p.meal_type===mealType);
+  const recipeId = current?.recipe_id || '';
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px';
+  panel.innerHTML = `
+    <div style="background:#1e293b;border:1px solid #2d3748;border-radius:14px;padding:24px;width:440px;max-width:100%">
+      <h3 style="margin:0 0 16px;font-size:1rem;color:#f1f5f9">${DAYS[day-1]} — ${mealType.replace('_',' ')}</h3>
+      <label style="font-size:.72rem;color:var(--c-muted);font-weight:700;display:block;margin-bottom:6px">Recipe</label>
+      <select id="slot-recipe-sel" style="width:100%;background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:9px 12px;font-size:.85rem;margin-bottom:14px">
+        <option value="">— No recipe (empty slot) —</option>${opts}
+      </select>
+      <div style="display:flex;gap:10px">
+        <button style="flex:1;padding:10px;background:#4a9abf;border:none;border-radius:8px;color:#fff;font-weight:700;cursor:pointer">Save</button>
+        <button style="flex:1;padding:10px;background:#2d3748;border:none;border-radius:8px;color:#f1f5f9;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  panel.querySelector('[style*=fixed]') // noop reference fix
+  document.body.appendChild(panel);
+  if (recipeId) document.getElementById('slot-recipe-sel').value = recipeId;
+  panel.addEventListener('click', e => { if (e.target===panel) panel.remove(); });
+  // patch save button to capture panel reference
+  panel.querySelectorAll('button')[1].addEventListener('click', () => panel.remove());
+  panel.querySelector('button').addEventListener('click', async () => {
+    const rid = panel.querySelector('#slot-recipe-sel').value;
+    try {
+      await Wren.api('/api/menus/plans', {method:'POST',body:{week_start_date:weekStart,room:document.getElementById('planner-room').value,day_of_week:day,meal_type:mealType,recipe_id:rid||null}});
+      Wren.toast('Saved','success');
+      panel.remove();
+      await loadPlanner();
+    } catch(e) { Wren.toast('Error: '+(e.error||e.message),'error'); }
+  });
+}
+
+async function generateShopping() {
+  const week = document.getElementById('planner-week').value;
+  const room = document.getElementById('planner-room').value;
+  if (!week) return Wren.toast('Select a week first','error');
+  try {
+    const r = await Wren.api('/api/menus/shopping-lists/generate',{method:'POST',body:{week_start_date:week,room}});
+    Wren.toast('Shopping list generated','success');
+    setTab('shopping', document.querySelectorAll('.kitchen-tab')[5]);
+    await loadShoppingLists();
+  } catch(e) { Wren.toast('Error: '+(e.error||e.message),'error'); }
+}
+
+// ── Recipe Library ────────────────────────────────────────────────────────
+
+async function loadRecipes() {
+  try {
+    allRecipes = await Wren.api('/api/menus/recipes');
+    renderRecipeGrid(allRecipes);
+  } catch(e) { document.getElementById('recipe-grid').innerHTML = `<div style="color:#ef4444">Error: ${esc(e.error||'')}</div>`; }
+}
+
+function filterRecipes() {
+  const q = (document.getElementById('recipe-search').value||'').toLowerCase();
+  const skipAllergen = document.getElementById('recipe-filter-allergen').value;
+  let filtered = allRecipes;
+  if (q) filtered = filtered.filter(r => r.name.toLowerCase().includes(q));
+  if (skipAllergen) filtered = filtered.filter(r => !(r.allergens||[]).includes(skipAllergen));
+  renderRecipeGrid(filtered);
+}
+
+function renderRecipeGrid(recipes) {
+  if (!recipes.length) { document.getElementById('recipe-grid').innerHTML='<div style="color:var(--c-muted);padding:30px;text-align:center;grid-column:1/-1">No recipes found</div>'; return; }
+  document.getElementById('recipe-grid').innerHTML = recipes.map(r=>{
+    const codes = (r.allergen_codes_display||[]).join(' ');
+    const n = r.nutrition_per_serving_json || {};
+    return `<div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:14px;cursor:pointer" data-action="edit-recipe" data-recipe-id="${r.id}">
+      <div style="font-size:.875rem;font-weight:700;color:#f1f5f9;margin-bottom:6px;line-height:1.3">${esc(r.name)}</div>
+      ${codes?`<div style="font-size:.65rem;color:#f59e0b;margin-bottom:6px">${esc(codes)}</div>`:'<div style="font-size:.65rem;color:#22c55e;margin-bottom:6px">No declared allergens</div>'}
+      <div style="font-size:.72rem;color:var(--c-muted);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(r.description||'')}</div>
+      ${n.kcal?`<div style="font-size:.65rem;color:#94a3b8;margin-top:6px">~${n.kcal} kcal per serving</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function showRecipeEditor(id) {
+  editingRecipeId = id;
+  document.getElementById('editor-title').textContent = id ? 'Edit Recipe' : 'New Recipe';
+  if (id) {
+    try {
+      const r = await Wren.api(`/api/menus/recipes/${id}`);
+      document.getElementById('re-name').value = r.name || '';
+      document.getElementById('re-desc').value = r.description || '';
+      document.getElementById('re-serves').value = r.serves_n || 22;
+      document.getElementById('re-tags').value = (r.tags||[]).join(', ');
+      document.getElementById('re-instructions').value = r.instructions || '';
+      ALL_LADN_ALLERGENS.forEach(a => {
+        const cb = document.getElementById('re-al-'+a.code);
+        if (cb) cb.checked = (r.allergen_codes_display||[]).includes(a.code);
+      });
+    } catch(e) { Wren.toast('Error loading recipe','error'); return; }
+  } else {
+    document.getElementById('re-name').value='';
+    document.getElementById('re-desc').value='';
+    document.getElementById('re-serves').value=22;
+    document.getElementById('re-tags').value='';
+    document.getElementById('re-instructions').value='';
+    ALL_LADN_ALLERGENS.forEach(a=>{ const cb=document.getElementById('re-al-'+a.code); if(cb) cb.checked=false; });
+  }
+  document.getElementById('recipe-editor-overlay').style.display='block';
+}
+
+function initRecipeEditorAllergenChecks() {
+  document.getElementById('re-allergen-checks').innerHTML = ALL_LADN_ALLERGENS.map(a=>
+    `<label style="display:flex;align-items:center;gap:5px;font-size:.75rem;color:var(--c-text);background:#0f172a;border:1px solid #2d3748;border-radius:6px;padding:4px 8px;cursor:pointer">
+      <input type="checkbox" id="re-al-${a.code}" style="width:13px;height:13px"> ${a.code} <span style="color:var(--c-muted)">(${a.name})</span>
+    </label>`
+  ).join('');
+}
+
+function closeRecipeEditor() { document.getElementById('recipe-editor-overlay').style.display='none'; }
+
+async function saveRecipe() {
+  const name = document.getElementById('re-name').value.trim();
+  if (!name) return Wren.toast('Recipe name required','error');
+  const codes = ALL_LADN_ALLERGENS.filter(a=>document.getElementById('re-al-'+a.code)?.checked).map(a=>a.code);
+  const tags = document.getElementById('re-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  const body = {
+    name, description: document.getElementById('re-desc').value,
+    serves_n: parseInt(document.getElementById('re-serves').value)||22,
+    allergen_codes_display: codes,
+    tags,
+    instructions: document.getElementById('re-instructions').value
+  };
+  try {
+    if (editingRecipeId) {
+      await Wren.api(`/api/menus/recipes/${editingRecipeId}`,{method:'PUT',body});
+    } else {
+      await Wren.api('/api/menus/recipes',{method:'POST',body});
+    }
+    Wren.toast('Recipe saved','success');
+    closeRecipeEditor();
+    await loadRecipes();
+  } catch(e){ Wren.toast('Error: '+(e.error||e.message),'error'); }
+}
+
+// ── Ingredients ───────────────────────────────────────────────────────────
+
+async function loadIngredientsTab() {
+  try {
+    const ings = await Wren.api('/api/menus/ingredients');
+    const tbody = document.getElementById('ingredients-tbody');
+    tbody.innerHTML = ings.map(i=>`
+      <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:8px;color:var(--c-text);font-weight:600">${esc(i.name)}</td>
+        <td style="padding:8px">
+          ${(i.allergens||[]).map(a=>`<span style="font-size:.62rem;background:rgba(245,158,11,.15);color:#f59e0b;padding:2px 5px;border-radius:4px;margin:1px">${esc(a)}</span>`).join('')}
+        </td>
+        <td style="padding:8px">
+          <input id="sku-${i.id}" value="${esc(i.sainsburys_sku||'')}" placeholder="SKU" style="background:#0f172a;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:5px 8px;font-size:.78rem;width:100px">
+        </td>
+        <td style="padding:8px;color:var(--c-muted);font-size:.8rem">${i.sainsburys_last_price_pence ? '£'+(i.sainsburys_last_price_pence/100).toFixed(2) : '—'}</td>
+        <td style="padding:8px">
+          <button data-action="save-ingredient" data-ingredient-id="${i.id}" style="padding:4px 10px;background:#4a9abf;border:none;border-radius:6px;color:#fff;font-size:.72rem;cursor:pointer">Save SKU</button>
+          ${i.sainsburys_url?`<a href="${esc(i.sainsburys_url)}" target="_blank" style="margin-left:6px;font-size:.72rem;color:#4a9abf">View →</a>`:''}
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) { document.getElementById('ingredients-tbody').innerHTML=`<tr><td colspan="5" style="color:#ef4444;padding:12px">Error: ${esc(e.error||'')}</td></tr>`; }
+}
+
+async function saveIngredient(id) {
+  const sku = document.getElementById('sku-'+id)?.value?.trim();
+  try {
+    await Wren.api(`/api/menus/ingredients/${id}`,{method:'PUT',body:{sainsburys_sku:sku||null}});
+    Wren.toast('Saved','success');
+  } catch(e){ Wren.toast('Error','error'); }
+}
+
+// ── Shopping Lists ────────────────────────────────────────────────────────
+
+async function loadShoppingLists() {
+  try {
+    const lists = await Wren.api('/api/menus/shopping-lists');
+    const container = document.getElementById('shopping-list-container');
+    if (!lists.length) { container.innerHTML='<div style="color:var(--c-muted);padding:30px;text-align:center">No shopping lists yet. Generate one from the Recipe Planner tab.</div>'; return; }
+    container.innerHTML = lists.map(l=>{
+      const items = l.items_json||[];
+      return `<div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <div style="font-size:.9rem;font-weight:700;color:#f1f5f9">Week of ${new Date(l.week_start_date).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})} — ${esc(l.room)}</div>
+            <div style="font-size:.75rem;color:var(--c-muted);margin-top:2px">Generated ${new Date(l.generated_at).toLocaleDateString('en-GB')} · ${items.length} items · Status: <b style="color:${l.status==='delivered'?'#22c55e':l.status==='ordered'?'#4a9abf':'#f59e0b'}">${l.status}</b></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <a href="/api/menus/shopping-list/${l.id}/sainsburys-cart" target="_blank" style="padding:7px 12px;background:#e07820;border:none;border-radius:8px;color:#fff;font-size:.75rem;font-weight:700;text-decoration:none">🛒 Sainsbury's JSON</a>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px">
+          ${items.slice(0,20).map(i=>`<div style="font-size:.75rem;color:var(--c-text);background:#0f172a;border-radius:6px;padding:5px 9px">${esc(i.name||'Item')}: ${Math.ceil(i.total_quantity||0)} ${esc(i.unit||'')}</div>`).join('')}
+          ${items.length>20?`<div style="font-size:.72rem;color:var(--c-muted);padding:5px 9px">+${items.length-20} more…</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { document.getElementById('shopping-list-container').innerHTML=`<div style="color:#ef4444">Error: ${esc(e.error||'')}</div>`; }
+}
+
+</script>
+<script>
+/* SFBB Diary tab — self-contained, additive (no edits to existing JS) */
+(function(){
+  const api = (p,o)=>Wren.api('/api/kitchen'+p, o);
+  let shift = 'opening';
+  const todayStr = ()=> new Date().toISOString().slice(0,10);
+  const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  async function loadTemps(){
+    const box=document.getElementById('sfbb-temps'); if(!box)return;
+    try{
+      const d=await api('/sensors/latest');
+      const map={}; (d.latest||[]).forEach(x=>map[x.location]=x);
+      box.innerHTML=(d.thresholds||[]).map(t=>{
+        const r=map[t.location];
+        const oor=r&&r.out_of_range;
+        const val=r?`${r.reading_c}°C`:'— no reading —';
+        const col=oor?'#ef4444':(r?'#22c55e':'#94a3b8');
+        const when=r?new Date(r.recorded_at).toLocaleString('en-GB',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'}):'';
+        return `<div style="background:var(--c-card);border:1px solid ${oor?'#ef4444':'var(--c-border)'};border-radius:10px;padding:12px">
+          <div style="font-size:.72rem;color:var(--c-muted);font-weight:700;text-transform:uppercase">${E(t.label)}</div>
+          <div style="font-size:1.5rem;font-weight:800;color:${col};margin:2px 0">${E(val)}</div>
+          <div style="font-size:.68rem;color:var(--c-muted)">safe ${t.min_c}–${t.max_c}°C${oor?' · ⚠️ OUT OF RANGE':''}</div>
+          <div style="font-size:.62rem;color:var(--c-muted);margin-top:2px">${E(when)}</div></div>`;
+      }).join('')||'<div style="color:var(--c-muted);font-size:.8rem">No thresholds configured.</div>';
+    }catch(e){ box.innerHTML='<div style="color:#ef4444;font-size:.8rem">Temps failed to load</div>'; }
+  }
+
+  async function loadChecklist(){
+    const box=document.getElementById('sfbb-checklist'); if(!box)return;
+    const date=document.getElementById('sfbb-date').value||todayStr();
+    try{
+      const d=await api(`/sfbb?date=${date}&shift=${shift}`);
+      box.innerHTML=(d.sections||[]).map(sec=>`
+        <div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:14px;margin-bottom:10px">
+          <div style="font-size:.82rem;font-weight:700;color:#4a9abf;margin-bottom:8px">${E(sec.section)}</div>
+          ${sec.items.map(it=>{
+            const tempInput=/°C/.test(it.item);
+            return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.84rem;color:var(--c-text)">
+              <input type="checkbox" class="sfbb-chk" data-section="${E(sec.section)}" data-item="${E(it.item)}" ${it.checked?'checked':''} style="width:18px;height:18px;cursor:pointer">
+              <span style="flex:1">${E(it.item)}</span>
+              ${tempInput?`<input type="text" class="sfbb-val" data-section="${E(sec.section)}" data-item="${E(it.item)}" value="${E(it.value_text)}" placeholder="°C" style="width:64px;background:#0f172a;border:1.5px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:4px 6px;font-size:.78rem">`:''}
+            </label>`;
+          }).join('')}
+        </div>`).join('');
+    }catch(e){ box.innerHTML='<div style="color:#ef4444;font-size:.8rem">Checklist failed to load</div>'; }
+  }
+
+  async function loadCleaning(){
+    const box=document.getElementById('sfbb-cleaning'); if(!box)return;
+    const date=document.getElementById('sfbb-date').value||todayStr();
+    try{
+      const d=await api(`/cleaning?date=${date}`);
+      box.innerHTML=`<div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:8px 14px">`+
+        (d.tasks||[]).map(t=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.82rem;color:var(--c-text);border-bottom:1px solid rgba(255,255,255,.04)">
+          <input type="checkbox" class="clean-chk" data-id="${t.id}" ${t.done?'checked':''} style="width:16px;height:16px;cursor:pointer">
+          <span style="flex:1">${E(t.area)}</span>
+          <span style="font-size:.62rem;color:var(--c-muted);text-transform:uppercase">${E(t.frequency)}</span>
+        </label>`).join('')+`</div>`;
+    }catch(e){ box.innerHTML='<div style="color:#ef4444;font-size:.8rem">Cleaning failed to load</div>'; }
+  }
+
+  async function saveDiary(){
+    const date=document.getElementById('sfbb-date').value||todayStr();
+    const st=document.getElementById('sfbb-status'); st.textContent='Saving…';
+    const items=[];
+    document.querySelectorAll('.sfbb-chk').forEach(chk=>{
+      const sec=chk.dataset.section,item=chk.dataset.item;
+      const valEl=document.querySelector(`.sfbb-val[data-section="${CSS.escape(sec)}"][data-item="${CSS.escape(item)}"]`);
+      items.push({section:sec,item:item,checked:chk.checked,value_text:valEl?valEl.value:null});
+    });
+    try{
+      const r=await api('/sfbb',{method:'POST',body:{date,shift,items}});
+      st.textContent=`✅ Saved ${r.saved||0} checklist items at ${new Date().toLocaleTimeString('en-GB')}`;
+    }catch(e){ st.textContent='❌ Save failed'; }
+  }
+
+  function load(){ loadTemps(); loadChecklist(); loadCleaning(); }
+
+  function bind(){
+    const dateEl=document.getElementById('sfbb-date'); if(dateEl&&!dateEl.value) dateEl.value=todayStr();
+    if(dateEl) dateEl.addEventListener('change',load);
+    document.querySelectorAll('.sfbb-shift').forEach(b=>b.addEventListener('click',()=>{
+      shift=b.dataset.shift;
+      document.querySelectorAll('.sfbb-shift').forEach(x=>{x.classList.remove('active');x.style.background='#2d3748';x.style.color='var(--c-text)';});
+      b.classList.add('active'); b.style.background='#4a9abf'; b.style.color='#fff';
+      loadChecklist();
+    }));
+    const saveBtn=document.getElementById('sfbb-save'); if(saveBtn) saveBtn.addEventListener('click',saveDiary);
+    document.addEventListener('change',e=>{
+      const c=e.target.closest&&e.target.closest('.clean-chk'); if(!c)return;
+      const date=document.getElementById('sfbb-date').value||todayStr();
+      api('/cleaning/log',{method:'POST',body:{task_id:+c.dataset.id,date,done:c.checked}});
+    });
+    // load when the SFBB tab is opened
+    const tabs=document.querySelector('.kitchen-tabs');
+    if(tabs) tabs.addEventListener('click',e=>{ const b=e.target.closest('.kitchen-tab[data-tab="sfbb"]'); if(b) load(); });
+  }
+  document.addEventListener('wren:ready', bind);
+})();
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

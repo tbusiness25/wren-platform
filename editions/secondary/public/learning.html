@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Pupils — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div><div class="page-title">Pupils</div><div class="page-subtitle" id="subtitle">Loading...</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+      <button class="btn btn-primary" onclick="openAddPupil()">+ Add Pupil</button>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px">
+    <div class="stat-card blue"><span class="stat-value" id="stat-total">—</span><span class="stat-label">Total</span></div>
+    <div class="stat-card green"><span class="stat-value" id="stat-ks3">—</span><span class="stat-label">KS3</span></div>
+    <div class="stat-card amber"><span class="stat-value" id="stat-ks4">—</span><span class="stat-label">KS4</span></div>
+    <div class="stat-card red"><span class="stat-value" id="stat-ks5">—</span><span class="stat-label">Sixth Form</span></div>
+    <div class="stat-card grey" style="border-left:4px solid #8b5cf6"><span class="stat-value" id="stat-sen">—</span><span class="stat-label">SEN/EHCP</span></div>
+    <div class="stat-card grey" style="border-left:4px solid #059669"><span class="stat-value" id="stat-pp">—</span><span class="stat-label">PP</span></div>
+  </div>
+  <div class="filter-bar">
+    <div class="search-box"><span class="search-icon">🔍</span><input type="text" id="search" placeholder="Search pupils..." oninput="filterPupils()"></div>
+    <select class="form-control" id="year-filter" onchange="filterPupils()" style="width:150px">
+      <option value="">All Years</option>
+      <option value="7">Year 7</option><option value="8">Year 8</option><option value="9">Year 9</option>
+      <option value="10">Year 10</option><option value="11">Year 11</option>
+      <option value="12">Year 12</option><option value="13">Year 13</option>
+    </select>
+    <select class="form-control" id="form-filter" onchange="filterPupils()" style="width:140px"><option value="">All Forms</option></select>
+    <select class="form-control" id="flag-filter" onchange="filterPupils()" style="width:140px">
+      <option value="">All Pupils</option><option value="pp">Pupil Premium</option><option value="sen">SEN</option>
+    </select>
+  </div>
+  <div id="pupils-area"><div class="loading-state"><div class="spinner"></div><span>Loading pupils...</span></div></div>
+</div>
+<div id="add-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeAddPupil()"></div>
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header"><div class="modal-title">Add Pupil</div><button class="modal-close" onclick="closeAddPupil()">×</button></div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label class="form-label">First Name *</label><input class="form-control" id="new-first"></div>
+        <div class="form-group"><label class="form-label">Last Name *</label><input class="form-control" id="new-last"></div>
+        <div class="form-group"><label class="form-label">Date of Birth</label><input class="form-control" id="new-dob" type="date"></div>
+        <div class="form-group"><label class="form-label">Year Group *</label>
+          <select class="form-control" id="new-year">
+            <option value="7">Year 7</option><option value="8">Year 8</option><option value="9">Year 9</option>
+            <option value="10">Year 10</option><option value="11">Year 11</option>
+            <option value="12">Year 12</option><option value="13">Year 13</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Form Group</label><input class="form-control" id="new-form" placeholder="e.g. 9B"></div>
+        <div class="form-group"><label class="form-label">UPN</label><input class="form-control" id="new-upn"></div>
+      </div>
+      <div style="display:flex;gap:20px;margin-top:8px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="new-pp"> Pupil Premium</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="new-sen"> SEN</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAddPupil()">Cancel</button>
+      <button class="btn btn-primary" onclick="savePupil()">Add Pupil</button>
+    </div>
+  </div>
+</div>
+<script>
+let allPupils=[];
+const KS=yr=>['7','8','9'].includes(yr)?'KS3':['10','11'].includes(yr)?'KS4':['12','13'].includes(yr)?'KS5':'—';
+const YR_ORDER=['7','8','9','10','11','12','13'];
+document.addEventListener('wren:ready',init);
+async function init(){await loadPupils();}
+async function loadPupils(){
+  try{
+    const res=await fetch('/api/children',{headers:{Authorization:'Bearer '+sessionStorage.getItem('wren_token')}});
+    allPupils=await res.json();
+    document.getElementById('stat-total').textContent=allPupils.length;
+    document.getElementById('stat-ks3').textContent=allPupils.filter(p=>['7','8','9'].includes(String(p.year_group))).length;
+    document.getElementById('stat-ks4').textContent=allPupils.filter(p=>['10','11'].includes(String(p.year_group))).length;
+    document.getElementById('stat-ks5').textContent=allPupils.filter(p=>['12','13'].includes(String(p.year_group))).length;
+    document.getElementById('stat-sen').textContent=allPupils.filter(p=>p.sen_status&&p.sen_status!=='none').length;
+    document.getElementById('stat-pp').textContent=allPupils.filter(p=>p.pupil_premium).length;
+    document.getElementById('subtitle').textContent=allPupils.length+' pupils enrolled';
+    const forms=[...new Set(allPupils.map(p=>p.class_group||p.form_group).filter(Boolean))].sort();
+    document.getElementById('form-filter').innerHTML='<option value="">All Forms</option>'+forms.map(f=>`<option value="${f}">${f}</option>`).join('');
+    filterPupils();
+  }catch(e){document.getElementById('pupils-area').innerHTML='<div class="empty-state">Failed to load</div>';}
+}
+function filterPupils(){
+  const q=document.getElementById('search').value.toLowerCase();
+  const yr=document.getElementById('year-filter').value;
+  const form=document.getElementById('form-filter').value;
+  const flag=document.getElementById('flag-filter').value;
+  let filtered=allPupils.filter(p=>{
+    if(q&&!(p.first_name+' '+p.last_name).toLowerCase().includes(q))return false;
+    if(yr&&String(p.year_group)!==yr)return false;
+    if(form&&(p.class_group||p.form_group)!==form)return false;
+    if(flag==='pp'&&!p.pupil_premium)return false;
+    if(flag==='sen'&&(!p.sen_status||p.sen_status==='none'))return false;
+    return true;
+  });
+  const area=document.getElementById('pupils-area');
+  if(!filtered.length){area.innerHTML='<div class="empty-state">No pupils found</div>';return;}
+  const groups={};
+  filtered.forEach(p=>{const yr=String(p.year_group||'Unknown');if(!groups[yr])groups[yr]=[];groups[yr].push(p);});
+  let html='';
+  [...YR_ORDER,'Unknown'].forEach(yr=>{
+    if(!groups[yr])return;
+    const ks=KS(yr);
+    const label=isNaN(yr)?'Unassigned':'Year '+yr;
+    html+=`<div style="margin-bottom:24px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><h3 style="margin:0;font-size:16px;font-weight:600">${label}</h3><span class="badge badge-blue">${ks}</span><span style="color:var(--text-muted);font-size:13px">${groups[yr].length} pupils</span></div>
+    <div class="table-wrapper"><table class="data-table"><thead><tr><th>Name</th><th>Form</th><th>KS</th><th>PP</th><th>SEN</th><th>UPN</th></tr></thead><tbody>
+    ${groups[yr].map(p=>`<tr onclick="window.location='/profile.html?id=${p.id}'" style="cursor:pointer"><td><strong>${p.first_name} ${p.last_name}</strong></td><td>${p.class_group||p.form_group||'—'}</td><td>${ks}</td><td>${p.pupil_premium?'<span class="badge badge-green">PP</span>':'—'}</td><td>${p.sen_status&&p.sen_status!=='none'?'<span class="badge badge-purple">'+p.sen_status.toUpperCase()+'</span>':'—'}</td><td style="font-size:12px;color:var(--text-muted)">${p.upn||'—'}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+  });
+  area.innerHTML=html;
+}
+function openAddPupil(){document.getElementById('add-modal').style.display='flex';}
+function closeAddPupil(){document.getElementById('add-modal').style.display='none';}
+async function savePupil(){
+  const body={first_name:document.getElementById('new-first').value.trim(),last_name:document.getElementById('new-last').value.trim(),date_of_birth:document.getElementById('new-dob').value||null,year_group:document.getElementById('new-year').value,class_group:document.getElementById('new-form').value.trim()||null,upn:document.getElementById('new-upn').value.trim()||null,pupil_premium:document.getElementById('new-pp').checked,is_active:true};
+  if(!body.first_name||!body.last_name){alert('Names required');return;}
+  try{const res=await fetch('/api/children',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+sessionStorage.getItem('wren_token')},body:JSON.stringify(body)});if(!res.ok)throw new Error((await res.json()).error);closeAddPupil();loadPupils();}catch(e){alert('Error: '+e.message);}
+}
+function exportCSV(){
+  const headers=['First Name','Last Name','Year','Form','KS','PP','SEN','UPN'];
+  const rows=allPupils.map(p=>[p.first_name,p.last_name,p.year_group||'',p.class_group||'',KS(String(p.year_group||'')),p.pupil_premium?'Yes':'',p.sen_status||'',p.upn||'']);
+  const csv=[headers,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='pupils.csv';a.click();
+}
+</script>
+</body>
+</html>

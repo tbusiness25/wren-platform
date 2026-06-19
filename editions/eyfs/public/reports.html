@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>Reports — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+  <meta name="wren-hide-modules" content="HR,Staff,IT Settings,Reports,Action Plans,Supervisions,CPD">
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📊 Reports</div>
+    <button class="btn btn-primary" id="btn-generate-report">+ Generate Report</button>
+  </div>
+
+  <div id="reports-area"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<script>
+let reports = [];
+let children = [];
+
+async function loadData() {
+  try {
+    [reports, children] = await Promise.all([
+      Wren.api('/api/reports'),
+      Wren.api('/api/children')
+    ]);
+    renderReports(reports);
+  } catch(e) {
+    document.getElementById('reports-area').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderReports(list) {
+  const area = document.getElementById('reports-area');
+  if (!list.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">No reports yet</div>
+      <div class="empty-body">Generate your first AI-assisted report above</div>
+    </div>`;
+    return;
+  }
+  area.innerHTML = list.map(r => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700">${r.child_name || 'Unknown'}</div>
+          <div style="font-size:.78rem;color:#64748b">
+            ${r.report_type} · ${new Date(r.created_at).toLocaleDateString('en-GB')}
+            ${r.ai_generated ? '· <span style="color:var(--c-purple)">🤖 AI assisted</span>' : ''}
+            ${r.staff_name ? `· ${r.staff_name}` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          ${!r.shared_with_parents ? `<button class="btn btn-sm btn-ghost" data-action="share-report" data-id="${r.id}">Share with Parents</button>` : '<span class="badge badge-green">Shared</span>'}
+          <button class="btn btn-sm btn-ghost" data-action="view-report" data-id="${r.id}">View →</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function generateReport() {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Child <span style="color:var(--c-red)">*</span></label>
+      <select class="form-control" id="rep-child">
+        <option value="">Select child...</option>
+        ${children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Report Type</label>
+      <select class="form-control" id="rep-type">
+        <option value="termly_progress">Termly Progress Report</option>
+        <option value="2year_check">2-Year Progress Check</option>
+        <option value="settling_in">Settling-in Review</option>
+        <option value="transition">Transition Report</option>
+        <option value="annual">Annual Review</option>
+      </select>
+    </div>
+    <div class="alert alert-info" style="margin-top:12px">
+      🤖 The AI will use recent observations, attendance, and developmental data to generate a draft report.
+      You can edit it before sharing with parents.
+    </div>
+  `;
+
+  Wren.modal('Generate Report', form, [
+    { label: 'Generate with AI', class: 'btn-primary', close: false, action: async () => {
+      const child_id = document.getElementById('rep-child').value;
+      if (!child_id) { Wren.toast('Please select a child', 'warning'); return; }
+      const btn = document.querySelector('[data-idx="0"]');
+      btn.textContent = '⏳ Generating...';
+      btn.disabled = true;
+      try {
+        const result = await Wren.api('/api/reports/generate', { method: 'POST', body: {
+          child_id: parseInt(child_id),
+          report_type: document.getElementById('rep-type').value
+        }});
+        document.querySelector('.wren-modal-overlay')?.remove();
+        Wren.toast('Report generated ✓', 'success');
+        viewReportText(result);
+        loadData();
+      } catch(e) {
+        btn.textContent = 'Generate with AI';
+        btn.disabled = false;
+        Wren.toast('Generation failed — AI may be unavailable', 'error');
+      }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function viewReportText(report) {
+  const text = report.generated_text || (report.content && JSON.parse(report.content)?.text) || 'No content';
+  Wren.modal(`${report.report_type} — ${report.child_name}`, `
+    <div style="font-size:.9rem;line-height:1.7;white-space:pre-wrap">${text}</div>
+  `, [
+    { label: 'Share with Parents', class: 'btn-primary', action: async () => {
+      await shareReport(report.id);
+    }},
+    { label: 'Print', class: 'btn-ghost', action: () => window.print() },
+    { label: 'Close', class: 'btn-ghost' }
+  ]);
+}
+
+async function viewReport(id) {
+  const report = reports.find(r => r.id === id);
+  if (!report) return;
+  const content = typeof report.content === 'string' ? JSON.parse(report.content) : report.content;
+  const text = content?.text || 'No content';
+  Wren.modal(`${report.report_type}`, `
+    <div style="font-size:.9rem;line-height:1.7;white-space:pre-wrap">${text}</div>
+  `, [
+    { label: 'Close', class: 'btn-ghost' }
+  ]);
+}
+
+async function shareReport(id) {
+  try {
+    await Wren.api(`/api/reports/${id}/share`, { method: 'PUT' });
+    Wren.toast('Shared with parents ✓', 'success');
+    loadData();
+  } catch(e) { Wren.toast('Failed', 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('btn-generate-report').addEventListener('click', generateReport);
+  document.getElementById('reports-area').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const id = parseInt(btn.dataset.id);
+    if (btn.dataset.action === 'share-report') shareReport(id);
+    else if (btn.dataset.action === 'view-report') viewReport(id);
+  });
+  loadData();
+});
+</script>
+<script src="/js/wren-chat.js?v=2026060801"></script>
+</body>
+</html>

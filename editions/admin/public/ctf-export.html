@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>CTF 25 — Import &amp; Export — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .ctf-tabs {
+      display: flex; gap: 0; border-bottom: 2px solid #2d3748; margin-bottom: 24px;
+    }
+    .ctf-tab {
+      padding: 10px 24px; cursor: pointer; font-size: .9rem; font-weight: 600;
+      color: #94a3b8; border-bottom: 2px solid transparent; margin-bottom: -2px;
+      transition: all .15s;
+    }
+    .ctf-tab.active { color: #4a9abf; border-bottom-color: #4a9abf; }
+    .ctf-tab:hover:not(.active) { color: #f1f5f9; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed #2d3748; border-radius: 12px; padding: 48px 24px;
+      text-align: center; cursor: pointer; transition: all .2s; margin-top: 12px;
+    }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: #4a9abf; background: #0f2233; }
+    .upload-zone .up-icon { font-size: 3rem; margin-bottom: 12px; }
+    .upload-zone p { margin: 6px 0; color: #94a3b8; }
+    .upload-zone .up-cta { color: #4a9abf; text-decoration: underline; cursor: pointer; }
+    #fileInput { display: none; }
+
+    /* ── Step indicator ── */
+    .steps { display: flex; align-items: center; gap: 0; margin-bottom: 24px; }
+    .step { display: flex; flex-direction: column; align-items: center; min-width: 56px; }
+    .step-num {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; font-weight: 700;
+      background: #1e293b; border: 2px solid #2d3748; color: #64748b;
+      transition: all .2s;
+    }
+    .step.active .step-num  { background: #4a9abf; border-color: #4a9abf; color: #fff; }
+    .step.done  .step-num   { background: #22c55e; border-color: #22c55e; color: #fff; }
+    .step-lbl { font-size: .65rem; color: #64748b; margin-top: 4px; white-space: nowrap; }
+    .step.active .step-lbl  { color: #4a9abf; }
+    .step.done  .step-lbl   { color: #22c55e; }
+    .step-line { flex: 1; height: 2px; background: #2d3748; min-width: 16px; margin-bottom: 16px; transition: background .2s; }
+    .step-line.done { background: #22c55e; }
+
+    /* ── Results table ── */
+    .result-tbl { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 12px; }
+    .result-tbl th { background: #0f172a; color: #4a9abf; padding: 7px 10px;
+      text-align: left; border-bottom: 1px solid #2d3748; white-space: nowrap; }
+    .result-tbl td { padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #cbd5e1; }
+    .result-tbl tr:hover td { background: #1e293b; }
+    .badge-create { background:#052e16; color:#86efac; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:600; }
+    .badge-update { background:#1e3a5f; color:#93c5fd; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:600; }
+    .badge-svc    { background:#451a03; color:#fcd34d; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:600; }
+    .badge-sen    { background:#2d1464; color:#c4b5fd; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:600; }
+    .badge-lac    { background:#1c1917; color:#d6d3d1; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:600; }
+
+    /* ── Alert banner ── */
+    .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; font-size: .85rem; }
+    .alert-warn { background:#451a03; color:#fcd34d; border: 1px solid #78350f; }
+    .alert-info { background:#0f2233; color:#93c5fd; border: 1px solid #1e3a5f; }
+    .alert-ok   { background:#052e16; color:#86efac; border: 1px solid #166534; }
+    .alert-err  { background:#450a0a; color:#fca5a5; border: 1px solid #7f1d1d; }
+
+    /* ── Child selector (export tab) ── */
+    .child-filter { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .child-filter input, .child-filter select {
+      background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 7px 12px; font-size: .85rem; flex: 1; min-width: 160px;
+    }
+    .child-row {
+      display: flex; align-items: center; padding: 8px 12px; border-radius: 8px;
+      cursor: pointer; transition: background .1s; gap: 12px;
+    }
+    .child-row:hover { background: #1e293b; }
+    .child-row input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
+    .child-name { font-weight: 600; color: #f1f5f9; font-size: .9rem; flex: 1; }
+    .child-meta { font-size: .75rem; color: #94a3b8; }
+    .child-flags { display: flex; gap: 4px; flex-wrap: wrap; }
+
+    .sel-all-bar {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+      padding: 6px 12px; background: #1e293b; border-radius: 8px; font-size: .82rem;
+    }
+    .children-list { max-height: 420px; overflow-y: auto; border: 1px solid #2d3748; border-radius: 8px; }
+    .dest-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    @media(max-width:600px) { .dest-grid { grid-template-columns: 1fr; } }
+
+    /* ── Export history ── */
+    .history-tbl { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 12px; }
+    .history-tbl th { background: #0f172a; color: #4a9abf; padding: 7px 10px; text-align: left; border-bottom: 1px solid #2d3748; }
+    .history-tbl td { padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #cbd5e1; }
+    .history-tbl tr:hover td { background: #1e293b; }
+    .dl-btn { background: #1e3a5f; color: #93c5fd; border: none; padding: 4px 12px;
+      border-radius: 8px; cursor: pointer; font-size: .78rem; font-weight: 600; }
+    .dl-btn:hover { background: #2563eb; color: #fff; }
+  </style>
+</head>
+<body>
+<div id="wren-shell-target"></div>
+<main class="wren-main" id="ctf-main" style="display:none">
+  <div class="page-header">
+    <h1 class="page-title">CTF 25 — Import &amp; Export</h1>
+    <p class="page-subtitle">Common Transfer File · DfE statutory pupil data format</p>
+  </div>
+
+  <div class="alert alert-info" style="margin-bottom:16px">
+    <strong>What is CTF?</strong> The Common Transfer File is the DfE-mandated XML format used by every state school MIS
+    (SIMS, Arbor, Bromcom, ScholarPack, Integris, etc.) to transfer pupil data when children move schools.
+    Exporting CTF is a statutory requirement under the <em>Education (Pupil Information) (England) Regulations 2005</em>.
+  </div>
+
+  <div class="ctf-tabs">
+    <div class="ctf-tab active" data-tab="import">Import from CTF</div>
+    <div class="ctf-tab" data-tab="export">Export to CTF</div>
+    <div class="ctf-tab" data-tab="history">Export History</div>
+  </div>
+
+  <!-- ══════════════════════ IMPORT TAB ══════════════════════ -->
+  <div class="tab-panel active" id="tab-import">
+    <div class="steps" id="import-steps">
+      <div class="step active" data-step="1"><div class="step-num">1</div><div class="step-lbl">Upload</div></div>
+      <div class="step-line" id="line-1-2"></div>
+      <div class="step" data-step="2"><div class="step-num">2</div><div class="step-lbl">Validate</div></div>
+      <div class="step-line" id="line-2-3"></div>
+      <div class="step" data-step="3"><div class="step-num">3</div><div class="step-lbl">Preview</div></div>
+      <div class="step-line" id="line-3-4"></div>
+      <div class="step" data-step="4"><div class="step-num">4</div><div class="step-lbl">Import</div></div>
+    </div>
+
+    <!-- Step 1: Upload -->
+    <div id="import-step-1">
+      <h3 style="margin-bottom:8px">Upload CTF 25 file</h3>
+      <p style="color:#94a3b8;font-size:.85rem;margin-bottom:4px">
+        Accepts <code>.xml</code> or <code>.zip</code> (Wren will extract the XML automatically).
+        Generated by SIMS, Arbor, Bromcom, ScholarPack, Integris, Compass, IRIS Ed:gen, Juniper, or any CTF 25 compliant MIS.
+      </p>
+      <div class="upload-zone" id="uploadZone">
+        <div class="up-icon">📂</div>
+        <p><strong>Drop CTF file here</strong></p>
+        <p>or <span class="up-cta" id="up-cta-btn">browse to file</span></p>
+        <p style="font-size:.75rem;margin-top:8px;color:#64748b">.xml or .zip · max 50 MB</p>
+      </div>
+      <input type="file" id="fileInput" accept=".xml,.zip">
+      <div id="uploadStatus" class="alert" style="display:none;margin-top:12px"></div>
+    </div>
+
+    <!-- Step 2: Validation results -->
+    <div id="import-step-2" style="display:none">
+      <h3 style="margin-bottom:8px">Validation</h3>
+      <div id="validationResult"></div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn-secondary" id="btn-start-over-2">Start over</button>
+        <button class="btn-primary" id="btnPreview" disabled>Preview import</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Dry-run preview -->
+    <div id="import-step-3" style="display:none">
+      <h3 style="margin-bottom:8px">Preview — what will be imported</h3>
+      <div id="dryRunSummary" class="alert alert-info" style="margin-bottom:12px"></div>
+      <div id="serviceChildAlert" class="alert alert-warn" style="display:none;margin-bottom:12px"></div>
+      <div style="overflow-x:auto">
+        <table class="result-tbl" id="dryRunTable">
+          <thead>
+            <tr>
+              <th>Action</th><th>Name</th><th>DOB</th><th>UPN</th>
+              <th>SEN</th><th>SEN history</th><th>FSM history</th>
+              <th>Assessments</th><th>Schools</th><th>Flags</th>
+            </tr>
+          </thead>
+          <tbody id="dryRunBody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn-secondary" id="btn-start-over-3">Start over</button>
+        <button class="btn-primary" id="btnCommit">Import all pupils</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div id="import-step-4" style="display:none">
+      <div id="commitResult"></div>
+      <button class="btn-secondary" id="btn-start-over-4" style="margin-top:16px">Import another file</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ EXPORT TAB ══════════════════════ -->
+  <div class="tab-panel" id="tab-export">
+    <h3 style="margin-bottom:16px">Generate CTF 25 for pupil transfer</h3>
+
+    <div class="dest-grid">
+      <div class="form-group">
+        <label class="form-label">Destination school name</label>
+        <input type="text" id="destName" class="form-input" placeholder="Receiving school name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Destination LA number (LEA)</label>
+        <input type="text" id="destLEA" class="form-input" placeholder="e.g. 307" maxlength="3">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Destination establishment number</label>
+        <input type="text" id="destEstab" class="form-input" placeholder="e.g. 2000" maxlength="4">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Document qualifier</label>
+        <select id="exportQualifier" class="form-input">
+          <option value="partial">Partial (end-of-year / transfer)</option>
+          <option value="full">Full (complete record)</option>
+        </select>
+      </div>
+    </div>
+
+    <h4 style="margin-bottom:8px;color:#94a3b8;font-size:.85rem">Select pupils to export</h4>
+    <div class="child-filter">
+      <input type="text" id="childSearch" placeholder="Search by name...">
+      <select id="childFilter">
+        <option value="">All pupils</option>
+        <option value="service">Service Children only</option>
+        <option value="lac">Looked After Children only</option>
+        <option value="sen">SEN only</option>
+      </select>
+    </div>
+    <div class="sel-all-bar">
+      <input type="checkbox" id="selectAll">
+      <label for="selectAll" style="cursor:pointer;color:#f1f5f9">Select all visible</label>
+      <span id="selCount" style="color:#94a3b8;margin-left:auto">0 selected</span>
+    </div>
+    <div class="children-list" id="childrenList">
+      <div style="padding:24px;text-align:center;color:#64748b">Loading pupils…</div>
+    </div>
+
+    <div id="exportAlert" class="alert" style="display:none;margin-top:12px"></div>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn-primary" id="btn-generate-export">Generate CTF file</button>
+      <button class="btn-secondary" id="btn-view-history">View export history</button>
+    </div>
+    <div id="exportResult" style="margin-top:12px"></div>
+  </div>
+
+  <!-- ══════════════════════ HISTORY TAB ══════════════════════ -->
+  <div class="tab-panel" id="tab-history">
+    <h3 style="margin-bottom:8px">Export history</h3>
+    <p style="color:#94a3b8;font-size:.85rem;margin-bottom:16px">
+      All CTF exports are permanently audited. Re-download any previous export below.
+    </p>
+    <div id="historyContent">
+      <div style="padding:24px;text-align:center;color:#64748b">Click the History tab to load…</div>
+    </div>
+  </div>
+</main>
+
+<script>
+let jobId = null;
+let allChildren = [];
+let currentStep = 1;
+
+function init() {
+  document.getElementById('ctf-main').style.display = '';
+  setupUploadZone();
+  loadChildren();
+  setupTabs();
+}
+
+function setupTabs() {
+  document.querySelectorAll('.ctf-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ctf-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'history') loadExportHistory();
+    });
+  });
+}
+
+// ── Import logic ──────────────────────────────────────────────────────────────
+
+function setupUploadZone() {
+  const zone = document.getElementById('uploadZone');
+  const fi   = document.getElementById('fileInput');
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  fi.addEventListener('change', () => { if (fi.files[0]) handleFile(fi.files[0]); });
+  zone.addEventListener('click', () => fi.click());
+}
+
+async function handleFile(file) {
+  showUploadStatus('Uploading…', 'info');
+  try {
+    // Create job
+    const jr = await api('POST', '/api/ctf/import/jobs', {});
+    jobId = jr.id;
+
+    // Upload
+    const fd = new FormData();
+    fd.append('file', file);
+    const ur = await fetch(`/api/ctf/import/jobs/${jobId}/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + getToken() },
+      body: fd,
+    });
+    if (!ur.ok) { const e = await ur.json(); throw new Error(e.error || 'Upload failed'); }
+
+    showUploadStatus(`Uploaded: ${file.name} (${fmtBytes(file.size)})`, 'ok');
+    await runValidation();
+  } catch (e) {
+    showUploadStatus('Upload failed: ' + e.message, 'err');
+  }
+}
+
+async function runValidation() {
+  goToStep(2);
+  const div = document.getElementById('validationResult');
+  div.innerHTML = '<div style="color:#94a3b8">Validating XML structure…</div>';
+  try {
+    const r = await api('POST', `/api/ctf/import/jobs/${jobId}/validate`, {});
+    if (r.valid) {
+      div.innerHTML = `<div class="alert alert-ok">
+        Valid CTF 25 file · <strong>${r.pupil_count}</strong> pupil${r.pupil_count !== 1 ? 's' : ''} found
+      </div>`;
+      document.getElementById('btnPreview').disabled = false;
+    } else {
+      let html = `<div class="alert alert-err">
+        <strong>Validation failed</strong> — ${r.errors.length} error${r.errors.length !== 1 ? 's' : ''}:<br><br>`;
+      html += r.errors.slice(0, 20).map(e =>
+        `<code style="font-size:.8rem">${esc(e.path)}</code>: ${esc(e.message)}${e.line ? ` (line ${e.line})` : ''}`
+      ).join('<br>');
+      if (r.errors.length > 20) html += `<br>… and ${r.errors.length - 20} more errors`;
+      html += '</div>';
+      div.innerHTML = html;
+    }
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-err">Validation error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function runDryRun() {
+  goToStep(3);
+  const tbody = document.getElementById('dryRunBody');
+  tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:#94a3b8">Loading preview…</td></tr>';
+  try {
+    const r = await api('POST', `/api/ctf/import/jobs/${jobId}/dry-run`, {});
+    const svcKids = r.pupils.filter(p => p.service_child);
+    if (svcKids.length) {
+      const alert = document.getElementById('serviceChildAlert');
+      alert.style.display = '';
+      alert.innerHTML = `<strong>⚠ Service Children alert:</strong> ${svcKids.length} pupil${svcKids.length !== 1 ? 's' : ''} flagged as Service Children
+        (${svcKids.map(p => esc(p.name)).join(', ')}).
+        These children should be assigned a named person in school — the Service Pupil Premium may apply.`;
+    }
+
+    const creates = r.pupils.filter(p => p.action === 'create').length;
+    const updates = r.pupils.filter(p => p.action === 'update').length;
+    document.getElementById('dryRunSummary').innerHTML =
+      `<strong>${r.total}</strong> pupils: <strong style="color:#86efac">${creates} new</strong> · <strong style="color:#93c5fd">${updates} updates</strong>`;
+
+    tbody.innerHTML = r.pupils.map(p => `
+      <tr>
+        <td><span class="badge-${p.action}">${p.action}</span></td>
+        <td>${esc(p.name)}</td>
+        <td style="font-size:.78rem">${p.dob || '—'}</td>
+        <td style="font-size:.75rem;color:#64748b">${p.upn_is_temp ? '<em>TEMP</em>' : esc(p.upn || '—')}</td>
+        <td>${p.sen_status && p.sen_status !== 'N' ? `<span class="badge-sen">${esc(p.sen_status)}</span>` : '—'}</td>
+        <td style="text-align:center">${p.sen_history_count || 0}</td>
+        <td style="text-align:center">${p.fsm_history_count || 0}</td>
+        <td style="text-align:center">${p.assessment_results_count || 0}</td>
+        <td style="text-align:center">${p.school_history_count || 0}</td>
+        <td>
+          ${p.service_child ? '<span class="badge-svc">SVC</span> ' : ''}
+        </td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="10" class="alert alert-err">Preview failed: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function commitImport() {
+  if (!confirm('Import all pupils into Wren? This action updates the database.')) return;
+  document.getElementById('btnCommit').disabled = true;
+  document.getElementById('btnCommit').textContent = 'Importing…';
+  goToStep(4);
+  const div = document.getElementById('commitResult');
+  try {
+    const r = await api('POST', `/api/ctf/import/jobs/${jobId}/commit`, {});
+    let html = `<div class="alert alert-ok">
+      <strong>Import complete</strong><br><br>
+      Created: <strong>${r.created}</strong> new pupils<br>
+      Updated: <strong>${r.updated}</strong> existing pupils<br>
+      Skipped: <strong>${r.skipped}</strong> (errors)<br>
+      Total:   <strong>${r.total}</strong>
+    </div>`;
+    if (r.errors && r.errors.length) {
+      html += `<div class="alert alert-warn" style="margin-top:8px">
+        <strong>${r.errors.length} pupil${r.errors.length !== 1 ? 's' : ''} had errors:</strong><br>
+        ${r.errors.slice(0, 10).map(e => `<strong>${esc(e.name || e.upn)}</strong>: ${esc(e.error)}`).join('<br>')}
+        ${r.errors.length > 10 ? `<br>… and ${r.errors.length - 10} more` : ''}
+      </div>`;
+    }
+    div.innerHTML = html;
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-err">Import failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function resetImport() {
+  jobId = null;
+  goToStep(1);
+  document.getElementById('uploadStatus').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('serviceChildAlert').style.display = 'none';
+}
+
+function goToStep(n) {
+  currentStep = n;
+  [1,2,3,4].forEach(i => {
+    document.getElementById(`import-step-${i}`).style.display = i === n ? '' : 'none';
+    const stepEl = document.querySelector(`[data-step="${i}"]`);
+    if (stepEl) {
+      stepEl.classList.toggle('active', i === n);
+      stepEl.classList.toggle('done', i < n);
+    }
+    const lineEl = document.getElementById(`line-${i}-${i+1}`);
+    if (lineEl) lineEl.classList.toggle('done', i < n);
+  });
+}
+
+function showUploadStatus(msg, type) {
+  const el = document.getElementById('uploadStatus');
+  el.style.display = '';
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+}
+
+// ── Export logic ──────────────────────────────────────────────────────────────
+
+async function loadChildren() {
+  try {
+    allChildren = await api('GET', '/api/ctf/children');
+    renderChildrenList(allChildren);
+  } catch(e) {
+    document.getElementById('childrenList').innerHTML =
+      `<div class="alert alert-err" style="margin:12px">${esc(e.message)}</div>`;
+  }
+}
+
+function renderChildrenList(children) {
+  const list = document.getElementById('childrenList');
+  if (!children.length) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:#64748b">No active pupils found</div>';
+    return;
+  }
+  list.innerHTML = children.map(c => {
+    const flags = [];
+    if (c.service_child) flags.push('<span class="badge-svc">SVC</span>');
+    if (c.looked_after)  flags.push('<span class="badge-lac">LAC</span>');
+    if (c.sen_status && c.sen_status !== 'N') flags.push(`<span class="badge-sen">SEN ${esc(c.sen_status)}</span>`);
+    const upnBit = c.upn ? `UPN: ${esc(c.upn)}` : '<em style="color:#ef4444">No UPN</em>';
+    return `
+      <label class="child-row" for="child-${c.id}">
+        <input type="checkbox" id="child-${c.id}" value="${c.id}">
+        <div style="flex:1">
+          <div class="child-name">${esc(c.last_name)}, ${esc(c.first_name)}</div>
+          <div class="child-meta">${c.date_of_birth ? fmtDate(c.date_of_birth) : ''} · ${esc(c.nc_year || c.year_group || '—')} · ${upnBit}</div>
+        </div>
+        <div class="child-flags">${flags.join(' ')}</div>
+      </label>`;
+  }).join('');
+  updateSelCount();
+}
+
+function filterChildren() {
+  const q = document.getElementById('childSearch').value.toLowerCase();
+  const f = document.getElementById('childFilter').value;
+  const filtered = allChildren.filter(c => {
+    const nameMatch = !q || `${c.first_name} ${c.last_name}`.toLowerCase().includes(q);
+    let flagMatch = true;
+    if (f === 'service') flagMatch = !!c.service_child;
+    else if (f === 'lac') flagMatch = !!c.looked_after;
+    else if (f === 'sen') flagMatch = c.sen_status && c.sen_status !== 'N';
+    return nameMatch && flagMatch;
+  });
+  renderChildrenList(filtered);
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('#childrenList input[type=checkbox]').forEach(cb => cb.checked = checked);
+  updateSelCount();
+}
+
+function updateSelCount() {
+  const n = document.querySelectorAll('#childrenList input[type=checkbox]:checked').length;
+  document.getElementById('selCount').textContent = `${n} selected`;
+}
+
+function getSelectedIds() {
+  return Array.from(document.querySelectorAll('#childrenList input[type=checkbox]:checked'))
+    .map(cb => parseInt(cb.value));
+}
+
+async function generateExport() {
+  const ids = getSelectedIds();
+  if (!ids.length) {
+    showExportAlert('Select at least one pupil to export', 'err');
+    return;
+  }
+  const destName  = document.getElementById('destName').value.trim();
+  const destLEA   = document.getElementById('destLEA').value.trim();
+  const destEstab = document.getElementById('destEstab').value.trim();
+  const qualifier = document.getElementById('exportQualifier').value;
+
+  showExportAlert(`Generating CTF for ${ids.length} pupil${ids.length !== 1 ? 's' : ''}…`, 'info');
+  try {
+    const r = await api('POST', '/api/ctf/export/generate', {
+      child_ids: ids, dest_lea: destLEA || null, dest_estab: destEstab || null,
+      dest_school_name: destName || null, qualifier,
+    });
+    showExportAlert(
+      `CTF generated: <strong>${esc(r.filename)}</strong> · ${r.child_count} pupil${r.child_count !== 1 ? 's' : ''} · ${fmtBytes(r.xml_size)}
+       <br><a href="/api/ctf/export/${r.export_id}/download" class="dl-btn" style="margin-top:8px;display:inline-block"
+          download="${esc(r.filename)}">Download CTF XML</a>`, 'ok');
+    loadExportHistory();
+  } catch(e) {
+    showExportAlert('Export failed: ' + e.message, 'err');
+  }
+}
+
+function showExportAlert(msg, type) {
+  const el = document.getElementById('exportAlert');
+  el.style.display = '';
+  el.className = `alert alert-${type}`;
+  el.innerHTML = msg;
+}
+
+async function loadExportHistory() {
+  const div = document.getElementById('historyContent');
+  div.innerHTML = '<div style="padding:16px;color:#94a3b8">Loading…</div>';
+  try {
+    const rows = await api('GET', '/api/ctf/export/history');
+    if (!rows.length) {
+      div.innerHTML = '<div style="padding:16px;color:#64748b">No exports yet.</div>';
+      return;
+    }
+    div.innerHTML = `
+      <table class="history-tbl">
+        <thead>
+          <tr>
+            <th>Date</th><th>Pupils</th><th>Destination</th><th>Qualifier</th><th>Filename</th><th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${fmtDateTime(r.exported_at)}</td>
+              <td>${r.child_count}</td>
+              <td>${esc(r.dest_school_name || '—')}</td>
+              <td>${esc(r.qualifier || 'partial')}</td>
+              <td style="font-size:.75rem;color:#64748b">${esc(r.filename || '—')}</td>
+              <td><a href="/api/ctf/export/${r.id}/download" class="dl-btn"
+                     download="${esc(r.filename || 'ctf.xml')}">Download</a></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    div.innerHTML = `<div class="alert alert-err">${esc(e.message)}</div>`;
+  }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtBytes(b) {
+  if (!b) return '0 B';
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/(1024*1024)).toFixed(2) + ' MB';
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-GB');
+}
+
+function fmtDateTime(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleString('en-GB', { dateStyle:'short', timeStyle:'short' });
+}
+
+function getToken() {
+  return sessionStorage.getItem('wrenToken') || localStorage.getItem('wrenToken') || '';
+}
+
+// ── Event listeners ───────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', init);
+
+document.getElementById('up-cta-btn').addEventListener('click', () => document.getElementById('fileInput').click());
+document.getElementById('btn-start-over-2').addEventListener('click', resetImport);
+document.getElementById('btnPreview').addEventListener('click', runDryRun);
+document.getElementById('btn-start-over-3').addEventListener('click', resetImport);
+document.getElementById('btnCommit').addEventListener('click', commitImport);
+document.getElementById('btn-start-over-4').addEventListener('click', resetImport);
+document.getElementById('childSearch').addEventListener('input', filterChildren);
+document.getElementById('childFilter').addEventListener('change', filterChildren);
+document.getElementById('selectAll').addEventListener('change', e => toggleSelectAll(e.target.checked));
+document.getElementById('btn-generate-export').addEventListener('click', generateExport);
+document.getElementById('btn-view-history').addEventListener('click', loadExportHistory);
+document.getElementById('childrenList').addEventListener('change', e => {
+  if (e.target.type === 'checkbox') updateSelCount();
+});
+
+async function api(method, url, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
+  };
+  if (body !== undefined && method !== 'GET') opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+</script>
+</body>
+</html>

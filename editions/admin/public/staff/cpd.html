@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>CPD Matrix — Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .tab-bar { display:flex; gap:4px; margin-bottom:20px; }
+    .tab-bar button { padding:8px 18px; border:none; border-radius:8px; cursor:pointer; font-size:.875rem; font-weight:600; background:#1e293b; color:#94a3b8; transition:.15s; }
+    .tab-bar button.active { background:#4a9abf; color:#fff; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .rag-g { background:#166534; color:#86efac; }
+    .rag-a { background:#78350f; color:#fde68a; }
+    .rag-r { background:#7f1d1d; color:#fca5a5; }
+    .badge-status { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.75rem; font-weight:700; }
+    .published { background:#166534; color:#86efac; }
+    .review { background:#78350f; color:#fde68a; }
+    .draft { background:#1e293b; color:#64748b; border:1px solid #334155; }
+    .course-row { padding:14px 16px; border-radius:8px; background:#1e293b; border:1px solid #2d3748; margin-bottom:8px; }
+    .course-row:hover { border-color:#4a9abf; }
+    .btn-sm { padding:4px 12px; border-radius:6px; font-size:.8rem; font-weight:600; border:none; cursor:pointer; transition:.15s; }
+    .btn-publish { background:#4a9abf; color:#fff; }
+    .btn-unpublish { background:#334155; color:#94a3b8; }
+    .btn-publish:hover { background:#3b82f6; }
+    .btn-unpublish:hover { background:#475569; color:#f1f5f9; }
+    .attempt-row { padding:10px 14px; background:#0f172a; border-radius:6px; margin-bottom:6px; font-size:.875rem; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 class="page-title">CPD Matrix</h1>
+      <p style="color:#94a3b8;margin:0">Staff training compliance &amp; course library</p>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="active" data-tab="matrix">Staff Matrix</button>
+    <button data-tab="courses">Course Library</button>
+    <button data-tab="attempts">Recent Attempts</button>
+  </div>
+
+  <!-- Tab 1: Staff Matrix -->
+  <div class="tab-panel active" id="tab-matrix">
+    <div id="matrix-content"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab 2: Course Library (manager admin) -->
+  <div class="tab-panel" id="tab-courses">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div style="color:#94a3b8;font-size:.875rem">15 statutory courses — click Publish to make visible to staff</div>
+      <div style="display:flex;gap:8px;font-size:.8rem">
+        <span class="badge-status published">published</span>
+        <span class="badge-status review">awaiting review</span>
+        <span class="badge-status draft">draft</span>
+      </div>
+    </div>
+    <div id="courses-content"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab 3: Recent attempts -->
+  <div class="tab-panel" id="tab-attempts">
+    <div id="attempts-content"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', init);
+
+function init() {
+  // Delegated click for publish toggle buttons (rendered inside courses-content)
+  document.getElementById('courses-content').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="toggle-publish"]');
+    if (!btn) return;
+    togglePublish(parseInt(btn.dataset.id), btn);
+  });
+
+  // Tab switching
+  document.querySelectorAll('.tab-bar button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      loadTab(btn.dataset.tab);
+    });
+  });
+  loadTab('matrix');
+}
+
+const loaded = {};
+
+async function loadTab(tab) {
+  if (loaded[tab]) return;
+  loaded[tab] = true;
+  if (tab === 'matrix') await loadMatrix();
+  if (tab === 'courses') await loadCourses();
+  if (tab === 'attempts') await loadAttempts();
+}
+
+async function loadMatrix() {
+  const el = document.getElementById('matrix-content');
+  try {
+    const [staffRes, summaryRes, certsRes] = await Promise.all([
+      Wren.api('/api/staff'),
+      Wren.api('/api/cpd/summary'),
+      Wren.api('/api/courses/certificates'),
+    ]);
+    const staff = (staffRes || []).filter(s => s.is_active !== false);
+    const summary = summaryRes || [];
+    const certs = certsRes || [];
+
+    const sumMap = {};
+    summary.forEach(r => sumMap[r.id] = r);
+
+    // Build cert map: staff_id → [course_names]
+    const certMap = {};
+    certs.forEach(c => {
+      if (!certMap[c.staff_id]) certMap[c.staff_id] = [];
+      certMap[c.staff_id].push(c.course_name);
+    });
+
+    const thisYear = new Date().getFullYear();
+
+    el.innerHTML = `<div style="overflow-x:auto">
+      <table class="data-table" style="width:100%;min-width:700px">
+        <thead><tr>
+          <th>Name</th><th>Role</th>
+          <th>CPD Hours (${thisYear})</th>
+          <th>Courses (${thisYear})</th>
+          <th>Online Certs</th>
+          <th>Expiring &lt;60d</th>
+          <th>DBS Expiry</th>
+          <th>FA Expiry</th>
+        </tr></thead>
+        <tbody>
+          ${staff.map(s => {
+            const sm = sumMap[s.id] || {};
+            const totalH = parseFloat(sm.total_hours || 0);
+            const expiring = parseInt(sm.expiring_soon || 0);
+            const mycerts = (certMap[s.id] || []).length;
+            const ragH = totalH >= 24 ? 'rag-g' : totalH >= 12 ? 'rag-a' : 'rag-r';
+            const ragExp = expiring === 0 ? 'rag-g' : expiring <= 2 ? 'rag-a' : 'rag-r';
+            function expBadge(d) {
+              if (!d) return '<span style="color:#475569">—</span>';
+              const exp = new Date(d) < new Date();
+              return `<span style="color:${exp?'#ef4444':'#22c55e'}">${fmtDate(d)}${exp?' ⚠':''}</span>`;
+            }
+            return `<tr>
+              <td style="font-weight:600;color:#f1f5f9">${esc(s.name||[s.first_name,s.last_name].join(' '))}</td>
+              <td style="color:#94a3b8;font-size:.8rem;text-transform:capitalize">${(s.role||'').replace(/_/g,' ')}</td>
+              <td><span class="badge-status ${ragH}">${totalH.toFixed(1)}h</span></td>
+              <td>${sm.total_courses||0}</td>
+              <td style="color:#4a9abf;font-weight:600">${mycerts}</td>
+              <td><span class="badge-status ${ragExp}">${expiring}</span></td>
+              <td>${expBadge(s.dbs_expiry)}</td>
+              <td>${expBadge(s.first_aid_expiry)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p style="color:#475569;font-size:.75rem;margin-top:12px">Green ≥24h / Amber ≥12h / Red &lt;12h CPD this year. Online Certs = Wren platform certificates earned.</p>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load matrix: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadCourses() {
+  const el = document.getElementById('courses-content');
+  try {
+    const courses = await Wren.api('/api/courses');
+    if (!courses || !courses.length) {
+      el.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:32px">No courses found.</div>';
+      return;
+    }
+    el.innerHTML = courses.map(c => `
+      <div class="course-row" id="cr-${c.id}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div style="flex:1;min-width:200px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="font-weight:700;color:#f1f5f9">${esc(c.name)}</span>
+              <span class="badge-status ${c.status}">${c.status}</span>
+              ${c.is_mandatory ? '<span style="background:#312e81;color:#a5b4fc;font-size:.7rem;padding:2px 8px;border-radius:10px;font-weight:700">MANDATORY</span>' : ''}
+            </div>
+            <div style="color:#64748b;font-size:.8rem">
+              ${c.category ? esc(c.category) + ' · ' : ''}
+              ${c.duration_minutes || 25} min · ${c.cpd_hours || 0}h CPD · ${c.section_count||0} sections · ${c.question_count||0} questions
+              · <span style="color:#4a9abf">${c.pass_count||0}/${c.attempt_count||0} passed</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn-sm ${c.status === 'published' ? 'btn-unpublish' : 'btn-publish'}"
+              data-action="toggle-publish" data-id="${c.id}">
+              ${c.status === 'published' ? 'Unpublish' : 'Publish'}
+            </button>
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load courses: ${esc(e.message)}</div>`;
+  }
+}
+
+async function togglePublish(id, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const result = await Wren.api(`/api/courses/${id}/publish`, { method: 'PUT' });
+    // Refresh just this row
+    const row = document.getElementById('cr-' + id);
+    const isNowPublished = result.status === 'published';
+    row.querySelector('.badge-status.published, .badge-status.review, .badge-status.draft').className =
+      'badge-status ' + result.status;
+    row.querySelector('.badge-status.published, .badge-status.review, .badge-status.draft').textContent =
+      result.status;
+    btn.textContent = isNowPublished ? 'Unpublish' : 'Publish';
+    btn.className = 'btn-sm ' + (isNowPublished ? 'btn-unpublish' : 'btn-publish');
+  } catch(e) {
+    btn.textContent = 'Error';
+  }
+  btn.disabled = false;
+}
+
+async function loadAttempts() {
+  const el = document.getElementById('attempts-content');
+  try {
+    const attempts = await Wren.api('/api/courses/attempts');
+    if (!attempts || !attempts.length) {
+      el.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:32px">No course attempts yet — staff haven\'t started any courses.</div>';
+      return;
+    }
+    el.innerHTML = `<table class="data-table" style="width:100%">
+      <thead><tr><th>Staff</th><th>Course</th><th>Score</th><th>Result</th><th>Date</th></tr></thead>
+      <tbody>
+        ${attempts.map(a => `<tr>
+          <td style="font-weight:600;color:#f1f5f9">${esc(a.staff_name)}</td>
+          <td>${esc(a.course_name)}</td>
+          <td style="font-weight:700;color:${a.score_pct>=80?'#22c55e':'#ef4444'}">${a.score_pct != null ? a.score_pct + '%' : '—'}</td>
+          <td><span class="badge-status ${a.passed?'published':'rag-r'}">${a.passed?'Passed':'Failed'}</span></td>
+          <td style="color:#64748b;font-size:.8rem">${a.completed_at ? fmtDate(a.completed_at) : 'In progress'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load attempts: ${esc(e.message)}</div>`;
+  }
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'2-digit' });
+}
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

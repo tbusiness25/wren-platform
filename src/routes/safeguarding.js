@@ -15,11 +15,11 @@ router.use((req, res, next) => {
 
 // ── Role helpers ──────────────────────────────────────────────────────────────
 function isDSL(req) {
-  return ['manager','deputy_manager','admin'].includes(req.user?.role);
+  return ['manager','deputy_manager','admin','headteacher'].includes(req.user?.role);
 }
 
 function requireSafeguardingViewer(req, res, next) {
-  if (!['manager','room_leader'].includes(req.user?.role)) {
+  if (!['manager','room_leader','headteacher'].includes(req.user?.role)) {
     return res.status(403).json({ error: 'Safeguarding records are restricted to DSL and room leaders' });
   }
   next();

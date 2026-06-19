@@ -176,8 +176,8 @@ let classes = [], subjects = [], currentHW = null;
 
 async function init() {
   [classes, subjects] = await Promise.all([
-    fetch('/api/classes').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/subjects').then(r=>r.json()).catch(()=>[]),
+    Wren.api('/api/classes').catch(()=>[]),
+    Wren.api('/api/subjects').catch(()=>[]),
   ]);
   const cs = document.getElementById('filter-class');
   const ns = document.getElementById('new-class');
@@ -203,7 +203,7 @@ async function loadHomework() {
   const su = document.getElementById('filter-subject').value;
   if (su) params.set('subject_id', su);
   document.getElementById('hw-list').innerHTML = '<div class="empty-state">Loading…</div>';
-  const data = await fetch('/api/homework?' + params).then(r=>r.json()).catch(()=>[]);
+  const data = await Wren.api('/api/homework?' + params).catch(()=>[]);
   renderList(data);
 }
 
@@ -318,21 +318,22 @@ async function saveHW(publish) {
     external_resource_url: document.getElementById('new-url').value.trim() || null,
     is_published: publish,
   };
-  const r = await fetch('/api/homework', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  if (!r.ok) { wrenToast('Failed to save homework.', 'error'); return; }
+  try {
+    await Wren.api('/api/homework', { method:'POST', body });
+  } catch(e) { wrenToast('Failed to save homework.', 'error'); return; }
   closeNew();
   wrenToast(publish ? 'Homework published' : 'Saved as draft', 'success');
   loadHomework();
 }
 
 async function togglePublish(id, current) {
-  await fetch(`/api/homework/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ is_published: !current }) });
+  await Wren.api(`/api/homework/${id}`, { method:'PATCH', body: { is_published: !current } });
   loadHomework();
 }
 
 async function deleteHW(id) {
   if (!confirm('Delete this homework? Submissions will also be deleted.')) return;
-  await fetch(`/api/homework/${id}`, { method:'DELETE' });
+  await Wren.api(`/api/homework/${id}`, { method:'DELETE' });
   wrenToast('Deleted', 'info');
   loadHomework();
 }
@@ -342,11 +343,11 @@ async function viewSubmissions(id, title) {
   document.getElementById('submissions-list').innerHTML = '<div class="empty-state">Loading…</div>';
   document.getElementById('modal-mark').style.display = 'flex';
   currentHW = id;
-  const data = await fetch(`/api/homework/${id}`).then(r=>r.json()).catch(()=>null);
+  const data = await Wren.api(`/api/homework/${id}`).catch(()=>null);
   if (!data) return;
   const subs = data.submissions || [];
   // Get pupil list for this class
-  const pupils = await fetch(`/api/classes/${data.class_id}`).then(r=>r.json()).then(c=>c.pupils||[]).catch(()=>[]);
+  const pupils = await Wren.api(`/api/classes/${data.class_id}`).then(c=>c.pupils||[]).catch(()=>[]);
   const subMap = {};
   subs.forEach(s => { subMap[s.pupil_id] = s; });
   document.getElementById('submissions-list').innerHTML = pupils.length ? pupils.map(p => {
@@ -365,9 +366,9 @@ async function viewSubmissions(id, title) {
 async function markSub(subId, pupilId) {
   const grade = document.getElementById(`grade-${pupilId}`)?.value;
   const fb = document.getElementById(`fb-${pupilId}`)?.value;
-  await fetch(`/api/homework/${currentHW}/submissions/${subId}/mark`, {
-    method:'PATCH', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ grade, teacher_feedback: fb, marked_by: 1 })
+  await Wren.api(`/api/homework/${currentHW}/submissions/${subId}/mark`, {
+    method:'PATCH',
+    body: { grade, teacher_feedback: fb, marked_by: 1 }
   });
 }
 
@@ -385,12 +386,10 @@ async function aiAssistDesc() {
     const prompt = `Write concise, clear homework instructions for a primary school ${type} task titled "${title}"` +
       (cls ? ` for ${cls.name}` : '') +
       '. 2-3 sentences. Friendly, encouraging tone. Include what pupils should do and any helpful tips.';
-    const r = await fetch('/api/ai', {
+    const d = await Wren.api('/api/ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: prompt, persona: 'primary_teacher', stream: false })
+      body: { message: prompt, persona: 'primary_teacher', stream: false }
     });
-    const d = await r.json();
     const text = d.reply || d.text || d.message || '';
     if (text) {
       document.getElementById('new-desc').value = text.trim();
@@ -452,7 +451,7 @@ function onTwinklAttach(resource) {
 
 async function loadTwinklResources(hwId) {
   try {
-    const data = await fetch(`/api/twinkl/resources?entity_type=homework&entity_id=${hwId}`).then(r => r.json());
+    const data = await Wren.api(`/api/twinkl/resources?entity_type=homework&entity_id=${hwId}`);
     const badge = document.getElementById(`twinkl-badge-${hwId}`);
     if (badge && data.length) {
       badge.innerHTML = `<span style="font-size:11px;background:#00b3e122;border:1px solid #00b3e144;border-radius:5px;padding:2px 8px;color:#7dd3fc;cursor:pointer;margin-left:4px"

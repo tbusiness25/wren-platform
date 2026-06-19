@@ -47,6 +47,16 @@ window.__wrenShellLoaded = 'app';
     { icon: '🛡️', label: 'Log Concern',       onClick: () => Wren.navigate('/ey/safeguarding/new' + _childContextParam()) },
   ];
 
+  // EY "+" log menu — single entry point for everything you can log (EyLog-style).
+  const LOG_ACTIONS = [
+    { icon: '📖', label: 'Diary',        onClick: () => Wren.navigate('/ey/diary') },
+    { icon: '📝', label: 'Observation',  onClick: () => Wren.navigate('/ey/observation/new' + _childContextParam()) },
+    { icon: '💊', label: 'Medicine',     onClick: () => Wren.navigate('/ey/medicine/new' + _childContextParam()) },
+    { icon: '🚑', label: 'Accident',     onClick: () => Wren.navigate('/ey/incident/new' + _childContextParam()) },
+    { icon: '🛡️', label: 'Safeguarding', onClick: () => Wren.navigate('/ey/safeguarding/new' + _childContextParam()) },
+    { icon: '📄', label: 'Report',       onClick: () => Wren.navigate('/ey/reports/summative') },
+  ];
+
   const FRAMEWORKS = ['EYFS', 'B25', 'CFE', 'COEL', 'SEND', 'Phonics', 'Montessori'];
 
   // ── Meta helper ───────────────────────────────────────────────────────────────
@@ -493,7 +503,7 @@ window.__wrenShellLoaded = 'app';
     bottomNav.querySelector('#wren-app-add-btn').addEventListener('click', e => {
       e.stopPropagation();
       if (isEY) {
-        Wren.navigate('/ey/observation/new' + _childContextParam());
+        Wren.actionSheet(LOG_ACTIONS);   // + opens the log menu (Diary/Obs/Medicine/Accident/Safeguarding/Report)
       } else if (window.Wren) {
         Wren.actionSheet(ADD_ACTIONS);
       }
@@ -522,6 +532,7 @@ window.__wrenShellLoaded = 'app';
 
     // ── Async background loads ──────────────────────────────────────────────────
     _loadNotificationCount();
+    setInterval(_loadNotificationCount, 60000);   // live-refresh the bell badge (was load-once)
     if (!isEY) _loadDraftCount();  // draft badge lives in the left drawer (non-EY only)
     _initOutboxBadge();            // offline obs-outbox queue → drawer badge (when present)
     _loadChatWidget();
@@ -534,11 +545,58 @@ window.__wrenShellLoaded = 'app';
     // ── Expose reset for external use ───────────────────────────────────────────
     window.WrenAppShell = { resetIdleTimer: _resetIdleTimer };
 
+    // ── PWA head tags (EY app installability) ────────────────────────────────────
+    // The /ey/* pages don't carry the manifest / apple meta in their own <head>, so
+    // inject them here (idempotent). Without this the app isn't installable from its
+    // real entry point and iOS gets no Add-to-Home-Screen icon.
+    if (isEY) {
+      try {
+        var _head = document.head;
+        var _ensureHead = function (sel, make) { if (!_head.querySelector(sel)) _head.appendChild(make()); };
+        var _meta = function (name, content) { var m = document.createElement('meta'); m.name = name; m.content = content; return m; };
+        _ensureHead('link[rel="manifest"]', function () { var l = document.createElement('link'); l.rel = 'manifest'; l.href = '/manifest.webmanifest'; return l; });
+        _ensureHead('meta[name="theme-color"]', function () { return _meta('theme-color', '#0f172a'); });
+        _ensureHead('meta[name="apple-mobile-web-app-capable"]', function () { return _meta('apple-mobile-web-app-capable', 'yes'); });
+        _ensureHead('meta[name="apple-mobile-web-app-status-bar-style"]', function () { return _meta('apple-mobile-web-app-status-bar-style', 'black-translucent'); });
+        _ensureHead('meta[name="apple-mobile-web-app-title"]', function () { return _meta('apple-mobile-web-app-title', 'Your Nursery EY'); });
+        _ensureHead('link[rel="apple-touch-icon"]', function () { var l = document.createElement('link'); l.rel = 'apple-touch-icon'; l.href = '/little-angels-logo.png'; return l; });
+      } catch (e) { /* non-fatal */ }
+    }
+
+    // ── Web Push helpers ─────────────────────────────────────────────────────────
+    function _urlB64ToUint8(b64) {
+      const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+      const s = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(s); const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    }
+    async function _syncPushSubscription(force) {
+      try {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
+        if (Notification.permission === 'denied') return;
+        if (Notification.permission === 'default') {
+          if (!force) return;                       // never auto-prompt — only on explicit opt-in
+          if ((await Notification.requestPermission()) !== 'granted') return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          const k = await Wren.api('/api/notifications/vapid-public-key').catch(() => null);
+          if (!k || !k.key) return;
+          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(k.key) });
+        }
+        await Wren.api('/api/notifications/push-subscribe', { method: 'POST', body: { subscription: sub, user_agent: navigator.userAgent } });
+        if (force && window.Wren && Wren.toast) Wren.toast('Notifications enabled on this device', 'success');
+      } catch (e) { console.warn('[wren-push] subscribe failed', e); }
+    }
+    if (window.Wren) window.Wren.enablePush = function () { return _syncPushSubscription(true); };
+
     // ── Service worker (EY portal offline-first) ─────────────────────────────────
     if (isEY && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => {
-        console.warn('[wren-sw] SW registration failed', err);
-      });
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(() => { _syncPushSubscription(false); })   // re-sync silently if already granted
+        .catch(err => { console.warn('[wren-sw] SW registration failed', err); });
     }
 
     // ── Fire wren:ready (same event wren-shell-v2 fires — page JS hooks this) ───

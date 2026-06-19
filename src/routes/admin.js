@@ -5,8 +5,12 @@ const authenticate = require('../middleware/auth');
 
 router.use(authenticate);
 
+// Admin-level roles across editions: nursery (manager/deputy_manager/admin) +
+// school (headteacher/business_manager). Adding the school roles is a no-op for
+// LADN/EYFS (no staff hold them) and unlocks the admin SPA on primary/secondary.
+const ADMIN_ROLES = ['manager','deputy_manager','admin','headteacher','business_manager'];
 const managerOnly = (req, res, next) => {
-  if (!['manager','deputy_manager','admin'].includes(req.user.role)) {
+  if (!ADMIN_ROLES.includes(req.user.role)) {
     return res.status(403).json({ error: 'Manager access required' });
   }
   next();

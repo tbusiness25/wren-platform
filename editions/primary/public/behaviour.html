@@ -274,13 +274,13 @@ async function init() {
   document.getElementById('log-date').value = today.toISOString().slice(0,10);
 
   // Load classes
-  CLASSES = await fetch('/api/classes').then(r=>r.json()).catch(()=>[]);
+  CLASSES = await Wren.api('/api/classes').catch(()=>[]);
   const sel = document.getElementById('class-select');
   sel.innerHTML = '<option value="">Choose class…</option>' +
     CLASSES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
   // Load settings (categories)
-  const s = await fetch('/api/behaviour-points/settings').then(r=>r.json()).catch(()=>({}));
+  const s = await Wren.api('/api/behaviour-points/settings').catch(()=>({}));
   if (s.categories && s.categories.length) CATEGORIES = s.categories;
 
   // Restore saved class
@@ -298,7 +298,7 @@ async function onClassChange() {
 
 async function refreshGrid() {
   if (!CURRENT_CLASS) return;
-  const data = await fetch(`/api/behaviour-points/today-totals?class_id=${CURRENT_CLASS}`).then(r=>r.json()).catch(()=>[]);
+  const data = await Wren.api(`/api/behaviour-points/today-totals?class_id=${CURRENT_CLASS}`).catch(()=>[]);
   PUPILS = data;
   TOTALS = {};
   data.forEach(p => { TOTALS[p.pupil_id] = parseInt(p.total_today)||0; });
@@ -428,19 +428,14 @@ async function awardPoint(category, type) {
   }
 
   try {
-    const r = await fetch('/api/behaviour-points', {
+    await Wren.api('/api/behaviour-points', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pupil_id: pupilId, type, category, points: 1, reason: category })
+      body: { pupil_id: pupilId, type, category, points: 1, reason: category }
     });
-    if (!r.ok) {
-      // Rollback
-      if (type === 'positive') { TOTALS[pupilId] = Math.max(0, (TOTALS[pupilId]||1)-1); updateCardTotal(pupilId); updateGrandTotal(); }
-      wrenToast('Failed to save point', 'error');
-    }
   } catch (_) {
+    // Rollback
     if (type === 'positive') { TOTALS[pupilId] = Math.max(0, (TOTALS[pupilId]||1)-1); updateCardTotal(pupilId); updateGrandTotal(); }
-    wrenToast('Network error — point not saved', 'error');
+    wrenToast('Failed to save point', 'error');
   }
 }
 
@@ -487,7 +482,7 @@ async function loadLog() {
   if (type) url += `type=${type}&`;
   const area = document.getElementById('log-area');
   area.innerHTML = '<div class="empty-state">Loading…</div>';
-  const rows = await fetch(url).then(r=>r.json()).catch(()=>[]);
+  const rows = await Wren.api(url).catch(()=>[]);
   if (!rows.length) { area.innerHTML = '<div class="empty-state">No entries found</div>'; return; }
   area.innerHTML = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Time</th><th>Pupil</th><th>Type</th><th>Category</th><th>Points</th></tr></thead><tbody>' +
     rows.map(r => `<tr>
@@ -504,7 +499,7 @@ async function loadLog() {
 let SETTINGS_CATS = [...CATEGORIES];
 
 async function openSettings() {
-  const s = await fetch('/api/behaviour-points/settings').then(r=>r.json()).catch(()=>({}));
+  const s = await Wren.api('/api/behaviour-points/settings').catch(()=>({}));
   SETTINGS_CATS = s.categories ? [...s.categories] : [...CATEGORIES];
   if (s.notification) {
     document.getElementById('notif-mode').value = s.notification.mode || 'digest';
@@ -541,10 +536,9 @@ async function saveSettings() {
     time: document.getElementById('notif-time').value,
     enabled: document.getElementById('notif-enabled').checked
   };
-  await fetch('/api/behaviour-points/settings', {
+  await Wren.api('/api/behaviour-points/settings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ categories: SETTINGS_CATS, notification })
+    body: { categories: SETTINGS_CATS, notification }
   });
   CATEGORIES = [...SETTINGS_CATS];
   closeSettings();

@@ -213,7 +213,7 @@ router.put('/prefs', async (req, res) => {
   try {
     for (const p of prefs) {
       if (!CATEGORY_KEYS.includes(p.event_category)) continue;
-      const chans = (p.channels || ['inapp']).filter(c => ['inapp','telegram','email'].includes(c));
+      const chans = (p.channels || ['inapp']).filter(c => ['inapp','telegram','email','webpush'].includes(c));
       await db.query(
         `INSERT INTO notification_preferences (staff_id, event_category, channels, enabled, scope, updated_at)
          VALUES ($1,$2,$3,$4,$5,NOW())
@@ -308,7 +308,7 @@ router.put('/prefs/:staffId', async (req, res) => {
   try {
     for (const p of prefs) {
       if (!CATEGORY_KEYS.includes(p.event_category)) continue;
-      const chans = (p.channels || ['inapp']).filter(c => ['inapp','telegram','email'].includes(c));
+      const chans = (p.channels || ['inapp']).filter(c => ['inapp','telegram','email','webpush'].includes(c));
       await db.query(
         `INSERT INTO notification_preferences (staff_id, event_category, channels, enabled, scope, updated_at)
          VALUES ($1,$2,$3,$4,$5,NOW())
@@ -407,6 +407,48 @@ router.post('/test', async (req, res) => {
       { priority: 'normal' }
     );
     res.json({ ok: true, message: 'Test queued — check your bell icon and Telegram (if linked).' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Web Push (browser push notifications) ────────────────────────────────────
+
+// GET /api/notifications/vapid-public-key — client needs this to subscribe
+router.get('/vapid-public-key', (req, res) => {
+  const key = process.env.VAPID_PUBLIC_KEY || null;
+  res.json({ key, enabled: !!key });
+});
+
+// POST /api/notifications/push-subscribe — save/refresh this device's subscription
+router.post('/push-subscribe', async (req, res) => {
+  try {
+    const sub = req.body.subscription || req.body;
+    if (!sub || !sub.endpoint || !sub.keys) return res.status(400).json({ error: 'subscription required' });
+    await getPool().query(
+      `INSERT INTO push_subscriptions (staff_id, endpoint, p256dh, auth, user_agent, last_used_at)
+       VALUES ($1,$2,$3,$4,$5,NOW())
+       ON CONFLICT (endpoint) DO UPDATE
+         SET staff_id=$1, p256dh=$3, auth=$4, user_agent=$5, last_used_at=NOW()`,
+      [req.user.id, sub.endpoint, sub.keys.p256dh, sub.keys.auth, (req.body.user_agent || '').slice(0, 300)]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/notifications/push-unsubscribe — remove this device's subscription
+router.post('/push-unsubscribe', async (req, res) => {
+  try {
+    const endpoint = (req.body.subscription && req.body.subscription.endpoint) || req.body.endpoint;
+    if (endpoint) await getPool().query(`DELETE FROM push_subscriptions WHERE endpoint=$1`, [endpoint]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/notifications/push-status — does this user have any active subscription?
+router.get('/push-status', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(
+      `SELECT COUNT(*)::int AS n FROM push_subscriptions WHERE staff_id=$1`, [req.user.id]);
+    res.json({ subscribed: rows[0].n > 0, count: rows[0].n, vapid: !!process.env.VAPID_PUBLIC_KEY });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

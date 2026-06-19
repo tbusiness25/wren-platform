@@ -102,9 +102,17 @@ router.get('/feed', async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
   const s = schema();
   const { class_id, week } = req.query;
-  if (!class_id) return res.status(400).json({ error: 'class_id required' });
   const ws = week || weekMonday();
   try {
+    // class_id is optional: with it, the leaderboard is scoped to that class's
+    // year group; without it, it's school-wide (the admin dashboard widget calls
+    // it with no class_id — previously a hard 400).
+    const params = [ws];
+    let yearFilter = '';
+    if (class_id) {
+      params.push(class_id);
+      yearFilter = `AND ch.year_group = (SELECT year_group::text FROM ${s}.classes WHERE id=$${params.length})`;
+    }
     const { rows } = await pool.query(`
       SELECT ch.id, ch.first_name, ch.photo_url,
         COALESCE(SUM(CASE WHEN a.value > 0 THEN a.value ELSE 0 END), 0)::int AS week_total,
@@ -112,14 +120,15 @@ router.get('/leaderboard', async (req, res) => {
       FROM ${s}.children ch
       LEFT JOIN ${s}.wp_awards a
         ON a.child_id = ch.id
-        AND a.awarded_at::date >= $2::date
-        AND a.awarded_at::date <  ($2::date + INTERVAL '7 days')
+        AND a.awarded_at::date >= $1::date
+        AND a.awarded_at::date <  ($1::date + INTERVAL '7 days')
       LEFT JOIN ${s}.wp_categories cat ON cat.id = a.category_id AND a.value > 0
       WHERE ch.is_active = true
-        AND ch.year_group = (SELECT year_group::text FROM ${s}.classes WHERE id=$1)
+        ${yearFilter}
       GROUP BY ch.id, ch.first_name, ch.photo_url
       ORDER BY week_total DESC, ch.first_name
-    `, [class_id, ws]);
+      LIMIT 50
+    `, params);
     res.json({ week_start: ws, pupils: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

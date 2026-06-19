@@ -283,7 +283,7 @@ router.get('/me', authenticate, async (req, res) => {
 router.get('/cf-auto-login', loginLimiter, async (req, res) => {
   const cfEmail = (req.headers['cf-access-authenticated-user-email'] || '').toLowerCase().trim();
   if (!cfEmail) {
-    return res.status(403).json({ error: 'No Cloudflare Access session. Access this portal via parents.littleangelsealing.co.uk' });
+    return res.status(403).json({ error: 'No Cloudflare Access session. Access this portal via parents.example.com' });
   }
   try {
     const db = getPool();
@@ -319,7 +319,7 @@ router.post('/parent-login', loginLimiter, async (req, res) => {
   // CF Access verification — mandatory, no fallback
   const cfEmail = (req.headers['cf-access-authenticated-user-email'] || '').toLowerCase().trim();
   if (!cfEmail) {
-    return res.status(403).json({ error: 'This portal requires Cloudflare Access verification. Please access via parents.littleangelsealing.co.uk' });
+    return res.status(403).json({ error: 'This portal requires Cloudflare Access verification. Please access via parents.example.com' });
   }
   if (cfEmail !== email.toLowerCase().trim()) {
     return res.status(403).json({ error: 'Email does not match your verified session. Please use the email you signed in with.' });
@@ -706,11 +706,13 @@ router.post('/demo-login', loginLimiter, async (req, res) => {
 
   // Staff roles
   const roleMap = {
-    admin:        { dbRoles: ['admin','manager','deputy_manager'],     redirect: '/admin.html' },
-    manager:      { dbRoles: ['manager','deputy_manager','admin'],     redirect: '/admin.html' },
+    admin:        { dbRoles: ['admin','manager','deputy_manager','headteacher','business_manager'], redirect: '/admin.html' },
+    manager:      { dbRoles: ['manager','deputy_manager','admin','headteacher','business_manager'], redirect: '/admin.html' },
+    headteacher:  { dbRoles: ['headteacher','manager','deputy_manager','admin'],     redirect: '/admin.html' },
+    business_manager: { dbRoles: ['business_manager','manager','admin'],             redirect: '/admin.html' },
     practitioner: { dbRoles: ['practitioner','room_leader'],           redirect: '/index.html' },
     teacher:      { dbRoles: ['teacher','practitioner','room_leader'], redirect: '/index.html' },
-    hr:           { dbRoles: ['manager','deputy_manager','admin'],     redirect: '/hr.html' },
+    hr:           { dbRoles: ['manager','deputy_manager','admin','business_manager'], redirect: '/hr.html' },
     student:      { dbRoles: ['student'],                              redirect: '/student.html' },
   };
   const mapping = roleMap[role];

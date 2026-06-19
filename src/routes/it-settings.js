@@ -17,7 +17,7 @@ router.use(authenticate);
 
 // ── Manager/IT guard ─────────────────────────────────────────────────────────
 const managerOnly = (req, res, next) => {
-  if (!['manager', 'deputy_manager', 'admin'].includes(req.user.role)) {
+  if (!['manager', 'deputy_manager', 'admin', 'headteacher', 'business_manager'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Manager access required' });
   }
   next();

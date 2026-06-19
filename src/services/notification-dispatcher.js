@@ -6,6 +6,21 @@
 const https = require('https');
 const { getPool } = require('../db/pool');
 
+// Web Push (VAPID). Guarded require so editions/containers WITHOUT the web-push
+// package (e.g. demo images) don't crash on load — push simply no-ops there.
+let webpush = null;
+try {
+  webpush = require('web-push');
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    webpush.setVapidDetails(
+      process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+      process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+    console.log('[dispatcher] web push enabled');
+  } else {
+    webpush = null; // keys not configured → disable push channel
+  }
+} catch (e) { webpush = null; }
+
 const BOT_TOKEN = () => process.env.TELEGRAM_BOT_TOKEN;
 const DEDUP_WINDOW_MS = 60 * 1000; // suppress same category+recipient within 60s
 
@@ -151,6 +166,29 @@ async function _dispatchAsync(category, recipientType, recipientId, title, body,
           [notifId, sid, channel]
         );
       }
+
+      // Web Push: if this staff has any active browser subscription, queue a webpush
+      // delivery too — subscribing in the browser IS the opt-in (independent of
+      // pref.channels). Respects the enabled/scope checks already applied above.
+      if (webpush && !pref.channels.includes('webpush')) {
+        try {
+          const { rows: subRows } = await db.query(
+            `SELECT 1 FROM push_subscriptions WHERE staff_id=$1 LIMIT 1`, [sid]);
+          if (subRows.length) {
+            const wdedup = await db.query(
+              `SELECT nd.id FROM notification_deliveries nd
+               JOIN notifications n ON n.id = nd.notification_id
+               WHERE nd.recipient_id=$1 AND n.category=$2 AND nd.channel='webpush'
+                 AND nd.attempted_at > NOW() - INTERVAL '${Math.floor(DEDUP_WINDOW_MS / 1000)} seconds'
+               LIMIT 1`, [sid, category]);
+            if (!wdedup.rows.length) {
+              await db.query(
+                `INSERT INTO notification_deliveries (notification_id, recipient_id, channel, status, attempted_at)
+                 VALUES ($1,$2,'webpush','queued',NOW())`, [notifId, sid]);
+            }
+          }
+        } catch (e) { console.error('[dispatcher] webpush queue failed:', e.message); }
+      }
     } catch (e) {
       console.error(`[dispatcher] pref check failed for staff ${sid}:`, e.message);
     }
@@ -172,7 +210,7 @@ async function _processQueued() {
     const result = await db.query(`
       SELECT nd.id, nd.notification_id, nd.recipient_id, nd.channel,
              n.category, n.title, n.body, n.link,
-             s.telegram_chat_id
+             s.telegram_chat_id, s.email
       FROM notification_deliveries nd
       JOIN notifications n ON n.id = nd.notification_id
       LEFT JOIN staff s ON s.id = nd.recipient_id
@@ -212,6 +250,34 @@ async function _processQueued() {
         const sent = await _sendEmail(row);
         success = sent;
         if (!sent) errMsg = 'email not configured';
+      } else if (row.channel === 'webpush') {
+        if (!webpush) { success = false; errMsg = 'web push not configured'; }
+        else {
+          const { rows: subs } = await db.query(
+            `SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE staff_id=$1`,
+            [row.recipient_id]);
+          if (!subs.length) {
+            await db.query(`UPDATE notification_deliveries SET status='skipped', delivered_at=NOW() WHERE id=$1`, [row.id]);
+            continue;
+          }
+          const payload = JSON.stringify({
+            title: row.title || 'Wren', body: row.body || '',
+            url: row.link || '/ey/inbox', tag: 'wren-' + row.category });
+          let anyOk = false;
+          for (const sub of subs) {
+            try {
+              await webpush.sendNotification(
+                { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
+              anyOk = true;
+            } catch (err) {
+              if (err.statusCode === 404 || err.statusCode === 410) {
+                await db.query(`DELETE FROM push_subscriptions WHERE id=$1`, [sub.id]).catch(() => {});
+              }
+            }
+          }
+          success = anyOk;
+          if (!success) errMsg = 'all push endpoints failed/expired';
+        }
       }
 
       await db.query(
@@ -230,11 +296,17 @@ async function _processQueued() {
 }
 
 async function _sendEmail(row) {
-  // Stubbed — wire to SMTP/Sendgrid when available
-  // Check if SMTP env vars exist before attempting
-  if (!process.env.SMTP_HOST && !process.env.SENDGRID_API_KEY) return false;
-  // Future: implement nodemailer send here
-  return false;
+  // Wired to src/utils/email.js (nodemailer). Returns false when no SMTP is
+  // configured (sendEmail → {skipped:true}) so the delivery is marked failed,
+  // not silently "sent".
+  try {
+    if (!row.email) return false;
+    const { sendEmail } = require('../utils/email');
+    const safe = String(row.body || row.title || '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+    const html = `<p>${safe}</p>` + (row.link ? `<p><a href="${row.link}">Open in Wren</a></p>` : '');
+    const result = await sendEmail({ to: row.email, subject: `Wren — ${row.title}`, html, text: row.body || row.title });
+    return !(result && result.skipped);
+  } catch (e) { return false; }
 }
 
 let _pollerStarted = false;

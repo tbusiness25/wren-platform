@@ -34,8 +34,11 @@ function roleKeyFor(user) {
 async function hasCapability(user, capKey) {
   if (!user) return false;
   // Toby (id=1) and any manager always resolve true — never lose access.
+  // headteacher = school manager-equivalent (no such role exists on LADN, so this
+  // is a no-op for the nursery; it unlocks capability-gated features — e.g.
+  // medicine — for the top authority on the school editions/demos).
   if (Number(user.id) === 1) return true;
-  if (user.role === 'manager') return true;
+  if (user.role === 'manager' || user.role === 'headteacher') return true;
 
   const roleKey = roleKeyFor(user);
   const db = getPool();

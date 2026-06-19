@@ -366,9 +366,7 @@ async function loadWeek() {
     '<tr><td colspan="99" style="padding:40px;text-align:center;color:var(--c-muted)"><div class="spinner" style="margin:0 auto 10px"></div>Loading...</td></tr>';
 
   try {
-    const r = await fetch(`/api/primary-rota/week/${currentWeekStart}`);
-    if (!r.ok) throw new Error(await r.text());
-    weekData = await r.json();
+    weekData = await Wren.api(`/api/primary-rota/week/${currentWeekStart}`);
     assignments = {};
 
     // Build assignments map from shifts
@@ -850,17 +848,14 @@ async function saveDraft() {
   }
 
   try {
-    const r = await fetch(`/api/primary-rota/week/${currentWeekStart}/draft`, {
+    const data = await Wren.api(`/api/primary-rota/week/${currentWeekStart}/draft`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shifts })
+      body: { shifts }
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Save failed');
     showToast(`Draft saved — ${data.saved} slots`, 'success');
     await loadWeek();
   } catch (err) {
-    showToast(err.message, 'error');
+    showToast((err && (err.error || err.message)) || 'Save failed', 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = '💾 Save draft';
@@ -874,33 +869,28 @@ async function publishWeek(confirm = false) {
   btn.textContent = '📤 Publishing...';
 
   try {
-    const r = await fetch(`/api/primary-rota/week/${currentWeekStart}/publish`, {
+    await Wren.api(`/api/primary-rota/week/${currentWeekStart}/publish`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm })
+      body: { confirm }
     });
-    const data = await r.json();
-
-    if (r.status === 409) {
-      if (data.hard && data.hard.length) {
-        showToast('Publish blocked: ' + data.hard[0].message, 'error');
-        displayServerConflicts(data.hard, data.soft);
-        return;
-      }
-      if (data.requires_confirm) {
-        const ok = window.confirm(
-          `Warnings:\n${data.soft.map(w => '• ' + w.message).join('\n')}\n\nPublish anyway?`
-        );
-        if (ok) { btn.disabled = false; btn.textContent = '📤 Publish'; publishWeek(true); }
-        return;
-      }
-    }
-
-    if (!r.ok) throw new Error(data.error || 'Publish failed');
     showToast('Rota published!', 'success');
     await loadWeek();
   } catch (err) {
-    showToast(err.message, 'error');
+    // Wren.api rejects with the parsed JSON body on non-2xx (e.g. 409 conflicts)
+    const data = err || {};
+    if (data.hard && data.hard.length) {
+      showToast('Publish blocked: ' + data.hard[0].message, 'error');
+      displayServerConflicts(data.hard, data.soft);
+      return;
+    }
+    if (data.requires_confirm) {
+      const ok = window.confirm(
+        `Warnings:\n${(data.soft || []).map(w => '• ' + w.message).join('\n')}\n\nPublish anyway?`
+      );
+      if (ok) { btn.disabled = false; btn.textContent = '📤 Publish'; publishWeek(true); }
+      return;
+    }
+    showToast(data.error || data.message || 'Publish failed', 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = '📤 Publish';
@@ -920,12 +910,11 @@ function displayServerConflicts(hard, soft) {
 async function unlockWeek() {
   if (!confirm('Unlock this published rota for editing?')) return;
   try {
-    const r = await fetch(`/api/primary-rota/week/${currentWeekStart}/unlock`, { method: 'POST' });
-    if (!r.ok) throw new Error((await r.json()).error);
+    await Wren.api(`/api/primary-rota/week/${currentWeekStart}/unlock`, { method: 'POST' });
     showToast('Rota unlocked', 'success');
     await loadWeek();
   } catch (err) {
-    showToast(err.message, 'error');
+    showToast((err && (err.error || err.message)) || 'Unlock failed', 'error');
   }
 }
 
@@ -959,9 +948,7 @@ async function loadCoverSuggestions() {
 
   el.innerHTML = '<div class="spinner" style="margin:20px auto"></div>';
   try {
-    const r = await fetch(`/api/primary-rota/cover/${date}/${staffId}`);
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error);
+    const data = await Wren.api(`/api/primary-rota/cover/${date}/${staffId}`);
 
     if (!data.suggestions.length) {
       el.innerHTML = '<p style="color:var(--c-muted);font-size:.85rem">No lessons found for this teacher on this date, or no rota draft exists.</p>';
@@ -991,7 +978,7 @@ async function loadCoverSuggestions() {
     }
     el.innerHTML = html;
   } catch (err) {
-    el.innerHTML = `<p style="color:#ef4444">${err.message}</p>`;
+    el.innerHTML = `<p style="color:#ef4444">${(err && (err.error || err.message)) || 'Failed to load cover suggestions'}</p>`;
   }
 }
 

@@ -10,7 +10,7 @@ const authenticate = require('../middleware/auth');
 router.use(authenticate);
 
 const adminOnly = (req, res, next) => {
-  if (!['manager', 'deputy_manager', 'admin'].includes(req.user?.role)) {
+  if (!['manager', 'deputy_manager', 'admin', 'headteacher', 'business_manager'].includes(req.user?.role)) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();

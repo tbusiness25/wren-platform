@@ -148,8 +148,40 @@ router.post('/dahua-webhook', async (req, res) => {
   }
 });
 
-// ── Public: GET /today — all active staff clock status ────────────────────────
+// ── On-site guard for public clock-in board ───────────────────────────────
+// H4 fix (2026-06-20): GET /today must not dump the staff roster to an off-site caller.
+// Allow if a valid JWT is present OR the request is on-site (nursery WAN IP or RFC1918).
+const _clockinNurseryIp = process.env.NURSERY_PUBLIC_IP;
+function _clockinIsOnSite(req) {
+  const ip = (req.headers['cf-connecting-ip'] || '').trim()
+    || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || (req.ip || '').replace('::ffff:', '').trim();
+  if (!ip) return false;
+  if (ip === _clockinNurseryIp) return true;
+  if (/^127\./.test(ip) || ip === '::1') return true;
+  if (/^10\./.test(ip) || /^192\.168\./.test(ip)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
+  const m = ip.match(/^100\.(\d+)\./);
+  if (m && +m[1] >= 64 && +m[1] <= 127) return true;
+  return false;
+}
+
+// ── Public: GET /today — all active staff clock status (kiosk board) ─────
+// H4: gated — allow JWT or on-site, else 403
 router.get('/today', async (req, res) => {
+  const hasJwt = !!(req.headers['authorization'] || '').startsWith('Bearer ');
+  const tok = (req.headers['authorization'] || '').slice(7) || (req.headers['x-wren-token'] || '');
+  let jwtOk = false;
+  if (hasJwt) {
+    try {
+      const { verify } = require('jsonwebtoken');
+      const d = verify(tok, process.env.JWT_SECRET);
+      if (d && Number(d.id) > 0) jwtOk = true;
+    } catch {}
+  }
+  if (!jwtOk && !_clockinIsOnSite(req)) {
+    return res.status(403).json({ error: 'Clock-in board is only available on the nursery network or with staff login.' });
+  }
   try {
     const db = getPool();
     const { rows } = await db.query(`

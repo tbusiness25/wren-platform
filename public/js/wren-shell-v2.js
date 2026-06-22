@@ -364,9 +364,11 @@ window.__wrenShellLoaded = 'v2';
 
     api(url, opts = {}) {
       const token = sessionStorage.getItem(TOKEN_KEY);
+      const deviceToken = localStorage.getItem('wrenDevice') || '';
       opts.headers = Object.assign({}, opts.headers, {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(deviceToken ? { 'X-Wren-Device': deviceToken } : {}),
       });
       if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
       return fetch(url, opts).then(r => {

@@ -16,12 +16,14 @@
   W.TOKEN_KEY = TOKEN_KEY;
   W.USER_KEY  = USER_KEY;
 
-  // ── api — JSON fetch with Bearer token, 401 → logout ─────────────────────────
+  // ── api — JSON fetch with Bearer token, device token, 401 → logout ────────────────
   W.api = function (url, opts = {}) {
     const token = sessionStorage.getItem(TOKEN_KEY);
+    const deviceToken = localStorage.getItem('wrenDevice') || '';
     opts.headers = Object.assign({}, opts.headers, {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...(deviceToken ? { 'X-Wren-Device': deviceToken } : {}),
     });
     if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
     return fetch(url, opts).then(r => {

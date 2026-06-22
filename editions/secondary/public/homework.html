@@ -167,11 +167,12 @@ const SOURCES = {
 };
 
 let classes = [], subjects = [], currentHW = null;
+const _auth = () => ({ Authorization: 'Bearer ' + (sessionStorage.getItem('wrenToken') || sessionStorage.getItem('wren_token') || '') });
 
 async function init() {
   [classes, subjects] = await Promise.all([
-    fetch('/api/classes').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/subjects').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/classes', { headers: _auth() }).then(r=>r.json()).catch(()=>[]),
+    fetch('/api/subjects', { headers: _auth() }).then(r=>r.json()).catch(()=>[]),
   ]);
   const cs = document.getElementById('filter-class');
   const ns = document.getElementById('new-class');
@@ -197,7 +198,7 @@ async function loadHomework() {
   const su = document.getElementById('filter-subject').value;
   if (su) params.set('subject_id', su);
   document.getElementById('hw-list').innerHTML = '<div class="empty-state">Loading…</div>';
-  const data = await fetch('/api/homework?' + params).then(r=>r.json()).catch(()=>[]);
+  const data = await fetch('/api/homework?' + params, { headers: _auth() }).then(r=>r.json()).catch(()=>[]);
   renderList(data);
 }
 
@@ -298,7 +299,7 @@ async function saveHW(publish) {
   const subjectId = document.getElementById('new-subject').value;
   const title = document.getElementById('new-title').value.trim();
   const due = document.getElementById('new-due').value;
-  if (!classId || !title || !due) { wrenToast('Class, title and due date are required.', 'error'); return; }
+  if (!classId || !title || !due) { Wren.toast('Class, title and due date are required.', 'error'); return; }
   const selectedType = document.querySelector('.type-chip.selected');
   const body = {
     class_id: parseInt(classId),
@@ -311,22 +312,22 @@ async function saveHW(publish) {
     external_resource_url: document.getElementById('new-url').value.trim() || null,
     is_published: publish,
   };
-  const r = await fetch('/api/homework', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  if (!r.ok) { wrenToast('Failed to save homework.', 'error'); return; }
+  const r = await fetch('/api/homework', { method:'POST', headers:{'Content-Type':'application/json',..._auth()}, body: JSON.stringify(body) });
+  if (!r.ok) { Wren.toast('Failed to save homework.', 'error'); return; }
   closeNew();
-  wrenToast(publish ? 'Homework published' : 'Saved as draft', 'success');
+  Wren.toast(publish ? 'Homework published' : 'Saved as draft', 'success');
   loadHomework();
 }
 
 async function togglePublish(id, current) {
-  await fetch(`/api/homework/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ is_published: !current }) });
+  await fetch(`/api/homework/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json',..._auth()}, body: JSON.stringify({ is_published: !current }) });
   loadHomework();
 }
 
 async function deleteHW(id) {
   if (!confirm('Delete this homework? Submissions will also be deleted.')) return;
-  await fetch(`/api/homework/${id}`, { method:'DELETE' });
-  wrenToast('Deleted', 'info');
+  await fetch(`/api/homework/${id}`, { method:'DELETE', headers: _auth() });
+  Wren.toast('Deleted', 'info');
   loadHomework();
 }
 
@@ -335,11 +336,11 @@ async function viewSubmissions(id, title) {
   document.getElementById('submissions-list').innerHTML = '<div class="empty-state">Loading…</div>';
   document.getElementById('modal-mark').style.display = 'flex';
   currentHW = id;
-  const data = await fetch(`/api/homework/${id}`).then(r=>r.json()).catch(()=>null);
+  const data = await fetch(`/api/homework/${id}`, { headers: _auth() }).then(r=>r.json()).catch(()=>null);
   if (!data) return;
   const subs = data.submissions || [];
   // Get pupil list for this class
-  const pupils = await fetch(`/api/classes/${data.class_id}`).then(r=>r.json()).then(c=>c.pupils||[]).catch(()=>[]);
+  const pupils = await fetch(`/api/classes/${data.class_id}`, { headers: _auth() }).then(r=>r.json()).then(c=>c.pupils||[]).catch(()=>[]);
   const subMap = {};
   subs.forEach(s => { subMap[s.pupil_id] = s; });
   document.getElementById('submissions-list').innerHTML = pupils.length ? pupils.map(p => {
@@ -359,7 +360,7 @@ async function markSub(subId, pupilId) {
   const grade = document.getElementById(`grade-${pupilId}`)?.value;
   const fb = document.getElementById(`fb-${pupilId}`)?.value;
   await fetch(`/api/homework/${currentHW}/submissions/${subId}/mark`, {
-    method:'PATCH', headers:{'Content-Type':'application/json'},
+    method:'PATCH', headers:{'Content-Type':'application/json',..._auth()},
     body: JSON.stringify({ grade, teacher_feedback: fb, marked_by: 1 })
   });
 }
@@ -380,7 +381,7 @@ function getTwinklModal() {
 
 function openTwinklSearch() {
   const modal = getTwinklModal();
-  if (!modal) { wrenToast('Twinkl not available', 'error'); return; }
+  if (!modal) { Wren.toast('Twinkl not available', 'error'); return; }
   const title = document.getElementById('new-title').value.trim();
   twinklCurrentHWId = null;
   modal.open({ entityType: 'homework', entityId: '__pending__', title });
@@ -404,7 +405,7 @@ function onTwinklAttach(resource) {
       TwinklModal.renderAttached(list, [resource]);
     }
   }
-  wrenToast('Twinkl resource attached', 'success');
+  Wren.toast('Twinkl resource attached', 'success');
 }
 
 async function loadTwinklResources(hwId) {

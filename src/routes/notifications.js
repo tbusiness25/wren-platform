@@ -145,14 +145,30 @@ router.get('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/notifications/:id/read
+// POST /api/notifications/:id/read (IDOR guard: recipient only)
 router.post('/:id/read', async (req, res) => {
   try {
-    const { rows } = await getPool().query(
+    const db = getPool();
+    const { rows } = await db.query(
+      `SELECT recipient_type, recipient_id FROM notifications WHERE id=$1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const n = rows[0];
+    // Check: notification is targeted at this user
+    const isManager = ['manager','deputy_manager'].includes(req.user.role);
+    const isParent = req.user.role === 'parent';
+    let allowed = false;
+    if (n.recipient_type === 'staff' && Number(n.recipient_id) === Number(req.user.id)) allowed = true;
+    if (n.recipient_type === 'parent' && Number(n.recipient_id) === Number(req.user.id)) allowed = true;
+    if ((n.recipient_type === 'all-staff' || n.recipient_type === 'all-managers') && !isParent) allowed = true;
+    if (!allowed) return res.status(403).json({ error: 'Forbidden — not your notification' });
+
+    const { rows: updated } = await db.query(
       `UPDATE notifications SET read_at=NOW() WHERE id=$1 AND read_at IS NULL RETURNING id`,
       [req.params.id]
     );
-    res.json({ ok: true, updated: rows.length });
+    res.json({ ok: true, updated: updated.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -171,10 +187,26 @@ router.post('/read-all', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/notifications/:id/dismiss
+// POST /api/notifications/:id/dismiss (IDOR guard: recipient only)
 router.post('/:id/dismiss', async (req, res) => {
   try {
-    await getPool().query(
+    const db = getPool();
+    const { rows } = await db.query(
+      `SELECT recipient_type, recipient_id FROM notifications WHERE id=$1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const n = rows[0];
+    // Check: notification is targeted at this user
+    const isManager = ['manager','deputy_manager'].includes(req.user.role);
+    const isParent = req.user.role === 'parent';
+    let allowed = false;
+    if (n.recipient_type === 'staff' && Number(n.recipient_id) === Number(req.user.id)) allowed = true;
+    if (n.recipient_type === 'parent' && Number(n.recipient_id) === Number(req.user.id)) allowed = true;
+    if ((n.recipient_type === 'all-staff' || n.recipient_type === 'all-managers') && !isParent) allowed = true;
+    if (!allowed) return res.status(403).json({ error: 'Forbidden — not your notification' });
+
+    await db.query(
       `UPDATE notifications SET dismissed_at=NOW() WHERE id=$1`,
       [req.params.id]
     );

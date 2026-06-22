@@ -687,6 +687,188 @@ router.delete('/blocks/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── AI Draft / Confirm-send (P4 Actions B) ───────────────────────
+// POST /draft — store a message as a draft (ai_draft=true, no send trigger)
+// Staff review then confirm-send to actually dispatch.
+router.post('/draft', async (req, res) => {
+  const { thread_id, body, attachment_json } = req.body;
+  if (!thread_id || !body) return res.status(400).json({ error: 'thread_id and body required' });
+  try {
+    const db = getPool();
+    const { rows: threads } = await db.query('SELECT * FROM message_threads WHERE id=$1', [thread_id]);
+    if (!threads.length) return res.status(404).json({ error: 'Thread not found' });
+    const thread = threads[0];
+
+    // Staff can draft for their threads; parents can draft for their child's threads
+    if (req.user.role === 'parent' && thread.child_id !== req.user.child_id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (req.user.role !== 'parent' && !['manager', 'deputy_manager'].includes(req.user.role)) {
+      const isAssigned = thread.recipient_staff_id === req.user.id;
+      const isStaffGroup = thread.recipient_type === 'staff_group';
+      if (!isAssigned && !isStaffGroup && thread.child_id) {
+        const childRoom = (await db.query('SELECT room_id FROM children WHERE id=$1', [thread.child_id])).rows[0]?.room_id;
+        if (childRoom !== req.user.room_id) return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    const senderType = req.user.role === 'parent' ? 'parent' : 'staff';
+    const senderId = req.user.role === 'parent' ? null : req.user.id;
+    const parentEmail = req.user.role === 'parent' ? req.user.name : null;
+
+    const { rows } = await db.query(`
+      INSERT INTO messages (thread_id, sender_type, sender_id, parent_email, body,
+        ai_draft, pending_review, review_decision)
+      VALUES ($1,$2,$3,$4,$5,true,true,'pending') RETURNING *
+    `, [thread_id, senderType, senderId, parentEmail, body.slice(0, 10000)]);
+    const draft = rows[0];
+
+    // Notify staff that a draft needs review
+    if (req.user.role !== 'parent') {
+      const targetId = thread.recipient_staff_id || 1;
+      await db.query(
+        `INSERT INTO notifications (recipient_type,recipient_id,category,title,body,link,priority)
+         VALUES ('all-managers',$1,'system','AI draft pending review',
+           $2,'/messages.html','normal')`,
+        [targetId, `Draft message in thread #${thread_id} — "${body.slice(0, 100)}"`]
+      );
+    }
+
+    res.status(201).json({ ...draft, status: 'draft' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /draft/:id/confirm-send — staff confirms draft → actually send
+router.post('/draft/:id/confirm-send', async (req, res) => {
+  try {
+    const db = getPool();
+    const { rows } = await db.query(`
+      SELECT m.*, t.subject, t.child_id
+      FROM messages m JOIN message_threads t ON t.id=m.thread_id
+      WHERE m.id=$1 AND m.ai_draft=true
+    `, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Draft not found or already sent' });
+    const msg = rows[0];
+    const thread = { id: msg.thread_id, child_id: msg.child_id };
+
+    // Auth check: same rules as reply
+    if (req.user.role === 'parent' && thread.child_id !== req.user.child_id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (req.user.role !== 'parent' && !['manager', 'deputy_manager'].includes(req.user.role)) {
+      const isAssigned = thread.recipient_staff_id === req.user.id;
+      const isStaffGroup = thread.recipient_type === 'staff_group';
+      if (!isAssigned && !isStaffGroup) {
+        if (thread.child_id) {
+          const childRoom = (await db.query('SELECT room_id FROM children WHERE id=$1', [thread.child_id])).rows[0]?.room_id;
+          if (childRoom !== req.user.room_id) return res.status(403).json({ error: 'Forbidden' });
+        } else {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+      }
+    }
+
+    // Mark as sent, remove draft flags
+    const { rows: sent } = await db.query(`
+      UPDATE messages SET ai_draft=false, pending_review=false, review_decision='approved',
+        body=body, created_at=NOW()
+      WHERE id=$1 RETURNING *
+    `, [req.params.id]);
+
+    // Audit
+    if (req.user.role !== 'parent') {
+      await db.query(
+        `INSERT INTO message_audit (message_id,staff_id,preview,has_attachment) VALUES ($1,$2,$3,$4)`,
+        [sent[0].id, req.user.id, (sent[0].body || '').slice(0, 200), false]
+      );
+    }
+
+    // Telegram notification (skip out-of-hours for parent-originated drafts)
+    const isParent = req.user.role === 'parent';
+    const isOOH = (() => {
+      const now = new Date(); const day = now.getDay();
+      if (day === 0 || day === 6) return true;
+      return now.getHours() < 8 || now.getHours() >= 18;
+    })();
+    if (isParent && !isOOH) {
+      await sendTelegramMsg(`✅ *Draft sent* — Parent message: ${thread.subject || ''}`);
+    }
+
+    // Notify key person + managers
+    if (isParent && thread.child_id) {
+      const { notify: _notify } = require('../services/notification-dispatcher');
+      _notify('parent_message_received', 'all-managers', null,
+        `Parent message sent: ${thread.subject || ''}`,
+        (sent[0].body || '').slice(0, 200),
+        { relatedTable: 'children', relatedId: thread.child_id, link: '/messages.html' }
+      );
+      const { rows: kp } = await db.query(`SELECT key_person_id FROM children WHERE id=$1`, [thread.child_id]).catch(() => ({ rows: [] }));
+      if (kp[0]?.key_person_id) {
+        _notify('parent_message_received', 'staff', kp[0].key_person_id,
+          `Parent message sent: ${thread.subject || ''}`,
+          (sent[0].body || '').slice(0, 200),
+          { relatedTable: 'children', relatedId: thread.child_id, link: '/messages.html' }
+        );
+      }
+    }
+
+    // Update thread last_message_at
+    await db.query('UPDATE message_threads SET last_message_at=NOW() WHERE id=$1', [thread.id]);
+
+    res.json({ ...sent[0], status: 'sent' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /drafts — list pending drafts for this user
+router.get('/drafts', async (req, res) => {
+  try {
+    const db = getPool();
+    let query, params;
+    if (req.user.role === 'parent') {
+      query = `
+        SELECT m.*, t.subject, c.first_name||' '||c.last_name as child_name
+        FROM messages m
+        JOIN message_threads t ON t.id=m.thread_id
+        JOIN children c ON c.id=t.child_id
+        WHERE m.ai_draft=true
+          AND t.child_id=$1
+        ORDER BY m.created_at DESC
+      `;
+      params = [req.user.child_id];
+    } else if (['manager', 'deputy_manager'].includes(req.user.role)) {
+      query = `
+        SELECT m.*, t.subject, t.child_id, c.first_name||' '||c.last_name as child_name,
+          s.first_name||' '||s.last_name as sender_name
+        FROM messages m
+        JOIN message_threads t ON t.id=m.thread_id
+        LEFT JOIN children c ON c.id=t.child_id
+        LEFT JOIN staff s ON s.id=m.sender_id
+        WHERE m.ai_draft=true
+        ORDER BY m.created_at DESC
+      `;
+      params = [];
+    } else {
+      query = `
+        SELECT m.*, t.subject, t.child_id
+        FROM messages m
+        JOIN message_threads t ON t.id=m.thread_id
+        WHERE m.ai_draft=true
+          AND (m.sender_id=$1 OR t.recipient_staff_id=$1)
+        ORDER BY m.created_at DESC
+      `;
+      params = [req.user.id];
+    }
+    const { rows } = await db.query(query, params);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 async function _dualWriteMessage(db, { senderEmail, body, direction, staffId }) {
   if (!senderEmail) return;
   const { upsertContact, upsertThread, insertThreadMessage } = require('./contacts');

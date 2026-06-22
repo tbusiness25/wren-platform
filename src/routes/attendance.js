@@ -51,9 +51,39 @@ router.post('/staff/kiosk-action', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// On-site guard for public attendance board (H4 fix)
+const _attNurseryIp = process.env.NURSERY_PUBLIC_IP;
+function _attIsOnSite(req) {
+  const ip = (req.headers['cf-connecting-ip'] || '').trim()
+    || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || (req.ip || '').replace('::ffff:', '').trim();
+  if (!ip) return false;
+  if (ip === _attNurseryIp) return true;
+  if (/^127\./.test(ip) || ip === '::1') return true;
+  if (/^10\./.test(ip) || /^192\.168\./.test(ip)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
+  const m = ip.match(/^100\.(\d+)\./);
+  if (m && +m[1] >= 64 && +m[1] <= 127) return true;
+  return false;
+}
+
 // Public endpoint — all staff clock status (for kiosk display)
+// H4: gated — allow JWT or on-site, else 403
 router.get('/staff/today', async (req, res) => {
-  // Allow without JWT for kiosk
+  const hasJwt = !!(req.headers['authorization'] || '').startsWith('Bearer ');
+  const tok = (req.headers['authorization'] || '').slice(7) || (req.headers['x-wren-token'] || '');
+  let jwtOk = false;
+  if (hasJwt) {
+    try {
+      const { verify } = require('jsonwebtoken');
+      const d = verify(tok, process.env.JWT_SECRET);
+      if (d && Number(d.id) > 0) jwtOk = true;
+    } catch {}
+  }
+  if (!jwtOk && !_attIsOnSite(req)) {
+    return res.status(403).json({ error: 'Attendance board is only available on the nursery network or with staff login.' });
+  }
+  // Allow without JWT for kiosk (on-site)
   try {
     const db = getPool();
     const { rows } = await db.query(`

@@ -75,6 +75,7 @@ router.get('/', async (req, res) => {
 
 // GET /:id
 router.get('/:id', async (req, res) => {
+  const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
   try {
     const db = getPool();
     const { rows } = await db.query(`
@@ -85,6 +86,23 @@ router.get('/:id', async (req, res) => {
       LEFT JOIN ${schema()}.supervisions sv ON sv.id = ap.supervision_id
       WHERE ap.id=$1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    // IDOR guard: non-managers can only read plans they own or are assigned to
+    if (!isManager) {
+      const ap = rows[0];
+      const apOwner = Number(ap.owner_staff_id) || 0;
+      const userId = Number(req.user.id);
+      if (apOwner !== userId) {
+        // Check if user is assigned in the actions JSON
+        const actions = ap.actions || ap.actions_json || [];
+        const rawActions = typeof actions === 'string' ? actions : JSON.stringify(actions);
+        let found = false;
+        try {
+          const arr = typeof actions === 'string' ? JSON.parse(actions) : actions;
+          found = Array.isArray(arr) && arr.some(a => Number(a.assignee_id || a.assigned_staff_id || 0) === userId);
+        } catch { found = false; }
+        if (!found) return res.status(403).json({ error: 'Forbidden — not your action plan' });
+      }
+    }
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -112,6 +130,22 @@ router.post('/', async (req, res) => {
 
 // PUT /:id
 router.put('/:id', async (req, res) => {
+  // IDOR guard: owner or manager
+  try {
+    const db = getPool();
+    const { rows: apRows } = await db.query(
+      `SELECT owner_staff_id FROM ${schema()}.action_plans WHERE id=$1`, [req.params.id]
+    );
+    if (!apRows.length) return res.status(404).json({ error: 'Not found' });
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    if (!isManager) {
+      const apOwner = Number(apRows[0].owner_staff_id) || 0;
+      if (apOwner !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Forbidden — only the owner or a manager' });
+      }
+    }
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
   const fields = ['title','area','priority','status','description','success_criteria','actions',
     'target_date','completed_date','actual_completion_date','review_notes','owner_staff_id',
     'linked_to','linked_id','supervision_id','progress_notes','evidence_attachments',
@@ -143,11 +177,18 @@ router.post('/:id/progress-note', async (req, res) => {
   if (!text) return res.status(400).json({ error: 'note or voice_transcript required' });
   try {
     const db = getPool();
-    const { rows: ap } = await db.query('SELECT progress_notes, owner_staff_id FROM ${schema()}.action_plans WHERE id=$1', [req.params.id]);
+    const { rows: ap } = await db.query(
+      `SELECT progress_notes, owner_staff_id FROM ${schema()}.action_plans WHERE id=$1`, [req.params.id]
+    );
     if (!ap.length) return res.status(404).json({ error: 'Not found' });
+    // IDOR guard: only owner or manager may add progress notes
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    if (!isManager && (Number(ap[0].owner_staff_id) || 0) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden — only the owner or a manager' });
+    }
     const notes = ap[0].progress_notes || [];
     notes.push({ date: new Date().toISOString().split('T')[0], note: text, by: req.user.username || req.user.id, source: voice_transcript ? 'voice' : 'text' });
-    await db.query('UPDATE ${schema()}.action_plans SET progress_notes=$1, updated_at=NOW() WHERE id=$2', [JSON.stringify(notes), req.params.id]);
+    await db.query(`UPDATE ${schema()}.action_plans SET progress_notes=$1, updated_at=NOW() WHERE id=$2`, [JSON.stringify(notes), req.params.id]);
     res.json({ ok: true, notes });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -157,7 +198,7 @@ router.delete('/:id', async (req, res) => {
   if (!['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role)) return res.status(403).json({error:'Forbidden'});
   try {
     const db = getPool();
-    await db.query('DELETE FROM ${schema()}.action_plans WHERE id=$1', [req.params.id]);
+    await db.query(`DELETE FROM ${schema()}.action_plans WHERE id=$1`, [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -199,7 +240,7 @@ router.post('/:id/items', async (req, res) => {
   try {
     const db = getPool();
     const { rows: plan } = await db.query(
-      'SELECT id, title, scope FROM ${schema()}.action_plans WHERE id=$1 AND archived_at IS NULL', [req.params.id]
+      `SELECT id, title, scope FROM ${schema()}.action_plans WHERE id=$1 AND archived_at IS NULL`, [req.params.id]
     );
     if (!plan.length) return res.status(404).json({ error: 'Plan not found' });
     const { rows } = await db.query(`

@@ -22,12 +22,30 @@ function datePeriod(reportType) {
   return { start: start.toISOString().split('T')[0], end };
 }
 
-// GET / — list all reports, optionally ?child_id=X
+// GET / — list reports (scoped by role)
 router.get('/', async (req, res) => {
+  const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
   try {
     const db = getPool();
     const { child_id } = req.query;
-    const params = child_id ? [child_id] : [];
+    const params = [];
+    let where = '';
+    if (child_id) {
+      where = 'WHERE pr.child_id=$1';
+      params.push(child_id);
+    }
+    if (!isManager) {
+      // Non-managers can only see reports for children in their room
+      const { rows: rooms } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      if (rooms.length && rooms[0].room_id != null) {
+        if (where) where += ' AND '; else where += 'WHERE ';
+        where += 'c.room_id = $' + (params.length + 1);
+        params.push(rooms[0].room_id);
+      } else {
+        // Staff without a room sees nothing
+        return res.json({ reports: [] });
+      }
+    }
     const { rows } = await db.query(`
       SELECT pr.*,
              c.first_name, c.last_name, c.preferred_name,
@@ -37,7 +55,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN children c ON c.id = pr.child_id
       LEFT JOIN rooms r ON r.id = c.room_id
       LEFT JOIN staff s ON s.id = pr.generated_by
-      ${child_id ? 'WHERE pr.child_id=$1' : ''}
+      ${where}
       ORDER BY pr.generated_at DESC NULLS LAST, pr.id DESC
       LIMIT 200
     `, params);
@@ -47,30 +65,53 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /children — list active children (for selector)
+// GET /children — list active children (scoped to room for non-managers)
 router.get('/children', async (req, res) => {
+  const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
   try {
     const db = getPool();
-    const { rows } = await db.query(`
+    let q = `
       SELECT c.id, c.first_name, c.last_name, c.preferred_name, r.name as room_name
       FROM children c
       LEFT JOIN rooms r ON r.id = c.room_id
       WHERE c.is_active = true
-      ORDER BY c.first_name, c.last_name
-    `);
+    `;
+    const params = [];
+    if (!isManager) {
+      const { rows: staffRows } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      if (staffRows[0]?.room_id != null) {
+        q += ' AND c.room_id=$1';
+        params.push(staffRows[0].room_id);
+      }
+    }
+    q += ' ORDER BY c.first_name, c.last_name';
+    const { rows } = await db.query(q, params);
     res.json({ children: rows });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /child/:child_id — load data for report generation
+// GET /child/:child_id — load data for report generation (scoped to room)
 router.get('/child/:child_id', async (req, res) => {
   const { child_id } = req.params;
   const { report_type = 'progress' } = req.query;
   const period = datePeriod(report_type);
   try {
     const db = getPool();
+    // IDOR guard: verify user has access to this child's room
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    if (!isManager) {
+      const { rows: staffRows } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      const userRoom = staffRows[0]?.room_id;
+      if (staffRows.length === 0 || userRoom == null) {
+        return res.status(403).json({ error: 'Forbidden — no room assignment' });
+      }
+      const { rows: childRows } = await db.query('SELECT room_id FROM children WHERE id=$1', [child_id]);
+      if (childRows.length && childRows[0].room_id !== userRoom) {
+        return res.status(403).json({ error: 'Forbidden — not your child' });
+      }
+    }
     const [childRes, obsRes, diaryRes, frameworkRes] = await Promise.all([
       db.query(`
         SELECT c.*, r.name as room_name,
@@ -114,14 +155,30 @@ router.get('/child/:child_id', async (req, res) => {
   }
 });
 
-// POST /generate — generate AI draft and save
+// POST /generate — generate AI draft and save (IDOR guard: room-scoped)
 router.post('/generate', async (req, res) => {
   const { child_id, report_type = 'progress', practitioner_notes = '' } = req.body;
   if (!child_id) return res.status(400).json({ error: 'child_id required' });
-
   const period = datePeriod(report_type);
   try {
     const db = getPool();
+    // IDOR guard: verify user can access this child's room
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    if (!isManager) {
+      const { rows: staffRows } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      const userRoom = staffRows[0]?.room_id;
+      if (staffRows.length === 0 || userRoom == null) {
+        return res.status(403).json({ error: 'Forbidden — no room assignment' });
+      }
+      const { rows: childRows } = await db.query('SELECT room_id FROM children WHERE id=$1', [child_id]);
+      if (childRows.length && childRows[0].room_id !== userRoom) {
+        return res.status(403).json({ error: 'Forbidden — not your child' });
+      }
+    }
+    // Validate child exists
+    const childCheck = await db.query('SELECT id FROM children WHERE id=$1', [child_id]);
+    if (!childCheck.rows.length) return res.status(404).json({ error: 'Child not found' });
+
     const [childRes, obsRes, frameworkRes, diaryRes] = await Promise.all([
       db.query(`
         SELECT c.*, r.name as room_name,
@@ -248,11 +305,12 @@ Target 300–400 words total. Quote specific observations where possible. Warm b
 
 // GET /:id — get single report
 router.get('/:id', async (req, res) => {
+  const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
   try {
     const db = getPool();
     const { rows } = await db.query(`
       SELECT pr.*, c.first_name, c.last_name, c.preferred_name,
-             pa.parent_1_email, pa.parent_2_email
+             pa.email as parent_email
       FROM parent_reports pr
       LEFT JOIN children c ON c.id = pr.child_id
       LEFT JOIN parent_portal_access pa ON pa.child_id = pr.child_id AND pa.is_active = true
@@ -261,6 +319,20 @@ router.get('/:id', async (req, res) => {
     `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const r = rows[0];
+    // IDOR guard: non-managers can only see reports for children in their room
+    if (!isManager) {
+      const { rows: staffRows } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      const userRoom = staffRows[0]?.room_id;
+      // Non-managers without a room (or not in staff table) get 403
+      if (staffRows.length === 0 || userRoom == null) {
+        return res.status(403).json({ error: 'Forbidden — no room assignment' });
+      }
+      // Note: the JOIN on GET already returns the row from DB (the room_id in rows
+      // is from the JOIN, not staff.room_id). Need to compare user's room vs child's room.
+      if (userRoom !== r.room_id) {
+        return res.status(403).json({ error: 'Forbidden — not your child report' });
+      }
+    }
     res.json({
       ...r,
       content: r.final_content || r.draft_content,
@@ -270,12 +342,28 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// PUT /:id — update draft content
+// PUT /:id — update draft content (IDOR guard: owner/manager only)
 router.put('/:id', async (req, res) => {
   const { content } = req.body;
   if (!content) return res.status(400).json({ error: 'content required' });
   try {
     const db = getPool();
+    // IDOR guard
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    if (!isManager) {
+      const { rows: staffRows } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      const userRoom = staffRows[0]?.room_id;
+      // Non-managers without a room (or not in staff table) get 403
+      if (staffRows.length === 0 || userRoom == null) {
+        return res.status(403).json({ error: 'Forbidden — no room assignment' });
+      }
+      const { rows: reportRows } = await db.query(
+        'SELECT c.room_id FROM parent_reports pr JOIN children c ON c.id=pr.child_id WHERE pr.id=$1', [req.params.id]
+      );
+      if (reportRows.length && reportRows[0].room_id !== userRoom) {
+        return res.status(403).json({ error: 'Forbidden — not your child report' });
+      }
+    }
     const { rows } = await db.query(`
       UPDATE parent_reports SET draft_content=$1 WHERE id=$2 RETURNING id
     `, [content, req.params.id]);
@@ -286,11 +374,26 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// POST /:id/finalise — mark final
+// POST /:id/finalise — mark final (IDOR guard: owner/manager only)
 router.post('/:id/finalise', async (req, res) => {
   const { content } = req.body;
   try {
     const db = getPool();
+    // IDOR guard
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    if (!isManager) {
+      const { rows: staffRows } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      const userRoom = staffRows[0]?.room_id;
+      if (staffRows.length === 0 || userRoom == null) {
+        return res.status(403).json({ error: 'Forbidden — no room assignment' });
+      }
+      const { rows: reportRows } = await db.query(
+        'SELECT c.room_id FROM parent_reports pr JOIN children c ON c.id=pr.child_id WHERE pr.id=$1', [req.params.id]
+      );
+      if (reportRows.length && reportRows[0].room_id !== userRoom) {
+        return res.status(403).json({ error: 'Forbidden — not your child report' });
+      }
+    }
     const { rows } = await db.query(`
       UPDATE parent_reports
       SET final_content = COALESCE($1, draft_content),
@@ -305,7 +408,7 @@ router.post('/:id/finalise', async (req, res) => {
   }
 });
 
-// POST /:id/send — generate PDF and email parent
+// POST /:id/send — generate PDF and email parent (IDOR guard: owner/manager/same-room only)
 router.post('/:id/send', async (req, res) => {
   try {
     const db = getPool();
@@ -319,11 +422,28 @@ router.post('/:id/send', async (req, res) => {
     `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const report = rows[0];
+    // IDOR guard: check room
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    if (!isManager) {
+      const { rows: staffRows } = await db.query('SELECT room_id FROM staff WHERE id=$1', [req.user.id]);
+      const userRoom = staffRows[0]?.room_id;
+      if (staffRows.length === 0 || userRoom == null) {
+        return res.status(403).json({ error: 'Forbidden — no room assignment' });
+      }
+      if (userRoom !== report.room_id) {
+        return res.status(403).json({ error: 'Forbidden — not your child report' });
+      }
+    }
     const content = report.final_content || report.draft_content || '';
     const childName = `${report.first_name} ${report.last_name}`;
-    const parentEmail = report.parent_1_email || report.parent_2_email;
+    // Collect parent emails from portal access; fall back to child's parents
+    const emailRows = await db.query(
+      'SELECT email FROM parent_portal_access WHERE child_id=$1 AND is_active=true ORDER BY created_at LIMIT 2',
+      [report.child_id]
+    );
+    const parentEmails = emailRows.rows.map(r => r.email).filter(Boolean);
 
-    if (!parentEmail) {
+    if (parentEmails.length === 0) {
       return res.status(400).json({ error: 'No parent email on file for this child' });
     }
 
@@ -357,7 +477,7 @@ router.post('/:id/send', async (req, res) => {
       });
       await transporter.sendMail({
         from: process.env.SMTP_FROM || 'wren@example.com',
-        to: [report.parent_1_email, report.parent_2_email].filter(Boolean).join(','),
+        to: parentEmails.join(','),
         subject: `${childName}'s ${report.report_type} — Your Nursery`,
         text: `Dear Parent/Carer,\n\nPlease find ${childName}'s ${report.report_type} attached.\n\nWarm regards,\nYour Nursery`,
         attachments: [{ filename: `${childName}-report.pdf`, content: pdfBuf, contentType: 'application/pdf' }],

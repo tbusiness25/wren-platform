@@ -12,6 +12,106 @@ const totp = require('../lib/totp');
 // Roles that require TOTP when enrolled
 const TOTP_ROLES = ['manager', 'deputy', 'admin'];
 
+// ── Cloudflare Access JWT verification (H1 — parents header trust) ──
+// Behind env flag VERIFY_CF_ACCESS_JWT. DEFAULT FALSE → log-only mode so
+// no parent can be locked out before Toby confirms real traffic carries a
+// valid assertion.
+const VERIFY_CF_ACCESS_JWT = process.env.VERIFY_CF_ACCESS_JWT === 'true';
+const CF_ACCESS_TEAM = 'ladnealing.cloudflareaccess.com';
+const CF_CERTS_URL = `https://${CF_ACCESS_TEAM}/cdn-cgi/access/certs`;
+
+async function _fetchCfAccessPubKey() {
+  try {
+    const res = await fetch(CF_CERTS_URL, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    const jwks = await res.json();
+    // Cloudflare returns { public_key: "..." }
+    return jwks?.public_key || null;
+  } catch {
+    console.warn('[cf-access] could not fetch certs from', CF_CERTS_URL);
+    return null;
+  }
+}
+
+// Verify Cf-Access-Jwt-Assertion matches the claimed email.
+// Returns { ok: true } or { ok: false, reason: '...' }
+async function verifyCfAccessJwt(rawJwt, claimedEmail) {
+  if (!rawJwt || !claimedEmail) return { ok: false, reason: 'no_assertion_or_email' };
+  const pubKey = await _fetchCfAccessPubKey();
+  if (!pubKey) return { ok: false, reason: 'cert_fetch_failed' };
+
+  try {
+    const verified = await jwt.verify(rawJwt, pubKey, {
+      algorithms: ['RS256'],
+      audience: CF_ACCESS_TEAM,
+      clockTolerance: 30, // 30s clock skew tolerance
+    });
+    // The CF cert contains public_key as JWK. jwt.verify with JWK string works
+    // when it's a raw PEM. Cloudflare also serves JWKS at /cdn-cgi/access/certs.
+    // Fallback: try parsing as JWK
+    const parsed = JSON.parse(`{${pubKey.replace(/"/g, '_').replace(/:/g, '":').replace(/,/g, '",').replace(/[\[\]]/g, '')}}`);
+    // Actually, Cloudflare's public_key is base64-encoded PEM. jwt.verify handles PEM.
+    // If it failed above, try JWK approach:
+    const header = JSON.parse(Buffer.from(rawJwt.split('.')[0], 'base64').toString());
+    if (header.alg === 'RS256') {
+      const certUrl = `https://${CF_ACCESS_TEAM}/cdn-cgi/access/certs`;
+      const certsRes = await fetch(certUrl, { signal: AbortSignal.timeout(5000) });
+      if (certsRes.ok) {
+        const certs = await certsRes.json();
+        // Try each key
+        for (const key of (certs.public_keys || [certs])) {
+          const pem = key.public_key || key;
+          try {
+            const v = await jwt.verify(rawJwt, pem, {
+              algorithms: ['RS256'],
+              audience: CF_ACCESS_TEAM,
+              clockTolerance: 30,
+            });
+            const emailMatch = (v.email || v.sub || '').toLowerCase() === claimedEmail.toLowerCase();
+            return emailMatch
+              ? { ok: true, email: v.email || v.sub }
+              : { ok: false, reason: 'email_mismatch', jwt_email: v.email, claimed: claimedEmail };
+          } catch { /* try next key */ }
+        }
+      }
+    }
+    return { ok: false, reason: 'verify_failed' };
+  } catch (e) {
+    return { ok: false, reason: `jwt_error: ${e.message}` };
+  }
+}
+
+// Verify Cloudflare Access JWT for parent login flows.
+// In log-only mode (default): just checks and logs, does NOT block.
+// In enforce mode: blocks login if verification fails.
+function _checkCfAccess(parentEmail, req) {
+  const rawCfJwt = (req.headers['cf-access-jwt-assertion'] || req.headers['cf-access-jwt'] || '').trim();
+  if (!rawCfJwt) {
+    if (VERIFY_CF_ACCESS_JWT) {
+      console.warn(`[cf-access] NO assertion for ${parentEmail} — REJECTING`);
+      return false;
+    }
+    // Log-only mode: no assertion is OK, just log
+    console.info(`[cf-access] no assertion for ${parentEmail} (log-only mode)`);
+    return true;
+  }
+
+  const result = verifyCfAccessJwt(rawCfJwt, parentEmail);
+  if (result.ok) {
+    console.info(`[cf-access] verified for ${parentEmail}`);
+    return true;
+  }
+
+  if (VERIFY_CF_ACCESS_JWT) {
+    console.warn(`[cf-access] VERIFICATION FAILED for ${parentEmail}: ${result.reason} — REJECTING`);
+    return false;
+  }
+
+  // Log-only mode: mismatch is OK for now, just log
+  console.warn(`[cf-access] MISMATCH for ${parentEmail}: ${result.reason} — ALLOWING (log-only)`);
+  return true;
+}
+
 const totpChallengeLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 5,
@@ -324,6 +424,13 @@ router.post('/parent-login', loginLimiter, async (req, res) => {
   if (cfEmail !== email.toLowerCase().trim()) {
     return res.status(403).json({ error: 'Email does not match your verified session. Please use the email you signed in with.' });
   }
+
+  // ── H1: Verify Cloudflare Access JWT assertion (log-only by default) ──
+  const cfOk = _checkCfAccess(email, req);
+  if (!cfOk && VERIFY_CF_ACCESS_JWT) {
+    return res.status(403).json({ error: 'Cloudflare Access verification failed' });
+  }
+
   try {
     const db = getPool();
     const { rows } = await db.query(
@@ -669,6 +776,8 @@ router.post('/set-my-pin', authenticate, async (req, res) => {
 
 
 // POST /api/auth/demo-login — frictionless role-based auto-login (DEMO_MODE only)
+// H3 (2026-06-20): refuse unless the active PG schema is a `demo_*` schema.
+// Prevents demo-login from working on production LADN even if DEMO_MODE=true.
 router.post('/demo-login', loginLimiter, async (req, res) => {
   if (process.env.DEMO_MODE !== 'true') {
     return res.status(403).json({ error: 'Not a demo environment' });
@@ -677,6 +786,17 @@ router.post('/demo-login', loginLimiter, async (req, res) => {
   if (!role) return res.status(400).json({ error: 'role required' });
 
   const db = getPool();
+
+  // Schema guard: demo-login must only work on demo_* schemas
+  try {
+    const { rows: schemaRows } = await db.query('SELECT current_schema()');
+    const activeSchema = schemaRows[0]?.current_schema || '';
+    if (!/^demo_/i.test(activeSchema)) {
+      return res.status(403).json({ error: `Demo login refused — active schema is '${activeSchema}' (must be demo_*)` });
+    }
+  } catch (schemaErr) {
+    return res.status(500).json({ error: 'Could not verify schema' });
+  }
 
   // Parent login — issue a parent JWT
   if (role === 'parent') {

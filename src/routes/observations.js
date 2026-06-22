@@ -795,4 +795,465 @@ router.get('/photo/:filename', (req, res) => {
   res.sendFile(full);
 });
 
+// ── TWINKL-ARI REPORT WRITER — suggest / draft / persist ──────────────
+// These endpoints power the "Draft with Wren" flow:
+//   1. POST /:id/suggest-statements  — AI suggests statement checkboxes + CoEL
+//   2. POST /:id/draft               — AI generates parent-friendly prose
+//   3. POST /:id/statements          — persist human's confirmed links
+
+// Helper: call Ollama with retry logic
+function callOllama(messages, model, timeoutMs) {
+  const url = new URL('/v1/chat/completions', OLLAMA_HOST);
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: model || OLLAMA_MODEL, messages, temperature: 0.3, max_tokens: 2048 }),
+    signal: AbortSignal.timeout(timeoutMs || 30000),
+  }).then(r => {
+    if (!r.ok) throw new Error(`Ollama ${r.status}`);
+    return r.json();
+  });
+}
+
+// Helper: pg_trgm similarity query for statement candidates
+function fetchTrgmCandidates(db, text, frameworks, limit) {
+  const params = [];
+  let sql = `
+    SELECT id, framework, area, aspect, age_range, statement_code, statement_text
+    FROM framework_statements
+    WHERE framework = ANY($1)
+      AND statement_text NOT LIKE '(stub%'
+  `;
+  params.push(frameworks);
+  // pg_trgm: similarity() needs both args typed as text
+  params.push(text);
+  sql += ` ORDER BY similarity(statement_text, $${params.length}::text) DESC`;
+  if (limit && limit > 0) {
+    params.push(limit);
+    sql += ` LIMIT $${params.length}`;
+  }
+  return db.query(sql, params);
+}
+
+// POST /:id/suggest-statements — AI suggests framework statements for an observation
+router.post('/:id/suggest-statements', authenticate, async (req, res) => {
+  const obsId = parseInt(req.params.id);
+  if (isNaN(obsId)) return res.status(400).json({ error: 'observation_id required' });
+
+  const db = getPool();
+  const { observation_text, child_id, frameworks } = req.body;
+
+  // Fetch the observation
+  let obs;
+  try {
+    const { rows } = await db.query(OBS_SELECT + ' WHERE o.id=$1', [obsId]);
+    if (!rows.length) return res.status(404).json({ error: 'Observation not found' });
+    obs = rows[0];
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  // Use provided text if given, otherwise the observation's own text
+  const text = observation_text || obs.observation_text;
+  const childIds = [child_id || obs.child_id];
+  const fwList = frameworks || ['birth_to_5', 'development_matters', 'eyfs_statutory', 'coel'];
+
+  // Fetch child age for any age-filtered frameworks
+  const ageStr = obs.child_age_months !== undefined && obs.child_age_months !== null
+    ? `${Math.floor(obs.child_age_months / 12)}y ${obs.child_age_months % 12}m`
+    : '0-5 years';
+
+  try {
+    // Step 1: pg_trgm similarity to narrow pool (per-framework)
+    const pools = {}; // framework -> candidates
+    for (const fw of fwList) {
+      const candidates = await fetchTrgmCandidates(db, text, [fw], 40);
+      if (candidates.rows.length) pools[fw] = candidates.rows;
+    }
+
+    // Step 2: Ask Ollama to score and pick + flag CoEL
+    let suggestions = [];
+    let coelSuggestions = [];
+    let method = 'ai';
+
+    const staffId = req.user.id;
+    if (isAiDegraded(staffId)) {
+      // Degraded fallback: keyword match
+      method = 'keyword_fallback';
+      for (const [fw, cands] of Object.entries(pools)) {
+        const obsWords = tokenise(text);
+        const scored = cands
+          .map(c => ({ ...c, _score: overlap(obsWords, tokenise(c.statement_text + ' ' + (c.area || '') + ' ' + (c.aspect || ''))) }))
+          .sort((a, b) => b._score - a._score)
+          .slice(0, 2);
+        for (const s of scored) {
+          suggestions.push({ ...s, _why: 'keyword_match' });
+          if (fw === 'coel') coelSuggestions.push({ ...s });
+        }
+      }
+    } else {
+      try {
+        // Build structured prompt for Ollama
+        const poolList = [];
+        for (const [fw, cands] of Object.entries(pools)) {
+          for (const c of cands) {
+            poolList.push(`[${fw}] ${c.area || ''} | ${c.aspect || ''} | ${c.age_range || ''} | ${c.statement_code} | ${c.statement_text}`);
+          }
+        }
+
+        const prompt = `You are a nursery practitioner selecting relevant EYFS framework statements for an observation.
+
+OBSERVATION TEXT: "${text.substring(0, 1000)}"
+CHILD AGE: ${ageStr}
+
+AVAILABLE STATEMENTS (pick the best fits):
+${poolList.join('\n')}
+
+Instructions:
+1. Select 2-5 statements that best match this observation
+2. For each selected statement, give a ONE-LINE reason why it fits
+3. Identify any that are CoEL (Characteristics of Effective Learning) — mark coel_aspect as true
+4. Return ONLY a valid JSON object matching this exact schema (no markdown, no extra text):
+{
+  "suggestions": [
+    {"id": <integer>, "framework": "<framework>", "statement_code": "<code>", "area": "<area>", "aspect": "<aspect>", "age_range": "<age>", "statement_text": "<text>", "_why": "<1-line reason>"}
+  ],
+  "coel_matches": [
+    {"id": <integer>, "framework": "<framework>", "statement_code": "<code>", "aspect": "<aspect>", "coel_level": "emerging|developing|secure"}
+  ]
+}`;
+
+        const result = await callOllama(
+          [{ role: 'system', content: 'You are an expert EYFS practitioner. Only select statements that genuinely match the observation. Never invent statements.' }, { role: 'user', content: prompt }],
+          AI_SUGGESTER_MODEL,
+          30000
+        );
+
+        const content = result?.choices?.[0]?.message?.content || '';
+
+        // Parse JSON from LLM response (may have markdown wrapper)
+        let parsed;
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        } catch { parsed = null; }
+
+        if (parsed && parsed.suggestions?.length) {
+          suggestions = parsed.suggestions;
+          coelSuggestions = parsed.coel_matches || [];
+        } else {
+          method = 'keyword_fallback';
+          for (const [fw, cands] of Object.entries(pools)) {
+            const obsWords = tokenise(text);
+            const scored = cands
+              .map(c => ({ ...c, _score: overlap(obsWords, tokenise(c.statement_text + ' ' + (c.area || '') + ' ' + (c.aspect || ''))) }))
+              .sort((a, b) => b._score - a._score)
+              .slice(0, 2);
+            for (const s of scored) {
+              suggestions.push({ ...s, _why: 'keyword_match' });
+            }
+          }
+        }
+        recordAiSuccess(staffId);
+      } catch (aiErr) {
+        appendLog(`suggest-statements AI failed: ${aiErr.message} — falling back to pg_trgm ranking`);
+        recordAiFailure(staffId);
+        method = 'pg_trgm_rank';
+        for (const [fw, cands] of Object.entries(pools)) {
+          const scored = cands
+            .map(c => ({
+              ...c,
+              _score: similarity(c.statement_text, text)
+            }))
+            .sort((a, b) => b._score - a._score)
+            .slice(0, 3);
+          for (const s of scored) {
+            suggestions.push({ ...s, _why: 'similarity_rank' });
+            if (fw === 'coel') coelSuggestions.push({ ...s, coel_level: 'developing' });
+          }
+        }
+      }
+    }
+
+    res.json({
+      observation_id: obsId,
+      child_name: obs.child_name,
+      child_age_months: obs.child_age_months,
+      method,
+      suggestions,
+      coel_matches: coelSuggestions,
+      total_candidates: Object.values(pools).reduce((a, b) => a + b.length, 0)
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Helper: similarity between two strings (Levenshtein-like, simpler)
+function similarity(a, b) {
+  const wordsA = new Set(tokenise(a));
+  const wordsB = new Set(tokenise(b));
+  if (!wordsA.size || !wordsB.size) return 0;
+  let common = 0;
+  for (const w of wordsA) if (wordsB.has(w)) common++;
+  return common / Math.max(wordsA.size, wordsB.size);
+}
+
+// POST /:id/draft — AI generates parent-friendly prose from confirmed selections
+router.post('/:id/draft', authenticate, async (req, res) => {
+  const obsId = parseInt(req.params.id);
+  if (isNaN(obsId)) return res.status(400).json({ error: 'observation_id required' });
+
+  const { observation_text, child_name, child_pronouns, statement_codes, coel_selections } = req.body;
+  const db = getPool();
+
+  // Fetch observation + child info
+  let obs;
+  try {
+    const { rows } = await db.query(OBS_SELECT + ' WHERE o.id=$1', [obsId]);
+    if (!rows.length) return res.status(404).json({ error: 'Observation not found' });
+    obs = rows[0];
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  const txt = observation_text || obs.observation_text;
+  const name = child_name || obs.child_name;
+  const pronouns = child_pronouns || 'they';
+
+  // Fetch the confirmed statement details from the database
+  let stmtDetails = [];
+  if (statement_codes?.length) {
+    const placeholders = statement_codes.map((_, i) => `$${i + 2}`).join(',');
+    const params = [obsId, ...statement_codes];
+    try {
+      const { rows: stmts } = await db.query(
+        `SELECT fs.id, fs.framework, fs.area, fs.aspect, fs.age_range, fs.statement_code, fs.statement_text
+         FROM framework_statements fs LEFT JOIN ladn.observation_statements os ON os.statement_id = fs.id
+         WHERE fs.statement_code = ANY($${1}) AND fs.id IN (${placeholders})`,
+        [statement_codes, ...statement_codes]
+      );
+      stmtDetails = stmts;
+    } catch {
+      // Non-fatal: fall back to empty
+    }
+  }
+
+  try {
+    const { child_age_months } = obs;
+    const ageStr = child_age_months !== undefined
+      ? `${Math.floor(child_age_months / 12)} years ${child_age_months % 12} months`
+      : 'age not known';
+
+    // Build prompt with confirmed statements
+    const stmtList = (stmtDetails.length ? stmtDetails.map(s =>
+      `▸ ${s.framework}/${s.statement_code}: "${s.statement_text}"`
+    ).join('\n') : (statement_codes?.map(c => `▸ ${c}`).join('\n') || 'None'));
+
+    const coelList = (coel_selections?.length ? coel_selections.map(c =>
+      `▸ ${c.characteristic} (${c.level}): ${c.coel_text || '(tick)'}`
+    ).join('\n') : 'None');
+
+    const prompt = `You are a warm, professional nursery practitioner writing observations for parents.
+
+CHILD: ${name}, age ${ageStr}, pronouns: ${pronouns}
+
+OBSERVATION TEXT (what happened):
+"${txt.substring(0, 1200)}"
+
+CONFIRMED STATEMENTS (these were ticked by the practitioner — include verbatim where appropriate):
+${stmtList}
+
+CONFIRMED CoEL (Characteristics of Effective Learning):
+${coelList}
+
+Write THREE outputs in this EXACT format:
+---OBSERVATION---
+[Keep the original observation text lightly edited for clarity]
+
+---PARENT_TEXT---
+[A warm, parent-friendly version using the confirmed statements woven into the prose naturally. Never invent new attainment claims. Use ${pronouns} for ${name}. Be specific, positive, and parent-accessible. 200-300 words.]
+
+---NEXT_STEPS---
+[3 specific, actionable next steps that build on what was observed. Each should connect to a framework area. Start each with an action verb.]
+
+CRITICAL RULES:
+- Use the VERBATIM confirmed statements in the parent text
+- Do NOT invent new framework attainment claims
+- Keep CoEL references natural, never clinical
+- The next steps should be practical things staff can do next day
+---OBSERVATION--- should be a polished version of the original`;
+
+    const result = await callOllama(
+      [
+        { role: 'system', content: 'You are helping a nursery practitioner write a warm, parent-friendly observation report. Follow the EXACT output format with ---SEPARATOR--- lines.' },
+        { role: 'user', content: prompt }
+      ],
+      OLLAMA_MODEL,
+      45000
+    );
+
+    const content = result?.choices?.[0]?.message?.content || '';
+
+    // Parse the three sections
+    const parts = content.split('---OBSERVATION---');
+    let obsEdit = '';
+    let parentText = '';
+    let nextSteps = '';
+
+    if (parts.length >= 2) {
+      // The first part of the second separator split is the observation text
+      if (parts[1].includes('---PARENT_TEXT---')) {
+        const p1p2 = parts[1].split('---PARENT_TEXT---');
+        obsEdit = p1p2[0].trim();
+        if (p1p2[1].includes('---NEXT_STEPS---')) {
+          const p3 = p1p2[1].split('---NEXT_STEPS---');
+          parentText = p3[0].trim();
+          nextSteps = p3[1].trim();
+        }
+      }
+    }
+
+    // If parsing failed, return raw content
+    if (!parentText && content.includes('Dear') && content.length > 100) {
+      parentText = content;
+    }
+
+    // Format next steps as array
+    let stepsList = [];
+    if (nextSteps) {
+      stepsList = nextSteps.split('\n').filter(l => l.trim().length > 0 && (l.startsWith('-') || l.startsWith('*') || l.startsWith('▸') || /\d+\./.test(l))).map(l => l.replace(/^[-*▸\d.]+\s*/, '').trim());
+      if (!stepsList.length) stepsList = [nextSteps];
+    }
+
+    res.json({
+      observation_id: obsId,
+      polished_observation: obsEdit || content.slice(0, 500),
+      parent_friendly_text: parentText || content,
+      next_steps: stepsList,
+      model: OLLAMA_MODEL
+    });
+  } catch (e) {
+    appendLog(`draft endpoint failed: ${e.message}`);
+    res.status(500).json({ error: 'AI draft failed: ' + e.message });
+  }
+});
+
+// POST /:id/statements — persist confirmed statement links + next steps
+router.post('/:id/statements', authenticate, async (req, res) => {
+  const obsId = parseInt(req.params.id);
+  if (isNaN(obsId)) return res.status(400).json({ error: 'observation_id required' });
+
+  const { statements, coel_selections, next_steps_text } = req.body;
+  const db = getPool();
+
+  // Validate input
+  if (!statements && !coel_selections && !next_steps_text) {
+    return res.status(400).json({ error: 'Provide statements, coel_selections, or next_steps_text' });
+  }
+
+  try {
+    const results = { persisted_statements: 0, persisted_coel: 0, updated_next_steps: false };
+
+    // Persist statement links
+    if (statements?.length) {
+      for (const stmt of statements) {
+        const { statement_id, framework, statement_code } = stmt;
+        if (!statement_id) continue;
+
+        // Check if already linked to avoid duplicate
+        const existing = await db.query(
+          'SELECT id FROM observation_statements WHERE observation_id=$1 AND statement_id=$2 LIMIT 1',
+          [obsId, statement_id]
+        );
+
+        if (existing.rows.length) {
+          // Update existing entry
+          await db.query(
+            'UPDATE observation_statements SET confirmed_by=$1, is_next_step=COALESCE($2, is_next_step), updated_at=NOW() WHERE id=$3',
+            [req.user.id, stmt.is_next_step || false, existing.rows[0].id]
+          );
+        } else {
+          // Insert new link
+          await db.query(`
+            INSERT INTO observation_statements (observation_id, statement_id, framework, statement_code, coel_characteristic, coel_level, is_next_step, source, confirmed_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `, [obsId, statement_id, framework, statement_code, null, null, stmt.is_next_step || false, 'manual', req.user.id]);
+        }
+        results.persisted_statements++;
+      }
+
+      // Clear AI-suggested rows that weren't picked (optional, for cleanliness)
+      await db.query(
+        `DELETE FROM observation_statements WHERE observation_id=$1 AND source='ai_suggested' AND confirmed_by IS NULL`,
+        [obsId]
+      );
+    }
+
+    // Persist CoEL selections
+    if (coel_selections?.length) {
+      for (const sel of coel_selections) {
+        // Find the CoEL framework statement matching this characteristic + level
+        const coelFwResult = await db.query(
+          `SELECT id, statement_code FROM framework_statements
+           WHERE framework='coel' AND coel_characteristic IS NOT NULL
+             AND LOWER($1) = 'developing'`,
+          [sel.coel_level]
+        );
+        // Simpler approach: just record as a special CoEL link
+        // (CoEL rows have aspect=0, so we match by characteristic text)
+        if (sel.statement_id) {
+          const cex = await db.query(
+            'SELECT id FROM observation_statements WHERE observation_id=$1 AND statement_id=$2 LIMIT 1',
+            [obsId, sel.statement_id]
+          );
+          const row = {};
+          if (cex.rows.length) {
+            row.id = cex.rows[0].id;
+            row.confirmed_by = req.user.id;
+            row.coel_characteristic = sel.characteristic || row.coel_characteristic;
+            row.coel_level = sel.level || row.coel_level;
+            await db.query(
+              'UPDATE observation_statements SET confirmed_by=$1, coel_characteristic=$2, coel_level=$3, updated_at=NOW() WHERE id=$4',
+              [req.user.id, sel.characteristic, sel.level, row.id]
+            );
+          } else {
+            await db.query(
+              `INSERT INTO observation_statements (observation_id, statement_id, framework, statement_code, coel_characteristic, coel_level, is_next_step, source, confirmed_by, created_at)
+               VALUES ($1, $2, 'coel', $3, $4, $5, $6, 'manual', $7, NOW() AT TIME ZONE 'UTC')`,
+              [obsId, sel.statement_id, sel.statement_code, sel.characteristic, sel.level, false, req.user.id]
+            );
+          }
+        }
+        results.persisted_coel++;
+      }
+    }
+
+    // Update next_steps text directly on the observation
+    if (next_steps_text && next_steps_text.trim().length > 0) {
+      await db.query('UPDATE observations SET next_steps=$1, updated_at=NOW() WHERE id=$2', [next_steps_text.trim(), obsId]);
+      results.updated_next_steps = true;
+    }
+
+    // Fetch updated linked statements for return
+    const { rows } = await db.query(
+      `SELECT os.*, fs.framework, fs.area, fs.aspect, fs.age_range, fs.statement_code, fs.statement_text
+       FROM observation_statements os
+       JOIN framework_statements fs ON fs.id = os.statement_id
+       WHERE os.observation_id=$1
+       ORDER BY os.is_next_step DESC, os.created_at`,
+      [obsId]
+    );
+
+    res.json({
+      ...results,
+      linked_statements: rows,
+      message: 'Statement links saved'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ╔══════════════════════════════════════════╗
+// ║ OLD endpoint kept for backwards compat  ║
+// ║ POST /ai-suggest-statements (global)   ║
+// ║ Now delegates to the new endpoint above ║
+// ╚══════════════════════════════════════════╝
+// (ai-suggest-statements already exists earlier in this file — do not duplicate)
+
 module.exports = router;

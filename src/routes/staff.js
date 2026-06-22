@@ -78,13 +78,18 @@ router.get('/:id', async (req, res) => {
       WHERE s.id=$1
     `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    // Only managers/deputies can see all fields for other staff
     const safe = rows[0];
+    // pin_hash must NEVER reach the client (offline-crackable; PINs are protected — CLAUDE rule 1)
+    delete safe.pin_hash;
+    // Sensitive PII/financial fields: visible only to the staff member themselves or managers/deputies
     if (req.user.id !== parseInt(req.params.id) &&
         !['manager','deputy_manager'].includes(req.user.role)) {
-      delete safe.ni_number;
-      delete safe.date_of_birth;
-      delete safe.dbs_number;
+      for (const f of ['ni_number','date_of_birth','dbs_number','hourly_rate','annual_salary','salary',
+                       'address_line1','address_line2','address','postcode',
+                       'emergency_contact_name','emergency_contact_phone','emergency_contact',
+                       'bank_account_number','bank_sort_code','telegram_chat_id']) {
+        delete safe[f];
+      }
     }
     res.json(safe);
   } catch (e) {

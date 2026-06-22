@@ -461,6 +461,7 @@ router.get('/overview', (req, res) => overviewHandler(req, res));
 
 // GET /:id
 router.get('/:id', async (req, res) => {
+  const isManager = ['manager','deputy_manager'].includes(req.user.role);
   try {
     const db = getPool();
     const { rows } = await db.query(`
@@ -472,6 +473,10 @@ router.get('/:id', async (req, res) => {
       LEFT JOIN ladn.staff s2 ON s2.id = sv.supervisor_id
       WHERE sv.id=$1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    // IDOR guard: non-managers can only view their own supervision
+    if (!isManager && Number(rows[0].staff_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden — not your supervision' });
+    }
     const { rows: targets } = await db.query(
       'SELECT * FROM ladn.supervision_targets WHERE supervision_id=$1 ORDER BY due_date', [req.params.id]
     );
@@ -499,26 +504,42 @@ router.post('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /:id — update supervision
+// PUT /:id — update supervision (IDOR guard: manager or staff for own wellbeing fields)
 router.put('/:id', async (req, res) => {
-  const fields = ['manager_notes','discussion_notes','transcript','ai_summary','wellbeing_rag',
-    'wellbeing_rag_reason','agreed_targets','manager_actions','action_items','agenda_items',
-    'status','type','conducted_date','next_supervision_date','wellbeing_score','audio_url',
-    'audio_recording_path','staff_signature_at','manager_signature_at',
-    'staff_signoff','supervisor_signoff','ai_summary_generated_at'];
-  const jsonFields = ['agreed_targets','manager_actions','action_items','agenda_items'];
-  const updates=[], vals=[];
-  fields.forEach(f=>{
-    if(req.body[f]!==undefined){
-      vals.push(jsonFields.includes(f)?JSON.stringify(req.body[f]):req.body[f]);
-      updates.push(`${f}=$${vals.length}`);
-    }
-  });
-  if(!updates.length) return res.status(400).json({error:'No fields'});
-  updates.push(`updated_at=NOW()`);
-  vals.push(req.params.id);
+  const isManager = ['manager','deputy_manager'].includes(req.user.role);
   try {
     const db = getPool();
+    // IDOR guard: check who owns this supervision
+    const { rows: svRows } = await db.query('SELECT staff_id FROM ladn.supervisions WHERE id=$1', [req.params.id]);
+    if (!svRows.length) return res.status(404).json({ error: 'Not found' });
+    if (!isManager && Number(svRows[0].staff_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden — not your supervision' });
+    }
+    // Staff may only update wellbeing/notes fields; managers get full update
+    if (!isManager) {
+      const allowedStaff = ['wellbeing_score'];
+      const disallowed = Object.keys(req.body).filter(f => !allowedStaff.includes(f));
+      if (disallowed.length) {
+        return res.status(403).json({ error: `Forbidden — staff can only update: ${allowedStaff.join(', ')}` });
+      }
+    }
+
+    const fields = ['manager_notes','discussion_notes','transcript','ai_summary','wellbeing_rag',
+      'wellbeing_rag_reason','agreed_targets','manager_actions','action_items','agenda_items',
+      'status','type','conducted_date','next_supervision_date','wellbeing_score','audio_url',
+      'audio_recording_path','staff_signature_at','manager_signature_at',
+      'staff_signoff','supervisor_signoff','ai_summary_generated_at'];
+    const jsonFields = ['agreed_targets','manager_actions','action_items','agenda_items'];
+    const updates=[], vals=[];
+    fields.forEach(f=>{
+      if(req.body[f]!==undefined){
+        vals.push(jsonFields.includes(f)?JSON.stringify(req.body[f]):req.body[f]);
+        updates.push(`${f}=$${vals.length}`);
+      }
+    });
+    if(!updates.length) return res.status(400).json({error:'No fields'});
+    updates.push(`updated_at=NOW()`);
+    vals.push(req.params.id);
     const { rows } = await db.query(
       `UPDATE ladn.supervisions SET ${updates.join(',')} WHERE id=$${vals.length} RETURNING *`, vals
     );
@@ -629,11 +650,23 @@ router.get('/:id/audio', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// PUT /targets/:targetId — update a target
+// PUT /targets/:targetId — update a target (IDOR guard)
 router.put('/targets/:targetId', async (req, res) => {
   const { achieved, achieved_date, progress_notes } = req.body;
   try {
     const db = getPool();
+    // IDOR guard: verify target's supervision belongs to this user or user is manager
+    const isManager = ['manager','deputy_manager'].includes(req.user.role);
+    if (!isManager) {
+      const { rows: tRows } = await db.query(
+        `SELECT sv.staff_id FROM ladn.supervision_targets t JOIN ladn.supervisions sv ON sv.id=t.supervision_id WHERE t.id=$1`,
+        [req.params.targetId]
+      );
+      if (!tRows.length) return res.status(404).json({ error: 'Target not found' });
+      if (Number(tRows[0].staff_id) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Forbidden — not your target' });
+      }
+    }
     const { rows } = await db.query(`
       UPDATE ladn.supervision_targets
       SET achieved=COALESCE($1,achieved), achieved_date=COALESCE($2,achieved_date),

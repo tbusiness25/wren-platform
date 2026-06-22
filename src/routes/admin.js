@@ -723,6 +723,8 @@ const WIPE_TABLES = [
   'invoices','payments','voice_notes','vapi_calls','outings','reports','parent_reports',
   'action_plans','action_plan_items','action_plan_comments','supervisions','supervision_targets','cpd_records','absence_requests',
   'audit_log','email_audit','email_triage','notifications','notification_deliveries','decision_log',
+  // GDPR: wipe assistant data (child/staff data goes through local Ollama)
+  'assistant_memory','assistant_profile','assistant_shared_memory',
 ];
 
 router.get('/wipe-status', (req, res) => res.json({ enabled: process.env.ALLOW_WIPE === 'true' }));

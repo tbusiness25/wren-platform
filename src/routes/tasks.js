@@ -58,17 +58,19 @@ router.get('/', async (req, res) => {
 // POST /api/tasks
 router.post('/', async (req, res) => {
   const { title, description, status, priority, due_date, owner_staff_id,
-          source, source_ref, linked_to, linked_id } = req.body;
+          source, source_ref, linked_to, linked_id, time_of_day } = req.body;
   if (!title) return res.status(400).json({ error: 'title required' });
   const db = getPool();
   try {
     const { rows } = await db.query(
       `INSERT INTO tasks (title, description, status, priority, due_date,
-         owner_staff_id, created_by, source, source_ref, linked_to, linked_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+         owner_staff_id, created_by, source, source_ref, linked_to, linked_id,
+         time_of_day)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [title, description || null, status || 'open', priority || 'medium',
        due_date || null, owner_staff_id || null, req.user.id,
-       source || 'manual', source_ref || null, linked_to || null, linked_id || null]
+       source || 'manual', source_ref || null, linked_to || null, linked_id || null,
+       time_of_day || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -81,7 +83,8 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const allowed = ['title','description','status','priority','due_date',
-                   'owner_staff_id','source','source_ref','linked_to','linked_id'];
+                 'owner_staff_id','source','source_ref','linked_to','linked_id',
+                 'time_of_day'];
   const updates = [];
   const vals = [];
   for (const f of allowed) {

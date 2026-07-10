@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Google Classroom — Parent View — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .cl-card { background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px; }
+    .cl-card-title { font-weight:700;font-size:15px;margin-bottom:6px; }
+    .cl-card-meta { font-size:13px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:8px;align-items:center; }
+    .state-badge { display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase; }
+    .state-TURNED_IN  { background:#14532d;color:#4ade80; }
+    .state-RETURNED   { background:#1e3a5f;color:#60a5fa; }
+    .state-CREATED    { background:#422006;color:#fdba74; }
+    .state-NEW        { background:#1e293b;color:#94a3b8;border:1px solid #2d3748; }
+    .grade-pill { background:rgba(74,154,191,.15);color:#4a9abf;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700; }
+    .overdue-flag { color:#ef4444;font-weight:700;font-size:12px; }
+    .sync-stamp { font-size:12px;color:var(--text-muted);margin-bottom:14px; }
+    .child-selector { display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px; }
+    .child-chip { padding:8px 16px;border-radius:99px;background:var(--card-bg);border:2px solid var(--border);color:var(--text-muted);cursor:pointer;font-size:14px;font-weight:600;transition:.15s; }
+    .child-chip.active { border-color:#4a9abf;color:#4a9abf;background:rgba(74,154,191,.08); }
+    .summary-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px; }
+    .summary-card { background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center; }
+    .summary-value { font-size:1.6rem;font-weight:700;color:#4a9abf; }
+    .summary-label { font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px; }
+    .tab-bar { display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:18px; }
+    .tab-btn { background:none;border:none;color:var(--text-muted);padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s; }
+    .tab-btn.active { color:#4a9abf;border-bottom-color:#4a9abf; }
+    .no-data { padding:32px;text-align:center;color:var(--text-muted);font-size:14px; }
+    @media(max-width:500px) { .summary-grid { grid-template-columns:1fr 1fr; } }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Google Classroom</div>
+      <div class="page-subtitle">Your child's assignments &amp; grades</div>
+    </div>
+  </div>
+
+  <!-- Child selector (shown when parent has multiple children at this school) -->
+  <div id="child-selector" class="child-selector" style="display:none"></div>
+
+  <div id="sync-info" class="sync-stamp"></div>
+
+  <!-- Summary stats -->
+  <div class="summary-grid" id="summary-grid" style="display:none">
+    <div class="summary-card">
+      <div class="summary-value" id="stat-total">—</div>
+      <div class="summary-label">Assignments</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="stat-submitted" style="color:#22c55e">—</div>
+      <div class="summary-label">Turned in</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="stat-overdue" style="color:#ef4444">—</div>
+      <div class="summary-label">Overdue</div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="due-soon">Due soon</button>
+    <button class="tab-btn" data-tab="all">All</button>
+    <button class="tab-btn" data-tab="graded">Graded</button>
+    <button class="tab-btn" data-tab="overdue">Overdue</button>
+  </div>
+
+  <div id="tab-due-soon"><div class="no-data">Loading…</div></div>
+  <div id="tab-all"     style="display:none"><div class="no-data">Loading…</div></div>
+  <div id="tab-graded"  style="display:none"><div class="no-data">Loading…</div></div>
+  <div id="tab-overdue" style="display:none"><div class="no-data">Loading…</div></div>
+</div>
+
+<script>
+let assignments = [];
+let currentChildId = null;
+const children = []; // populated from parent's linked children
+
+async function init() {
+  const user = Wren?.user || {};
+
+  // Parent may have linked children via child_ids array or single child_id
+  const ids = user.child_ids || (user.child_id ? [user.child_id] : []);
+
+  if (!ids.length) {
+    document.getElementById('tab-due-soon').innerHTML =
+      '<div class="no-data">No children linked to this account.<br>Contact your school administrator.</div>';
+    return;
+  }
+
+  // If multiple children, show selector
+  if (ids.length > 1) {
+    const names = user.child_names || ids.map((_, i) => `Child ${i + 1}`);
+    const sel = document.getElementById('child-selector');
+    sel.style.display = 'flex';
+    ids.forEach((id, i) => {
+      const chip = document.createElement('button');
+      chip.className = 'child-chip' + (i === 0 ? ' active' : '');
+      chip.textContent = names[i] || `Child ${i + 1}`;
+      chip.dataset.childId = id;
+      chip.onclick = () => selectChild(id, chip);
+      sel.appendChild(chip);
+    });
+  }
+
+  currentChildId = ids[0];
+  await loadChild(currentChildId);
+}
+
+function selectChild(id, chipEl) {
+  currentChildId = id;
+  document.querySelectorAll('.child-chip').forEach(c => c.classList.remove('active'));
+  chipEl.classList.add('active');
+  loadChild(id);
+}
+
+async function loadChild(childId) {
+  document.getElementById('tab-due-soon').innerHTML = '<div class="no-data">Loading…</div>';
+
+  const data = await fetch(`/api/classroom/student/${childId}`, { headers: authHeaders() })
+    .then(r => r.ok ? r.json() : { assignments: [], last_synced_at: null })
+    .catch(() => ({ assignments: [], last_synced_at: null }));
+
+  assignments = data.assignments || [];
+
+  // Sync stamp
+  const stamp = document.getElementById('sync-info');
+  if (data.last_synced_at) {
+    const ok = data.sync_ok !== false;
+    stamp.innerHTML = ok
+      ? `Last synced ${timeSince(data.last_synced_at)}`
+      : `<span style="color:#f59e0b">Last sync had issues — showing cached data (${timeSince(data.last_synced_at)})</span>`;
+  }
+
+  updateSummary();
+  renderTab('due-soon');
+  renderTab('all');
+  renderTab('graded');
+  renderTab('overdue');
+
+  document.getElementById('summary-grid').style.display = assignments.length ? '' : 'none';
+}
+
+function updateSummary() {
+  const today = new Date().toISOString().slice(0, 10);
+  const total    = assignments.length;
+  const submitted = assignments.filter(a => ['TURNED_IN','RETURNED'].includes(a.submission_state)).length;
+  const overdue  = assignments.filter(a => a.due_date && a.due_date < today && !['TURNED_IN','RETURNED'].includes(a.submission_state)).length;
+  document.getElementById('stat-total').textContent    = total;
+  document.getElementById('stat-submitted').textContent = submitted;
+  document.getElementById('stat-overdue').textContent   = overdue;
+}
+
+function renderTab(tab) {
+  const today = new Date().toISOString().slice(0,10);
+  const nextWeek = new Date(); nextWeek.setDate(nextWeek.getDate() + 7);
+  const nextWeekStr = nextWeek.toISOString().slice(0,10);
+
+  let items;
+  switch (tab) {
+    case 'due-soon':
+      items = assignments.filter(a => a.due_date && a.due_date >= today && a.due_date <= nextWeekStr)
+                         .sort((a,b) => a.due_date.localeCompare(b.due_date));
+      break;
+    case 'all':
+      items = [...assignments].sort((a,b) => (a.due_date||'').localeCompare(b.due_date||''));
+      break;
+    case 'graded':
+      items = assignments.filter(a => a.assigned_grade != null)
+                         .sort((a,b) => (b.due_date||'').localeCompare(a.due_date||''));
+      break;
+    case 'overdue':
+      items = assignments.filter(a => a.due_date && a.due_date < today && !['TURNED_IN','RETURNED'].includes(a.submission_state))
+                         .sort((a,b) => a.due_date.localeCompare(b.due_date));
+      break;
+    default: items = [];
+  }
+
+  const el = document.getElementById('tab-' + tab);
+  if (!items.length) {
+    el.innerHTML = '<div class="no-data">' +
+      (tab === 'due-soon' ? 'Nothing due in the next 7 days' :
+       tab === 'graded'   ? 'No graded work yet' :
+       tab === 'overdue'  ? 'No overdue assignments' :
+       'No assignments') + '</div>';
+    return;
+  }
+  el.innerHTML = items.map(a => renderCard(a, today)).join('');
+}
+
+function switchTab(btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['due-soon','all','graded','overdue'].forEach(id => {
+    document.getElementById('tab-' + id).style.display = btn.dataset.tab === id ? '' : 'none';
+  });
+}
+
+function renderCard(a, today) {
+  const overdue = a.due_date && a.due_date < today && !['TURNED_IN','RETURNED'].includes(a.submission_state);
+  const state = a.submission_state || 'NEW';
+
+  return `<div class="cl-card">
+    <div class="cl-card-title">${escHtml(a.coursework_title)}</div>
+    <div class="cl-card-meta">
+      <span style="color:#4a9abf">${escHtml(a.course_name || '')}</span>
+      ${a.due_date ? `<span>${overdue ? '<span class="overdue-flag">OVERDUE — </span>' : ''}Due ${fmtDate(a.due_date)}</span>` : ''}
+      ${a.max_points ? `<span style="color:var(--text-muted)">${a.max_points} pts</span>` : ''}
+      <span class="state-badge state-${state.replace(/\s/g,'_')}">${stateLabel(state)}</span>
+      ${a.assigned_grade != null ? `<span class="grade-pill">${a.assigned_grade}${a.max_points ? `/${a.max_points}` : ''}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function stateLabel(s) {
+  const map = {
+    TURNED_IN:'Turned in', RETURNED:'Returned', CREATED:'Assigned',
+    NEW:'Not started', RECLAIMED_BY_STUDENT:'Reclaimed',
+  };
+  return map[s] || s;
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const [y,m,day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+function timeSince(iso) {
+  const h = Math.floor((Date.now() - new Date(iso)) / 3600000);
+  if (h < 1) return 'just now';
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function authHeaders() {
+  const t = sessionStorage.getItem('wren_token') || localStorage.getItem('wren_token') || '';
+  return t ? { Authorization: 'Bearer ' + t } : {};
+}
+
+document.querySelector('.tab-bar').addEventListener('click', function(e) {
+  const btn = e.target.closest('.tab-btn');
+  if (btn) switchTab(btn);
+});
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

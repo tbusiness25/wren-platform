@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Medicine Records — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .med-tab-bar{display:flex;gap:4px;background:#1e293b;border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap}
+    .med-tab{flex:1;min-width:90px;padding:8px;border-radius:8px;border:none;background:transparent;color:#94a3b8;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500}
+    .med-tab.active{background:#4a9abf;color:#fff;font-weight:700}
+    .med-pane{display:none}.med-pane.active{display:block}
+    .med-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:14px;margin-bottom:10px}
+    .med-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+    .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase}
+    .pill-signed{background:rgba(34,197,94,.15);color:#22c55e}.pill-await{background:rgba(245,158,11,.15);color:#f59e0b}
+    .med-empty{color:#64748b;font-size:13px;padding:20px;text-align:center}
+    .au-row{display:grid;grid-template-columns:120px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #1e293b;font-size:12px;color:#94a3b8}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <div><div class="page-title">Medicine Records</div><div class="page-subtitle">Administered medicine, sign-off & audit trail</div></div>
+    <button class="btn btn-primary" id="btn-add-med">+ Record medicine</button>
+  </div>
+
+  <div class="med-tab-bar">
+    <button class="med-tab active" id="t-today">Today</button>
+    <button class="med-tab" id="t-child">By child</button>
+    <button class="med-tab" id="t-audit">Audit log</button>
+  </div>
+
+  <div class="med-pane active" id="p-today"><div class="med-empty">Loading…</div></div>
+
+  <div class="med-pane" id="p-child">
+    <div class="form-group" style="max-width:320px;margin-bottom:14px">
+      <label class="form-label">Child</label>
+      <select class="form-control" id="med-child-sel"><option value="">Select a child…</option></select>
+    </div>
+    <div id="child-records"><div class="med-empty">Select a child to see their medicine history.</div></div>
+  </div>
+
+  <div class="med-pane" id="p-audit"><div class="med-empty">Loading audit…</div></div>
+</div>
+
+<!-- Add medicine modal -->
+<div id="add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;overflow-y:auto">
+  <div class="card" style="max-width:440px;margin:6vh auto;padding:22px">
+    <h3 style="margin:0 0 16px;color:#f1f5f9">Record medicine</h3>
+    <div class="form-group"><label class="form-label">Child *</label><select class="form-control" id="m-child"></select></div>
+    <div class="form-group"><label class="form-label">Medicine *</label><input class="form-control" id="m-name" placeholder="e.g. Calpol"></div>
+    <div class="form-group"><label class="form-label">Dose</label><input class="form-control" id="m-dose" placeholder="e.g. 2.5ml"></div>
+    <div class="form-group"><label class="form-label">Time given</label><input type="time" class="form-control" id="m-time"></div>
+    <div class="form-group"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="m-consent"> Parent has given written consent</label></div>
+    <div class="form-group"><label class="form-label">Notes</label><input class="form-control" id="m-notes"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" id="m-cancel">Cancel</button>
+      <button class="btn btn-primary" id="m-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let children = [], canSignOff = false;
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmt(d){return d?new Date(d).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'—';}
+
+function recordCard(m){
+  const signed = m.manager_sign_off_at
+    ? '<span class="pill pill-signed">✓ Signed off</span>'
+    : (canSignOff ? `<button class="btn btn-sm btn-secondary" data-signoff="${m.id}">Sign off</button>` : '<span class="pill pill-await">Awaiting sign-off</span>');
+  return `<div class="med-card"><div class="med-row">
+    <div><div style="color:#f1f5f9;font-weight:600">${esc(m.medicine_name)}${m.dose?' — '+esc(m.dose):''}</div>
+      <div style="font-size:.78rem;color:#94a3b8">${esc(m.child_name||('Child #'+m.child_id))} · ${fmt(m.time_given||m.created_at)}${m.parent_consent?' · consent ✓':''}${m.notes?' · '+esc(m.notes):''}</div></div>
+    <div>${signed}</div></div></div>`;
+}
+
+async function loadToday(){
+  const el=document.getElementById('p-today');
+  try{const recs=await Wren.api('/api/medicine/today');
+    el.innerHTML = (recs&&recs.length)?recs.map(recordCard).join(''):'<div class="med-empty">No medicine recorded today.</div>';
+  }catch(e){el.innerHTML='<div class="med-empty" style="color:#ef4444">Could not load</div>';}
+}
+async function loadChild(id){
+  const el=document.getElementById('child-records');
+  if(!id){el.innerHTML='<div class="med-empty">Select a child to see their medicine history.</div>';return;}
+  el.innerHTML='<div class="med-empty">Loading…</div>';
+  try{const recs=await Wren.api('/api/medicine/child/'+id);
+    el.innerHTML=(recs&&recs.length)?recs.map(recordCard).join(''):'<div class="med-empty">No medicine records for this child.</div>';
+  }catch(e){el.innerHTML='<div class="med-empty" style="color:#ef4444">Could not load</div>';}
+}
+async function loadAudit(){
+  const el=document.getElementById('p-audit');
+  try{const data=await Wren.api('/api/audit?entity_type=medicine_record&limit=100');
+    const rows=Array.isArray(data)?data:(data.rows||data.entries||[]);
+    el.innerHTML=rows.length?('<div class="card" style="padding:14px">'+rows.map(r=>`<div class="au-row"><span>${fmt(r.occurred_at)}</span><span><strong style="color:#f1f5f9">${esc(r.action)}</strong> record #${esc(r.entity_id)} — ${esc(r.actor_email||r.actor_id||'')}${r.meta&&r.meta.medicine_name?' ('+esc(r.meta.medicine_name)+')':''}</span></div>`).join('')+'</div>'):'<div class="med-empty">No audit entries yet.</div>';
+  }catch(e){el.innerHTML='<div class="med-empty" style="color:#ef4444">Could not load audit</div>';}
+}
+
+function tab(name){
+  ['today','child','audit'].forEach(n=>{document.getElementById('t-'+n).classList.toggle('active',n===name);document.getElementById('p-'+n).classList.toggle('active',n===name);});
+  if(name==='audit')loadAudit();
+}
+
+document.addEventListener('wren:ready', async ()=>{
+  canSignOff = !!(Wren.user && ['manager','deputy_manager','admin'].includes(Wren.user.role));
+  try{children = await Wren.api('/api/children');}catch(e){children=[];}
+  const opts='<option value="">Select a child…</option>'+(children||[]).map(c=>`<option value="${c.id}">${esc(c.first_name+' '+c.last_name)}</option>`).join('');
+  document.getElementById('med-child-sel').innerHTML=opts;
+  document.getElementById('m-child').innerHTML=opts;
+  document.getElementById('t-today').addEventListener('click',()=>tab('today'));
+  document.getElementById('t-child').addEventListener('click',()=>tab('child'));
+  document.getElementById('t-audit').addEventListener('click',()=>tab('audit'));
+  document.getElementById('med-child-sel').addEventListener('change',function(){loadChild(this.value);});
+  // sign-off (delegated)
+  document.getElementById('wren-content').addEventListener('click',async e=>{
+    const b=e.target.closest('[data-signoff]'); if(!b)return;
+    try{await Wren.api('/api/medicine/'+b.dataset.signoff+'/sign-off',{method:'POST'});Wren.toast('Signed off','success');loadToday();const cs=document.getElementById('med-child-sel');if(cs.value)loadChild(cs.value);}
+    catch(x){Wren.toast(x.error||'Sign-off failed','error');}
+  });
+  // add modal
+  document.getElementById('btn-add-med').addEventListener('click',()=>{document.getElementById('m-time').value=new Date().toTimeString().slice(0,5);document.getElementById('add-modal').style.display='block';});
+  document.getElementById('m-cancel').addEventListener('click',()=>document.getElementById('add-modal').style.display='none');
+  document.getElementById('m-save').addEventListener('click',async()=>{
+    const body={child_id:document.getElementById('m-child').value,medicine_name:document.getElementById('m-name').value.trim(),dose:document.getElementById('m-dose').value.trim(),time_given:document.getElementById('m-time').value?new Date().toISOString().slice(0,10)+'T'+document.getElementById('m-time').value:undefined,parent_consent:document.getElementById('m-consent').checked,notes:document.getElementById('m-notes').value.trim()};
+    if(!body.child_id||!body.medicine_name){Wren.toast('Child and medicine required','warning');return;}
+    try{await Wren.api('/api/medicine',{method:'POST',body});document.getElementById('add-modal').style.display='none';Wren.toast('Medicine recorded','success');['m-name','m-dose','m-notes'].forEach(i=>document.getElementById(i).value='');document.getElementById('m-consent').checked=false;loadToday();}
+    catch(x){Wren.toast(x.error||'Could not save','error');}
+  });
+  loadToday();
+});
+</script>
+</body>
+</html>

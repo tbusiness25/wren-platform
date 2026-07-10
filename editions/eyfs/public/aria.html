@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>Aria Call Dashboard — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    @media (max-width: 700px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 380px) { .stats-grid { grid-template-columns: 1fr; } }
+
+    .calls-table-wrap { overflow-x: auto; border-radius: 12px; }
+    .calls-table-wrap table { min-width: 640px; }
+
+    .outcome-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .outcome-completed  { background: rgba(34,197,94,.15); color: #22c55e; }
+    .outcome-transferred{ background: rgba(74,154,191,.15); color: #4a9abf; }
+    .outcome-voicemail  { background: rgba(168,85,247,.15); color: #a855f7; }
+    .outcome-missed     { background: rgba(239,68,68,.15); color: #ef4444; }
+    .outcome-error      { background: rgba(100,116,139,.15); color: #64748b; }
+
+    .summary-cell {
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--c-muted);
+      font-size: .85rem;
+    }
+
+    .call-row { cursor: pointer; }
+    .call-row:hover td { background: rgba(74,154,191,.06); }
+
+    .rec-btn {
+      background: none;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 4px 10px;
+      color: #94a3b8;
+      font-size: .78rem;
+      cursor: pointer;
+    }
+    .rec-btn:hover { background: #1e293b; color: #f1f5f9; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.65); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 16px;
+      padding: 28px;
+      width: 92vw; max-width: 720px;
+      max-height: 80vh;
+      overflow-y: auto;
+      position: relative;
+    }
+    .modal-close {
+      position: absolute; top: 14px; right: 18px;
+      background: none; border: none;
+      font-size: 1.3rem; color: #94a3b8; cursor: pointer;
+    }
+    .modal-close:hover { color: #f1f5f9; }
+
+    .transcript-block {
+      background: #0f172a;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: .82rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      max-height: 320px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .detail-item { background: #0f172a; border-radius: 8px; padding: 10px 14px; }
+    .detail-label { font-size: .72rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .detail-value { font-size: .95rem; color: #f1f5f9; font-weight: 600; }
+
+    .filter-row {
+      display: flex; gap: 12px; align-items: center;
+      margin-bottom: 18px; flex-wrap: wrap;
+    }
+    .filter-row input, .filter-row select {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 8px 14px;
+      color: #f1f5f9;
+      font-size: .88rem;
+      outline: none;
+    }
+    .filter-row input:focus, .filter-row select:focus { border-color: #4a9abf; }
+    .filter-row input { flex: 1; min-width: 180px; }
+
+    .no-key-banner {
+      background: rgba(245,158,11,.1);
+      border: 1px solid rgba(245,158,11,.3);
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: #fbbf24;
+      margin-bottom: 20px;
+      font-size: .88rem;
+    }
+    .no-key-banner strong { color: #f59e0b; }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #64748b;
+    }
+    .empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📞 Aria Call Dashboard</div>
+    <button class="btn btn-ghost btn-sm" onclick="refreshCalls()">↻ Refresh</button>
+  </div>
+
+  <div id="no-key-banner" class="no-key-banner" style="display:none">
+    <strong>⚠ Vapi API key not configured</strong> — showing saved calls from local database only.
+    Contact your system administrator to add the VAPI_API_KEY to the server configuration.
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card blue"><div class="stat-value" id="s-today">–</div><div class="stat-label">Today's Calls</div></div>
+    <div class="stat-card green"><div class="stat-value" id="s-week">–</div><div class="stat-label">This Week</div></div>
+    <div class="stat-card orange"><div class="stat-value" id="s-avg">–</div><div class="stat-label">Avg Duration</div></div>
+    <div class="stat-card amber"><div class="stat-value" id="s-transfer">–</div><div class="stat-label">Transfer Rate</div></div>
+  </div>
+
+  <!-- Filter row -->
+  <div class="filter-row">
+    <input type="text" id="search-input" placeholder="Search number or summary…" oninput="filterCalls()">
+    <select id="outcome-filter" onchange="filterCalls()">
+      <option value="">All outcomes</option>
+      <option value="completed">Completed</option>
+      <option value="transferred">Transferred</option>
+      <option value="voicemail">Voicemail</option>
+      <option value="missed">Missed</option>
+    </select>
+  </div>
+
+  <!-- Calls table -->
+  <div class="card">
+    <div class="calls-table-wrap">
+      <table id="calls-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>From</th>
+            <th>Duration</th>
+            <th>Outcome</th>
+            <th>Summary</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="calls-tbody">
+          <tr><td colspan="6" style="text-align:center;padding:40px;color:#64748b">
+            <div class="spinner" style="margin:auto"></div>
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Call detail modal -->
+<div class="modal-overlay" id="call-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h2 style="margin:0 0 18px;font-size:1.1rem;color:#f1f5f9" id="modal-title">Call Detail</h2>
+    <div class="detail-grid" id="modal-details"></div>
+    <div id="modal-summary"></div>
+    <div id="modal-transcript-wrap" style="display:none">
+      <div style="font-size:.82rem;color:#64748b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Transcript</div>
+      <div class="transcript-block" id="modal-transcript"></div>
+    </div>
+    <div id="modal-rec" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<script>
+let allCalls = [];
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  loadStats();
+  loadCalls();
+}
+
+async function loadStats() {
+  try {
+    const data = await Wren.api('/api/aria/stats');
+    document.getElementById('s-today').textContent = data.today;
+    document.getElementById('s-week').textContent = data.this_week;
+    const avg = data.avg_duration_secs;
+    document.getElementById('s-avg').textContent = avg >= 60
+      ? `${Math.floor(avg/60)}m ${avg%60}s`
+      : `${avg}s`;
+    document.getElementById('s-transfer').textContent = data.transfer_rate + '%';
+  } catch(e) {
+    console.error('stats error', e);
+  }
+}
+
+async function loadCalls() {
+  try {
+    const data = await Wren.api('/api/aria/calls?limit=100');
+    allCalls = data;
+    // If all calls are from local source (no Vapi key), show banner
+    if (data.length > 0 && data.every(c => c.source === 'local')) {
+      document.getElementById('no-key-banner').style.display = 'block';
+    }
+    if (data.length === 0) {
+      document.getElementById('no-key-banner').style.display = 'block';
+    }
+    renderCalls(data);
+  } catch(e) {
+    document.getElementById('calls-tbody').innerHTML =
+      `<tr><td colspan="6" style="text-align:center;padding:40px;color:#ef4444">Failed to load calls</td></tr>`;
+  }
+}
+
+function refreshCalls() {
+  document.getElementById('calls-tbody').innerHTML =
+    '<tr><td colspan="6" style="text-align:center;padding:40px;color:#64748b"><div class="spinner" style="margin:auto"></div></td></tr>';
+  loadStats();
+  loadCalls();
+}
+
+function filterCalls() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const outcome = document.getElementById('outcome-filter').value;
+  const filtered = allCalls.filter(c => {
+    const matchQ = !q || (c.from_number||'').includes(q) || (c.summary||'').toLowerCase().includes(q);
+    const matchO = !outcome || c.outcome === outcome;
+    return matchQ && matchO;
+  });
+  renderCalls(filtered);
+}
+
+function fmtDur(s) {
+  if (!s || s < 1) return '–';
+  return s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`;
+}
+
+function fmtTime(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return time;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' + time;
+}
+
+function fmtNum(n) {
+  if (!n) return '–';
+  return n.replace(/^(\+44)/, '0').replace(/(\d{5})(\d{6})/, '$1 $2') || n;
+}
+
+function renderCalls(calls) {
+  const tbody = document.getElementById('calls-tbody');
+  if (!calls.length) {
+    tbody.innerHTML = `<tr><td colspan="6">
+      <div class="empty-state">
+        <div class="empty-icon">📵</div>
+        <div>No calls found</div>
+      </div>
+    </td></tr>`;
+    return;
+  }
+  tbody.innerHTML = calls.map(c => `
+    <tr class="call-row" onclick="openCall('${escHtml(c.id)}')">
+      <td style="white-space:nowrap;font-size:.88rem">${fmtTime(c.started_at)}</td>
+      <td style="font-size:.88rem;font-family:monospace">${fmtNum(c.from_number)}</td>
+      <td style="white-space:nowrap;font-size:.88rem">${fmtDur(c.duration_seconds)}</td>
+      <td><span class="outcome-badge outcome-${escHtml(c.outcome||'unknown')}">${c.outcome||'unknown'}</span></td>
+      <td class="summary-cell" title="${escHtml(c.summary||'')}">${escHtml(c.summary||'')}</td>
+      <td onclick="event.stopPropagation()">
+        ${c.recording_url ? `<button class="rec-btn" onclick="playRec('${escHtml(c.id)}')">▶ Rec</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openCall(id) {
+  document.getElementById('modal-details').innerHTML = '<div class="spinner" style="margin:auto"></div>';
+  document.getElementById('modal-summary').innerHTML = '';
+  document.getElementById('modal-transcript-wrap').style.display = 'none';
+  document.getElementById('modal-rec').innerHTML = '';
+  document.getElementById('call-modal').classList.add('open');
+  document.getElementById('modal-title').textContent = 'Loading…';
+
+  try {
+    const c = await Wren.api(`/api/aria/call/${encodeURIComponent(id)}`);
+    document.getElementById('modal-title').textContent = `Call — ${fmtTime(c.started_at)}`;
+
+    document.getElementById('modal-details').innerHTML = `
+      <div class="detail-item"><div class="detail-label">From</div><div class="detail-value" style="font-family:monospace">${fmtNum(c.from_number)}</div></div>
+      <div class="detail-item"><div class="detail-label">Duration</div><div class="detail-value">${fmtDur(c.duration_seconds)}</div></div>
+      <div class="detail-item"><div class="detail-label">Outcome</div><div class="detail-value"><span class="outcome-badge outcome-${escHtml(c.outcome||'unknown')}">${c.outcome||'unknown'}</span></div></div>
+      <div class="detail-item"><div class="detail-label">Ended Reason</div><div class="detail-value" style="font-size:.85rem;color:#94a3b8">${escHtml(c.ended_reason||'–')}</div></div>
+    `;
+
+    if (c.summary) {
+      document.getElementById('modal-summary').innerHTML = `
+        <div style="background:#0f172a;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+          <div style="font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">AI Summary</div>
+          <div style="font-size:.92rem;color:#e2e8f0">${escHtml(c.summary)}</div>
+          ${c.urgency ? `<div style="margin-top:8px"><span class="badge badge-${c.urgency==='urgent'?'red':'amber'}">${c.urgency}</span></div>` : ''}
+        </div>
+      `;
+    }
+
+    if (c.transcript) {
+      document.getElementById('modal-transcript').textContent = c.transcript;
+      document.getElementById('modal-transcript-wrap').style.display = 'block';
+    }
+
+    if (c.recording_url || id) {
+      document.getElementById('modal-rec').innerHTML = `
+        <a class="btn btn-ghost btn-sm" href="/api/aria/call/${encodeURIComponent(id)}/recording" target="_blank">▶ Open Recording</a>
+      `;
+    }
+  } catch(e) {
+    document.getElementById('modal-details').innerHTML = `<div style="color:#ef4444">Failed to load call details</div>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('call-modal').classList.remove('open');
+}
+
+function playRec(id) {
+  window.open(`/api/aria/call/${encodeURIComponent(id)}/recording`, '_blank');
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

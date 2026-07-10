@@ -1,0 +1,195 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Planner · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .pl-wrap{padding:18px;max-width:1200px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .pl-quick{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0 12px}
+ .pl-quick input{width:100%;background:var(--card);border:1px solid var(--bd);border-radius:12px;
+   padding:14px 16px;color:var(--txt);font-size:1rem}
+ .pl-quick input:focus{outline:none;border-color:var(--blue)}
+ .pl-overdue{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:12px;
+   padding:10px 14px;margin-bottom:12px;font-size:.9rem}
+ .pl-proposed{background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35);border-radius:12px;
+   padding:10px 14px;margin-bottom:12px;font-size:.9rem}
+ .pl-grid{display:grid;grid-template-columns:1.6fr repeat(4,1fr) .8fr;gap:10px}
+ @media(max-width:900px){.pl-grid{grid-template-columns:1fr 1fr}}
+ @media(max-width:600px){.pl-grid{grid-template-columns:1fr}}
+ .pl-col{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;min-height:120px}
+ .pl-col.today{border-color:var(--blue)}
+ .pl-col h3{font-size:.85rem;margin:0 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+ .pl-col.today h3{color:var(--blue)}
+ .pl-item{padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.04);margin-bottom:6px;font-size:.88rem}
+ .pl-item .t{color:var(--mut);font-size:.76rem}
+ .pl-item.evt{border-left:3px solid var(--blue)}
+ .pl-item.todo{border-left:3px solid var(--warn);display:flex;gap:8px;align-items:flex-start}
+ .pl-item.todo button{background:none;border:1px solid var(--bd);border-radius:6px;color:var(--ok);
+   cursor:pointer;width:26px;height:26px;flex:none;font-size:.9rem}
+ .pl-plan{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin:14px 0;
+   white-space:pre-wrap;font-size:.9rem;display:none}
+ .pl-btnrow{display:flex;gap:10px;margin:12px 0;flex-wrap:wrap}
+ .pl-btn{background:var(--card);border:1px solid var(--bd);color:var(--txt);border-radius:10px;
+   padding:9px 16px;cursor:pointer;font-size:.88rem}
+ .pl-btn.primary{background:var(--blue);border-color:var(--blue);color:#04101c;font-weight:700}
+ .pl-mini{background:none;border:none;cursor:pointer;font-size:.9rem;padding:2px 6px}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+</head><body data-portal="admin">
+<div class="pl-wrap">
+  <h1>🗓️ Planner</h1>
+  <div class="sub">Type anything below — "fire drill thurs 10am", "chase PAT renewal friday" — and it lands in the right place.</div>
+
+  <div class="pl-quick"><input id="pl-quick" placeholder="Quick add — press Enter…" autocomplete="off"></div>
+
+  <div id="pl-overdue" class="pl-overdue" style="display:none"></div>
+  <div id="pl-proposed" class="pl-proposed" style="display:none"></div>
+
+  <div class="pl-btnrow">
+    <button class="pl-btn primary" id="pl-plan-btn">🧠 Plan my day</button>
+    <button class="pl-btn" id="pl-extract-btn">📧 Pull events from emails</button>
+    <button class="pl-btn" id="pl-prev">‹ Prev week</button>
+    <button class="pl-btn" id="pl-next">Next week ›</button>
+  </div>
+
+  <div id="pl-plan" class="pl-plan"></div>
+  <div class="pl-grid" id="pl-grid"></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  let weekStart = null; // YYYY-MM-DD Monday, null = this week
+
+  const esc = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+  const fmtTime = iso => new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  function rel(iso){
+    const ms = new Date(iso) - Date.now();
+    if (ms < -60*60000) return '';
+    if (ms < 0) return ' · now';
+    const m = Math.round(ms/60000);
+    if (m < 60) return ` · in ${m} min`;
+    if (m < 24*60) return ` · in ${Math.round(m/60)}h`;
+    return '';
+  }
+
+  async function load(){
+    const q = weekStart ? '?start=' + weekStart : '';
+    let data;
+    try { data = await Wren.api('/api/planner/week' + q); }
+    catch(e){ document.getElementById('pl-grid').innerHTML = '<div style="color:var(--bad)">Could not load planner.</div>'; return; }
+    weekStart = String(data.week_start).split('T')[0];
+
+    // Overdue strip
+    const od = document.getElementById('pl-overdue');
+    if (data.overdue.length){
+      od.style.display='block';
+      od.innerHTML = '🔴 <b>Overdue:</b> ' + data.overdue.map(t =>
+        `${esc(t.title)} (${t.due_date ? new Date(t.due_date).toLocaleDateString('en-GB') : ''}) <button class="pl-mini" data-done="${t.id}" title="done">✓</button>`).join(' · ');
+    } else od.style.display='none';
+
+    // Proposed-from-email strip
+    const proposed = data.events.filter(e => e.status === 'proposed');
+    const pr = document.getElementById('pl-proposed');
+    if (proposed.length){
+      pr.style.display='block';
+      pr.innerHTML = '📧 <b>Proposed from email:</b> ' + proposed.map(e =>
+        `${esc(e.title)} (${new Date(e.starts_at).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})})
+         <button class="pl-mini" data-confirm="${e.id}" title="confirm">✓</button>
+         <button class="pl-mini" data-dismiss="${e.id}" title="dismiss">✕</button>`).join(' · ');
+    } else pr.style.display='none';
+
+    // Columns: TODAY big + Mon–Fri + weekend
+    const grid = document.getElementById('pl-grid');
+    const todayStr = new Date().toISOString().split('T')[0];
+    const days = [];
+    const ws = new Date(weekStart + 'T00:00:00');
+    for (let i=0;i<7;i++){ const d=new Date(ws); d.setDate(ws.getDate()+i); days.push(d.toISOString().split('T')[0]); }
+
+    const evOn  = d => data.events.filter(e => e.status!=='cancelled' && String(e.starts_at).split('T')[0]===d);
+    const tdOn  = d => data.todos.filter(t => t.due_date && String(t.due_date).split('T')[0]===d);
+
+    const todayCol = `
+      <div class="pl-col today"><h3>Today</h3>
+        ${evOn(todayStr).map(e=>`<div class="pl-item evt"><b>${esc(e.title)}</b><div class="t">${e.all_day?'all day':fmtTime(e.starts_at)}${rel(e.starts_at)}${e.location?' · '+esc(e.location):''}</div></div>`).join('') || '<div class="t" style="color:var(--mut)">No events today</div>'}
+        ${data.todos.slice(0,3).map(t=>`<div class="pl-item todo"><button data-done="${t.id}">✓</button><div><b>${esc(t.title)}</b>${t.due_date?`<div class="t">due ${new Date(t.due_date).toLocaleDateString('en-GB')}</div>`:''}</div></div>`).join('')}
+      </div>`;
+
+    const dayCols = days.slice(0,5).map((d,i)=>`
+      <div class="pl-col${d===todayStr?' today':''}"><h3>${['Mon','Tue','Wed','Thu','Fri'][i]} ${new Date(d+'T00:00:00').getDate()}</h3>
+        ${evOn(d).map(e=>`<div class="pl-item evt"><b>${esc(e.title)}</b><div class="t">${e.all_day?'all day':fmtTime(e.starts_at)}</div></div>`).join('')}
+        ${tdOn(d).map(t=>`<div class="pl-item todo"><button data-done="${t.id}">✓</button><div>${esc(t.title)}</div></div>`).join('')}
+      </div>`).join('');
+
+    const wkndCol = `
+      <div class="pl-col"><h3>Weekend</h3>
+        ${days.slice(5).map((d,i)=>evOn(d).map(e=>`<div class="pl-item evt"><b>${esc(e.title)}</b><div class="t">${['Sat','Sun'][i]} ${fmtTime(e.starts_at)}</div></div>`).join('')).join('') || '<div class="t" style="color:var(--mut)">—</div>'}
+      </div>`;
+
+    grid.innerHTML = todayCol + dayCols + wkndCol;
+  }
+
+  async function quickAdd(text){
+    const inp = document.getElementById('pl-quick');
+    inp.disabled = true;
+    try {
+      const r = await Wren.api('/api/planner/quick-add', { method:'POST', body:{ text } });
+      Wren.toast(r.kind === 'event' ? '📅 Event added' : '☑️ Todo added', 'success');
+      inp.value=''; load();
+    } catch(e){ Wren.toast('Could not add: ' + (e.error||''), 'error'); }
+    finally { inp.disabled = false; inp.focus(); }
+  }
+
+  async function planDay(){
+    const box = document.getElementById('pl-plan');
+    box.style.display='block'; box.textContent = 'Thinking…';
+    try {
+      const r = await Wren.api('/api/planner/today');
+      box.textContent = r.plan || 'No AI plan available — but your events and todos are on the grid.';
+    } catch(e){ box.textContent = 'Could not build a plan.'; }
+  }
+
+  async function extract(){
+    const btn = document.getElementById('pl-extract-btn');
+    btn.disabled = true; btn.textContent = '📧 Reading emails…';
+    try {
+      const r = await Wren.api('/api/planner/extract-from-emails', { method:'POST' });
+      Wren.toast(r.extracted.length ? `${r.extracted.length} event(s) proposed` : 'No new events found in recent emails', 'info');
+      load();
+    } catch(e){ Wren.toast('Extraction failed', 'error'); }
+    finally { btn.disabled=false; btn.textContent='📧 Pull events from emails'; }
+  }
+
+  function shiftWeek(days){
+    const base = weekStart ? new Date(weekStart+'T00:00:00') : new Date();
+    base.setDate(base.getDate()+days);
+    weekStart = base.toISOString().split('T')[0];
+    load();
+  }
+
+  document.addEventListener('wren:ready', function(){
+    document.getElementById('pl-quick').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && e.target.value.trim()) quickAdd(e.target.value.trim());
+    });
+    document.getElementById('pl-plan-btn').addEventListener('click', planDay);
+    document.getElementById('pl-extract-btn').addEventListener('click', extract);
+    document.getElementById('pl-prev').addEventListener('click', ()=>shiftWeek(-7));
+    document.getElementById('pl-next').addEventListener('click', ()=>shiftWeek(7));
+    document.addEventListener('click', async e => {
+      const done = e.target.closest('[data-done]');
+      const conf = e.target.closest('[data-confirm]');
+      const dism = e.target.closest('[data-dismiss]');
+      try {
+        if (done){ await Wren.api('/api/planner/todos/'+done.dataset.done, {method:'PATCH', body:{status:'done'}}); Wren.toast('Done ✓','success'); load(); }
+        if (conf){ await Wren.api('/api/planner/events/'+conf.dataset.confirm, {method:'PATCH', body:{status:'confirmed'}}); load(); }
+        if (dism){ await Wren.api('/api/planner/events/'+dism.dataset.dismiss, {method:'PATCH', body:{status:'cancelled'}}); load(); }
+      } catch(x){ Wren.toast('Update failed','error'); }
+    });
+    load();
+  });
+})();
+</script>
+</body></html>

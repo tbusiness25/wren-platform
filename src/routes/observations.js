@@ -1,0 +1,1510 @@
+'use strict';
+const express = require('express');
+const router = express.Router();
+const { getPool } = require('../db/pool');
+const authenticate = require('../middleware/auth');
+const fs = require('fs');
+const path = require('path');
+
+const OLLAMA_HOST        = process.env.OLLAMA_HOST        || 'http://localhost:11434';
+const OLLAMA_MODEL       = process.env.OLLAMA_MODEL       || 'qwen3.5:4b';
+const AI_SUGGESTER_MODEL = process.env.AI_SUGGESTER_MODEL || OLLAMA_MODEL;
+const AI_LOG = path.join(__dirname, '../../logs/ai-helper.log');
+const { classifyArea } = require('../services/eyfs-area-classifier');
+
+function appendLog(msg) {
+  try { fs.appendFileSync(AI_LOG, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
+}
+
+// ── AI session-level degradation tracking ────────────────────────────────────
+const _aiFailures = {};
+
+function isAiDegraded(staffId) {
+  const f = _aiFailures[staffId];
+  if (!f || !f.until) return false;
+  if (Date.now() > f.until) { delete _aiFailures[staffId]; return false; }
+  return true;
+}
+function recordAiSuccess(staffId) {
+  if (_aiFailures[staffId]) _aiFailures[staffId].count = 0;
+}
+function recordAiFailure(staffId) {
+  if (!_aiFailures[staffId]) _aiFailures[staffId] = { count: 0 };
+  _aiFailures[staffId].count++;
+  if (_aiFailures[staffId].count >= 1) {
+    _aiFailures[staffId].until = Date.now() + 30 * 60 * 1000;
+    appendLog(`Staff ${staffId}: AI suggester degraded for 30 min after consecutive failures`);
+  }
+}
+
+router.use(authenticate);
+
+const OBS_SELECT = `
+  SELECT o.*, c.first_name || ' ' || c.last_name as child_name,
+    c.first_name as child_first_name, c.last_name as child_last_name,
+    c.room_id as room_id,
+    EXTRACT(MONTH FROM AGE(NOW(), c.date_of_birth))::int as child_age_months,
+    r.name as room_name,
+    -- staff_name from the staff join; fall back to o.author_name (the EyLog-recorded
+    -- practitioner) so historical obs by leavers with no staff row stay attributed.
+    COALESCE(s.first_name || ' ' || s.last_name, o.author_name) as staff_name
+  FROM observations o
+  JOIN children c ON c.id = o.child_id
+  LEFT JOIN staff s ON s.id = o.staff_id
+  LEFT JOIN rooms r ON r.id = c.room_id
+`;
+
+// GET /recent
+router.get('/recent', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  try {
+    const { rows } = await getPool().query(OBS_SELECT + ' ORDER BY o.created_at DESC LIMIT $1', [limit]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET / — filtered list
+router.get('/', async (req, res) => {
+  // Accept both old short names and frontend query param names
+  const child_id   = req.query.child_id;
+  const staff_id   = req.query.staff_id;
+  const area       = req.query.eyfs_area  || req.query.area;
+  const from       = req.query.date_from  || req.query.from;
+  const to         = req.query.date_to    || req.query.to;
+  const type       = req.query.observation_type || req.query.type;
+  const shared     = req.query.shared;
+  const search     = req.query.search;
+  let sql = OBS_SELECT + ' WHERE 1=1';
+  const params = [];
+  if (child_id) { params.push(child_id); sql += ` AND o.child_id=$${params.length}`; }
+  if (staff_id) { params.push(staff_id); sql += ` AND o.staff_id=$${params.length}`; }
+  // Obs-tracker list filters (Prompt 27C): room + my-key-children.
+  if (req.query.room_id) { params.push(req.query.room_id); sql += ` AND c.room_id=$${params.length}`; }
+  if (req.query.mine === '1' && req.user && req.user.id) { params.push(req.user.id); sql += ` AND c.key_person_id=$${params.length}`; }
+  // Prompt 50: scope to an explicit set of selected children (EY home multi-select / ?children=).
+  if (req.query.child_ids) {
+    const ids = String(req.query.child_ids).split(',').map(n => parseInt(n, 10)).filter(Boolean);
+    if (ids.length) { params.push(ids); sql += ` AND o.child_id = ANY($${params.length}::int[])`; }
+  }
+  if (area) { params.push(`%${area}%`); sql += ` AND o.eyfs_areas::text ILIKE $${params.length}`; }
+  if (from) { params.push(from); sql += ` AND o.created_at >= $${params.length}`; }
+  if (to) { params.push(to); sql += ` AND o.created_at <= $${params.length}`; }
+  if (type) { params.push(type); sql += ` AND o.observation_type=$${params.length}`; }
+  // Prompt 28A: filter to just termly updates (the distinct "Termly Update & Tracking" kind).
+  if (req.query.termly_update === '1' || req.query.termly_update === 'true') sql += ` AND o.termly_update=true`;
+  if (shared === 'true') sql += ` AND o.shared_with_parents=true`;
+  if (search) { params.push(`%${search}%`); sql += ` AND (o.observation_text ILIKE $${params.length} OR o.title ILIKE $${params.length})`; }
+  // Honour an explicit ?limit= (2026-07-04) — capped at the long-standing 200 default
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 200);
+  sql += ` ORDER BY o.created_at DESC LIMIT ${limit}`;
+  try {
+    const { rows } = await getPool().query(sql, params);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /child/:childId
+router.get('/child/:childId', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(
+      OBS_SELECT + ' WHERE o.child_id=$1 ORDER BY o.created_at DESC',
+      [req.params.childId]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /child/:childId/framework-summary
+router.get('/child/:childId/framework-summary', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(`
+      SELECT unnest(eyfs_areas) as area, count(*) as obs_count
+      FROM observations WHERE child_id=$1 GROUP BY 1 ORDER BY 2 DESC
+    `, [req.params.childId]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /:id
+router.get('/:id', async (req, res, next) => {
+  if (!/^\d+$/.test(req.params.id)) return next();
+  try {
+    const { rows } = await getPool().query(OBS_SELECT + ' WHERE o.id=$1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+const VALID_OBS_TAGS = new Set(['planned_activity','tracking','next_step_followup','baseline','termly_update','parental']);
+
+function validateObsTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  return tags.filter(t => VALID_OBS_TAGS.has(t));
+}
+
+// POST /
+router.post('/', async (req, res) => {
+  const {
+    child_id, observation_text, observation_type, eyfs_areas, subject_areas,
+    photo_urls, title, shared_with_parents, next_steps, analysis,
+    baseline, planned_activity, termly_update, parental,
+    additional_comments, staff_notes, framework_tracker_ids, obs_date,
+    obs_tags, client_uuid, dsl_only,
+    next_step_framework_statement_id, next_step_due_by, fulfils_next_step_id
+  } = req.body;
+  if (!child_id || !observation_text)
+    return res.status(400).json({ error: 'child_id and observation_text required' });
+
+  const db = getPool();
+
+  // ── Idempotency for the offline outbox (offlineobs-20260608) ───────────────
+  // The tablet outbox attaches a client-generated UUID to each queued obs so a
+  // retry after a flaky network can't create a duplicate. If we've already
+  // stored a row for this client_uuid, return it unchanged with 200 so the
+  // client treats the retry as a confirmed success and removes it from the queue.
+  if (client_uuid) {
+    try {
+      const dup = await db.query(
+        'SELECT * FROM observations WHERE client_uuid = $1 LIMIT 1', [client_uuid]);
+      if (dup.rows.length) {
+        return res.status(200).json({ ...dup.rows[0], deduped: true });
+      }
+    } catch (e) { /* fall through to insert; unique index still protects us */ }
+  }
+  const cleanTags = validateObsTags(obs_tags || []);
+
+  // Sync boolean flags from tags (so both representations stay consistent)
+  const isBaseline         = cleanTags.includes('baseline')         || (baseline         ?? false);
+  const isPlannedActivity  = cleanTags.includes('planned_activity') || (planned_activity  ?? false);
+  const isTermlyUpdate     = cleanTags.includes('termly_update')    || (termly_update     ?? false);
+  const isParental         = cleanTags.includes('parental')         || (parental          ?? false);
+
+  // Merge flags back into tags array
+  const mergedTags = [...new Set([
+    ...cleanTags,
+    ...(isBaseline        ? ['baseline']         : []),
+    ...(isPlannedActivity ? ['planned_activity']  : []),
+    ...(isTermlyUpdate    ? ['termly_update']     : []),
+    ...(isParental        ? ['parental']          : []),
+  ])];
+
+  try {
+    const { rows } = await db.query(`
+      INSERT INTO observations (child_id, staff_id, title, observation_text, observation_type,
+        eyfs_areas, subject_areas, photo_urls, shared_with_parents,
+        next_steps, analysis, baseline, planned_activity, termly_update, parental,
+        additional_comments, staff_notes, linked_framework_ids, obs_tags,
+        client_uuid, created_at, updated_at, dsl_only)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21,
+        COALESCE($20::timestamptz, NOW()), NOW(), $22)
+      ON CONFLICT (client_uuid) WHERE client_uuid IS NOT NULL DO NOTHING
+      RETURNING *
+    `, [child_id, req.user.id, title, observation_text,
+        observation_type || 'learning_story',
+        eyfs_areas || [], subject_areas || [],
+        photo_urls || [], shared_with_parents || false,
+        next_steps, analysis,
+        isBaseline, isPlannedActivity, isTermlyUpdate, isParental,
+        additional_comments, staff_notes,
+        framework_tracker_ids || [], mergedTags,
+        obs_date || null, client_uuid || null, dsl_only || false]);
+
+    // ON CONFLICT DO NOTHING returns 0 rows if a concurrent/duplicate insert
+    // raced us on the same client_uuid — fetch and return the winning row.
+    if (!rows.length && client_uuid) {
+      const existing = await db.query(
+        'SELECT * FROM observations WHERE client_uuid = $1 LIMIT 1', [client_uuid]);
+      if (existing.rows.length) {
+        return res.status(200).json({ ...existing.rows[0], deduped: true });
+      }
+    }
+
+    const obs = rows[0];
+
+    // Link framework tracker rows.
+    // framework_tracker_ids are framework_statements.id values (the obs UI sends the
+    // selected statement ids, possibly across MULTIPLE frameworks). Resolve each to
+    // its framework/area/aspect/statement and UPSERT one tracker row per
+    // (child, framework, area, aspect, statement) — this is what makes multi-framework
+    // tagging actually persist (one row per framework). Mirrors POST /framework-tracker/link
+    // so that online saves AND offline outbox replays both link correctly.
+    // (Previously this UPDATE'd by tracker PK, which no-op'd because the ids are
+    // statement ids, not tracker ids — 0 of 12,002 obs ever linked.)
+    // Frameworks in settings.reference_frameworks are "reference only" (2026-07-08):
+    // their statements stay in observation_statements (staff-visible) but never
+    // become framework_tracker assessment rows — e.g. EYFS links on a B25M setting.
+    if (framework_tracker_ids?.length) {
+      const refFw = await _referenceFrameworks(db);
+      for (const sid of framework_tracker_ids) {
+        try {
+          const { rows: stRows } = await db.query(
+            'SELECT framework, area, aspect, age_range, statement_text FROM framework_statements WHERE id=$1', [sid]);
+          if (!stRows.length) continue;
+          const st = stRows[0];
+          if (refFw.has(st.framework)) continue;
+          await db.query(`
+            INSERT INTO framework_tracker
+              (child_id, framework, area, aspect, age_range, statement, statement_id,
+               status, linked_observation_id, assessed_by, assessed_at, created_at, updated_at)
+            -- COALESCE area/aspect to '' so the (child,framework,area,aspect,statement) unique
+            -- index actually dedupes: many framework_statements (e.g. ALL Development Matters)
+            -- have aspect=NULL, and Postgres treats NULL as distinct in unique indexes, so a
+            -- NULL aspect would never match ON CONFLICT and would insert duplicate tracker rows.
+            VALUES ($1,$2,COALESCE($3,''),COALESCE($4,''),$5,$6,$7,'emerging',$8,$9,NOW(),NOW(),NOW())
+            ON CONFLICT (child_id, framework, area, aspect, statement) DO UPDATE
+              SET statement_id=EXCLUDED.statement_id,
+                  status=CASE WHEN framework_tracker.status='not_yet' THEN 'emerging' ELSE framework_tracker.status END,
+                  linked_observation_id=COALESCE($8, framework_tracker.linked_observation_id),
+                  assessed_by=$9, assessed_at=NOW(), updated_at=NOW()
+          `, [child_id, st.framework, st.area, st.aspect, st.age_range,
+              st.statement_text, sid, obs.id, req.user.id]);
+        } catch (e) { /* non-fatal: the observation is already saved; tracker link is best-effort */ }
+      }
+    }
+
+    // Auto-create a next_steps row when next_steps text is non-empty
+    let next_step_id = null;
+    if (next_steps && next_steps.trim().length > 5) {
+      const ns = await db.query(`
+        INSERT INTO next_steps (observation_id, child_id, staff_id, description,
+          framework_statement_id, due_by, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW(), NOW())
+        RETURNING id
+      `, [obs.id, child_id, req.user.id, next_steps.trim(),
+          next_step_framework_statement_id || null,
+          next_step_due_by || null]);
+      next_step_id = ns.rows[0]?.id;
+    }
+
+    // If this obs fulfils a next step (next_step_followup tag), mark it completed
+    if (fulfils_next_step_id) {
+      await db.query(`
+        UPDATE next_steps SET status='completed', completed_observation_id=$1, updated_at=NOW()
+        WHERE id=$2 AND child_id=$3
+      `, [obs.id, fulfils_next_step_id, child_id]);
+    }
+
+    res.status(201).json({ ...obs, next_step_id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /:id
+router.put('/:id', async (req, res) => {
+  const {
+    observation_text, title, eyfs_areas, subject_areas, shared_with_parents,
+    photo_urls, next_steps, analysis, baseline, planned_activity,
+    termly_update, parental, additional_comments, staff_notes,
+    framework_tracker_ids, observation_type
+  } = req.body;
+  const db = getPool();
+  try {
+    const { rows } = await db.query(`
+      UPDATE observations SET
+        observation_text=COALESCE($1,observation_text),
+        title=COALESCE($2,title),
+        eyfs_areas=COALESCE($3,eyfs_areas),
+        subject_areas=COALESCE($4,subject_areas),
+        shared_with_parents=COALESCE($5,shared_with_parents),
+        photo_urls=COALESCE($6,photo_urls),
+        observation_type=COALESCE($7,observation_type),
+        next_steps=$8, analysis=$9,
+        baseline=COALESCE($10,baseline),
+        planned_activity=COALESCE($11,planned_activity),
+        termly_update=COALESCE($12,termly_update),
+        parental=COALESCE($13,parental),
+        additional_comments=$14, staff_notes=$15,
+        linked_framework_ids=COALESCE($16,linked_framework_ids),
+        updated_at=NOW()
+      WHERE id=$17 AND (staff_id=$18 OR $19 IN ('manager','deputy_manager'))
+      RETURNING *
+    `, [observation_text, title, eyfs_areas, subject_areas,
+        shared_with_parents, photo_urls, observation_type,
+        next_steps, analysis, baseline, planned_activity,
+        termly_update, parental, additional_comments, staff_notes,
+        framework_tracker_ids || null,
+        req.params.id, req.user.id, req.user.role]);
+
+    if (!rows.length) return res.status(404).json({ error: 'Not found or not authorised' });
+    const obs = rows[0];
+
+    // Re-link framework tracker rows
+    if (framework_tracker_ids?.length) {
+      await db.query(`
+        UPDATE framework_tracker SET linked_observation_id=NULL
+        WHERE linked_observation_id=$1 AND id != ALL($2::int[])
+      `, [obs.id, framework_tracker_ids]);
+      for (const ftId of framework_tracker_ids) {
+        await db.query(`
+          UPDATE framework_tracker
+          SET linked_observation_id=$1, assessed_by=$2, assessed_at=NOW(), updated_at=NOW(),
+            status = CASE WHEN status='not_yet' THEN 'emerging' ELSE status END
+          WHERE id=$3 AND child_id=$4
+        `, [obs.id, req.user.id, ftId, obs.child_id]);
+      }
+    }
+
+    res.json(obs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /:id/tags — replace obs_tags array
+router.patch('/:id/tags', async (req, res) => {
+  const { obs_tags } = req.body;
+  if (!Array.isArray(obs_tags)) return res.status(400).json({ error: 'obs_tags must be array' });
+  const cleanTags = validateObsTags(obs_tags);
+  try {
+    const { rows } = await getPool().query(`
+      UPDATE observations SET obs_tags=$1, updated_at=NOW()
+      WHERE id=$2 RETURNING id, obs_tags
+    `, [cleanTags, req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /:id
+router.delete('/:id', async (req, res) => {
+  if (!['manager','deputy_manager'].includes(req.user.role))
+    return res.status(403).json({ error: 'Manager only' });
+  try {
+    await getPool().query('DELETE FROM observations WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /:id/share — toggle shared_with_parents
+router.post('/:id/share', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(`
+      UPDATE observations SET shared_with_parents=NOT shared_with_parents, updated_at=NOW()
+      WHERE id=$1 RETURNING id, shared_with_parents
+    `, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /child/:childId/framework — framework tracker for a child
+router.get('/child/:childId/framework', async (req, res) => {
+  const { framework = 'birth_to_5' } = req.query;
+  try {
+    const { rows } = await getPool().query(`
+      SELECT ft.*, s.first_name || ' ' || s.last_name as assessed_by_name
+      FROM framework_tracker ft
+      LEFT JOIN staff s ON s.id=ft.assessed_by
+      WHERE ft.child_id=$1 AND ft.framework=$2
+      ORDER BY ft.area, ft.aspect, ft.age_range, ft.id
+    `, [req.params.childId, framework]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /framework/:ftId — update a single framework tracker entry
+router.put('/framework/:ftId', async (req, res) => {
+  const { status, notes, linked_observation_id } = req.body;
+  try {
+    const { rows } = await getPool().query(`
+      UPDATE framework_tracker SET
+        status=COALESCE($1,status),
+        notes=$2,
+        linked_observation_id=COALESCE($3,linked_observation_id),
+        assessed_by=$4, assessed_at=NOW(), updated_at=NOW()
+      WHERE id=$5 RETURNING *
+    `, [status, notes, linked_observation_id, req.user.id, req.params.ftId]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── FRAMEWORK STATEMENTS CATALOGUE ──────────────────────────────────────────
+
+// GET /statements — browse/search framework statements
+router.get('/statements', async (req, res) => {
+  const { framework, area, q, limit = 50 } = req.query;
+  const db = getPool();
+  const params = [];
+  let sql = 'SELECT id,framework,area,aspect,age_range,statement_code,statement_text,ordinal FROM framework_statements WHERE 1=1';
+  if (framework) { params.push(framework); sql += ` AND framework=$${params.length}`; }
+  if (area) { params.push(area); sql += ` AND area=$${params.length}`; }
+  if (q) {
+    params.push(q);
+    sql += ` AND (statement_text ILIKE '%'||$${params.length}||'%' OR area ILIKE '%'||$${params.length}||'%' OR aspect ILIKE '%'||$${params.length}||'%')`;
+  }
+  // Exclude stubs from search results unless specifically browsing
+  if (!area && !q) {
+    sql += ` AND statement_text NOT LIKE '(stub%'`;
+  }
+  sql += ` ORDER BY framework, ordinal, id LIMIT $${params.length + 1}`;
+  params.push(Math.min(parseInt(limit) || 50, 200));
+  try {
+    const { rows } = await db.query(sql, params);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /child/:childId/age-bands — most recent age_range per framework+area
+router.get('/child/:childId/age-bands', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(`
+      SELECT ft.framework, ft.area, ft.age_range,
+             MAX(ft.assessed_at) as last_assessed
+      FROM framework_tracker ft
+      WHERE ft.child_id=$1 AND ft.age_range IS NOT NULL
+      GROUP BY ft.framework, ft.area, ft.age_range
+      ORDER BY ft.framework, ft.area, MAX(ft.assessed_at) DESC
+    `, [req.params.childId]);
+    // Return most recent per framework+area
+    const map = {};
+    rows.forEach(r => {
+      const k = r.framework + '|' + r.area;
+      if (!map[k]) map[k] = r;
+    });
+    res.json(Object.values(map));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /ai-suggest-statements — AI-powered statement linking suggestions
+router.post('/ai-suggest-statements', async (req, res) => {
+  const { observation_text, child_id, frameworks = ['eyfs_statutory'] } = req.body;
+  if (!observation_text) return res.status(400).json({ error: 'observation_text required' });
+
+  const db = getPool();
+  try {
+    // Get child's age in months
+    let ageMonths = null;
+    if (child_id) {
+      const { rows: childRows } = await db.query(
+        'SELECT EXTRACT(MONTH FROM AGE(NOW(), date_of_birth))::int + EXTRACT(YEAR FROM AGE(NOW(), date_of_birth))::int*12 as age_months FROM children WHERE id=$1',
+        [child_id]
+      );
+      if (childRows.length) ageMonths = childRows[0].age_months;
+    }
+
+    const ageFilter = ageMonths !== null ? buildAgeRanges(ageMonths) : null;
+
+    // Classify observation into EYFS developmental area(s) before candidate fetch
+    const { areas: classifiedAreas } = classifyArea(observation_text);
+
+    // Fetch candidates — area-scoped when classifier is confident, broader otherwise
+    let candidateSql = `
+      SELECT id, framework, area, aspect, age_range, statement_text
+      FROM framework_statements
+      WHERE framework = ANY($1)
+        AND statement_text NOT LIKE '(stub%'
+    `;
+    const params = [frameworks];
+
+    if (classifiedAreas) {
+      params.push(classifiedAreas);
+      candidateSql += ` AND area = ANY($${params.length})`;
+    }
+    if (ageFilter && ageFilter.length) {
+      params.push(ageFilter);
+      candidateSql += ` AND (age_range = ANY($${params.length}) OR age_range='End of Reception' OR age_range IS NULL)`;
+    }
+    const fetchLimit = classifiedAreas ? 30 : 50;
+    candidateSql += ` ORDER BY framework, ordinal LIMIT ${fetchLimit}`;
+
+    const { rows: candidates } = await db.query(candidateSql, params);
+    if (!candidates.length) return res.json({ suggestions: [], method: 'no_candidates' });
+
+    // Keyword-score and narrow pool to 15 (area-scoped) or 25 (all-area fallback)
+    const obsWords = tokenise(observation_text);
+    const poolSize = classifiedAreas ? 15 : 25;
+    let scored = candidates.map(c => ({
+      ...c,
+      _kwScore: overlap(obsWords, tokenise(c.statement_text + ' ' + (c.area || '') + ' ' + (c.aspect || '')))
+    })).sort((a, b) => b._kwScore - a._kwScore).slice(0, poolSize);
+
+    // Save keyword-ranked top 3 BEFORE shuffling — used as fallback
+    const kwTop = scored.slice(0, 3);
+
+    // Shuffle to prevent positional anchoring for AI (Fisher-Yates)
+    for (let i = scored.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [scored[i], scored[j]] = [scored[j], scored[i]];
+    }
+
+    // Session-level AI degradation check
+    const staffId = req.user.id;
+    let suggestions;
+
+    if (isAiDegraded(staffId)) {
+      appendLog(`Staff ${staffId}: AI degraded — keyword fallback`);
+      suggestions = kwTop;
+      suggestions._method = 'keyword_degraded';
+    } else {
+      try {
+        suggestions = await aiSuggest(observation_text, scored, classifiedAreas);
+        recordAiSuccess(staffId);
+      } catch (err) {
+        appendLog(`AI suggest failed: ${err.message} — falling back to keyword`);
+        recordAiFailure(staffId);
+        suggestions = kwTop;
+        suggestions._method = 'keyword';
+      }
+    }
+
+    res.json({ suggestions: suggestions.slice(0, 3), method: suggestions._method || 'ai' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function buildAgeRanges(months) {
+  // Returns plausible B25M ranges and DM bands for child's age
+  const ranges = [];
+  if (months <= 20) ranges.push('Range 1 (Birth to 12 months)', 'Range 2 (8 to 20 months)', 'Birth to 3');
+  if (months >= 8 && months <= 30) ranges.push('Range 2 (8 to 20 months)', 'Range 3 (16 to 26 months)', 'Birth to 3');
+  if (months >= 16 && months <= 40) ranges.push('Range 3 (16 to 26 months)', 'Range 4 (22 to 36 months)', 'Birth to 3', '3 and 4-year-olds');
+  if (months >= 22 && months <= 50) ranges.push('Range 4 (22 to 36 months)', 'Range 5 (30 to 50 months)', '3 and 4-year-olds');
+  if (months >= 30 && months <= 65) ranges.push('Range 5 (30 to 50 months)', 'Range 6 (40 to 60+ months)', '3 and 4-year-olds', 'Children in Reception');
+  if (months >= 40) ranges.push('Range 6 (40 to 60+ months)', 'Children in Reception');
+  return [...new Set(ranges)];
+}
+
+function tokenise(text) {
+  return (text || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 3);
+}
+
+function overlap(a, b) {
+  const setB = new Set(b);
+  return a.filter(w => setB.has(w)).length;
+}
+
+async function aiSuggest(obsText, candidates, classifiedAreas) {
+  // Assign random 3-char codes — avoids numeric ID anchoring in the LLM
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const usedCodes = new Set();
+  const coded = candidates.map(c => {
+    let code;
+    do { code = Array.from({length: 3}, () => chars[Math.floor(Math.random() * chars.length)]).join(''); }
+    while (usedCodes.has(code));
+    usedCodes.add(code);
+    return { ...c, _code: code };
+  });
+  const codeMap = {};
+  coded.forEach(c => { codeMap[c._code] = c; });
+
+  const areaConstraint = classifiedAreas
+    ? `\nThis observation relates to the "${classifiedAreas.join(' / ')}" area of EYFS development. Only suggest statements from this area. Do not suggest statements from other developmental areas even if the child communicated or spoke during the activity.`
+    : '';
+
+  const candidateList = coded.map(c => `[${c._code}] ${c.statement_text}`).join('\n');
+
+  const fullPrompt = `You are an Early Years practitioner in an English nursery linking observations to EYFS learning statements.
+
+Rules:
+- Return EXACTLY 3 codes from the candidate list below.
+- Only suggest statements directly evidenced by what is described.
+- Match the PRIMARY developmental focus of the observation — not incidental behaviour.
+- If the observation is about counting, suggest Mathematics statements only.
+- Return JSON ONLY: {"codes": ["XX1","YY2","ZZ3"]}. No prose, no explanation.${areaConstraint}
+
+Observation: ${obsText.slice(0, 600)}
+
+Candidates:
+${candidateList}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7000);
+
+  const r = await fetch(`${OLLAMA_HOST}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: AI_SUGGESTER_MODEL, prompt: fullPrompt, stream: false, think: false, options: { temperature: 0 } }),
+    signal: controller.signal
+  });
+  clearTimeout(timer);
+
+  if (!r.ok) throw new Error(`Ollama ${r.status}`);
+  const data = await r.json();
+  const raw = (data.response || '').trim();
+
+  const jsonStart = raw.indexOf('{');
+  const jsonEnd   = raw.lastIndexOf('}');
+  if (jsonStart === -1 || jsonEnd === -1) throw new Error(`Bad AI response: ${raw.slice(0, 120)}`);
+  const { codes } = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+  if (!Array.isArray(codes) || !codes.length) throw new Error('No codes in response');
+
+  const resolved = codes.map(code => codeMap[code]).filter(Boolean)
+    .map(({ _code, _kwScore, ...rest }) => rest);
+  if (!resolved.length) throw new Error('No valid codes matched candidates');
+  return resolved;
+}
+
+// POST /framework-tracker/link — upsert tracker rows from statement IDs
+router.post('/framework-tracker/link', async (req, res) => {
+  const { child_id, observation_id, statement_ids = [], status = 'emerging' } = req.body;
+  if (!child_id || !statement_ids.length) return res.status(400).json({ error: 'child_id and statement_ids required' });
+  const db = getPool();
+  try {
+    const linked = [];
+    for (const sid of statement_ids) {
+      const { rows: stRows } = await db.query('SELECT * FROM framework_statements WHERE id=$1', [sid]);
+      if (!stRows.length) continue;
+      const st = stRows[0];
+      const { rows } = await db.query(`
+        INSERT INTO framework_tracker
+          (child_id, framework, area, aspect, age_range, statement, statement_id,
+           status, linked_observation_id, assessed_by, assessed_at, created_at, updated_at)
+        -- COALESCE area/aspect to '' so NULL-aspect statements (e.g. all Development Matters)
+        -- dedupe via the unique index instead of inserting duplicate tracker rows.
+        VALUES ($1,$2,COALESCE($3,''),COALESCE($4,''),$5,$6,$7,$8,$9,$10,NOW(),NOW(),NOW())
+        ON CONFLICT (child_id, framework, area, aspect, statement) DO UPDATE
+          SET statement_id=EXCLUDED.statement_id,
+              status=CASE WHEN framework_tracker.status='not_yet' THEN $8 ELSE framework_tracker.status END,
+              linked_observation_id=COALESCE($9, framework_tracker.linked_observation_id),
+              assessed_by=$10, assessed_at=NOW(), updated_at=NOW()
+        RETURNING *
+      `, [child_id, st.framework, st.area, st.aspect, st.age_range,
+          st.statement_text, sid, status, observation_id || null, req.user.id]);
+      if (rows.length) linked.push(rows[0]);
+    }
+    res.json({ linked });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /child/:childId/framework-statements — linked statement IDs for a child
+router.get('/child/:childId/framework-statements', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(`
+      SELECT ft.id as tracker_id, ft.statement_id, ft.framework, ft.area, ft.aspect,
+             ft.age_range, ft.status, ft.linked_observation_id,
+             fs.statement_text, fs.statement_code
+      FROM framework_tracker ft
+      LEFT JOIN framework_statements fs ON fs.id=ft.statement_id
+      WHERE ft.child_id=$1 AND ft.statement_id IS NOT NULL
+      ORDER BY ft.framework, ft.area, ft.id
+    `, [req.params.childId]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /coverage — coverage stats for curriculum heatmap
+router.get('/coverage', async (req, res) => {
+  const { framework = 'eyfs_statutory', room_id, weeks = 12 } = req.query;
+  const db = getPool();
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - (parseInt(weeks) || 12) * 7);
+    const params = [framework, since.toISOString()];
+    const childConds = [];
+    if (room_id) { params.push(room_id); childConds.push(`c.room_id=$${params.length}`); }
+    // ?mine=1 → only the requesting staff member's key children
+    if (req.query.mine === '1' && req.user && req.user.id) { params.push(req.user.id); childConds.push(`c.key_person_id=$${params.length}`); }
+    const childWhere = childConds.length
+      ? `AND ft.child_id IN (SELECT id FROM children c WHERE ${childConds.join(' AND ')})` : '';
+    const { rows } = await db.query(`
+      SELECT fs.area, fs.aspect, fs.age_range, fs.statement_code, fs.statement_text,
+             COUNT(DISTINCT ft.linked_observation_id) as link_count
+      FROM framework_statements fs
+      LEFT JOIN framework_tracker ft ON ft.statement_id=fs.id
+        AND ft.linked_observation_id IS NOT NULL
+        AND ft.assessed_at >= $2
+        ${childWhere}
+      WHERE fs.framework=$1
+        AND fs.statement_text NOT LIKE '(stub%'
+      GROUP BY fs.id, fs.area, fs.aspect, fs.age_range, fs.statement_code, fs.statement_text
+      ORDER BY fs.area, fs.ordinal
+    `, params);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /monthly-grid — observation counts per child per month (the obs-tracker grid).
+// Optional filters: staff_id, room_id, area (EYFS area substring), mine=1 (my key children),
+// child_ids=1,2,3 (scope to an explicit selected set — EY home multi-select; Prompt 50).
+router.get('/monthly-grid', async (req, res) => {
+  const months = Math.min(Math.max(parseInt(req.query.months) || 6, 1), 18);
+  const db = getPool();
+  try {
+    const since = new Date(); since.setMonth(since.getMonth() - (months - 1)); since.setDate(1);
+    const params = [since.toISOString()];
+    const where = ["o.created_at >= $1", "(c.is_active = true)"];
+    if (req.query.staff_id) { params.push(req.query.staff_id); where.push(`o.staff_id = $${params.length}`); }
+    if (req.query.room_id)  { params.push(req.query.room_id);  where.push(`c.room_id = $${params.length}`); }
+    if (req.query.mine === '1' && req.user && req.user.id) { params.push(req.user.id); where.push(`c.key_person_id = $${params.length}`); }
+    if (req.query.child_ids) {
+      const ids = String(req.query.child_ids).split(',').map(n => parseInt(n, 10)).filter(Boolean);
+      if (ids.length) { params.push(ids); where.push(`o.child_id = ANY($${params.length}::int[])`); }
+    }
+    if (req.query.area)     { params.push('%' + req.query.area + '%'); where.push(`o.eyfs_areas::text ILIKE $${params.length}`); }
+    const { rows } = await db.query(`
+      SELECT o.child_id, c.first_name, c.last_name, c.room_id,
+             to_char(date_trunc('month', o.created_at), 'YYYY-MM') AS ym,
+             COUNT(*) AS n
+      FROM observations o
+      JOIN children c ON c.id = o.child_id
+      WHERE ${where.join(' AND ')}
+      GROUP BY o.child_id, c.first_name, c.last_name, c.room_id, ym
+    `, params);
+    // Build the month column list (oldest→newest)
+    const cols = [];
+    const d = new Date(since);
+    for (let i = 0; i < months; i++) { cols.push(d.toISOString().slice(0, 7)); d.setMonth(d.getMonth() + 1); }
+    // Pivot into child rows
+    const byChild = {};
+    for (const r of rows) {
+      if (!byChild[r.child_id]) byChild[r.child_id] = { child_id: r.child_id, name: `${r.first_name} ${r.last_name}`, room_id: r.room_id, months: {}, total: 0 };
+      byChild[r.child_id].months[r.ym] = parseInt(r.n);
+      byChild[r.child_id].total += parseInt(r.n);
+    }
+    const children = Object.values(byChild).sort((a, b) => b.total - a.total);
+    res.json({ months: cols, children });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /populated-frameworks — which frameworks have ≥10 real (non-stub) statements
+router.get('/populated-frameworks', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(`
+      SELECT framework, COUNT(*) AS n
+      FROM framework_statements
+      WHERE statement_text NOT ILIKE '%stub%'
+      GROUP BY framework
+    `);
+    const counts = {};
+    rows.forEach(r => { counts[r.framework] = parseInt(r.n); });
+    res.json({
+      eyfs_statutory:      (counts['eyfs_statutory']      || 0) >= 10,
+      birth_to_5:          (counts['birth_to_5']          || 0) >= 10,
+      development_matters: (counts['development_matters'] || 0) >= 10,
+      iters_3:             (counts['iters_3']             || 0) >= 10,
+      ecers_3:             (counts['ecers_3']             || 0) >= 10,
+      eydj:                (counts['eydj']                || 0) >= 10,
+      eylog_dev_matters:   (counts['eylog_dev_matters']   || 0) >= 10,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── FRAMEWORK TRACKER GRID (EyLog-style "view all the data at once") ──────────
+// Prompt 27B. Returns, for a SELECTED SET of children, the full statement grid
+// for one framework + each child's status per statement (the coloured cell) +
+// the observation that evidences it (click-through) + each child's next steps.
+const TRACKER_FW_LABELS = {
+  birth_to_5_la:       'Birth to 5 Matters',
+  birth_to_5:          'Birth to 5 (legacy)',
+  eyfs_statutory:      'Early Learning Goals (EYFS Profile)',
+  development_matters: 'Development Matters',
+  eylog_dev_matters:   'Development Matters (EyLog)',
+  eydj:                'EYDJ (SEN)',
+  iters_3:             'ITERS-3',
+  ecers_3:             'ECERS-3',
+};
+
+// Reference-only frameworks (settings.reference_frameworks, JSON array of framework
+// keys, e.g. ["eyfs_statutory","development_matters"]). Statements from these
+// frameworks can be linked to observations for staff reference, but must NOT create
+// framework_tracker assessment rows (the setting tracks a different framework).
+// Missing/invalid setting → empty set → behaviour unchanged. Added 2026-07-08.
+async function _referenceFrameworks(db) {
+  try {
+    const { rows } = await db.query(`SELECT value FROM settings WHERE key='reference_frameworks'`);
+    const arr = rows[0] && rows[0].value ? JSON.parse(rows[0].value) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch { return new Set(); }
+}
+
+// ── DEFAULT FRAMEWORK (per-instance) ────────────────────────────────────────
+// Which framework the tracker pre-selects. Persisted in settings.default_framework;
+// if unset, inferred from the edition (state-school editions → ELG/EYFS-Profile,
+// nurseries → Birth to 5). LADN production has no settings row and is NOT a school
+// edition, so it stays on birth_to_5 — this endpoint never changes that.
+function _inferDefaultFramework() {
+  const ed = (process.env.WREN_EDITION || '').toLowerCase();
+  return (ed === 'ht' || ed === 'primary' || ed === 'secondary') ? 'eyfs_statutory' : 'birth_to_5';
+}
+
+// GET /default-framework — the configured/inferred default tracker framework.
+router.get('/default-framework', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(`SELECT value FROM settings WHERE key='default_framework'`);
+    const fw = (rows[0] && rows[0].value) || _inferDefaultFramework();
+    res.json({ framework: fw, label: TRACKER_FW_LABELS[fw] || fw, source: (rows[0] && rows[0].value) ? 'setting' : 'edition' });
+  } catch (e) {
+    const fw = _inferDefaultFramework();
+    res.json({ framework: fw, label: TRACKER_FW_LABELS[fw] || fw, source: 'edition' });
+  }
+});
+
+// PUT /default-framework {framework} — manager toggle, persisted in settings.
+router.put('/default-framework', async (req, res) => {
+  if (!req.user || !['manager','deputy_manager','admin','headteacher','business_manager'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Manager access required' });
+  }
+  const fw = ((req.body && req.body.framework) || '').trim();
+  if (!fw) return res.status(400).json({ error: 'framework required' });
+  try {
+    await getPool().query(
+      `INSERT INTO settings (key, value, updated_by, updated_at)
+       VALUES ('default_framework', $1, $2, now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [fw, req.user.id]);
+    res.json({ ok: true, framework: fw, label: TRACKER_FW_LABELS[fw] || fw });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /tracker-frameworks — frameworks that actually have assessment data, for the selector
+router.get('/tracker-frameworks', async (req, res) => {
+  try {
+    const { rows } = await getPool().query(`
+      SELECT ft.framework,
+             COUNT(*)::int AS assessments,
+             COUNT(DISTINCT ft.statement_id)::int AS statements,
+             COUNT(DISTINCT ft.child_id)::int AS children
+      FROM framework_tracker ft
+      WHERE ft.statement_id IS NOT NULL
+      GROUP BY ft.framework
+      ORDER BY assessments DESC
+    `);
+    res.json(rows.map(r => ({ ...r, label: TRACKER_FW_LABELS[r.framework] || r.framework })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /framework-grid — the big grid. ?framework=&scope=group|room|mine&room_id=
+router.get('/framework-grid', async (req, res) => {
+  const framework = req.query.framework || 'birth_to_5_la';
+  const scope     = req.query.scope || 'group';
+  const db = getPool();
+  try {
+    // 1. Resolve the in-scope children.
+    const cParams = [];
+    const cConds  = ['c.is_active = true'];
+    if (scope === 'room' && req.query.room_id) {
+      cParams.push(req.query.room_id); cConds.push(`c.room_id = $${cParams.length}`);
+    } else if (scope === 'mine' && req.user && req.user.id) {
+      cParams.push(req.user.id); cConds.push(`c.key_person_id = $${cParams.length}`);
+    }
+    const { rows: children } = await db.query(`
+      SELECT c.id, c.first_name, c.last_name,
+             c.first_name || ' ' || c.last_name AS name,
+             c.room_id, r.name AS room_name, c.key_person_id
+      FROM children c
+      LEFT JOIN rooms r ON r.id = c.room_id
+      WHERE ${cConds.join(' AND ')}
+      ORDER BY c.first_name, c.last_name
+    `, cParams);
+    const childIds = children.map(c => c.id);
+
+    // 2. Statement rows for the framework (grouped Area → Aspect → Age band).
+    const { rows: statements } = await db.query(`
+      SELECT id, area, aspect, age_range, statement_code, statement_text, ordinal
+      FROM framework_statements
+      WHERE framework = $1 AND statement_text NOT LIKE '(stub%'
+      ORDER BY area, ordinal, id
+    `, [framework]);
+
+    // 3. The cells: each child's tracker entry per statement.
+    let cells = [];
+    let nextSteps = [];
+    if (childIds.length) {
+      const cellRes = await db.query(`
+        SELECT ft.id AS tracker_id, ft.child_id, ft.statement_id,
+               ft.status, ft.linked_observation_id
+        FROM framework_tracker ft
+        WHERE ft.framework = $1
+          AND ft.child_id = ANY($2::int[])
+          AND ft.statement_id IS NOT NULL
+      `, [framework, childIds]);
+      cells = cellRes.rows;
+
+      // 4. Each child's recent next steps (from their observations).
+      // observations.next_steps may not exist in every schema (e.g. the school
+      // editions' observations table) — degrade gracefully rather than 500 the grid.
+      try {
+        const nsRes = await db.query(`
+          SELECT child_id, id AS observation_id, next_steps AS text, created_at
+          FROM (
+            SELECT o.child_id, o.id, o.next_steps, o.created_at,
+                   ROW_NUMBER() OVER (PARTITION BY o.child_id ORDER BY o.created_at DESC) AS rn
+            FROM observations o
+            WHERE o.child_id = ANY($1::int[])
+              AND o.next_steps IS NOT NULL AND length(trim(o.next_steps)) > 0
+          ) t
+          WHERE rn <= 3
+          ORDER BY child_id, created_at DESC
+        `, [childIds]);
+        nextSteps = nsRes.rows;
+      } catch (nsErr) { nextSteps = []; }
+    }
+
+    res.json({
+      framework,
+      label: TRACKER_FW_LABELS[framework] || framework,
+      scope,
+      children, statements, cells, nextSteps,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Observation photo upload ──────────────────────────────────────────────────
+const multer = require('multer');
+const OBS_UPLOAD_DIR = process.env.DATA_DIR
+  ? path.join(process.env.DATA_DIR, 'observations')
+  : path.join(__dirname, '../../data/ladn/uploads/observations');
+
+const _obsStorage = multer.diskStorage({
+  destination(req, file, cb) {
+    fs.mkdirSync(OBS_UPLOAD_DIR, { recursive: true });
+    cb(null, OBS_UPLOAD_DIR);
+  },
+  filename(req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    cb(null, `obs_${Date.now()}_${Math.random().toString(36).slice(2, 7)}${ext}`);
+  },
+});
+const _obsUpload = multer({
+  storage: _obsStorage,
+  // 100MB request ceiling to allow short videos; per-type caps enforced below
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    cb(null, /^image\/(jpeg|png|webp|gif)$/.test(file.mimetype) ||
+             /^video\/(mp4|webm|quicktime|3gpp|x-matroska)$/.test(file.mimetype));
+  },
+});
+
+// POST /upload — observation media upload (up to 10 files; images ≤8MB, videos ≤100MB)
+router.post('/upload', _obsUpload.array('photos', 10), (req, res) => {
+  if (!req.files || !req.files.length) return res.status(400).json({ error: 'No files uploaded' });
+  const tooBig = req.files.find(f => f.mimetype.startsWith('image/') && f.size > 8 * 1024 * 1024);
+  if (tooBig) {
+    req.files.forEach(f => { try { fs.unlinkSync(f.path); } catch (_) {} });
+    return res.status(400).json({ error: 'Images must be under 8MB' });
+  }
+  const urls = req.files.map(f => `/api/observations/photo/${f.filename}`);
+  res.json({ urls });
+});
+
+// GET /photo/:filename — serve uploaded observation photos
+router.get('/photo/:filename', (req, res) => {
+  const name = path.basename(req.params.filename); // strip path traversal
+  const full = path.join(OBS_UPLOAD_DIR, name);
+  if (!fs.existsSync(full)) return res.status(404).json({ error: 'Not found' });
+  res.sendFile(full);
+});
+
+// ── TWINKL-ARI REPORT WRITER — suggest / draft / persist ──────────────
+// These endpoints power the "Draft with Wren" flow:
+//   1. POST /:id/suggest-statements  — AI suggests statement checkboxes + CoEL
+//   2. POST /:id/draft               — AI generates parent-friendly prose
+//   3. POST /:id/statements          — persist human's confirmed links
+
+// Helper: call Ollama with retry logic
+function callOllama(messages, model, timeoutMs) {
+  const url = new URL('/v1/chat/completions', OLLAMA_HOST);
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: model || OLLAMA_MODEL, messages, temperature: 0.3, max_tokens: 2048 }),
+    signal: AbortSignal.timeout(timeoutMs || 30000),
+  }).then(r => {
+    if (!r.ok) throw new Error(`Ollama ${r.status}`);
+    return r.json();
+  });
+}
+
+// Helper: pg_trgm similarity query for statement candidates
+function fetchTrgmCandidates(db, text, frameworks, limit) {
+  const params = [];
+  let sql = `
+    SELECT id, framework, area, aspect, age_range, statement_code, statement_text
+    FROM framework_statements
+    WHERE framework = ANY($1)
+      AND statement_text NOT LIKE '(stub%'
+  `;
+  params.push(frameworks);
+  // pg_trgm: similarity() needs both args typed as text
+  params.push(text);
+  sql += ` ORDER BY similarity(statement_text, $${params.length}::text) DESC`;
+  if (limit && limit > 0) {
+    params.push(limit);
+    sql += ` LIMIT $${params.length}`;
+  }
+  return db.query(sql, params);
+}
+
+// POST /:id/suggest-statements — AI suggests framework statements for an observation
+// id may be 'new' (pre-save: the EY/admin forms suggest before the obs row exists) —
+// in that case observation_text is required in the body and no obs row is fetched.
+router.post('/:id/suggest-statements', authenticate, async (req, res) => {
+  const isNew = req.params.id === 'new';
+  const obsId = parseInt(req.params.id);
+  if (!isNew && isNaN(obsId)) return res.status(400).json({ error: 'observation_id required' });
+
+  const db = getPool();
+  const { observation_text, child_id, frameworks } = req.body;
+
+  // Fetch the observation (or synthesize one for pre-save suggests)
+  let obs;
+  if (isNew) {
+    if (!observation_text || !observation_text.trim()) {
+      return res.status(400).json({ error: 'observation_text required for pre-save suggestions' });
+    }
+    let ageMonths = null;
+    if (child_id) {
+      try {
+        const { rows } = await db.query(
+          'SELECT EXTRACT(MONTH FROM AGE(NOW(), date_of_birth))::int + EXTRACT(YEAR FROM AGE(NOW(), date_of_birth))::int*12 AS age_months FROM children WHERE id=$1',
+          [child_id]);
+        if (rows.length) ageMonths = rows[0].age_months;
+      } catch (_) { /* age filter is best-effort */ }
+    }
+    obs = { observation_text, child_id: child_id || null, child_age_months: ageMonths };
+  } else try {
+    const { rows } = await db.query(OBS_SELECT + ' WHERE o.id=$1', [obsId]);
+    if (!rows.length) return res.status(404).json({ error: 'Observation not found' });
+    obs = rows[0];
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  // Use provided text if given, otherwise the observation's own text
+  const text = observation_text || obs.observation_text;
+  const childIds = [child_id || obs.child_id];
+  const fwList = frameworks || ['birth_to_5', 'development_matters', 'eyfs_statutory', 'coel'];
+
+  // Fetch child age for any age-filtered frameworks
+  const ageStr = obs.child_age_months !== undefined && obs.child_age_months !== null
+    ? `${Math.floor(obs.child_age_months / 12)}y ${obs.child_age_months % 12}m`
+    : '0-5 years';
+
+  try {
+    // Step 1: pg_trgm similarity to narrow pool (per-framework)
+    const pools = {}; // framework -> candidates
+    for (const fw of fwList) {
+      const candidates = await fetchTrgmCandidates(db, text, [fw], 40);
+      if (candidates.rows.length) pools[fw] = candidates.rows;
+    }
+
+    // Step 2: Ask Ollama to score and pick + flag CoEL
+    let suggestions = [];
+    let coelSuggestions = [];
+    let method = 'ai';
+
+    const staffId = req.user.id;
+    if (isAiDegraded(staffId)) {
+      // Degraded fallback: keyword match
+      method = 'keyword_fallback';
+      for (const [fw, cands] of Object.entries(pools)) {
+        const obsWords = tokenise(text);
+        const scored = cands
+          .map(c => ({ ...c, _score: overlap(obsWords, tokenise(c.statement_text + ' ' + (c.area || '') + ' ' + (c.aspect || ''))) }))
+          .sort((a, b) => b._score - a._score)
+          .slice(0, 2);
+        for (const s of scored) {
+          suggestions.push({ ...s, _why: 'keyword_match' });
+          if (fw === 'coel') coelSuggestions.push({ ...s });
+        }
+      }
+    } else {
+      try {
+        // Build structured prompt for Ollama
+        const poolList = [];
+        for (const [fw, cands] of Object.entries(pools)) {
+          for (const c of cands) {
+            poolList.push(`[${fw}] ${c.area || ''} | ${c.aspect || ''} | ${c.age_range || ''} | ${c.statement_code} | ${c.statement_text}`);
+          }
+        }
+
+        const prompt = `You are a nursery practitioner selecting relevant EYFS framework statements for an observation.
+
+OBSERVATION TEXT: "${text.substring(0, 1000)}"
+CHILD AGE: ${ageStr}
+
+AVAILABLE STATEMENTS (pick the best fits):
+${poolList.join('\n')}
+
+Instructions:
+1. Select 2-5 statements that best match this observation
+2. For each selected statement, give a ONE-LINE reason why it fits
+3. Identify any that are CoEL (Characteristics of Effective Learning) — mark coel_aspect as true
+4. Return ONLY a valid JSON object matching this exact schema (no markdown, no extra text):
+{
+  "suggestions": [
+    {"id": <integer>, "framework": "<framework>", "statement_code": "<code>", "area": "<area>", "aspect": "<aspect>", "age_range": "<age>", "statement_text": "<text>", "_why": "<1-line reason>"}
+  ],
+  "coel_matches": [
+    {"id": <integer>, "framework": "<framework>", "statement_code": "<code>", "aspect": "<aspect>", "coel_level": "emerging|developing|secure"}
+  ]
+}`;
+
+        const result = await callOllama(
+          [{ role: 'system', content: 'You are an expert EYFS practitioner. Only select statements that genuinely match the observation. Never invent statements.' }, { role: 'user', content: prompt }],
+          AI_SUGGESTER_MODEL,
+          30000
+        );
+
+        const content = result?.choices?.[0]?.message?.content || '';
+
+        // Parse JSON from LLM response (may have markdown wrapper)
+        let parsed;
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        } catch { parsed = null; }
+
+        if (parsed && parsed.suggestions?.length) {
+          suggestions = parsed.suggestions;
+          coelSuggestions = parsed.coel_matches || [];
+        } else {
+          method = 'keyword_fallback';
+          for (const [fw, cands] of Object.entries(pools)) {
+            const obsWords = tokenise(text);
+            const scored = cands
+              .map(c => ({ ...c, _score: overlap(obsWords, tokenise(c.statement_text + ' ' + (c.area || '') + ' ' + (c.aspect || ''))) }))
+              .sort((a, b) => b._score - a._score)
+              .slice(0, 2);
+            for (const s of scored) {
+              suggestions.push({ ...s, _why: 'keyword_match' });
+            }
+          }
+        }
+        recordAiSuccess(staffId);
+      } catch (aiErr) {
+        appendLog(`suggest-statements AI failed: ${aiErr.message} — falling back to pg_trgm ranking`);
+        recordAiFailure(staffId);
+        method = 'pg_trgm_rank';
+        for (const [fw, cands] of Object.entries(pools)) {
+          const scored = cands
+            .map(c => ({
+              ...c,
+              _score: similarity(c.statement_text, text)
+            }))
+            .sort((a, b) => b._score - a._score)
+            .slice(0, 3);
+          for (const s of scored) {
+            suggestions.push({ ...s, _why: 'similarity_rank' });
+            if (fw === 'coel') coelSuggestions.push({ ...s, coel_level: 'developing' });
+          }
+        }
+      }
+    }
+
+    res.json({
+      observation_id: obsId,
+      child_name: obs.child_name,
+      child_age_months: obs.child_age_months,
+      method,
+      suggestions,
+      coel_matches: coelSuggestions,
+      total_candidates: Object.values(pools).reduce((a, b) => a + b.length, 0)
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Helper: similarity between two strings (Levenshtein-like, simpler)
+function similarity(a, b) {
+  const wordsA = new Set(tokenise(a));
+  const wordsB = new Set(tokenise(b));
+  if (!wordsA.size || !wordsB.size) return 0;
+  let common = 0;
+  for (const w of wordsA) if (wordsB.has(w)) common++;
+  return common / Math.max(wordsA.size, wordsB.size);
+}
+
+// POST /:id/draft — AI generates parent-friendly prose from confirmed selections
+router.post('/:id/draft', authenticate, async (req, res) => {
+  const obsId = parseInt(req.params.id);
+  if (isNaN(obsId)) return res.status(400).json({ error: 'observation_id required' });
+
+  const { observation_text, child_name, child_pronouns, statement_codes, coel_selections } = req.body;
+  const db = getPool();
+
+  // Fetch observation + child info
+  let obs;
+  try {
+    const { rows } = await db.query(OBS_SELECT + ' WHERE o.id=$1', [obsId]);
+    if (!rows.length) return res.status(404).json({ error: 'Observation not found' });
+    obs = rows[0];
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  const txt = observation_text || obs.observation_text;
+  const name = child_name || obs.child_name;
+  const pronouns = child_pronouns || 'they';
+
+  // Fetch the confirmed statement details from the database
+  let stmtDetails = [];
+  if (statement_codes?.length) {
+    const placeholders = statement_codes.map((_, i) => `$${i + 2}`).join(',');
+    const params = [obsId, ...statement_codes];
+    try {
+      const { rows: stmts } = await db.query(
+        `SELECT fs.id, fs.framework, fs.area, fs.aspect, fs.age_range, fs.statement_code, fs.statement_text
+         FROM framework_statements fs LEFT JOIN observation_statements os ON os.statement_id = fs.id
+         WHERE fs.statement_code = ANY($${1}) AND fs.id IN (${placeholders})`,
+        [statement_codes, ...statement_codes]
+      );
+      stmtDetails = stmts;
+    } catch {
+      // Non-fatal: fall back to empty
+    }
+  }
+
+  try {
+    const { child_age_months } = obs;
+    const ageStr = child_age_months !== undefined
+      ? `${Math.floor(child_age_months / 12)} years ${child_age_months % 12} months`
+      : 'age not known';
+
+    // Build prompt with confirmed statements
+    const stmtList = (stmtDetails.length ? stmtDetails.map(s =>
+      `▸ ${s.framework}/${s.statement_code}: "${s.statement_text}"`
+    ).join('\n') : (statement_codes?.map(c => `▸ ${c}`).join('\n') || 'None'));
+
+    const coelList = (coel_selections?.length ? coel_selections.map(c =>
+      `▸ ${c.characteristic} (${c.level}): ${c.coel_text || '(tick)'}`
+    ).join('\n') : 'None');
+
+    const prompt = `You are a warm, professional nursery practitioner writing observations for parents.
+
+CHILD: ${name}, age ${ageStr}, pronouns: ${pronouns}
+
+OBSERVATION TEXT (what happened):
+"${txt.substring(0, 1200)}"
+
+CONFIRMED STATEMENTS (these were ticked by the practitioner — include verbatim where appropriate):
+${stmtList}
+
+CONFIRMED CoEL (Characteristics of Effective Learning):
+${coelList}
+
+Write THREE outputs in this EXACT format:
+---OBSERVATION---
+[Keep the original observation text lightly edited for clarity]
+
+---PARENT_TEXT---
+[A warm, parent-friendly version using the confirmed statements woven into the prose naturally. Never invent new attainment claims. Use ${pronouns} for ${name}. Be specific, positive, and parent-accessible. 200-300 words.]
+
+---NEXT_STEPS---
+[3 specific, actionable next steps that build on what was observed. Each should connect to a framework area. Start each with an action verb.]
+
+CRITICAL RULES:
+- Use the VERBATIM confirmed statements in the parent text
+- Do NOT invent new framework attainment claims
+- Keep CoEL references natural, never clinical
+- The next steps should be practical things staff can do next day
+---OBSERVATION--- should be a polished version of the original`;
+
+    const result = await callOllama(
+      [
+        { role: 'system', content: 'You are helping a nursery practitioner write a warm, parent-friendly observation report. Follow the EXACT output format with ---SEPARATOR--- lines.' },
+        { role: 'user', content: prompt }
+      ],
+      OLLAMA_MODEL,
+      45000
+    );
+
+    const content = result?.choices?.[0]?.message?.content || '';
+
+    // Parse the three sections
+    const parts = content.split('---OBSERVATION---');
+    let obsEdit = '';
+    let parentText = '';
+    let nextSteps = '';
+
+    if (parts.length >= 2) {
+      // The first part of the second separator split is the observation text
+      if (parts[1].includes('---PARENT_TEXT---')) {
+        const p1p2 = parts[1].split('---PARENT_TEXT---');
+        obsEdit = p1p2[0].trim();
+        if (p1p2[1].includes('---NEXT_STEPS---')) {
+          const p3 = p1p2[1].split('---NEXT_STEPS---');
+          parentText = p3[0].trim();
+          nextSteps = p3[1].trim();
+        }
+      }
+    }
+
+    // If parsing failed, return raw content
+    if (!parentText && content.includes('Dear') && content.length > 100) {
+      parentText = content;
+    }
+
+    // Format next steps as array
+    let stepsList = [];
+    if (nextSteps) {
+      stepsList = nextSteps.split('\n').filter(l => l.trim().length > 0 && (l.startsWith('-') || l.startsWith('*') || l.startsWith('▸') || /\d+\./.test(l))).map(l => l.replace(/^[-*▸\d.]+\s*/, '').trim());
+      if (!stepsList.length) stepsList = [nextSteps];
+    }
+
+    res.json({
+      observation_id: obsId,
+      polished_observation: obsEdit || content.slice(0, 500),
+      parent_friendly_text: parentText || content,
+      next_steps: stepsList,
+      model: OLLAMA_MODEL
+    });
+  } catch (e) {
+    appendLog(`draft endpoint failed: ${e.message}`);
+    res.status(500).json({ error: 'AI draft failed: ' + e.message });
+  }
+});
+
+// POST /:id/statements — persist confirmed statement links + next steps
+router.post('/:id/statements', authenticate, async (req, res) => {
+  const obsId = parseInt(req.params.id);
+  if (isNaN(obsId)) return res.status(400).json({ error: 'observation_id required' });
+
+  const { statements, coel_selections, next_steps_text } = req.body;
+  const db = getPool();
+
+  // Validate input
+  if (!statements && !coel_selections && !next_steps_text) {
+    return res.status(400).json({ error: 'Provide statements, coel_selections, or next_steps_text' });
+  }
+
+  try {
+    const results = { persisted_statements: 0, persisted_coel: 0, updated_next_steps: false };
+
+    // Persist statement links
+    if (statements?.length) {
+      for (const stmt of statements) {
+        const { statement_id, framework, statement_code } = stmt;
+        if (!statement_id) continue;
+
+        // Check if already linked to avoid duplicate
+        const existing = await db.query(
+          'SELECT id FROM observation_statements WHERE observation_id=$1 AND statement_id=$2 LIMIT 1',
+          [obsId, statement_id]
+        );
+
+        if (existing.rows.length) {
+          // Update existing entry
+          await db.query(
+            'UPDATE observation_statements SET confirmed_by=$1, is_next_step=COALESCE($2, is_next_step), updated_at=NOW() WHERE id=$3',
+            [req.user.id, stmt.is_next_step || false, existing.rows[0].id]
+          );
+        } else {
+          // Insert new link
+          await db.query(`
+            INSERT INTO observation_statements (observation_id, statement_id, framework, statement_code, coel_characteristic, coel_level, is_next_step, source, confirmed_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `, [obsId, statement_id, framework, statement_code, null, null, stmt.is_next_step || false, 'manual', req.user.id]);
+        }
+        results.persisted_statements++;
+      }
+
+      // Clear AI-suggested rows that weren't picked (optional, for cleanliness)
+      await db.query(
+        `DELETE FROM observation_statements WHERE observation_id=$1 AND source='ai_suggested' AND confirmed_by IS NULL`,
+        [obsId]
+      );
+    }
+
+    // Persist CoEL selections
+    if (coel_selections?.length) {
+      for (const sel of coel_selections) {
+        // Find the CoEL framework statement matching this characteristic + level
+        const coelFwResult = await db.query(
+          `SELECT id, statement_code FROM framework_statements
+           WHERE framework='coel' AND coel_characteristic IS NOT NULL
+             AND LOWER($1) = 'developing'`,
+          [sel.coel_level]
+        );
+        // Simpler approach: just record as a special CoEL link
+        // (CoEL rows have aspect=0, so we match by characteristic text)
+        if (sel.statement_id) {
+          const cex = await db.query(
+            'SELECT id FROM observation_statements WHERE observation_id=$1 AND statement_id=$2 LIMIT 1',
+            [obsId, sel.statement_id]
+          );
+          const row = {};
+          if (cex.rows.length) {
+            row.id = cex.rows[0].id;
+            row.confirmed_by = req.user.id;
+            row.coel_characteristic = sel.characteristic || row.coel_characteristic;
+            row.coel_level = sel.level || row.coel_level;
+            await db.query(
+              'UPDATE observation_statements SET confirmed_by=$1, coel_characteristic=$2, coel_level=$3, updated_at=NOW() WHERE id=$4',
+              [req.user.id, sel.characteristic, sel.level, row.id]
+            );
+          } else {
+            await db.query(
+              `INSERT INTO observation_statements (observation_id, statement_id, framework, statement_code, coel_characteristic, coel_level, is_next_step, source, confirmed_by, created_at)
+               VALUES ($1, $2, 'coel', $3, $4, $5, $6, 'manual', $7, NOW() AT TIME ZONE 'UTC')`,
+              [obsId, sel.statement_id, sel.statement_code, sel.characteristic, sel.level, false, req.user.id]
+            );
+          }
+        }
+        results.persisted_coel++;
+      }
+    }
+
+    // Update next_steps text directly on the observation
+    if (next_steps_text && next_steps_text.trim().length > 0) {
+      await db.query('UPDATE observations SET next_steps=$1, updated_at=NOW() WHERE id=$2', [next_steps_text.trim(), obsId]);
+      results.updated_next_steps = true;
+    }
+
+    // Fetch updated linked statements for return
+    const { rows } = await db.query(
+      `SELECT os.*, fs.framework, fs.area, fs.aspect, fs.age_range, fs.statement_code, fs.statement_text
+       FROM observation_statements os
+       JOIN framework_statements fs ON fs.id = os.statement_id
+       WHERE os.observation_id=$1
+       ORDER BY os.is_next_step DESC, os.created_at`,
+      [obsId]
+    );
+
+    res.json({
+      ...results,
+      linked_statements: rows,
+      message: 'Statement links saved'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── TERMLY UPDATE COMPLETION TRACKING (Prompt 28B) ────────────────────────────
+// Per-child status for the "Termly Update & Tracking" document (an observation
+// with termly_update=true). Status: done this cycle / due / overdue, against a
+// configurable rolling cycle (settings termly_update_cycle_weeks, default 8).
+const { fetchTermlyStatuses } = require('../services/termly-status');
+
+// GET /termly-status?staff_id=&filter=all|outstanding|done|due|overdue
+//   Managers (manager/deputy/room_leader/senior_practitioner) see ALL key children;
+//   pass staff_id to focus on one key person. Everyone else sees only their own.
+router.get('/termly-status', async (req, res) => {
+  const db = getPool();
+  try {
+    const isManager = ['manager','deputy_manager','room_leader','senior_practitioner'].includes(req.user.role);
+    let staffId = null;
+    if (isManager) {
+      if (req.query.staff_id) staffId = parseInt(req.query.staff_id, 10) || null;
+    } else {
+      staffId = req.user.id; // non-managers locked to their own key children
+    }
+
+    const { cycleWeeks, graceWeeks, children } = await fetchTermlyStatuses(db, { staffId });
+
+    const summary = { done: 0, due: 0, overdue: 0, total: 0 };
+    for (const c of children) { summary[c.status] = (summary[c.status] || 0) + 1; summary.total++; }
+    summary.outstanding = summary.due + summary.overdue;
+
+    let list = children;
+    const filter = (req.query.filter || 'all').toLowerCase();
+    if (filter === 'outstanding')   list = list.filter(c => c.status !== 'done');
+    else if (filter === 'done')     list = list.filter(c => c.status === 'done');
+    else if (filter === 'due')      list = list.filter(c => c.status === 'due');
+    else if (filter === 'overdue')  list = list.filter(c => c.status === 'overdue');
+
+    res.json({
+      cycle_weeks: cycleWeeks,
+      grace_weeks: graceWeeks,
+      scope: staffId ? 'mine' : 'all',
+      staff_id: staffId,
+      filter,
+      summary,
+      children: list,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ╔══════════════════════════════════════════╗
+// ║ OLD endpoint kept for backwards compat  ║
+// ║ POST /ai-suggest-statements (global)   ║
+// ║ Now delegates to the new endpoint above ║
+// ╚══════════════════════════════════════════╝
+// (ai-suggest-statements already exists earlier in this file — do not duplicate)
+
+module.exports = router;

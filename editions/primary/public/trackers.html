@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="primary">
+  <title>EYFS Profile Tracker — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── EYFS Profile / ELG tracker. Reuses the prompt-27 framework-grid API
+         (/api/observations/framework-grid, /tracker-frameworks, /framework,
+         /framework-tracker/link) — no parallel assessment system. ──────────── */
+    .tk-head { display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px; }
+    .tk-tabs { display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap; }
+    .tk-tab { padding:8px 14px;border-radius:10px;border:1px solid var(--border,#2d3748);background:var(--surface,#1e293b);
+              color:var(--text-muted,#94a3b8);font-weight:600;cursor:pointer;font-size:.85rem; }
+    .tk-tab.active { background:#4a9abf;border-color:#4a9abf;color:#fff; }
+    .tk-chips { display:flex;gap:6px;flex-wrap:wrap;align-items:center; }
+    .tk-chip { padding:6px 12px;border-radius:999px;border:1px solid var(--border,#2d3748);background:var(--surface,#1e293b);
+               color:var(--text-muted,#94a3b8);font-weight:600;cursor:pointer;font-size:.8rem;white-space:nowrap; }
+    .tk-chip.active { background:#e07820;border-color:#e07820;color:#fff; }
+    .tk-sub { font-size:.78rem;color:var(--text-muted,#94a3b8); }
+    .tk-legend { display:flex;gap:14px;flex-wrap:wrap;font-size:.74rem;color:var(--text-muted,#94a3b8);margin:8px 0 4px; }
+    .tk-key { display:inline-flex;align-items:center;gap:5px; }
+    .tk-sw { width:14px;height:14px;border-radius:4px;display:inline-block; }
+    .sw-exp { background:#22c55e; } .sw-exc { background:#15803d; } .sw-eme { background:#f59e0b; } .sw-not { background:#475569; }
+
+    /* Grid */
+    .fg-area { border:1px solid var(--border,#2d3748);border-radius:10px;margin-bottom:10px;overflow:hidden; }
+    .fg-area-head { width:100%;display:flex;align-items:center;gap:8px;background:var(--surface,#1e293b);border:0;cursor:pointer;
+                    padding:11px 14px;color:var(--text,#f1f5f9);font-weight:700;font-size:.9rem;text-align:left; }
+    .fg-area-stat { margin-left:auto;font-size:.72rem;color:var(--text-muted,#94a3b8);font-weight:500; }
+    .fg-area-body { overflow-x:auto; }
+    .fg-area:not(.open) .fg-area-body { display:none; }
+    table.fg { border-collapse:collapse;width:100%;font-size:.78rem; }
+    .fg th,.fg td { border-bottom:1px solid var(--border,#2d3748);padding:6px 8px;vertical-align:top; }
+    .fg-stmt-h { text-align:left;min-width:280px;position:sticky;left:0;background:var(--surface,#1e293b);z-index:2; }
+    .fg-stmt { position:sticky;left:0;background:var(--bg,#0f172a);z-index:1;min-width:280px; }
+    .fg-stmt-cap { font-size:.66rem;color:var(--text-muted,#94a3b8);text-transform:uppercase;letter-spacing:.03em; }
+    .fg-stmt-txt { color:var(--text,#f1f5f9);line-height:1.3; }
+    .fg-child-h { text-align:center; }
+    .fg-avatar { width:30px;height:30px;border-radius:50%;background:#4a9abf;color:#fff;display:inline-flex;
+                 align-items:center;justify-content:center;font-size:.7rem;font-weight:700;cursor:pointer; }
+    .fg-cell { text-align:center; }
+    .fg-dot { width:26px;height:26px;border-radius:7px;margin:0 auto;cursor:pointer;display:flex;align-items:center;justify-content:center;
+              font-size:.64rem;font-weight:800;color:#fff;border:2px solid transparent; }
+    .fg-dot.expected { background:#22c55e; } .fg-dot.exceeding { background:#15803d; }
+    .fg-dot.emerging { background:#f59e0b; } .fg-dot.empty { background:transparent;border:2px dashed #334155;color:#475569; }
+    .grid-empty { padding:30px;text-align:center;color:var(--text-muted,#94a3b8); }
+
+    /* Popup */
+    .tk-backdrop { position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:60; }
+    .tk-backdrop.open { display:block; }
+    .tk-pop { position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,92vw);background:var(--surface,#1e293b);
+              border:1px solid var(--border,#2d3748);border-radius:14px;padding:18px;z-index:61;display:none; }
+    .tk-pop.open { display:block; }
+    .tk-pop-stmt { font-size:.92rem;color:var(--text,#f1f5f9);font-weight:600;margin:4px 0 2px; }
+    .tk-pop-cap { font-size:.7rem;color:var(--text-muted,#94a3b8);text-transform:uppercase;letter-spacing:.04em; }
+    .tk-statusrow { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 6px; }
+    .tk-sbtn { padding:10px;border-radius:10px;border:1px solid var(--border,#2d3748);background:var(--bg,#0f172a);
+               color:var(--text,#f1f5f9);font-weight:700;cursor:pointer;font-size:.82rem; }
+    .tk-sbtn.sel-expected { border-color:#22c55e;background:#22c55e22; }
+    .tk-sbtn.sel-exceeding { border-color:#15803d;background:#15803d22; }
+    .tk-sbtn.sel-emerging { border-color:#f59e0b;background:#f59e0b22; }
+    .tk-sbtn.sel-not_yet  { border-color:#475569;background:#47556922; }
+
+    /* Profile summary */
+    .pf-area { border:1px solid var(--border,#2d3748);border-radius:10px;margin-bottom:10px;padding:12px 14px; }
+    .pf-area h4 { margin:0 0 8px;font-size:.86rem;color:#4a9abf; }
+    .pf-row { display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border,#2d3748); }
+    .pf-row:last-child { border-bottom:0; }
+    .pf-txt { flex:1;font-size:.8rem;color:var(--text,#f1f5f9);line-height:1.3; }
+    .pf-sel { padding:5px 8px;border-radius:8px;border:1px solid var(--border,#2d3748);background:var(--bg,#0f172a);color:var(--text,#f1f5f9);font-size:.78rem; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">EYFS Profile Tracker</div>
+      <div class="page-subtitle tk-sub" id="tk-subtitle">Assess each child against the Early Learning Goals</div>
+    </div>
+  </div>
+
+  <div class="tk-head">
+    <div class="tk-chips" id="tk-fw-chips"><span class="tk-sub">Loading framework…</span></div>
+    <div class="tk-chips">
+      <button class="tk-chip active" data-scope="group" type="button">All children</button>
+    </div>
+  </div>
+
+  <div class="tk-tabs">
+    <button class="tk-tab active" data-tab="grid" type="button">📊 Tracker Grid</button>
+    <button class="tk-tab" data-tab="profile" type="button">🧒 EYFS Profile (per child)</button>
+  </div>
+
+  <div class="tk-legend">
+    <span class="tk-key"><span class="tk-sw sw-eme"></span> Emerging</span>
+    <span class="tk-key"><span class="tk-sw sw-exp"></span> Expected</span>
+    <span class="tk-key"><span class="tk-sw sw-exc"></span> Exceeding</span>
+    <span class="tk-key"><span class="tk-sw sw-not"></span> Not yet assessed</span>
+  </div>
+
+  <!-- Grid tab -->
+  <div id="tk-grid-tab">
+    <div id="tk-grid-summary" class="tk-sub" style="margin-bottom:8px"></div>
+    <div id="tk-grid-body"><div class="grid-empty">Loading…</div></div>
+  </div>
+
+  <!-- Profile tab -->
+  <div id="tk-profile-tab" hidden>
+    <div style="margin-bottom:12px">
+      <select id="tk-profile-child" class="pf-sel" style="min-width:240px"><option value="">Select a child…</option></select>
+    </div>
+    <div id="tk-profile-body"><div class="grid-empty">Select a child to view their EYFS Profile.</div></div>
+  </div>
+</div>
+
+<div class="tk-backdrop" id="tk-backdrop"></div>
+<div class="tk-pop" id="tk-pop">
+  <div class="tk-pop-cap" id="tk-pop-cap"></div>
+  <div class="tk-pop-stmt" id="tk-pop-stmt"></div>
+  <div class="tk-pop-cap" id="tk-pop-child" style="margin-top:6px"></div>
+  <div class="tk-pop-cap" style="margin-top:12px">EYFS Profile judgement</div>
+  <div class="tk-statusrow" id="tk-pop-statusrow"></div>
+  <button class="tk-sbtn" style="width:100%;margin-top:6px" id="tk-pop-cancel">Cancel</button>
+</div>
+
+<script>
+(function () {
+  // Available frameworks for this instance (both seeded into demo_primary).
+  var FW_LABELS = { eyfs_statutory: 'Early Learning Goals (EYFS Profile)', birth_to_5: 'Birth to 5 Matters' };
+  var FW_ORDER  = ['eyfs_statutory', 'birth_to_5'];
+  // EYFS Profile statuses (Exceeding kept as an option though no longer official).
+  var STATUSES = [
+    { key:'emerging',  label:'Emerging',  cls:'sel-emerging'  },
+    { key:'expected',  label:'Expected',  cls:'sel-expected'  },
+    { key:'exceeding', label:'Exceeding', cls:'sel-exceeding' },
+    { key:'not_yet',   label:'Not yet',   cls:'sel-not_yet'   },
+  ];
+  var S = { framework:'eyfs_statutory', scope:'group', data:null, cellMap:{}, byArea:{}, built:{} };
+
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function api(url, opts){ return Wren.api(url, opts); }
+
+  function statusKind(status){
+    var s = (status||'').toLowerCase();
+    if (/exceed|mastered/.test(s)) return 'exceeding';
+    if (/expected|secure|met|achiev/.test(s)) return 'expected';
+    if (/emerg|develop|observ|working/.test(s)) return 'emerging';
+    return 'empty';
+  }
+  function kindGlyph(k){ return k==='exceeding'?'E+':k==='expected'?'E':k==='emerging'?'e':''; }
+  function initials(c){ return ((c.first_name||c.name||'?').charAt(0)+(c.last_name||'').charAt(0)).toUpperCase(); }
+
+  /* ── Framework chips ─────────────────────────────────────────────────────── */
+  function renderFwChips(){
+    var el = document.getElementById('tk-fw-chips');
+    el.innerHTML = FW_ORDER.map(function(fw){
+      return '<button class="tk-chip'+(fw===S.framework?' active':'')+'" data-fw="'+fw+'" type="button">'+esc(FW_LABELS[fw])+'</button>';
+    }).join('');
+    el.querySelectorAll('.tk-chip').forEach(function(b){
+      b.addEventListener('click', function(){ S.framework=b.dataset.fw; renderFwChips(); loadGrid(); if(!document.getElementById('tk-profile-tab').hidden) loadProfile(); });
+    });
+  }
+
+  /* ── Grid ────────────────────────────────────────────────────────────────── */
+  function loadGrid(){
+    var body=document.getElementById('tk-grid-body'), sum=document.getElementById('tk-grid-summary');
+    body.innerHTML='<div class="grid-empty">Loading framework grid…</div>'; sum.textContent='';
+    api('/api/observations/framework-grid?framework='+encodeURIComponent(S.framework)+'&scope='+S.scope).then(function(d){
+      S.data=d; S.cellMap={}; S.byArea={}; S.built={};
+      (d.cells||[]).forEach(function(c){ S.cellMap[c.child_id+':'+c.statement_id]=c; });
+      (d.statements||[]).forEach(function(s){ (S.byArea[s.area]=S.byArea[s.area]||[]).push(s); });
+      fillChildSelect(d.children||[]);
+      renderGrid();
+    }).catch(function(e){ body.innerHTML='<div class="grid-empty" style="color:#ef4444">Could not load grid: '+esc(e&&(e.error||e.message)||'')+'</div>'; });
+  }
+
+  function renderGrid(){
+    var d=S.data, body=document.getElementById('tk-grid-body'), sum=document.getElementById('tk-grid-summary');
+    if (!d.statements.length){ body.innerHTML='<div class="grid-empty">This framework has no statements yet.</div>'; return; }
+    if (!d.children.length){
+      body.innerHTML='<div class="grid-empty">No children yet.<br><br>Use <strong>Import your data</strong> on the admin portal to load your children, then assess them against the Early Learning Goals here.</div>';
+      sum.textContent=d.statements.length+' Early Learning Goals across '+Object.keys(S.byArea).length+' areas of learning — ready to assess.';
+      return;
+    }
+    sum.textContent=d.children.length+' child'+(d.children.length===1?'':'ren')+' · '+d.statements.length+' goals · '+d.cells.length+' assessed';
+    var areas=Object.keys(S.byArea);
+    body.innerHTML=areas.map(function(area,i){
+      var stmts=S.byArea[area];
+      var done=stmts.reduce(function(n,s){ return n+d.children.reduce(function(m,c){ return m+(S.cellMap[c.id+':'+s.id]?1:0); },0); },0);
+      return '<div class="fg-area'+(i===0?' open':'')+'" data-area="'+esc(area)+'">'+
+        '<button class="fg-area-head" type="button"><span>'+esc(area)+'</span>'+
+        '<span class="fg-area-stat">'+done+' assessed · '+stmts.length+' goals</span></button>'+
+        '<div class="fg-area-body"></div></div>';
+    }).join('');
+    body.querySelectorAll('.fg-area').forEach(function(areaEl){
+      areaEl.querySelector('.fg-area-head').addEventListener('click', function(){ if(areaEl.classList.toggle('open')) buildArea(areaEl); });
+      if (areaEl.classList.contains('open')) buildArea(areaEl);
+    });
+  }
+
+  function buildArea(areaEl){
+    var area=areaEl.dataset.area;
+    if (S.built[area]) return; S.built[area]=true;
+    var d=S.data, stmts=S.byArea[area];
+    var head='<thead><tr><th class="fg-stmt-h">Early Learning Goal</th>'+d.children.map(function(c){
+      return '<th class="fg-child-h"><div class="fg-avatar" title="'+esc(c.name)+'">'+esc(initials(c))+'</div></th>';
+    }).join('')+'</tr></thead>';
+    var lastGrp=null, rows='';
+    stmts.forEach(function(s){
+      var grp=s.aspect||'';
+      if (grp!==lastGrp){ lastGrp=grp; if(grp) rows+='<tr><td colspan="'+(d.children.length+1)+'" style="font-size:.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;padding-top:10px">'+esc(grp)+'</td></tr>'; }
+      rows+='<tr><td class="fg-stmt"><div class="fg-stmt-cap">'+esc(s.statement_code||'')+'</div><div class="fg-stmt-txt">'+esc(s.statement_text)+'</div></td>'+
+        d.children.map(function(c){
+          var cell=S.cellMap[c.id+':'+s.id]; var k=cell?statusKind(cell.status):'empty';
+          return '<td class="fg-cell"><div class="fg-dot '+k+'" data-child="'+c.id+'" data-stmt="'+s.id+'"'+
+                 (cell?' data-tracker="'+cell.tracker_id+'"':'')+'>'+kindGlyph(k)+'</div></td>';
+        }).join('')+'</tr>';
+    });
+    areaEl.querySelector('.fg-area-body').innerHTML='<table class="fg">'+head+'<tbody>'+rows+'</tbody></table>';
+    areaEl.querySelectorAll('.fg-dot').forEach(function(dot){ dot.addEventListener('click', function(){ openCellPop(dot); }); });
+  }
+
+  /* ── Cell popup ──────────────────────────────────────────────────────────── */
+  function childById(id){ return (S.data.children||[]).find(function(c){ return c.id===id; }); }
+  function stmtById(id){ return (S.data.statements||[]).find(function(s){ return s.id===id; }); }
+
+  function openCellPop(dot){
+    var childId=parseInt(dot.dataset.child,10), stmtId=parseInt(dot.dataset.stmt,10);
+    var trackerId=dot.dataset.tracker?parseInt(dot.dataset.tracker,10):null;
+    var child=childById(childId), stmt=stmtById(stmtId);
+    var cur=(S.cellMap[childId+':'+stmtId]||{}).status||'';
+    var curKind=statusKind(cur);
+    document.getElementById('tk-pop-cap').textContent=(stmt.area||'')+(stmt.aspect?' · '+stmt.aspect:'');
+    document.getElementById('tk-pop-stmt').textContent=stmt.statement_text;
+    document.getElementById('tk-pop-child').textContent=child.name+(child.room_name?' · '+child.room_name:'');
+    var row=document.getElementById('tk-pop-statusrow');
+    row.innerHTML=STATUSES.map(function(st){
+      var sel=(st.key===cur)||(curKind!=='empty'&&statusKind(st.key)===curKind&&st.key!=='not_yet')?st.cls:'';
+      return '<button class="tk-sbtn '+(st.key===cur?st.cls:'')+'" data-set="'+st.key+'">'+st.label+'</button>';
+    }).join('');
+    row.querySelectorAll('.tk-sbtn').forEach(function(b){ b.addEventListener('click', function(){ setStatus(childId,stmtId,trackerId,b.dataset.set,dot); }); });
+    document.getElementById('tk-pop').classList.add('open');
+    document.getElementById('tk-backdrop').classList.add('open');
+  }
+  function closePop(){ document.getElementById('tk-pop').classList.remove('open'); document.getElementById('tk-backdrop').classList.remove('open'); }
+
+  function setStatus(childId,stmtId,trackerId,status,dot){
+    var p;
+    if (trackerId) p=api('/api/observations/framework/'+trackerId,{method:'PUT',body:{status:status}});
+    else p=api('/api/observations/framework-tracker/link',{method:'POST',body:{child_id:childId,statement_ids:[stmtId],status:status}})
+            .then(function(r){ return (r&&r.linked&&r.linked[0])||null; });
+    p.then(function(row){
+      var ex=S.cellMap[childId+':'+stmtId]||{}; ex.status=status; ex.statement_id=stmtId; ex.child_id=childId;
+      if (row&&row.id){ ex.tracker_id=row.id; if(dot) dot.dataset.tracker=row.id; }
+      S.cellMap[childId+':'+stmtId]=ex;
+      if (dot){ var k=statusKind(status); dot.className='fg-dot '+k; dot.textContent=kindGlyph(k); }
+      closePop();
+      if (window.Wren&&Wren.toast) Wren.toast('Saved','success',1400);
+      if (!document.getElementById('tk-profile-tab').hidden) loadProfile();
+    }).catch(function(e){ if(window.Wren&&Wren.toast) Wren.toast('Could not save: '+(e&&(e.error||e.message)||''),'error'); });
+  }
+
+  /* ── Per-child EYFS Profile summary ──────────────────────────────────────── */
+  function fillChildSelect(children){
+    var sel=document.getElementById('tk-profile-child');
+    var cur=sel.value;
+    sel.innerHTML='<option value="">Select a child…</option>'+children.map(function(c){ return '<option value="'+c.id+'">'+esc(c.name)+'</option>'; }).join('');
+    if (cur) sel.value=cur;
+  }
+  function loadProfile(){
+    var sel=document.getElementById('tk-profile-child'), body=document.getElementById('tk-profile-body');
+    var childId=parseInt(sel.value,10);
+    if (!childId){ body.innerHTML='<div class="grid-empty">Select a child to view their EYFS Profile.</div>'; return; }
+    if (!S.data){ loadGrid(); }
+    var statusByStmt={};
+    (S.data&&S.data.cells||[]).filter(function(c){ return c.child_id===childId; }).forEach(function(c){ statusByStmt[c.statement_id]={status:c.status,tracker_id:c.tracker_id}; });
+    var areas=Object.keys(S.byArea);
+    body.innerHTML=areas.map(function(area){
+      var rows=S.byArea[area].map(function(s){
+        var st=statusByStmt[s.id]||{};
+        var optHtml=[{k:'',l:'—'}].concat(STATUSES.map(function(x){return {k:x.key,l:x.label};})).map(function(o){
+          return '<option value="'+o.k+'"'+((st.status||'')===o.k?' selected':'')+'>'+o.l+'</option>';
+        }).join('');
+        return '<div class="pf-row"><div class="pf-txt"><strong>'+esc(s.statement_code||'')+'</strong> '+esc(s.statement_text)+'</div>'+
+               '<select class="pf-sel" data-child="'+childId+'" data-stmt="'+s.id+'" data-tracker="'+(st.tracker_id||'')+'">'+optHtml+'</select></div>';
+      }).join('');
+      return '<div class="pf-area"><h4>'+esc(area)+'</h4>'+rows+'</div>';
+    }).join('');
+    body.querySelectorAll('.pf-sel').forEach(function(selEl){
+      selEl.addEventListener('change', function(){
+        var v=selEl.value; if(!v) return;
+        var tid=selEl.dataset.tracker?parseInt(selEl.dataset.tracker,10):null;
+        setStatus(parseInt(selEl.dataset.child,10), parseInt(selEl.dataset.stmt,10), tid, v, null);
+      });
+    });
+  }
+
+  /* ── Tabs ────────────────────────────────────────────────────────────────── */
+  function initTabs(){
+    document.querySelectorAll('.tk-tab').forEach(function(t){
+      t.addEventListener('click', function(){
+        document.querySelectorAll('.tk-tab').forEach(function(x){ x.classList.toggle('active',x===t); });
+        var tab=t.dataset.tab;
+        document.getElementById('tk-grid-tab').hidden = tab!=='grid';
+        document.getElementById('tk-profile-tab').hidden = tab!=='profile';
+        if (tab==='profile') loadProfile();
+      });
+    });
+    document.getElementById('tk-profile-child').addEventListener('change', loadProfile);
+    document.getElementById('tk-pop-cancel').addEventListener('click', closePop);
+    document.getElementById('tk-backdrop').addEventListener('click', closePop);
+  }
+
+  /* ── Boot ────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function(){
+    initTabs();
+    api('/api/observations/default-framework').then(function(d){
+      if (d && d.framework && FW_LABELS[d.framework]) S.framework=d.framework;
+      if (d && d.framework && d.label) FW_LABELS[d.framework]=d.label;
+      document.getElementById('tk-subtitle').textContent='Framework: '+(FW_LABELS[S.framework]||S.framework);
+    }).catch(function(){}).then(function(){
+      renderFwChips();
+      loadGrid();
+    });
+  });
+}());
+</script>
+</body>
+</html>

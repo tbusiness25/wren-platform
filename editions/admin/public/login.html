@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Admin Login — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<script src="/js/wren-shell-v2.js?v=20260704" defer></script>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="wren-logo">
+        <span class="logo-w">w</span><span class="logo-ren">ren</span>
+        <span class="logo-edition">ADMIN</span>
+      </div>
+      <p>Management Dashboard</p>
+    </div>
+
+    <div id="step-email">
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input type="email" class="form-control" id="email" placeholder="manager@nursery.co.uk">
+      </div>
+      <button id="continue-btn" class="btn btn-primary btn-block">Continue →</button>
+    </div>
+
+    <div id="step-pin" style="display:none">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-weight:700;font-size:1.1rem;color:var(--c-navy)" id="pin-name"></div>
+        <p style="font-size:.875rem;color:#64748b">Enter your PIN</p>
+      </div>
+      <div class="pin-dots" id="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key" data-val="back">⌫</button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key" data-val="cancel" style="font-size:.75rem">Back</button>
+      </div>
+      <p id="pin-error" style="color:var(--c-red);text-align:center;margin-top:12px;display:none">Incorrect PIN</p>
+      <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;font-size:.8rem;color:#64748b;cursor:pointer">
+        <input type="checkbox" id="remember-device" style="accent-color:var(--c-navy,#4a9abf)">
+        Trust this device for 30 days (don't use on shared devices)
+      </label>
+    </div>
+
+    <!-- Step 3: TOTP challenge (shown only when server returns requires_totp:true) -->
+    <div id="step-totp" style="display:none">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-size:2rem;margin-bottom:8px">🔐</div>
+        <div style="font-weight:700;font-size:1.1rem;color:var(--c-text)">Two-factor verification</div>
+        <p style="font-size:.875rem;color:var(--c-muted);margin-top:6px">Enter the 6-digit code from your authenticator app</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+        <input type="text" id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"
+               placeholder="000000"
+               style="flex:1;text-align:center;font-size:1.5rem;letter-spacing:.25rem;padding:12px;border-radius:12px;border:2px solid var(--c-border);background:var(--c-card);color:var(--c-text);outline:none">
+        <button id="totp-submit-btn" class="btn btn-primary" style="padding:12px 20px;white-space:nowrap">Verify →</button>
+      </div>
+      <p id="totp-error" style="color:var(--c-red);text-align:center;margin-top:8px;display:none">Invalid code — try again</p>
+      <div style="text-align:center;margin-top:16px">
+        <a href="#" id="use-recovery-link" style="font-size:.8rem;color:var(--c-muted);text-decoration:underline">Use a recovery code instead</a>
+      </div>
+      <div id="recovery-input-wrap" style="display:none;margin-top:12px">
+        <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XX"
+               style="width:100%;text-align:center;font-size:1rem;padding:10px;border-radius:12px;border:2px solid var(--c-border);background:var(--c-card);color:var(--c-text);box-sizing:border-box;text-transform:uppercase">
+        <p style="font-size:.75rem;color:var(--c-muted);margin-top:6px;text-align:center">Enter one of your saved recovery codes</p>
+      </div>
+    </div>
+
+    <div id="demo-hint" style="text-align:center;margin-top:16px;display:none">
+      <span class="badge badge-orange">Demo: try olivia@demo.wren / PIN: 1234</span>
+    </div>
+  </div>
+</div>
+
+<script>
+let staffEmail = '';
+let pin = '';
+let challengeToken = '';
+// PIN length (4 or 6) for this account. Defaults to 4; updated after email
+// entry so 6-digit admins auto-submit at 6 and 4-digit users are unaffected.
+let MAX_PIN = 4;
+
+async function findStaff() {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return;
+  staffEmail = email;
+  MAX_PIN = 4;
+  try {
+    const r = await fetch('/api/auth/pin-length?email=' + encodeURIComponent(email));
+    if (r.ok) { const d = await r.json(); MAX_PIN = (d.pin_length === 6) ? 6 : 4; }
+  } catch {}
+  renderDots(MAX_PIN);
+  document.getElementById('step-email').style.display = 'none';
+  document.getElementById('step-pin').style.display = 'block';
+  document.getElementById('pin-name').textContent = email;
+}
+
+function renderDots(n) {
+  const box = document.getElementById('pin-dots');
+  if (!box) return;
+  box.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const span = document.createElement('span');
+    span.className = 'pin-dot';
+    box.appendChild(span);
+  }
+}
+
+function updateDots() {
+  document.querySelectorAll('.pin-dot').forEach((d, i) => d.classList.toggle('filled', i < pin.length));
+}
+
+// Remember-device (2026-07-04): if this browser holds a trusted-device cookie,
+// silently mint a fresh session and skip the PIN entirely.
+(async function tryDeviceLogin() {
+  try {
+    const r = await fetch('/api/auth/refresh', { method: 'POST' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.token && d.staff) {
+      sessionStorage.setItem('wrenToken', d.token);
+      window.location.href = '/admin/dashboard';
+    }
+  } catch (_) { /* no trusted device — normal login */ }
+})();
+
+async function submitPin() {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: staffEmail, pin,
+        remember: !!(document.getElementById('remember-device') || {}).checked })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('pin-error').style.display = 'block';
+      pin = ''; updateDots(); return;
+    }
+    if (data.requires_totp) {
+      // Advance to TOTP step
+      challengeToken = data.challenge_token;
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-totp').style.display = 'block';
+      setTimeout(() => document.getElementById('totp-code').focus(), 50);
+      return;
+    }
+    sessionStorage.setItem('wrenToken', data.token);
+    window.location.href = '/admin/dashboard';
+  } catch {
+    document.getElementById('pin-error').style.display = 'block';
+    pin = ''; updateDots();
+  }
+}
+
+async function submitTotp() {
+  const codeInput = document.getElementById('totp-code');
+  const recoveryInput = document.getElementById('recovery-code');
+  const recoveryVisible = document.getElementById('recovery-input-wrap').style.display !== 'none';
+  const code = recoveryVisible ? recoveryInput.value.trim() : codeInput.value.trim();
+  if (!code) return;
+
+  document.getElementById('totp-error').style.display = 'none';
+  try {
+    const res = await fetch('/api/auth/totp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge_token: challengeToken, code })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('totp-error').textContent = data.error || 'Invalid code — try again';
+      document.getElementById('totp-error').style.display = 'block';
+      codeInput.value = '';
+      return;
+    }
+    sessionStorage.setItem('wrenToken', data.token);
+    window.location.href = '/admin/dashboard';
+  } catch {
+    document.getElementById('totp-error').style.display = 'block';
+  }
+}
+
+document.querySelectorAll('.pin-key').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const val = btn.dataset.val;
+    document.getElementById('pin-error').style.display = 'none';
+    if (val === 'back') { pin = pin.slice(0,-1); updateDots(); }
+    else if (val === 'cancel') {
+      pin = '';
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-email').style.display = 'block';
+    } else if (pin.length < MAX_PIN) {
+      pin += val; updateDots();
+      if (pin.length === MAX_PIN) submitPin();
+    }
+  });
+});
+
+(function() {
+  var t = sessionStorage.getItem('wrenToken');
+  if (!t) return;
+  fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t } })
+    .then(function(r) { if (r.ok) window.location.href = '/admin/dashboard'; else sessionStorage.removeItem('wrenToken'); })
+    .catch(function() { sessionStorage.removeItem('wrenToken'); });
+})();
+
+fetch('/api/edition').then(r => r.json()).then(d => {
+  if (d.demo) document.getElementById('demo-hint').style.display = 'block';
+}).catch(() => {});
+
+document.addEventListener('DOMContentLoaded', () => {
+  const emailInput = document.getElementById('email');
+  if (emailInput) emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') findStaff(); });
+  const contBtn = document.getElementById('continue-btn');
+  if (contBtn) contBtn.addEventListener('click', findStaff);
+
+  const totpInput = document.getElementById('totp-code');
+  if (totpInput) {
+    totpInput.addEventListener('input', () => {
+      if (totpInput.value.replace(/\D/g,'').length === 6) submitTotp();
+    });
+    totpInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitTotp(); });
+  }
+  const totpBtn = document.getElementById('totp-submit-btn');
+  if (totpBtn) totpBtn.addEventListener('click', submitTotp);
+
+  const recovLink = document.getElementById('use-recovery-link');
+  if (recovLink) {
+    recovLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      const wrap = document.getElementById('recovery-input-wrap');
+      const visible = wrap.style.display !== 'none';
+      wrap.style.display = visible ? 'none' : 'block';
+      recovLink.textContent = visible ? 'Use a recovery code instead' : 'Use authenticator app instead';
+      if (!visible) document.getElementById('recovery-code').focus();
+    });
+  }
+  const recovInput = document.getElementById('recovery-code');
+  if (recovInput) {
+    recovInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitTotp(); });
+    recovInput.addEventListener('input', () => { recovInput.value = recovInput.value.toUpperCase(); });
+  }
+});
+</script>
+</body>
+</html>

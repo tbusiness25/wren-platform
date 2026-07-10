@@ -1,0 +1,248 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weekly Scheduling · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ body{background:var(--bg);color:var(--txt);font-family:Inter,-apple-system,sans-serif}
+ .sched-wrap{padding:18px;max-width:1400px;margin:0 auto}
+ h1{font-size:1.3rem;margin:0 0 4px}
+ .sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .sched-grid{display:grid;grid-template-columns:180px repeat(5,1fr);gap:2px;background:var(--bd);
+   border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+ .sched-cell{background:var(--card);padding:12px;min-height:60px;position:relative}
+ .sched-header{font-weight:700;font-size:.85rem;text-align:center;padding:10px;background:var(--bg)}
+ .sched-child-name{font-weight:600;font-size:.88rem;display:flex;align-items:center;gap:8px}
+ .room-badge{font-size:.7rem;background:var(--blue);color:#06121f;border-radius:6px;
+   padding:2px 8px;font-weight:700}
+ .session-block{background:var(--blue);color:#06121f;border-radius:8px;padding:6px 10px;
+   font-size:.82rem;font-weight:600;cursor:move;user-select:none;margin-bottom:4px}
+ .session-block.funded{background:var(--ok)}
+ .session-block.dragging{opacity:.5}
+ .sched-cell.drag-over{background:rgba(74,154,191,.15);border:2px dashed var(--blue)}
+ .empty-state{color:var(--mut);font-size:.78rem;text-align:center;padding:40px;
+   background:var(--card);border:1px solid var(--bd);border-radius:10px;margin:20px 0}
+ .msg{margin:10px 0;font-size:.85rem;padding:10px;background:var(--card);border:1px solid var(--bd);
+   border-radius:8px}
+ .msg.ok{border-color:var(--ok);color:var(--ok)}
+ .msg.bad{border-color:var(--bad);color:var(--bad)}
+</style>
+</head>
+<body data-portal="admin">
+<div class="sched-wrap">
+  <h1>📅 Weekly Scheduling</h1>
+  <div class="sub">Drag session blocks to different days to update booking patterns. Current bookings only.</div>
+  <div id="msg"></div>
+  <div id="grid-container"></div>
+</div>
+
+<script defer src="/js/wren-core.js"></script>
+<script defer src="/js/wren-shell-v2.js"></script>
+<script>
+document.addEventListener('wren:ready', init);
+
+const WEEKDAYS = ['mon','tue','wed','thu','fri'];
+const DAY_NAMES = {mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday'};
+
+let children = [];
+let bookingsMap = {}; // childId -> array of bookings
+
+async function init() {
+  try {
+    await loadChildren();
+    renderGrid();
+  } catch (e) {
+    showMsg(e.message, 'bad');
+  }
+}
+
+async function loadChildren() {
+  // Load all children + their active bookings
+  const res = await WREN.api('/api/children?include_inactive=false');
+  children = res.filter(c => c.is_active !== false).sort((a,b) => {
+    const aName = `${a.first_name||''} ${a.last_name||''}`.trim();
+    const bName = `${b.first_name||''} ${b.last_name||''}`.trim();
+    return aName.localeCompare(bName);
+  });
+
+  // Load bookings for each child
+  for (const child of children) {
+    const bookings = await WREN.api(`/api/bookings/child/${child.id}`);
+    bookingsMap[child.id] = bookings.filter(b => b.is_active !== false);
+  }
+}
+
+function renderGrid() {
+  const container = document.getElementById('grid-container');
+  if (!children.length) {
+    container.innerHTML = '<div class="empty-state">No active children found.</div>';
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'sched-grid';
+
+  // Header row
+  const cornerCell = document.createElement('div');
+  cornerCell.className = 'sched-header';
+  cornerCell.textContent = 'Child';
+  grid.appendChild(cornerCell);
+
+  WEEKDAYS.forEach(day => {
+    const headerCell = document.createElement('div');
+    headerCell.className = 'sched-header';
+    headerCell.textContent = DAY_NAMES[day];
+    grid.appendChild(headerCell);
+  });
+
+  // Child rows
+  children.forEach(child => {
+    // Name cell
+    const nameCell = document.createElement('div');
+    nameCell.className = 'sched-cell';
+    const childName = document.createElement('div');
+    childName.className = 'sched-child-name';
+    childName.innerHTML = `${child.first_name||''} ${child.last_name||''}`.trim();
+    if (child.room_name) {
+      childName.innerHTML += ` <span class="room-badge">${child.room_name}</span>`;
+    }
+    nameCell.appendChild(childName);
+    grid.appendChild(nameCell);
+
+    // Day cells
+    WEEKDAYS.forEach(day => {
+      const dayCell = document.createElement('div');
+      dayCell.className = 'sched-cell';
+      dayCell.dataset.childId = child.id;
+      dayCell.dataset.day = day;
+
+      // Add session blocks for this child/day
+      const childBookings = bookingsMap[child.id] || [];
+      childBookings.forEach(booking => {
+        if (booking[day]) {
+          const block = createSessionBlock(child, booking, day);
+          dayCell.appendChild(block);
+        }
+      });
+
+      // Drop zone
+      dayCell.addEventListener('dragover', handleDragOver);
+      dayCell.addEventListener('drop', handleDrop);
+      dayCell.addEventListener('dragleave', handleDragLeave);
+
+      grid.appendChild(dayCell);
+    });
+  });
+
+  container.innerHTML = '';
+  container.appendChild(grid);
+}
+
+function createSessionBlock(child, booking, day) {
+  const block = document.createElement('div');
+  block.className = 'session-block';
+  if (booking.funded) block.classList.add('funded');
+  block.draggable = true;
+  block.dataset.bookingId = booking.id;
+  block.dataset.childId = child.id;
+  block.dataset.day = day;
+
+  const startDate = booking.start_date ? new Date(booking.start_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : '';
+  const endDate = booking.end_date ? new Date(booking.end_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : 'ongoing';
+
+  block.innerHTML = `${startDate} – ${endDate}${booking.funded ? ' 🎓' : ''}`;
+
+  block.addEventListener('dragstart', handleDragStart);
+  block.addEventListener('dragend', handleDragEnd);
+
+  return block;
+}
+
+let draggedElement = null;
+
+function handleDragStart(e) {
+  draggedElement = e.target;
+  e.target.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/html', e.target.innerHTML);
+}
+
+function handleDragEnd(e) {
+  e.target.classList.remove('dragging');
+  // Remove drag-over styling from all cells
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+
+function handleDragOver(e) {
+  if (e.preventDefault) e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const cell = e.currentTarget;
+  if (!cell.classList.contains('drag-over')) {
+    cell.classList.add('drag-over');
+  }
+  return false;
+}
+
+function handleDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function handleDrop(e) {
+  if (e.stopPropagation) e.stopPropagation();
+  e.preventDefault();
+
+  const targetCell = e.currentTarget;
+  targetCell.classList.remove('drag-over');
+
+  if (!draggedElement) return;
+
+  const bookingId = parseInt(draggedElement.dataset.bookingId, 10);
+  const childId = parseInt(draggedElement.dataset.childId, 10);
+  const fromDay = draggedElement.dataset.day;
+  const toDay = targetCell.dataset.day;
+  const targetChildId = parseInt(targetCell.dataset.childId, 10);
+
+  // Only allow moving within the same child's row
+  if (childId !== targetChildId) {
+    showMsg('Cannot move booking to a different child', 'bad');
+    return;
+  }
+
+  // Don't drop on the same day
+  if (fromDay === toDay) {
+    return;
+  }
+
+  try {
+    // Update the booking: turn off fromDay, turn on toDay
+    const updates = { [fromDay]: false, [toDay]: true };
+
+    const res = await WREN.api(`/api/bookings/${bookingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+
+    showMsg(`Moved booking from ${DAY_NAMES[fromDay]} to ${DAY_NAMES[toDay]}`, 'ok');
+
+    // Refresh the grid
+    await loadChildren();
+    renderGrid();
+
+  } catch (err) {
+    showMsg(`Failed to update booking: ${err.message}`, 'bad');
+  }
+
+  draggedElement = null;
+  return false;
+}
+
+function showMsg(text, cls) {
+  const msg = document.getElementById('msg');
+  msg.textContent = text;
+  msg.className = 'msg ' + (cls || '');
+  setTimeout(() => { msg.textContent = ''; msg.className = 'msg'; }, 4000);
+}
+</script>
+</body>
+</html>

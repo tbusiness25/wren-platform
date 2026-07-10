@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Notifications — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <!-- v1 wren-shell.js retired here 2026-07-04 — last live reference; v2 matches every other legacy page -->
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🔔 Notifications</div>
+      <div class="page-subtitle" id="notif-subtitle">Loading…</div>
+    </div>
+    <button class="btn btn-ghost" onclick="markAllRead()">Mark all read</button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar" style="margin-bottom:16px">
+    <select class="form-control" id="cat-filter" onchange="loadNotifs()" style="flex:0 0 180px">
+      <option value="">All categories</option>
+      <option value="repair">🔧 Repairs</option>
+      <option value="message">💬 Messages</option>
+      <option value="calendar">📅 Calendar</option>
+      <option value="action-plan">📋 Action plans</option>
+      <option value="safeguarding">🛡️ Safeguarding</option>
+      <option value="medicine">💊 Medicine</option>
+      <option value="incident">🚨 Incidents</option>
+      <option value="enquiry">📩 Enquiries</option>
+      <option value="waiting-list">📝 Waiting list</option>
+      <option value="gmail">📧 Gmail</option>
+      <option value="system">ℹ️ System</option>
+    </select>
+    <select class="form-control" id="read-filter" onchange="loadNotifs()" style="flex:0 0 140px">
+      <option value="unread">Unread only</option>
+      <option value="all">All</option>
+    </select>
+  </div>
+
+  <div id="notif-list"><div class="loading-state"><div class="spinner"></div></div></div>
+
+  <div id="notif-pagination" style="display:none;text-align:center;margin-top:16px">
+    <button class="btn btn-ghost" id="load-more-btn" onclick="loadMore()">Load more</button>
+  </div>
+</div>
+
+<style>
+.notif-card {
+  display:flex; gap:12px; align-items:flex-start;
+  padding:14px 16px; border-radius:12px; background:var(--c-card);
+  border:1px solid var(--c-border); margin-bottom:8px; cursor:pointer;
+  transition:background .15s;
+}
+.notif-card:hover { background:#243347; }
+.notif-card.read { opacity:.65; }
+.notif-card .notif-icon { font-size:24px; flex-shrink:0; margin-top:2px; }
+.notif-card .notif-body { flex:1; min-width:0; }
+.notif-card .notif-title { font-weight:700; font-size:14px; color:var(--c-text); }
+.notif-card.read .notif-title { font-weight:400; }
+.notif-card .notif-text { font-size:13px; color:var(--c-muted); margin-top:2px; }
+.notif-card .notif-meta { font-size:11px; color:#64748b; margin-top:4px; }
+.notif-actions { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+</style>
+
+<script>
+const CAT_ICON = {
+  repair:'🔧', message:'💬', calendar:'📅', 'action-plan':'📋',
+  safeguarding:'🛡️', medicine:'💊', incident:'🚨', system:'ℹ️',
+  gmail:'📧', enquiry:'📩', 'waiting-list':'📝', 'parent-comment':'💬',
+};
+const PRIORITY_BADGE = {
+  urgent: '<span style="background:#ef444422;color:#ef4444;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid #ef444444">URGENT</span>',
+  high:   '<span style="background:#f59e0b22;color:#f59e0b;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid #f59e0b44">HIGH</span>',
+};
+
+let page = 0;
+let items = [];
+
+async function loadNotifs(reset = true) {
+  if (reset) { page = 0; items = []; }
+  const cat    = document.getElementById('cat-filter').value;
+  const onlyUnread = document.getElementById('read-filter').value !== 'all';
+  let url = `/api/notifications?page=${page}`;
+  if (cat) url += `&category=${encodeURIComponent(cat)}`;
+  try {
+    const rows = await Wren.api(url);
+    const filtered = onlyUnread ? rows.filter(n => !n.read_at) : rows;
+    if (reset) items = filtered; else items = items.concat(filtered);
+    renderNotifs();
+    document.getElementById('load-more-btn').parentElement.style.display = rows.length === 40 ? 'block' : 'none';
+  } catch {
+    document.getElementById('notif-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderNotifs() {
+  const list = document.getElementById('notif-list');
+  const unread = items.filter(n => !n.read_at).length;
+  document.getElementById('notif-subtitle').textContent = `${unread} unread`;
+
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔔</div><div class="empty-title">No notifications</div></div>`;
+    return;
+  }
+  list.innerHTML = items.map(n => {
+    const icon = CAT_ICON[n.category] || '🔔';
+    const pri  = PRIORITY_BADGE[n.priority] || '';
+    return `<div class="notif-card${n.read_at?' read':''}" onclick="openNotif(${n.id}, ${JSON.stringify(n.link||'')})" data-id="${n.id}">
+      <div class="notif-icon">${icon}</div>
+      <div class="notif-body">
+        <div class="notif-title">${escHtml(n.title)} ${pri}</div>
+        ${n.body ? `<div class="notif-text">${escHtml(n.body)}</div>` : ''}
+        <div class="notif-meta">${relTime(n.created_at)} · ${n.category}</div>
+        <div class="notif-actions">
+          ${!n.read_at ? `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();markRead(${n.id})">Mark read</button>` : ''}
+          <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();dismiss(${n.id})">Dismiss</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openNotif(id, link) {
+  await markRead(id);
+  if (link) window.location.href = link;
+}
+
+async function markRead(id) {
+  try { await Wren.api(`/api/notifications/${id}/read`, { method: 'POST' }); } catch {}
+  items = items.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n);
+  renderNotifs();
+}
+
+async function markAllRead() {
+  try {
+    await Wren.api('/api/notifications/read-all', { method: 'POST' });
+    items = items.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() }));
+    renderNotifs();
+    Wren.toast('All marked as read', 'success');
+  } catch { Wren.toast('Failed', 'error'); }
+}
+
+async function dismiss(id) {
+  try { await Wren.api(`/api/notifications/${id}/dismiss`, { method: 'POST' }); } catch {}
+  items = items.filter(n => n.id !== id);
+  renderNotifs();
+}
+
+function loadMore() {
+  page++;
+  loadNotifs(false);
+}
+
+function relTime(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'Just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7)  return `${d}d ago`;
+  return new Date(ts).toLocaleDateString('en-GB');
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.addEventListener('wren:ready', () => loadNotifs());
+</script>
+<script src="/js/wren-chat.js?v=2026062901"></script>
+</body>
+</html>

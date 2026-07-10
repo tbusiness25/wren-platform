@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Smart Staffing Analysis — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Heatmap ──────────────────────────────────────────────────────── */
+    .heatmap-wrap { overflow-x: auto; }
+    .heatmap-table { border-collapse: collapse; width: 100%; min-width: 480px; font-size: .78rem; }
+    .heatmap-table th {
+      background: #0f172a; color: #94a3b8; text-align: center;
+      padding: 6px 4px; font-weight: 600; font-size: .75rem;
+    }
+    .heatmap-table .hour-label {
+      color: #94a3b8; text-align: right; padding: 4px 8px 4px 4px;
+      font-size: .72rem; white-space: nowrap; background: #0f172a;
+    }
+    .hm-cell {
+      text-align: center; padding: 4px 2px; cursor: default;
+      position: relative; font-size: .72rem; font-weight: 600;
+      border: 1px solid rgba(255,255,255,.06); transition: filter .15s;
+    }
+    .hm-cell:hover { filter: brightness(1.25); }
+    .hm-cell.red    { background: rgba(239,68,68,.35);  color: #fca5a5; }
+    .hm-cell.amber  { background: rgba(245,158,11,.3);  color: #fcd34d; }
+    .hm-cell.green  { background: rgba(34,197,94,.2);   color: #86efac; }
+    .hm-cell .tooltip {
+      display: none; position: absolute; bottom: calc(100% + 4px); left: 50%;
+      transform: translateX(-50%); background: #1e293b; border: 1px solid #2d3748;
+      border-radius: 8px; padding: 8px 10px; z-index: 100;
+      white-space: nowrap; text-align: left; font-size: .72rem;
+      color: #f1f5f9; font-weight: 400; min-width: 160px; max-width: 260px;
+      white-space: pre-wrap;
+    }
+    .hm-cell:hover .tooltip { display: block; }
+
+    /* ── Stat panels ─────────────────────────────────────────────────── */
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: 12px; margin-bottom: 16px; }
+    .stat-box { background: #1e293b; border: 1px solid #2d3748; border-radius: 10px; padding: 14px 12px; text-align: center; }
+    .stat-val { font-size: 1.6rem; font-weight: 800; color: #f1f5f9; line-height: 1; margin-bottom: 4px; }
+    .stat-lbl { font-size: .72rem; color: #94a3b8; }
+    .stat-val.red    { color: #ef4444; }
+    .stat-val.green  { color: #22c55e; }
+    .stat-val.amber  { color: #f59e0b; }
+
+    /* ── Gaps list ───────────────────────────────────────────────────── */
+    .gap-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #2d3748; font-size: .82rem; }
+    .gap-item:last-child { border-bottom: none; }
+    .gap-badge { background: rgba(239,68,68,.2); color: #fca5a5; border-radius: 6px; padding: 2px 8px; font-size: .7rem; font-weight: 700; }
+
+    /* ── Narrative ───────────────────────────────────────────────────── */
+    .narrative-text { background: #0f172a; border: 1px solid #2d3748; border-radius: 10px; padding: 18px; font-size: .85rem; line-height: 1.7; color: #e2e8f0; white-space: pre-wrap; }
+
+    /* ── Section header ─────────────────────────────────────────────── */
+    .section-hdr { font-size: .8rem; font-weight: 700; color: #4a9abf; text-transform: uppercase; letter-spacing: .05em; margin: 20px 0 10px; }
+
+    /* ── Run button ─────────────────────────────────────────────────── */
+    #run-btn { background: #4a9abf; color: #fff; border: none; border-radius: 10px; padding: 10px 20px; font-weight: 700; cursor: pointer; font-size: .85rem; transition: background .2s; }
+    #run-btn:hover { background: #3a8aaf; }
+    #run-btn:disabled { background: #334155; color: #64748b; cursor: default; }
+
+    .warn-banner { background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.3); border-radius: 8px; padding: 10px 14px; color: #fca5a5; font-size: .82rem; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 class="page-title">Smart Staffing Analysis</h1>
+      <p style="color:#94a3b8;margin:0;font-size:.85rem">Ratio compliance · September outlook · Wage efficiency — manager only</p>
+    </div>
+    <button id="run-btn" onclick="runAnalysis()">Run analysis</button>
+  </div>
+
+  <div id="ss-content">
+    <div style="color:#94a3b8;padding:40px 0;text-align:center">No report yet — click "Run analysis" to generate.</div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', loadSmartStaffing);
+
+const HOURS = Array.from({length:10}, (_,i) => i + 8); // 8..17
+const DAYS  = ['Mon','Tue','Wed','Thu','Fri'];
+
+function fmtTime(h) { return `${String(h).padStart(2,'0')}:00`; }
+
+function ragColour(diff) {
+  if (diff < 0)  return 'red';
+  if (diff === 0) return 'amber';
+  return 'green';
+}
+
+function buildHeatmap(heatmap, containerId) {
+  if (!heatmap || !heatmap.length) return '<p style="color:#94a3b8">No data</p>';
+
+  // Group by date × hour
+  const idx = {};
+  for (const r of heatmap) idx[`${r.date}|${r.hour}`] = r;
+
+  // Get unique dates in order
+  const dates = [...new Set(heatmap.map(r => r.date))];
+
+  let html = '<div class="heatmap-wrap"><table class="heatmap-table">';
+  // Header
+  html += '<thead><tr><th>Hour</th>';
+  for (let di = 0; di < dates.length; di++) {
+    const dayName = heatmap.find(r => r.date === dates[di])?.day_name || '';
+    html += `<th>${dayName}<br><span style="font-size:.65rem;font-weight:400">${dates[di].slice(5)}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const hour of HOURS) {
+    html += `<tr><td class="hour-label">${fmtTime(hour)}</td>`;
+    for (const date of dates) {
+      const slot = idx[`${date}|${hour}`];
+      if (!slot) { html += '<td class="hm-cell"></td>'; continue; }
+      const diff  = slot.surplus_deficit;
+      const label = diff > 0 ? `+${diff}` : String(diff);
+      const names = (slot.staff_names || []).join('\n') || 'No staff';
+      const gaps  = [];
+      if (!slot.dsl_present)         gaps.push('⚠ No DSL');
+      if (!slot.first_aider_present) gaps.push('⚠ No First Aider');
+      const tooltip = [
+        `Staff: ${slot.staff_count} (eff ${slot.effective_count})`,
+        `Required: ${slot.required}`,
+        `Surplus/deficit: ${label}`,
+        ...(gaps.length ? gaps : []),
+        '',
+        names,
+      ].join('\n');
+      html += `<td class="hm-cell ${ragColour(diff)}">${label}<div class="tooltip">${esc(tooltip)}</div></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtMoney(n) {
+  return '£' + Number(n||0).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function renderReport(r) {
+  const stats = r.deterministic_stats || {};
+  const cov   = stats.coverage_summary || {};
+  const wage  = stats.wage_analysis    || {};
+  const kids  = stats.children_summary || {};
+  const sep   = stats.sep_leavers      || {};
+  const gaps  = stats.mandatory_cover_gaps || [];
+
+  let html = '';
+
+  // Top-level warnings
+  if (cov.no_first_aider_registered) {
+    html += `<div class="warn-banner">⚠ CRITICAL: No First Aiders are registered in the system. All operating hours are flagged. Update staff records immediately.</div>`;
+  }
+  if (cov.dsl_count === 0) {
+    html += `<div class="warn-banner">⚠ CRITICAL: No DSL is registered in the system.</div>`;
+  }
+
+  // Meta row
+  const genAt = r.generated_at ? new Date(r.generated_at).toLocaleString('en-GB') : '—';
+  html += `<div style="color:#94a3b8;font-size:.78rem;margin-bottom:16px">Report generated ${genAt} · As of ${stats.as_of_date||'—'} · Model: ${r.model_used||'—'}</div>`;
+
+  // ── Current week stats ─────────────────────────────────────────────────────
+  html += '<div class="section-hdr">Current week — ratio coverage</div>';
+  html += '<div class="stats-row">';
+  const wDiff = cov.avg_surplus ?? 0;
+  html += `<div class="stat-box"><div class="stat-val ${wDiff < 0 ? 'red' : wDiff === 0 ? 'amber' : 'green'}">${wDiff > 0 ? '+' : ''}${wDiff}</div><div class="stat-lbl">Avg surplus/deficit</div></div>`;
+  html += `<div class="stat-box"><div class="stat-val ${cov.slots_deficit > 0 ? 'red' : 'green'}">${cov.slots_deficit}</div><div class="stat-lbl">Slots in deficit</div></div>`;
+  html += `<div class="stat-box"><div class="stat-val">${cov.slots_surplus}</div><div class="stat-lbl">Slots with surplus</div></div>`;
+  html += `<div class="stat-box"><div class="stat-val ${cov.dsl_count === 0 ? 'red' : 'green'}">${cov.dsl_count}</div><div class="stat-lbl">DSL / Deputy DSLs</div></div>`;
+  html += `<div class="stat-box"><div class="stat-val ${cov.first_aider_count === 0 ? 'red' : 'green'}">${cov.first_aider_count}</div><div class="stat-lbl">First Aiders</div></div>`;
+  html += `<div class="stat-box"><div class="stat-val">${cov.l3_plus_count}</div><div class="stat-lbl">L3+ qualified staff</div></div>`;
+  html += '</div>';
+
+  // Children summary
+  html += '<div class="section-hdr">Children (static room assignment used as occupancy proxy)</div>';
+  html += `<div class="stats-row">
+    <div class="stat-box"><div class="stat-val">${kids.total||0}</div><div class="stat-lbl">Total</div></div>
+    <div class="stat-box"><div class="stat-val">${kids.baby||0}</div><div class="stat-lbl">Baby (&lt;24m) — 1:3</div></div>
+    <div class="stat-box"><div class="stat-val">${kids.toddler||0}</div><div class="stat-lbl">Toddler (24–36m) — 1:5</div></div>
+    <div class="stat-box"><div class="stat-val">${kids.preschool||0}</div><div class="stat-lbl">Pre-school (36–60m) — 1:8</div></div>
+    <div class="stat-box"><div class="stat-val">${kids.school_age||0}</div><div class="stat-lbl">School-age (leavers)</div></div>
+  </div>`;
+
+  // Heatmap — current week
+  html += '<div class="section-hdr">Heatmap — current week (hover for detail)</div>';
+  html += buildHeatmap(stats.current_week_heatmap, 'hm-current');
+
+  // ── September preview ──────────────────────────────────────────────────────
+  html += '<div class="section-hdr">September 2026 preview — after school leavers depart</div>';
+  const sepBk = sep.buckets_after_sep || {};
+  html += `<div class="stats-row">
+    <div class="stat-box"><div class="stat-val amber">${sep.count||0}</div><div class="stat-lbl">Expected leavers</div></div>
+    <div class="stat-box"><div class="stat-val">${sep.children_remaining||0}</div><div class="stat-lbl">Children remaining</div></div>
+    <div class="stat-box"><div class="stat-val">${sepBk.baby||0}</div><div class="stat-lbl">Babies</div></div>
+    <div class="stat-box"><div class="stat-val">${sepBk.toddler||0}</div><div class="stat-lbl">Toddlers</div></div>
+    <div class="stat-box"><div class="stat-val">${sepBk.preschool||0}</div><div class="stat-lbl">Pre-school</div></div>
+  </div>`;
+  html += buildHeatmap(stats.sep_week_heatmap, 'hm-sep');
+
+  // ── Wage panel ─────────────────────────────────────────────────────────────
+  html += '<div class="section-hdr">Wage efficiency</div>';
+  html += `<div class="stats-row">
+    <div class="stat-box"><div class="stat-val">${fmtMoney(wage.total_weekly_cost)}</div><div class="stat-lbl">Actual weekly cost</div></div>
+    <div class="stat-box"><div class="stat-val">${fmtMoney(wage.min_ratio_weekly_cost)}</div><div class="stat-lbl">Ratio-minimum cost</div></div>
+    <div class="stat-box"><div class="stat-val ${(wage.efficiency_pct||0) < 50 ? 'red' : 'amber'}">${wage.efficiency_pct||0}%</div><div class="stat-lbl">Efficiency (min/actual)</div></div>
+    <div class="stat-box"><div class="stat-val">${wage.min_headcount_for_ratio||0}</div><div class="stat-lbl">Min headcount for ratios</div></div>
+    <div class="stat-box"><div class="stat-val">${wage.staff_with_rate_count||0}</div><div class="stat-lbl">Staff with pay rates</div></div>
+  </div>`;
+  html += '<p style="font-size:.75rem;color:#64748b;margin:0 0 16px">Efficiency = (cheapest possible staff to meet ratios) ÷ (actual cost). Low = possible over-staffing vs minimum legal requirement.</p>';
+
+  // ── Mandatory cover gaps ───────────────────────────────────────────────────
+  html += '<div class="section-hdr">Mandatory cover gaps — current week</div>';
+  if (!gaps.length) {
+    html += '<p style="color:#22c55e;font-size:.85rem">No gaps detected this week.</p>';
+  } else {
+    html += '<div class="card" style="padding:12px">';
+    const shown = gaps.slice(0, 20);
+    for (const g of shown) {
+      html += `<div class="gap-item">
+        <span style="color:#94a3b8;width:60px">${g.day} ${fmtTime(g.hour)}</span>
+        ${g.missing.map(m => `<span class="gap-badge">${esc(m)}</span>`).join(' ')}
+      </div>`;
+    }
+    if (gaps.length > 20) {
+      html += `<div style="color:#94a3b8;font-size:.75rem;padding:8px 0">…and ${gaps.length - 20} more</div>`;
+    }
+    html += '</div>';
+  }
+
+  // ── Narrative ──────────────────────────────────────────────────────────────
+  html += '<div class="section-hdr">Analysis narrative</div>';
+  if (r.narrative_summary) {
+    html += `<div class="narrative-text">${esc(r.narrative_summary)}</div>`;
+  } else {
+    html += '<p style="color:#64748b;font-size:.82rem">Narrative unavailable (Ollama did not respond). Deterministic stats above are complete.</p>';
+  }
+
+  document.getElementById('ss-content').innerHTML = html;
+}
+
+async function loadSmartStaffing() {
+  try {
+    const r = await Wren.api('/api/staff-analytics/smart-staffing/latest');
+    renderReport(r);
+  } catch (e) {
+    if (e.status === 404 || (e.message && e.message.includes('404'))) {
+      document.getElementById('ss-content').innerHTML =
+        '<div style="color:#94a3b8;padding:40px 0;text-align:center">No report yet — click "Run analysis" to generate.</div>';
+    } else {
+      document.getElementById('ss-content').innerHTML =
+        `<div style="color:#ef4444">Error loading report: ${esc(e.message||'unknown')}</div>`;
+    }
+  }
+}
+
+async function runAnalysis() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  document.getElementById('ss-content').innerHTML =
+    '<div style="color:#94a3b8;padding:40px 0;text-align:center">Computing staffing analysis… (Ollama narrative may take up to 2 minutes)</div>';
+  try {
+    const result = await Wren.api('/api/staff-analytics/smart-staffing/run', { method: 'POST', body: {} });
+    const report = await Wren.api(`/api/staff-analytics/smart-staffing/${result.id}`);
+    renderReport(report);
+  } catch (e) {
+    document.getElementById('ss-content').innerHTML =
+      `<div style="color:#ef4444;padding:16px">Run failed: ${esc(e.message||'unknown')}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run analysis';
+  }
+}
+</script>
+</body>
+</html>

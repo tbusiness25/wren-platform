@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Sleep Checks — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">😴 Sleep Checks</div>
+      <div class="page-subtitle">Baby Room — tap to log a check</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" id="btn-all-sleeping">✓ All Sleeping</button>
+      <button class="btn btn-ghost" id="btn-refresh">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div class="alert alert-info" style="margin-bottom:20px">
+    ⏱ <strong>Remember:</strong> Check sleeping children every 10–15 minutes. Log each check.
+  </div>
+
+  <div id="sleep-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+
+  <!-- Check log -->
+  <div class="card" style="margin-top:20px">
+    <div class="card-header">
+      <div class="card-title">Today's Check Log</div>
+    </div>
+    <div id="check-log">
+      <div class="loading-state"><div class="spinner"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let babyRoomChildren = [];
+
+async function loadData() {
+  try {
+    const [children, checks] = await Promise.all([
+      Wren.api('/api/children/attendance/today'),
+      Wren.api('/api/sleep/today')
+    ]);
+
+    // Baby room only (room_id 1 or room named Baby Room)
+    babyRoomChildren = children.filter(c =>
+      c.room_name && (c.room_name.toLowerCase().includes('baby') || c.room_id === 1)
+      && c.sign_in_time && !c.sign_out_time && !c.absent
+    );
+
+    renderGrid(babyRoomChildren, checks);
+    renderLog(checks);
+  } catch(e) {
+    Wren.toast('Failed to load', 'error');
+  }
+}
+
+function renderGrid(children, checks) {
+  const area = document.getElementById('sleep-area');
+  if (!children.length) {
+    area.innerHTML = '<div class="empty-state"><div class="empty-icon">🍼</div><div class="empty-title">No children in Baby Room right now</div></div>';
+    return;
+  }
+
+  // Find last check per child
+  const lastCheck = {};
+  checks.forEach(c => {
+    if (!lastCheck[c.child_id] ||
+        new Date(c.check_time) > new Date(lastCheck[c.child_id].check_time)) {
+      lastCheck[c.child_id] = c;
+    }
+  });
+
+  area.innerHTML = `<div class="sleep-grid">
+    ${children.map(child => {
+      const last = lastCheck[child.id];
+      const sleeping = last ? last.is_sleeping : null;
+      const lastTime = last ? new Date(last.check_time).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : null;
+      const minsSince = last ? Math.floor((Date.now() - new Date(last.check_time))/60000) : null;
+      const overdue = minsSince !== null && minsSince > 15;
+
+      return `
+        <div class="sleep-card ${sleeping===true?'sleeping':sleeping===false?'awake':''}"
+             data-action="log-check" data-id="${child.id}" data-name="${child.first_name}">
+          <div class="sleep-status">${sleeping===true?'😴':sleeping===false?'👀':'❓'}</div>
+          <div class="sleep-name">${child.first_name}</div>
+          <div class="sleep-time" style="${overdue?'color:var(--c-red);font-weight:700':''}">
+            ${lastTime ? `Last: ${lastTime}${overdue?' ⚠':' ('+minsSince+'m)'}` : 'No check yet'}
+          </div>
+        </div>
+      `;
+    }).join('')}
+  </div>`;
+}
+
+function renderLog(checks) {
+  const log = document.getElementById('check-log');
+  if (!checks.length) {
+    log.innerHTML = '<p style="color:#94a3b8;padding:16px;text-align:center;font-size:.875rem">No checks logged today</p>';
+    return;
+  }
+  const recent = checks.slice(0, 20);
+  log.innerHTML = `<table><thead><tr>
+    <th>Child</th><th>Time</th><th>Status</th><th>Position</th><th>By</th>
+  </tr></thead><tbody>
+    ${recent.map(c => `<tr>
+      <td>${c.first_name} ${c.last_name}</td>
+      <td>${new Date(c.check_time).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td><span class="badge ${c.is_sleeping?'badge-green':'badge-blue'}">${c.is_sleeping?'Sleeping':'Awake'}</span></td>
+      <td>${c.position || '—'}</td>
+      <td>${c.staff_name || '—'}</td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function logCheck(childId, childName) {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <p style="font-size:1rem;font-weight:700;color:var(--c-navy);margin-bottom:16px">${childName}</p>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="btn btn-ghost" id="btn-sleeping" style="font-size:1.5rem;padding:20px">😴<br><small>Sleeping</small></button>
+        <button class="btn btn-ghost" id="btn-awake" style="font-size:1.5rem;padding:20px">👀<br><small>Awake</small></button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Position (if sleeping)</label>
+      <select class="form-control" id="check-position">
+        <option value="">— Select —</option>
+        <option value="on back">On back</option>
+        <option value="on side">On side</option>
+        <option value="sitting">Sitting (chair/buggy)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <input class="form-control" id="check-notes" placeholder="Optional notes...">
+    </div>
+  `;
+
+  let selectedStatus = null;
+  function setStatus(s) {
+    selectedStatus = s;
+    form.querySelector('#btn-sleeping').style.background = s ? 'var(--c-green-light)' : '';
+    form.querySelector('#btn-awake').style.background = !s ? 'var(--c-blue-light)' : '';
+  }
+  form.querySelector('#btn-sleeping').addEventListener('click', function() { setStatus(true); });
+  form.querySelector('#btn-awake').addEventListener('click', function() { setStatus(false); });
+
+  Wren.modal(`Log Check — ${childName}`, form, [
+    { label: 'Log Check', class: 'btn-primary', close: false, action: async () => {
+      if (selectedStatus === null) { Wren.toast('Select sleeping or awake', 'warning'); return; }
+      try {
+        await Wren.api('/api/sleep', { method: 'POST', body: {
+          child_id: childId,
+          is_sleeping: selectedStatus,
+          position: document.getElementById('check-position').value || null,
+          notes: document.getElementById('check-notes').value || null
+        }});
+        document.querySelector('.wren-modal-overlay')?.remove();
+        Wren.toast('Check logged ✓', 'success');
+        loadData();
+      } catch(e) {
+        Wren.toast('Failed to log check', 'error');
+      }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+async function logAllSleeping() {
+  if (!babyRoomChildren.length) return;
+  try {
+    await Promise.all(babyRoomChildren.map(c =>
+      Wren.api('/api/sleep', { method: 'POST', body: { child_id: c.id, is_sleeping: true, position: 'on back' } })
+    ));
+    Wren.toast(`${babyRoomChildren.length} sleep checks logged ✓`, 'success');
+    loadData();
+  } catch(e) {
+    Wren.toast('Some checks failed', 'error');
+  }
+}
+
+document.getElementById('btn-all-sleeping').addEventListener('click', logAllSleeping);
+document.getElementById('btn-refresh').addEventListener('click', loadData);
+document.getElementById('sleep-area').addEventListener('click', function(e) {
+  const card = e.target.closest('[data-action="log-check"]');
+  if (card) logCheck(parseInt(card.dataset.id), card.dataset.name);
+});
+document.addEventListener('wren:ready', () => { loadData(); });
+// Auto-refresh every 5 minutes
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>

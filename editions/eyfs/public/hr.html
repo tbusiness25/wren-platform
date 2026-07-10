@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>HR — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+  <meta name="wren-hide-modules" content="HR,Staff,IT Settings,Reports,Action Plans,Supervisions,CPD">
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-title" style="margin-bottom:20px">📁 HR Self-Service</div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="absences">My Absences</button>
+    <button class="tab-btn" data-tab="request">Request Leave</button>
+    <button class="tab-btn" data-tab="all" id="tab-all-btn" style="display:none">All Requests</button>
+  </div>
+
+  <div id="tab-absences" class="tab-panel active">
+    <div id="my-absences"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <div id="tab-request" class="tab-panel">
+    <div class="card" style="max-width:560px">
+      <div class="card-header"><div class="card-title">Request Absence</div></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">From <span style="color:var(--c-red)">*</span></label>
+          <input type="date" class="form-control" id="abs-start">
+        </div>
+        <div class="form-group">
+          <label class="form-label">To <span style="color:var(--c-red)">*</span></label>
+          <input type="date" class="form-control" id="abs-end">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-control" id="abs-type">
+          <option value="Annual Leave">Annual Leave</option>
+          <option value="Sick Leave">Sick Leave</option>
+          <option value="Compassionate">Compassionate Leave</option>
+          <option value="Maternity">Maternity Leave</option>
+          <option value="Paternity">Paternity Leave</option>
+          <option value="Training">Training / CPD</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea class="form-control" id="abs-notes" rows="2" placeholder="Optional notes..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="btn-submit-request">Submit Request</button>
+    </div>
+  </div>
+
+  <div id="tab-all" class="tab-panel">
+    <div id="all-absences"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<script>
+const STATUS_BADGES = {
+  pending: 'badge-amber',
+  approved: 'badge-green',
+  declined: 'badge-red',
+  cancelled: 'badge-grey'
+};
+
+async function loadMyAbsences() {
+  try {
+    const data = await Wren.api('/api/absence/my');
+    const el = document.getElementById('my-absences');
+    if (!data.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏖️</div><div class="empty-title">No absence requests</div></div>';
+      return;
+    }
+    el.innerHTML = `<div class="table-wrapper"><table>
+      <thead><tr><th>Type</th><th>From</th><th>To</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody>
+        ${data.map(a => `<tr>
+          <td>${a.absence_type || '—'}</td>
+          <td>${new Date(a.start_date).toLocaleDateString('en-GB')}</td>
+          <td>${new Date(a.end_date).toLocaleDateString('en-GB')}</td>
+          <td><span class="badge ${STATUS_BADGES[a.status]||'badge-grey'}">${a.status}</span></td>
+          <td class="text-muted text-sm">${a.notes || '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  } catch(e) {
+    Wren.toast('Failed to load absences', 'error');
+  }
+}
+
+async function loadAllAbsences() {
+  try {
+    const data = await Wren.api('/api/absence/all');
+    const el = document.getElementById('all-absences');
+    if (!data.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No requests</div></div>';
+      return;
+    }
+    el.innerHTML = `<div class="table-wrapper"><table>
+      <thead><tr><th>Staff</th><th>Type</th><th>From</th><th>To</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${data.map(a => `<tr>
+          <td><strong>${a.staff_name}</strong></td>
+          <td>${a.absence_type || '—'}</td>
+          <td>${new Date(a.start_date).toLocaleDateString('en-GB')}</td>
+          <td>${new Date(a.end_date).toLocaleDateString('en-GB')}</td>
+          <td><span class="badge ${STATUS_BADGES[a.status]||'badge-grey'}">${a.status}</span></td>
+          <td>
+            ${a.status === 'pending' ? `
+              <button class="btn btn-sm btn-green" data-action="approve-absence" data-id="${a.id}">Approve</button>
+              <button class="btn btn-sm btn-danger" data-action="decline-absence" data-id="${a.id}">Decline</button>
+            ` : '—'}
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  } catch(e) {}
+}
+
+async function submitRequest() {
+  const start = document.getElementById('abs-start').value;
+  const end = document.getElementById('abs-end').value;
+  if (!start || !end) { Wren.toast('Please select dates', 'warning'); return; }
+  try {
+    await Wren.api('/api/absence', { method: 'POST', body: {
+      start_date: start,
+      end_date: end,
+      absence_type: document.getElementById('abs-type').value,
+      notes: document.getElementById('abs-notes').value
+    }});
+    Wren.toast('Request submitted ✓', 'success');
+    document.getElementById('abs-start').value = '';
+    document.getElementById('abs-end').value = '';
+    document.getElementById('abs-notes').value = '';
+    showTab('absences');
+    loadMyAbsences();
+  } catch(e) { Wren.toast('Failed to submit', 'error'); }
+}
+
+async function approveAbsence(id) {
+  await Wren.api(`/api/absence/${id}/approve`, { method: 'PUT' });
+  Wren.toast('Approved ✓', 'success');
+  loadAllAbsences();
+}
+
+async function declineAbsence(id) {
+  await Wren.api(`/api/absence/${id}/decline`, { method: 'PUT' });
+  Wren.toast('Declined', 'info');
+  loadAllAbsences();
+}
+
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.dataset.tab === tab) b.classList.add('active');
+  });
+}
+
+// Show manager tabs if applicable
+document.addEventListener('wren:ready', () => {
+  const user = Wren.user;
+  if (user && ['manager','deputy_manager'].includes(user.role)) {
+    document.getElementById('tab-all-btn').style.display = '';
+    loadAllAbsences();
+  }
+  // Tab delegation
+  document.querySelector('.tabs').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-tab]');
+    if (btn) showTab(btn.dataset.tab);
+  });
+  document.getElementById('btn-submit-request').addEventListener('click', submitRequest);
+  document.getElementById('all-absences').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const id = parseInt(btn.dataset.id);
+    if (btn.dataset.action === 'approve-absence') approveAbsence(id);
+    else if (btn.dataset.action === 'decline-absence') declineAbsence(id);
+  });
+});
+
+loadMyAbsences();
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

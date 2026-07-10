@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="wren-edition" content="eyfs">
+<title>Framework Tracker — Wren EYFS</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.rag-dot{width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800}
+.rag-green{background:rgba(34,197,94,.2);color:#22c55e;border:2px solid #22c55e44}
+.rag-amber{background:rgba(245,158,11,.2);color:#f59e0b;border:2px solid #f59e0b44}
+.rag-red{background:rgba(239,68,68,.2);color:#ef4444;border:2px solid #ef444444}
+.rag-grey{background:rgba(148,163,184,.1);color:#64748b;border:2px solid #64748b33}
+.summary-pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.summary-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;background:var(--c-navy-mid);border:1px solid #2d3748;font-size:.82rem;font-weight:600;color:#94a3b8}
+.summary-pill .rag-dot{width:12px;height:12px;font-size:8px}
+.child-card{background:var(--c-navy-mid);border:1px solid #2d3748;border-radius:12px;padding:16px;margin-bottom:12px;cursor:pointer;transition:border-color .15s}
+.child-card:hover{border-color:#4a9abf}
+.child-name{font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:4px}
+.child-room{font-size:13px;color:#64748b;margin-bottom:8px}
+.child-rag{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.rag-pill{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 10px}
+.modal-overlay.open{display:flex}
+.modal{background:#0f172a;border:1px solid #2d3748;border-radius:14px;padding:20px;max-width:900px;width:100%;margin:20px 0}
+.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-close{background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer}
+.modal-close:hover{color:#f1f5f9}
+.area-block{margin-bottom:24px}
+.area-title{font-size:13px;font-weight:700;color:#4a9abf;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+.tracker-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.tracker-table th{padding:8px 10px;text-align:left;background:#1e293b;color:#94a3b8;font-weight:600;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #2d3748}
+.tracker-table td{padding:8px 10px;border-bottom:1px solid #1e293b}
+.tracker-table tr:hover{background:rgba(74,154,191,.04)}
+.stmt-code{font-family:monospace;color:#64748b;font-size:.72rem;margin-right:8px}
+.status-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.72rem;font-weight:600;cursor:pointer;transition:.15s}
+.status-badge:hover{filter:brightness(1.3)}
+.status-not-started{background:rgba(148,163,184,.15);color:#94a3b8}
+.status-emerging{background:rgba(245,158,11,.2);color:#f59e0b}
+.status-developing{background:rgba(74,154,191,.2);color:#4a9abf}
+.status-secure{background:rgba(34,197,94,.2);color:#22c55e}
+.linked-obs{color:#4a9abf;font-size:.72rem;cursor:pointer}
+.linked-obs:hover{text-decoration:underline}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.filter-bar select,.filter-bar input{padding:6px 10px;background:#1e293b;border:1px solid #2d3748;border-radius:6px;color:#e2e8f0;font-size:.82rem}
+.filter-bar select:focus,.filter-bar input:focus{border-color:#4a9abf;outline:none}
+.loading{text-align:center;padding:48px;color:#94a3b8}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📊 Framework Tracker</div>
+    <div class="page-subtitle">EYFS development statements — RAG progress across all areas</div>
+  </div>
+
+  <div class="filter-bar">
+    <select id="filter-room" onchange="filterChildren()">
+      <option value="">All Rooms</option>
+    </select>
+    <select id="filter-status" onchange="filterChildren()">
+      <option value="">All Statuses</option>
+      <option value="secure">Secure only</option>
+      <option value="developing">Developing+</option>
+      <option value="emerging">Emerging+</option>
+      <option value="not_yet">Not started</option>
+    </select>
+    <input type="text" id="filter-search" placeholder="Search child name…" oninput="filterChildren()" style="flex:1;min-width:150px">
+  </div>
+
+  <div class="summary-pills" id="summary-pills">
+    <span class="summary-pill"><span class="rag-dot rag-grey">-</span> Loading…</span>
+  </div>
+
+  <div id="child-list">
+    <div class="loading">Loading children…</div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title" style="color:#f1f5f0;margin:0">Framework Tracker</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+const STATUS_LABELS = { 'not_yet':'Not started','emerging':'Emerging','developing':'Developing','secure':'Secure' };
+const STATUS_CYCLE    = { 'not_yet':'emerging','emerging':'developing','developing':'secure','secure':'not_yet' };
+const AREA_COLORS = {
+  'Communication & Language':'#4a9abf','Personal, Social & Emotional':'#e07820',
+  'Physical Development':'#22c55e','Literacy':'#7c3aed','Mathematics':'#f59e0b',
+  'Understanding the World':'#06b6d4','Expressive Arts & Design':'#ec4899','All Areas':'#94a3b8'
+};
+const RAG_CLASSES = { 'secure':'rag-green','developing':'rag-amber','emerging':'rag-red','not_yet':'rag-grey' };
+const STATUS_CSS  = { 'secure':'status-secure','developing':'status-developing','emerging':'status-emerging','not_yet':'status-not-started' };
+
+let allChildren = [];
+let allFrameworks = {}; // childId → rows array
+
+document.addEventListener('wren:ready', init);
+
+async function init(){
+  try{
+    const children = await Wren.api('/api/children?limit=200');
+    if(!children?.length){document.getElementById('child-list').innerHTML='<div class="loading">No children found.</div>';return;}
+    allChildren = children.filter(c=>c.first_name);
+
+    // Populate room filter
+    const rooms = new Map();
+    for(const c of allChildren){
+      if(c.room_name) rooms.set(c.room_name,(rooms.get(c.room_name)||0)+1);
+    }
+    const roomSelect = document.getElementById('filter-room');
+    for(const[name,cnt] of rooms){
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = `${name} (${cnt})`;
+      roomSelect.appendChild(opt);
+    }
+
+    // Load framework data for all children
+    const kids = [...allChildren];
+    const promises = kids.map(c => Wren.api('/api/observations/child/'+c.id+'/framework').then(rows=>({id:c.id,rows:rows||[],name:`${c.first_name} ${c.last_name}`})));
+    const results = await Promise.all(promises);
+    for(const r of results){
+      allFrameworks[r.id] = r.rows;
+    }
+
+    // Render
+    renderSummary();
+    renderChildren();
+  }catch(e){
+    document.getElementById('child-list').innerHTML = '<div class="loading">Could not load data: '+esc(e.message||String(e))+'</div>';
+  }
+}
+
+function renderSummary(){
+  const el = document.getElementById('summary-pills');
+  let total=0,secure=0,developing=0,emerging=0,notStarted=0;
+  for(const rows of Object.values(allFrameworks)){
+    for(const r of rows){
+      total++;
+      if(r.status==='secure')secure++;
+      else if(r.status==='developing')developing++;
+      else if(r.status==='emerging')emerging++;
+      else notStarted++;
+    }
+  }
+  el.innerHTML = [
+    `Total: ${total}`,
+    `<span class="summary-pill"><span class="rag-dot rag-green">✓</span> Secure: ${secure}</span>`,
+    `<span class="summary-pill"><span class="rag-dot rag-amber">●</span> Developing: ${developing}</span>`,
+    `<span class="summary-pill"><span class="rag-dot rag-red">●</span> Emerging: ${emerging}</span>`,
+    `<span class="summary-pill"><span class="rag-dot rag-grey">○</span> Not started: ${notStarted}</span>`,
+  ].join(' ');
+}
+
+function filterChildren(){
+  const room = document.getElementById('filter-room').value;
+  const status = document.getElementById('filter-status').value;
+  const search = document.getElementById('filter-search').value.toLowerCase();
+  let filtered = allChildren;
+  if(room) filtered = filtered.filter(c=>c.room_name===room);
+  if(status) filtered = filtered.filter(c=>{
+    const rows = allFrameworks[c.id]||[];
+    if(status==='secure') return rows.some(r=>r.status==='secure') && !rows.some(r=>r.status==='not_yet');
+    if(status==='developing') return rows.some(r=>r.status==='developing'||r.status==='secure');
+    if(status==='emerging') return rows.some(r=>r.status==='emerging'||r.status==='developing'||r.status==='secure');
+    if(status==='not_yet') return rows.some(r=>r.status==='not_yet');
+    return true;
+  });
+  if(search) filtered = filtered.filter(c=> `${c.first_name} ${c.last_name}`.toLowerCase().includes(search));
+  renderChildren(filtered);
+}
+
+function renderChildren(list){
+  const el = document.getElementById('child-list');
+  if(!list) list = allChildren;
+  if(!list.length){el.innerHTML='<div class="loading">No children match your filters.</div>';return;}
+
+  el.innerHTML = list.map(c => {
+    const rows = allFrameworks[c.id]||[];
+    const secure = rows.filter(r=>r.status==='secure').length;
+    const total = rows.length;
+    const pct = total ? Math.round(secure/total*100) : 0;
+    const col = AREA_COLORS['All Areas'];
+    return `<div class="child-card" onclick="openChildTracker(${c.id},'${esc(c.first_name+' '+c.last_name)}')">
+      <div class="child-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
+      <div class="child-room">${esc(c.room_name||'')} · ID:${c.id}</div>
+      <div class="child-rag">
+        <span class="rag-pill"><span class="rag-dot rag-green">✓</span> ${secure}/${total}</span>
+        <span class="rag-pill" style="color:${col};font-weight:700">${pct}% secure</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Detail modal ──
+async function openChildTracker(childId, childName){
+  const overlay = document.getElementById('modal-overlay');
+  document.getElementById('modal-title').textContent = `Framework Tracker — ${childName}`;
+  document.getElementById('modal-body').innerHTML = '<div class="loading">Loading tracker…</div>';
+  overlay.classList.add('open');
+
+  try{
+    const rows = await Wren.api('/api/observations/child/'+childId+'/framework');
+    allFrameworks[childId] = rows||[];
+    renderDetailGrid(rows, childId);
+  }catch(e){
+    document.getElementById('modal-body').innerHTML = '<div class="loading">Could not load: '+esc(e.message||String(e))+'</div>';
+  }
+}
+
+function renderDetailGrid(rows, childId){
+  const body = document.getElementById('modal-body');
+
+  // Group by area
+  const byArea = {};
+  let total=rows.length, secure=0, developing=0, emerging=0, ns=0;
+  for(const r of rows){
+    const area=r.area||'Unassigned';
+    if(!byArea[area]) byArea[area]={items:[]};
+    byArea[area].items.push(r);
+    if(r.status==='secure')secure++;
+    else if(r.status==='developing') developing++;
+    else if(r.status==='emerging')emerging++;
+    else ns++;
+  }
+
+  const pct = total?Math.round(secure/total*100):0;
+  let html = `<p style="color:#94a3b8;font-size:.85rem;margin-bottom:16px">${total} assessments · ${pct}% secure · ${rows.filter(r=>r.linked_observation_id).length} linked to observations</p>`;
+
+  // Areas along the TOP as chips (2026-07-04) — one area visible at a time
+  const areaNames = Object.keys(byArea).sort();
+  html += `<div id="ft-chipbar" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px">` +
+    areaNames.map((area, i) => {
+      const its = byArea[area].items;
+      const g = its.filter(r=>r.status==='secure').length;
+      const p = its.length?Math.round(g/its.length*100):0;
+      const col = AREA_COLORS[area]||'#94a3b8';
+      return `<button type="button" class="ft-chip" data-area-idx="${i}" style="background:#0f1a34;border:1px solid ${col}55;color:${col};border-radius:999px;padding:6px 13px;font-size:.76rem;font-weight:600;cursor:pointer">${esc(area)} <span style="opacity:.7;font-size:.68rem">${p}%</span></button>`;
+    }).join('') + `</div>`;
+
+  for(const area of areaNames){
+    const items = byArea[area].items;
+    const col = AREA_COLORS[area]||'#94a3b8';
+    const aSecure = items.filter(r=>r.status==='secure').length;
+    const aPct = items.length?Math.round(aSecure/items.length*100):0;
+
+    html += `<div class="area-block" data-ft-block hidden>
+      <div class="area-title" style="color:${col}">${esc(area)} <span style="color:#475569;font-size:.72rem">(${aPct}% of ${items.length})</span></div>
+      <table class="tracker-table">
+        <thead><tr><th>Code</th><th>Aspect / Age</th><th>Statement</th><th>Status</th><th>Linked</th><th>By</th><th>When</th></tr></thead><tbody>`;
+
+    for(const r of items){
+      const ragCls = RAG_CLASSES[r.status] || 'rag-grey';
+      const cssCls = STATUS_CSS[r.status] || 'status-not-started';
+      const statusLabel = STATUS_LABELS[r.status] || r.status || 'Not started';
+      html += `<tr>
+        <td><span class="stmt-code">${esc(r.statement_code||'—')}</span></td>
+        <td style="color:#94a3b8;font-size:.74rem">${esc(r.aspect||'')}<br><span style="color:#475569">${esc(r.age_range||'')}</span></td>
+        <td><span style="color:#cbd5e1;font-size:.76rem">${esc(r.statement_text||'—')}</span></td>
+        <td><span class="status-badge ${cssCls}" onclick="cycleStatus(${r.id},'${r.status}')">${statusLabel}</span></td>
+        <td>${r.linked_observation_id?`<span class="linked-obs" onclick="window.location='/observations.html?id=${r.linked_observation_id}'">#${r.linked_observation_id}</span>`:'<span style="color:#475569">—</span>'}</td>
+        <td style="color:#94a3b8;font-size:.72rem">${esc(r.assessed_by_name||'')}</td>
+        <td style="color:#94a3b8;font-size:.72rem">${r.assessed_at?new Date(r.assessed_at).toLocaleDateString('en-GB'):'—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+  html += total===0?'<div class="loading">No framework tracker data for this child yet.</div>':'<p style="color:#475569;font-size:.72rem;margin-top:16px">Click any status badge to cycle: Not started → Emerging → Developing → Secure</p>';
+  body.innerHTML = html;
+
+  // Wire the chip bar — exclusive show (areas along the top)
+  const ftBlocks = body.querySelectorAll('[data-ft-block]');
+  const ftChips = body.querySelectorAll('.ft-chip');
+  const showFtArea = (idx) => {
+    ftBlocks.forEach((b, i) => { b.hidden = i !== idx; });
+    ftChips.forEach((c, i) => { c.style.outline = i === idx ? '2px solid currentColor' : 'none'; });
+  };
+  ftChips.forEach(c => c.addEventListener('click', () => showFtArea(parseInt(c.dataset.areaIdx, 10))));
+  if (ftBlocks.length) showFtArea(0);
+}
+
+function cycleStatus(ftId, currentStatus){
+  const next = STATUS_CYCLE[currentStatus]||'not_yet';
+  if(!confirm(`Change from "${STATUS_LABELS[currentStatus]}" to "${STATUS_LABELS[next]}"?`)) return;
+  Wren.api('/api/observations/framework/'+ftId,{method:'PUT',body:{status:next}})
+    .catch(e=>alert('Update failed: '+e.message));
+}
+
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+</script>
+</body>
+</html>

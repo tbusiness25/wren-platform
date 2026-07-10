@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="primary">
+  <title>Action Plans — Wren Primary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .ap-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; margin-top:16px; }
+    .ap-card { background:var(--c-card); border:1px solid var(--c-border); border-radius:12px; padding:16px; }
+    .ap-header { display:flex; align-items:flex-start; gap:10px; margin-bottom:10px; }
+    .ap-avatar { width:38px;height:38px;border-radius:50%;background:#4a9abf;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0; }
+    .ap-pupil { font-weight:700;font-size:.9rem;color:var(--c-text); }
+    .ap-meta { font-size:.72rem;color:var(--c-muted);margin-top:2px; }
+    .ap-focus { font-size:.82rem;color:var(--c-text);margin:8px 0;line-height:1.4; }
+    .ap-targets { display:flex;flex-direction:column;gap:6px;margin:10px 0; }
+    .ap-target { display:flex;align-items:flex-start;gap:8px;font-size:.8rem; }
+    .ap-target input[type=checkbox] { margin-top:2px;flex-shrink:0;accent-color:#4a9abf; }
+    .ap-target-text { color:var(--c-text);line-height:1.4; }
+    .ap-target-text.done { text-decoration:line-through;color:var(--c-muted); }
+    .ap-footer { display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--c-border); }
+    .ap-review { font-size:.72rem;color:var(--c-muted); }
+    .ap-rag { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
+    .rag-r { background:#ef4444; } .rag-a { background:#f59e0b; } .rag-g { background:#22c55e; }
+    .new-btn { position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:#4a9abf;color:#fff;font-size:1.5rem;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(74,154,191,.4);z-index:100; }
+    .modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal-box { background:#1e293b;border:1px solid #2d3748;border-radius:16px;padding:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto; }
+    .form-group { margin-bottom:14px; }
+    .form-label { font-size:.78rem;font-weight:700;color:var(--c-muted);margin-bottom:4px;display:block; }
+    .form-control { width:100%;background:#0f172a;border:1px solid #2d3748;color:var(--c-text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:.875rem; }
+    .form-control:focus { outline:none;border-color:#4a9abf; }
+    .filter-row { display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px; }
+    .filter-chip { padding:5px 12px;border-radius:14px;border:1.5px solid var(--c-border);background:transparent;color:var(--c-muted);font-size:.75rem;cursor:pointer;font-family:inherit;transition:.15s; }
+    .filter-chip.active { border-color:#4a9abf;background:rgba(74,154,191,.12);color:#4a9abf;font-weight:600; }
+    .empty-msg { text-align:center;padding:48px 24px;color:var(--c-muted);font-size:.9rem; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📋 Action Plans</div>
+    <button class="btn btn-primary btn-sm" onclick="openNew()">+ New Plan</button>
+  </div>
+
+  <div class="filter-row" id="filter-row">
+    <button class="filter-chip active" data-f="all" onclick="setFilter('all',this)">All</button>
+    <button class="filter-chip" data-f="active" onclick="setFilter('active',this)">Active</button>
+    <button class="filter-chip" data-f="review" onclick="setFilter('review',this)">Due Review</button>
+    <button class="filter-chip" data-f="completed" onclick="setFilter('completed',this)">Completed</button>
+  </div>
+
+  <div id="ap-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- New/edit modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal-box">
+    <h2 style="font-size:1rem;margin-bottom:16px;color:var(--c-text)" id="modal-title">New Action Plan</h2>
+    <div class="form-group">
+      <label class="form-label">Pupil</label>
+      <select class="form-control" id="ap-pupil-sel">
+        <option value="">Select pupil…</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Area of focus</label>
+      <input class="form-control" id="ap-focus-inp" placeholder="e.g. Reading fluency, Behaviour in unstructured time…">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Targets (one per line)</label>
+      <textarea class="form-control" id="ap-targets-inp" rows="4" placeholder="Target 1&#10;Target 2&#10;Target 3"></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group">
+        <label class="form-label">Start date</label>
+        <input type="date" class="form-control" id="ap-start">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Review date</label>
+        <input type="date" class="form-control" id="ap-review">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">RAG status</label>
+      <select class="form-control" id="ap-rag">
+        <option value="R">Red — Significant concern</option>
+        <option value="A" selected>Amber — Monitoring</option>
+        <option value="G">Green — Good progress</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveAP()">Save plan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let plans = [], pupils = [], activeFilter = 'all', editId = null;
+
+document.addEventListener('wren:ready', async () => {
+  try {
+    [pupils, plans] = await Promise.all([
+      Wren.api('/api/children').catch(() => []),
+      Wren.api('/api/action-plans').catch(() => []),
+    ]);
+    if (!Array.isArray(pupils)) pupils = [];
+    if (!Array.isArray(plans)) plans = [];
+    populatePupilSel();
+    render();
+  } catch(e) {
+    document.getElementById('ap-area').innerHTML = '<div class="empty-msg">Failed to load action plans</div>';
+  }
+});
+
+function populatePupilSel() {
+  const sel = document.getElementById('ap-pupil-sel');
+  pupils.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = p.first_name + ' ' + p.last_name + (p.year_group ? ' · ' + p.year_group : '');
+    sel.appendChild(o);
+  });
+}
+
+function setFilter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function render() {
+  const area = document.getElementById('ap-area');
+  let filtered = [...plans];
+  const now = new Date();
+  if (activeFilter === 'active') filtered = filtered.filter(p => p.status !== 'completed');
+  else if (activeFilter === 'completed') filtered = filtered.filter(p => p.status === 'completed');
+  else if (activeFilter === 'review') filtered = filtered.filter(p => {
+    if (!p.review_date) return false;
+    const diff = (new Date(p.review_date) - now) / 86400000;
+    return diff <= 7 && p.status !== 'completed';
+  });
+
+  if (!filtered.length) {
+    area.innerHTML = '<div class="empty-msg">No action plans found</div>';
+    return;
+  }
+  area.innerHTML = '<div class="ap-grid">' + filtered.map(renderCard).join('') + '</div>';
+}
+
+function renderCard(p) {
+  const pupil = pupils.find(c => c.id === p.child_id);
+  const name = pupil ? pupil.first_name + ' ' + pupil.last_name : 'Unknown pupil';
+  const initials = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+  const targets = (p.targets || []).map((t, i) =>
+    `<div class="ap-target">
+      <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTarget(${p.id},${i},this.checked)">
+      <span class="ap-target-text${t.done ? ' done' : ''}">${t.text}</span>
+    </div>`
+  ).join('');
+  const ragClass = { R:'rag-r', A:'rag-a', G:'rag-g' }[p.rag] || 'rag-a';
+  const reviewDate = p.review_date ? new Date(p.review_date).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : '—';
+  return `<div class="ap-card" data-id="${p.id}">
+    <div class="ap-header">
+      <div class="ap-avatar">${initials}</div>
+      <div>
+        <div class="ap-pupil">${name}</div>
+        <div class="ap-meta">${pupil?.year_group || ''}</div>
+      </div>
+      <div class="ap-rag ${ragClass}" style="margin-left:auto;margin-top:2px" title="RAG: ${p.rag || 'A'}"></div>
+    </div>
+    <div class="ap-focus">${p.focus || ''}</div>
+    ${targets ? '<div class="ap-targets">' + targets + '</div>' : ''}
+    <div class="ap-footer">
+      <span class="ap-review">Review: ${reviewDate}</span>
+      <button class="btn btn-sm btn-secondary" onclick="editAP(${p.id})" style="font-size:.7rem;padding:3px 8px">Edit</button>
+    </div>
+  </div>`;
+}
+
+async function toggleTarget(planId, idx, done) {
+  const plan = plans.find(p => p.id === planId);
+  if (!plan || !plan.targets) return;
+  plan.targets[idx].done = done;
+  await Wren.api(`/api/action-plans/${planId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ targets: plan.targets })
+  }).catch(() => {});
+  render();
+}
+
+function openNew() {
+  editId = null;
+  document.getElementById('modal-title').textContent = 'New Action Plan';
+  ['ap-pupil-sel','ap-focus-inp','ap-targets-inp','ap-start','ap-review'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('ap-rag').value = 'A';
+  document.getElementById('ap-start').value = new Date().toISOString().split('T')[0];
+  document.getElementById('modal').classList.add('open');
+}
+
+function editAP(id) {
+  const plan = plans.find(p => p.id === id);
+  if (!plan) return;
+  editId = id;
+  document.getElementById('modal-title').textContent = 'Edit Action Plan';
+  document.getElementById('ap-pupil-sel').value = plan.child_id;
+  document.getElementById('ap-focus-inp').value = plan.focus || '';
+  document.getElementById('ap-targets-inp').value = (plan.targets || []).map(t => t.text).join('\n');
+  document.getElementById('ap-start').value = plan.start_date ? plan.start_date.split('T')[0] : '';
+  document.getElementById('ap-review').value = plan.review_date ? plan.review_date.split('T')[0] : '';
+  document.getElementById('ap-rag').value = plan.rag || 'A';
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  editId = null;
+}
+
+async function saveAP() {
+  const child_id = parseInt(document.getElementById('ap-pupil-sel').value);
+  const focus = document.getElementById('ap-focus-inp').value.trim();
+  if (!child_id || !focus) { Wren.toast && Wren.toast('Pupil and focus are required', 'error'); return; }
+  const targets = document.getElementById('ap-targets-inp').value.split('\n')
+    .map(t => t.trim()).filter(Boolean)
+    .map(t => ({ text: t, done: false }));
+
+  const payload = {
+    child_id,
+    focus,
+    targets,
+    start_date: document.getElementById('ap-start').value || null,
+    review_date: document.getElementById('ap-review').value || null,
+    rag: document.getElementById('ap-rag').value,
+    status: 'active',
+  };
+
+  try {
+    if (editId) {
+      const updated = await Wren.api(`/api/action-plans/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+      const idx = plans.findIndex(p => p.id === editId);
+      if (idx >= 0) plans[idx] = updated;
+    } else {
+      const created = await Wren.api('/api/action-plans', { method: 'POST', body: JSON.stringify(payload) });
+      plans.unshift(created);
+    }
+    closeModal();
+    render();
+  } catch(e) {
+    Wren.toast && Wren.toast('Failed to save action plan', 'error');
+  }
+}
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+</script>
+</body>
+</html>

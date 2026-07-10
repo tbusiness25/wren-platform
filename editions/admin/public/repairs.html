@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Repairs — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🔧 Repairs & Maintenance</div>
+      <div class="page-subtitle" id="repairs-count">Loading…</div>
+    </div>
+    <button class="btn btn-primary" id="btn-report-issue">+ Report Issue</button>
+  </div>
+
+  <!-- Stats strip -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px" id="repair-stats"></div>
+
+  <div class="filter-bar">
+    <select class="form-control" id="status-filter" style="flex:0 0 150px">
+      <option value="">All</option>
+      <option value="reported" selected>Reported</option>
+      <option value="in_progress">In Progress</option>
+      <option value="resolved">Resolved</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <select class="form-control" id="location-filter" style="flex:0 0 160px">
+      <option value="">All Locations</option>
+      <option>Baby Room</option><option>Pre-school</option><option>Garden</option>
+      <option>Kitchen</option><option>Corridor</option><option>Pre-school toilets</option>
+      <option>Baby room toilets</option><option>Office</option>
+    </select>
+    <select class="form-control" id="severity-filter" style="flex:0 0 150px">
+      <option value="">All Severities</option>
+      <option value="safety-critical">🔴 Safety-critical</option>
+      <option value="urgent">🟠 Urgent</option>
+      <option value="normal">🟡 Normal</option>
+      <option value="low">🟢 Low</option>
+    </select>
+    <select class="form-control" id="category-filter" style="flex:0 0 140px">
+      <option value="">All Categories</option>
+      <option value="plumbing">Plumbing</option>
+      <option value="electrical">Electrical</option>
+      <option value="fixtures">Fixtures</option>
+      <option value="furniture">Furniture</option>
+      <option value="outdoor">Outdoor</option>
+      <option value="appliance">Appliance</option>
+      <option value="safety">Safety</option>
+      <option value="other">Other</option>
+    </select>
+  </div>
+
+  <div id="repairs-list"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<script>
+let repairs = [];
+let staff = [];
+const PRIORITY_COLOUR = { urgent:'#ef4444', high:'#f59e0b', medium:'#4a9abf', low:'#94a3b8' };
+const STATUS_COLOUR   = { reported:'#4a9abf', in_progress:'#f59e0b', resolved:'#22c55e', cancelled:'#94a3b8' };
+const SEV_COLOUR      = { low:'#22c55e', normal:'#f59e0b', urgent:'#e07820', 'safety-critical':'#ef4444' };
+const SEV_LABEL       = { low:'🟢', normal:'🟡', urgent:'🟠', 'safety-critical':'🔴' };
+
+async function init() {
+  [repairs, staff] = await Promise.all([
+    Wren.api('/api/repairs').catch(() => []),
+    Wren.api('/api/staff').catch(() => []),
+  ]);
+  renderStats(repairs);
+  loadRepairs();
+}
+
+async function loadRepairs() {
+  const status = document.getElementById('status-filter').value;
+  const location = document.getElementById('location-filter').value;
+  const severity = document.getElementById('severity-filter')?.value || '';
+  const category = document.getElementById('category-filter')?.value || '';
+  let url = '/api/repairs?';
+  if (status)   url += `status=${status}&`;
+  if (location) url += `location=${encodeURIComponent(location)}&`;
+  if (severity) url += `severity=${encodeURIComponent(severity)}&`;
+  if (category) url += `category=${encodeURIComponent(category)}`;
+  try {
+    repairs = await Wren.api(url);
+    renderRepairs();
+    renderStats(repairs);
+  } catch(e) {
+    document.getElementById('repairs-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderStats(all) {
+  const open = all.filter(r => r.status === 'reported').length;
+  const inProg = all.filter(r => r.status === 'in_progress').length;
+  const urgent = all.filter(r => r.priority === 'urgent' && r.status !== 'resolved').length;
+  const resolved = all.filter(r => r.status === 'resolved').length;
+  document.getElementById('repair-stats').innerHTML = [
+    { label:'Open', val:open, colour:'#4a9abf' },
+    { label:'In Progress', val:inProg, colour:'#f59e0b' },
+    { label:'Urgent', val:urgent, colour:'#ef4444' },
+    { label:'Resolved', val:resolved, colour:'#22c55e' },
+  ].map(s => `
+    <div class="card" style="text-align:center;border-top:3px solid ${s.colour}">
+      <div style="font-size:28px;font-weight:800;color:${s.colour}">${s.val}</div>
+      <div style="font-size:12px;color:var(--c-muted)">${s.label}</div>
+    </div>
+  `).join('');
+  document.getElementById('repairs-count').textContent = `${open} open · ${urgent} urgent`;
+}
+
+function renderRepairs() {
+  const list = document.getElementById('repairs-list');
+  if (!repairs.length) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">✅</div>
+      <div class="empty-title">No repairs match this filter</div>
+    </div>`;
+    return;
+  }
+  list.innerHTML = `<div style="display:grid;gap:10px">` +
+    repairs.map(r => `
+      <div class="card" style="border-left:4px solid ${PRIORITY_COLOUR[r.priority]||'#4a9abf'}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div style="flex:1">
+            <div style="font-weight:700">${escHtml(r.title)}</div>
+            ${r.description ? `<div style="color:var(--c-muted);font-size:13px;margin-top:2px">${escHtml(r.description)}</div>` : ''}
+            <div style="font-size:12px;color:var(--c-muted);margin-top:4px">
+              ${r.location ? `📍 ${escHtml(r.location)} · ` : ''}
+              Reported by ${escHtml(r.reported_by_name||'?')} · ${new Date(r.reported_at).toLocaleDateString('en-GB')}
+              ${r.assigned_to_name ? ` · Assigned: ${escHtml(r.assigned_to_name)}` : ''}
+              ${r.resolved_at ? ` · Resolved: ${new Date(r.resolved_at).toLocaleDateString('en-GB')}` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            ${r.severity ? `<span style="padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${SEV_COLOUR[r.severity]||'#4a9abf'}22;color:${SEV_COLOUR[r.severity]||'#4a9abf'};border:1px solid ${SEV_COLOUR[r.severity]||'#4a9abf'}44">${SEV_LABEL[r.severity]||''} ${r.severity}</span>` : ''}
+            <span style="padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${PRIORITY_COLOUR[r.priority]}22;color:${PRIORITY_COLOUR[r.priority]};border:1px solid ${PRIORITY_COLOUR[r.priority]}44">${r.priority}</span>
+            <span style="padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${STATUS_COLOUR[r.status]||'#4a9abf'}22;color:${STATUS_COLOUR[r.status]||'#4a9abf'};border:1px solid ${STATUS_COLOUR[r.status]||'#4a9abf'}44">${r.status.replace('_',' ')}</span>
+            ${r.status !== 'resolved' ? `
+              <button class="btn btn-sm btn-ghost" data-action="rep-edit" data-id="${r.id}">✏️ Edit</button>
+              <button class="btn btn-sm btn-primary" data-action="rep-resolve" data-id="${r.id}">✅ Resolve</button>
+            ` : `
+              <button class="btn btn-sm btn-ghost" data-action="rep-view" data-id="${r.id}">View</button>
+            `}
+          </div>
+        </div>
+      </div>`
+    ).join('') + `</div>`;
+}
+
+function viewRepair(id) {
+  const r = repairs.find(x => x.id === id);
+  if (!r) return;
+  Wren.modal(`Issue: ${r.title}`, `
+    <div style="line-height:1.7;font-size:14px">
+      ${r.description ? `<p>${escHtml(r.description)}</p>` : ''}
+      <div style="color:var(--c-muted);font-size:12px">
+        Location: ${escHtml(r.location||'Not specified')}<br>
+        Priority: ${r.priority}<br>
+        Status: ${r.status}<br>
+        Reported by: ${escHtml(r.reported_by_name||'Unknown')} on ${new Date(r.reported_at).toLocaleDateString('en-GB')}<br>
+        ${r.assigned_to_name ? `Assigned to: ${escHtml(r.assigned_to_name)}<br>` : ''}
+        ${r.resolved_at ? `Resolved: ${new Date(r.resolved_at).toLocaleDateString('en-GB')}<br>` : ''}
+        ${r.resolution_notes ? `<br>Resolution notes: ${escHtml(r.resolution_notes)}` : ''}
+      </div>
+    </div>
+  `, [{ label: 'Close', class: 'btn-ghost' }]);
+}
+
+function editRepair(id) {
+  const r = repairs.find(x => x.id === id);
+  if (!r) return;
+  const staffOptions = staff.map(s => `<option value="${s.id}" ${r.assigned_to===s.id?'selected':''}>${s.first_name} ${s.last_name}</option>`).join('');
+  Wren.modal(`Edit: ${r.title}`, `
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select class="form-control" id="e-status">
+        <option value="reported" ${r.status==='reported'?'selected':''}>Reported</option>
+        <option value="in_progress" ${r.status==='in_progress'?'selected':''}>In Progress</option>
+        <option value="resolved" ${r.status==='resolved'?'selected':''}>Resolved</option>
+        <option value="cancelled" ${r.status==='cancelled'?'selected':''}>Cancelled</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <select class="form-control" id="e-priority">
+          <option value="low" ${r.priority==='low'?'selected':''}>Low</option>
+          <option value="medium" ${r.priority==='medium'?'selected':''}>Medium</option>
+          <option value="high" ${r.priority==='high'?'selected':''}>High</option>
+          <option value="urgent" ${r.priority==='urgent'?'selected':''}>Urgent</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Assign to</label>
+        <select class="form-control" id="e-assign">
+          <option value="">Unassigned</option>
+          ${staffOptions}
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Resolution notes</label>
+      <textarea class="form-control" id="e-notes" rows="3" placeholder="What was done?">${escHtml(r.resolution_notes||'')}</textarea>
+    </div>
+  `, [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      try {
+        const newStatus = document.getElementById('e-status').value;
+        const assignTo = document.getElementById('e-assign').value;
+        await Wren.api(`/api/repairs/${id}`, { method: 'PUT', body: {
+          status: newStatus,
+          priority: document.getElementById('e-priority').value,
+          assigned_to: assignTo ? parseInt(assignTo) : null,
+          resolution_notes: document.getElementById('e-notes').value.trim() || null,
+        }});
+        Wren.toast('Updated ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadRepairs();
+      } catch(e) { Wren.toast('Failed: ' + e.message, 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+async function quickResolve(id) {
+  const r = repairs.find(x => x.id === id);
+  if (!r) return;
+  Wren.modal('Resolve Issue', `
+    <p style="margin-bottom:12px">Marking <strong>${escHtml(r.title)}</strong> as resolved.</p>
+    <div class="form-group">
+      <label class="form-label">Resolution notes</label>
+      <textarea class="form-control" id="res-notes" rows="3" placeholder="What was done to fix it?"></textarea>
+    </div>
+  `, [
+    { label: 'Mark Resolved', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/repairs/${id}/resolve`, { method: 'POST', body: {
+          resolution_notes: document.getElementById('res-notes').value.trim() || null,
+        }});
+        Wren.toast('Resolved ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadRepairs();
+      } catch(e) { Wren.toast('Failed: ' + e.message, 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function openReportForm() {
+  Wren.modal('Report an Issue', `
+    <div class="form-group">
+      <label class="form-label">Title <span style="color:var(--c-red)">*</span></label>
+      <input class="form-control" id="r-title" placeholder="Brief description of the issue">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <select class="form-control" id="r-location">
+          <option value="">Select location</option>
+          <option>Baby Room</option><option>Pre-school</option><option>Garden</option>
+          <option>Kitchen</option><option>Corridor</option><option>Pre-school toilets</option>
+          <option>Baby room toilets</option><option>Office</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select class="form-control" id="r-category">
+          <option value="">Select category</option>
+          <option value="plumbing">Plumbing</option><option value="electrical">Electrical</option>
+          <option value="fixtures">Fixtures</option><option value="furniture">Furniture</option>
+          <option value="outdoor">Outdoor</option><option value="appliance">Appliance</option>
+          <option value="safety">Safety</option><option value="other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <select class="form-control" id="r-priority">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Severity</label>
+        <select class="form-control" id="r-severity">
+          <option value="low">🟢 Low</option>
+          <option value="normal" selected>🟡 Normal</option>
+          <option value="urgent">🟠 Urgent</option>
+          <option value="safety-critical">🔴 Safety-critical</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Details</label>
+      <textarea class="form-control" id="r-desc" rows="3"></textarea>
+    </div>
+  `, [
+    { label: 'Report', class: 'btn-primary', close: false, action: async () => {
+      const title = document.getElementById('r-title').value.trim();
+      if (!title) { Wren.toast('Title required', 'warning'); return; }
+      try {
+        await Wren.api('/api/repairs', { method: 'POST', body: {
+          title,
+          description: document.getElementById('r-desc').value.trim() || null,
+          location:  document.getElementById('r-location').value || null,
+          category:  document.getElementById('r-category').value || null,
+          priority:  document.getElementById('r-priority').value,
+          severity:  document.getElementById('r-severity').value,
+        }});
+        Wren.toast('Issue reported ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadRepairs();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.addEventListener('wren:ready', init);
+
+// ── Inline handler migration ────────────────────────────────────────────────
+document.getElementById('btn-report-issue').addEventListener('click', openReportForm);
+document.getElementById('status-filter').addEventListener('change', loadRepairs);
+document.getElementById('location-filter').addEventListener('change', loadRepairs);
+document.getElementById('severity-filter').addEventListener('change', loadRepairs);
+document.getElementById('category-filter').addEventListener('change', loadRepairs);
+
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  if (el.dataset.action === 'rep-edit') editRepair(+el.dataset.id);
+  else if (el.dataset.action === 'rep-resolve') quickResolve(+el.dataset.id);
+  else if (el.dataset.action === 'rep-view') viewRepair(+el.dataset.id);
+});
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

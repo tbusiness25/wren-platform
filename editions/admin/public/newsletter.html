@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="wren-edition" content="admin">
+<title>Newsletter — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* ── Layout ── */
+.nl-layout {
+  display: grid;
+  grid-template-columns: 270px 1fr 380px;
+  gap: 16px;
+  height: calc(100vh - 130px);
+  min-height: 0;
+}
+@media(max-width:1200px){ .nl-layout{grid-template-columns:240px 1fr 340px} }
+@media(max-width:960px){
+  .nl-layout{grid-template-columns:1fr;height:auto}
+  .nl-panel-preview{display:none}
+}
+.nl-panel { display:flex; flex-direction:column; gap:0; min-height:0; overflow:hidden; }
+.nl-panel-scroll { flex:1; overflow-y:auto; padding:0 2px 20px; }
+.nl-panel-scroll::-webkit-scrollbar{width:4px}
+.nl-panel-scroll::-webkit-scrollbar-thumb{background:#2d3748;border-radius:2px}
+
+/* ── Cards ── */
+.nl-card {
+  background:var(--c-card);
+  border:1px solid var(--c-border);
+  border-radius:12px;
+  padding:16px;
+  margin-bottom:12px;
+}
+.nl-card-hd {
+  font-size:.75rem;
+  font-weight:700;
+  color:var(--c-muted);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  margin-bottom:12px;
+}
+
+/* ── Newsletter list items ── */
+.nl-item {
+  background:#0f172a;
+  border:1px solid var(--c-border);
+  border-radius:10px;
+  padding:12px 14px;
+  margin-bottom:8px;
+  cursor:pointer;
+  transition:.15s;
+  position:relative;
+}
+.nl-item:hover{border-color:#4a9abf;background:#1e293b}
+.nl-item.active{border-color:#4a9abf;background:#1e293b;box-shadow:0 0 0 2px rgba(74,154,191,.25)}
+.nl-item-title{font-size:.9rem;font-weight:600;color:var(--c-text);margin-bottom:4px}
+.nl-item-meta{font-size:.75rem;color:var(--c-muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.nl-item-del{position:absolute;top:10px;right:10px;background:none;border:none;cursor:pointer;color:var(--c-muted);padding:2px 6px;border-radius:6px;font-size:.8rem;opacity:0;transition:.15s}
+.nl-item:hover .nl-item-del{opacity:1}
+.nl-item-del:hover{color:#ef4444;background:#ef444422}
+
+/* ── Status badges ── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:.7rem;font-weight:700}
+.badge-draft{background:#f59e0b22;color:#f59e0b}
+.badge-ready{background:#4a9abf22;color:#4a9abf}
+.badge-sent{background:#22c55e22;color:#22c55e}
+
+/* ── Section type badges ── */
+.stype{padding:2px 8px;border-radius:6px;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.stype-text{background:#4a9abf22;color:#4a9abf}
+.stype-planning_week{background:#22c55e22;color:#22c55e}
+.stype-feature_grid{background:#7c3aed22;color:#a78bfa}
+.stype-card{background:#e0782022;color:#e07820}
+.stype-cta{background:#f59e0b22;color:#f59e0b}
+.stype-security_note{background:#ef444422;color:#ef4444}
+
+/* ── Section cards in composer ── */
+.section-item{
+  background:#0f172a;
+  border:1px solid var(--c-border);
+  border-radius:10px;
+  margin-bottom:8px;
+  overflow:hidden;
+  transition:.15s;
+}
+.section-item.expanded{border-color:#4a9abf}
+.section-hd{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 14px;
+  cursor:pointer;
+  user-select:none;
+}
+.section-hd:hover{background:#1e293b22}
+.section-title-txt{flex:1;font-size:.88rem;font-weight:600;color:var(--c-text)}
+.section-actions{display:flex;gap:4px;margin-left:auto}
+.section-btn{background:none;border:none;cursor:pointer;color:var(--c-muted);padding:3px 7px;border-radius:6px;font-size:.75rem;transition:.15s}
+.section-btn:hover{color:var(--c-text);background:#1e293b}
+.section-btn.del:hover{color:#ef4444;background:#ef444422}
+.section-editor{padding:0 14px 14px;display:none}
+.section-item.expanded .section-editor{display:block}
+
+/* ── Form fields ── */
+.f-group{margin-bottom:12px}
+.f-label{display:block;font-size:.75rem;font-weight:600;color:var(--c-muted);margin-bottom:5px}
+.f-input,.f-select,.f-ta{
+  width:100%;background:#1e293b;border:1.5px solid var(--c-border);
+  border-radius:8px;padding:9px 12px;color:var(--c-text);font-size:.875rem;
+  outline:none;transition:.2s;font-family:inherit;
+}
+.f-input:focus,.f-select:focus,.f-ta:focus{border-color:#4a9abf}
+.f-ta{resize:vertical;min-height:90px;line-height:1.5}
+.f-ta.notes{min-height:80px}
+.f-ta.draft{min-height:120px}
+.f-row{display:flex;gap:10px}
+.f-row>*{flex:1}
+
+/* ── AI button ── */
+.btn-ai{
+  display:inline-flex;align-items:center;gap:6px;
+  background:linear-gradient(135deg,#4a9abf,#2d7fa8);
+  color:#fff;border:none;border-radius:8px;padding:8px 14px;
+  font-size:.8rem;font-weight:700;cursor:pointer;transition:.2s;
+}
+.btn-ai:hover{opacity:.88}
+.btn-ai:disabled{opacity:.5;cursor:default}
+.btn-ai.done{background:linear-gradient(135deg,#22c55e,#16a34a)}
+.ai-spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);
+  border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ai-note{font-size:.7rem;color:var(--c-muted);margin-top:5px;font-style:italic}
+
+/* ── Approve strip ── */
+.approve-strip{display:flex;align-items:center;gap:8px;margin-top:8px}
+.approve-status{font-size:.75rem;font-weight:700}
+.approve-status.approved{color:#22c55e}
+.approve-status.pending{color:#f59e0b}
+
+/* ── Day rows for planning week ── */
+.day-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.day-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.day-label{font-size:.75rem;font-weight:700;color:var(--c-muted);width:70px;flex-shrink:0;text-transform:uppercase;letter-spacing:.04em}
+.day-input{flex:1;background:#1e293b;border:1.5px solid var(--c-border);border-radius:7px;padding:7px 10px;color:var(--c-text);font-size:.825rem;outline:none;font-family:inherit;transition:.2s}
+.day-input:focus{border-color:#4a9abf}
+
+/* ── Feature tile editors ── */
+.tile-editor{background:#1e293b;border:1px solid var(--c-border);border-radius:8px;padding:12px;margin-bottom:8px}
+.tile-editor-hd{font-size:.7rem;font-weight:700;color:var(--c-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.tile-row{display:flex;gap:8px;margin-bottom:8px}
+.tile-icon-input{width:54px;flex-shrink:0;background:#0f172a;border:1.5px solid var(--c-border);border-radius:7px;padding:7px;color:var(--c-text);font-size:1.1rem;text-align:center;outline:none}
+.tile-name-input{flex:1;background:#0f172a;border:1.5px solid var(--c-border);border-radius:7px;padding:7px 10px;color:var(--c-text);font-size:.825rem;outline:none;font-family:inherit}
+.tile-name-input:focus,.tile-icon-input:focus{border-color:#4a9abf}
+.tile-desc-input{width:100%;background:#0f172a;border:1.5px solid var(--c-border);border-radius:7px;padding:7px 10px;color:var(--c-text);font-size:.8rem;font-family:inherit;outline:none;resize:vertical;min-height:48px}
+.tile-desc-input:focus{border-color:#4a9abf}
+.color-chips{display:flex;gap:6px;margin-top:6px}
+.color-chip{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:.15s}
+.color-chip:hover{transform:scale(1.2)}
+.color-chip.selected{border-color:#fff}
+
+/* ── Preview panel ── */
+.preview-frame{flex:1;border-radius:10px;overflow:hidden;min-height:300px;background:#f0ebe3}
+.preview-frame iframe{width:100%;height:100%;border:none;border-radius:10px;display:block}
+.preview-controls{display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap}
+.recipient-bar{background:#0f172a;border:1px solid var(--c-border);border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;font-size:.82rem}
+
+/* ── Status bar ── */
+.save-status{font-size:.72rem;color:var(--c-muted);display:flex;align-items:center;gap:5px;margin-left:auto}
+.save-status.saving{color:#f59e0b}
+.save-status.saved{color:#22c55e}
+
+/* ── Send modal ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:#1e293b;border:1px solid #2d3748;border-radius:16px;padding:28px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal h3{font-size:1.1rem;font-weight:700;color:var(--c-text);margin:0 0 8px}
+.modal p{font-size:.875rem;color:var(--c-muted);line-height:1.6;margin:0 0 20px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end}
+.progress-bar{height:4px;background:#2d3748;border-radius:2px;overflow:hidden;margin:14px 0}
+.progress-fill{height:100%;background:#4a9abf;border-radius:2px;transition:width .3s}
+
+/* ── Add section dropdown ── */
+.add-section-dd{position:relative;display:inline-block}
+.add-section-menu{position:absolute;top:calc(100% + 4px);left:0;background:#1e293b;border:1px solid #2d3748;border-radius:10px;min-width:200px;padding:6px;box-shadow:0 10px 40px rgba(0,0,0,.4);z-index:100;display:none}
+.add-section-menu.open{display:block}
+.add-opt{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:.85rem;color:var(--c-text);transition:.15s}
+.add-opt:hover{background:#0f172a}
+.add-opt-icon{font-size:1rem;width:22px;text-align:center}
+
+@media(max-width:900px){
+  .nl-layout{grid-template-columns:1fr}
+  .nl-panel-list{order:-1}
+  .nl-panel-preview{display:none}
+}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+<div class="page-header">
+  <div>
+    <div class="page-title">Newsletter</div>
+    <div class="page-subtitle">Compose, write with AI, and send to parents</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="save-status" id="saveStatus"></span>
+    <button class="btn btn-ghost" id="btnExport" style="display:none">⬇ Export HTML</button>
+    <button class="btn btn-ghost" id="btnFullPreview" style="display:none">⛶ Full Preview</button>
+    <button class="btn btn-primary" id="btnSave" style="display:none">Save</button>
+    <button class="btn" style="background:#22c55e;color:#fff" id="btnSend" style="display:none">Send to Parents →</button>
+  </div>
+</div>
+
+<div class="nl-layout">
+
+  <!-- ══ LEFT: Newsletter list ══ -->
+  <div class="nl-panel nl-panel-list">
+    <div style="margin-bottom:10px">
+      <button class="btn btn-primary" id="btn-nl-new" style="width:100%">+ New Newsletter</button>
+    </div>
+    <div class="nl-panel-scroll" id="nlList">
+      <div style="color:var(--c-muted);font-size:.85rem;text-align:center;padding:20px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ══ CENTRE: Composer ══ -->
+  <div class="nl-panel">
+    <div class="nl-panel-scroll" id="composerPanel">
+      <div style="color:var(--c-muted);font-size:.9rem;text-align:center;padding:60px 20px">
+        <div style="font-size:2.5rem;margin-bottom:12px">📰</div>
+        <div style="font-weight:600;color:var(--c-text);margin-bottom:6px">Select a newsletter</div>
+        <div>Choose from the list or create a new one</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ RIGHT: Preview ══ -->
+  <div class="nl-panel nl-panel-preview" id="previewPanel" style="display:none">
+    <div class="preview-controls">
+      <span class="nl-card-hd" style="margin:0">Live Preview</span>
+      <button class="btn btn-ghost" id="btn-nl-preview-refresh" style="margin-left:auto;font-size:.75rem;padding:5px 10px">↻</button>
+    </div>
+    <div class="recipient-bar" id="recipientBar">
+      <span style="color:var(--c-muted)">Recipients</span>
+      <span id="recipientCount" style="color:var(--c-text);font-weight:700">—</span>
+    </div>
+    <div class="preview-frame" style="flex:1">
+      <iframe id="previewIframe" title="Newsletter preview" sandbox="allow-same-origin allow-scripts"></iframe>
+    </div>
+  </div>
+
+</div>
+</div><!-- /wren-content -->
+
+<!-- ══ SEND MODAL ══ -->
+<div id="sendModal" class="modal-bg" style="display:none">
+  <div class="modal">
+    <h3>📬 Send Newsletter</h3>
+    <p id="sendModalDesc">This will send the newsletter to all active parents in the system.</p>
+    <div class="progress-bar" id="sendProgress" style="display:none"><div class="progress-fill" id="sendProgressFill" style="width:0%"></div></div>
+    <div id="sendResult" style="display:none;font-size:.85rem;margin-bottom:16px"></div>
+    <div class="modal-actions" id="sendActions">
+      <button class="btn btn-ghost" id="btn-send-cancel">Cancel</button>
+      <button class="btn" style="background:#22c55e;color:#fff" id="btn-send-confirm">Send Now</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CREATE MODAL ══ -->
+<div id="createModal" class="modal-bg" style="display:none">
+  <div class="modal">
+    <h3>📰 New Newsletter</h3>
+    <p>Give this newsletter a title. You can add sections after creating it.</p>
+    <div class="f-group">
+      <label class="f-label">Title</label>
+      <input class="f-input" id="newNlTitle" placeholder="e.g. Summer Term 2026 Newsletter">
+    </div>
+    <div class="f-row">
+      <div class="f-group">
+        <label class="f-label">Term</label>
+        <input class="f-input" id="newNlTerm" placeholder="Summer Term 2026">
+      </div>
+      <div class="f-group">
+        <label class="f-label">Academic Year</label>
+        <select class="f-select" id="newNlYear">
+          <option value="2024-2025">2024–2025</option>
+          <option value="2025-2026" selected>2025–2026</option>
+          <option value="2026-2027">2026–2027</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-create-cancel">Cancel</button>
+      <button class="btn btn-primary" id="btn-create-confirm">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let currentNl = null;       // full newsletter object with sections[]
+let saveTimer  = null;
+let previewTimer = null;
+
+const SECTION_TYPES = [
+  { type:'text',          icon:'📝', label:'Text section',    hint:'Title + notes → AI expands to paragraphs' },
+  { type:'planning_week', icon:'📅', label:'Planning week',   hint:'Day-by-day activity plan' },
+  { type:'feature_grid',  icon:'🟦', label:'Feature grid',    hint:'2×2 grid of feature tiles' },
+  { type:'card',          icon:'🗂️',  label:'Card / callout', hint:'Highlighted card with orange border' },
+  { type:'cta',           icon:'🟠', label:'CTA / survey',    hint:'Orange gradient box with button' },
+  { type:'security_note', icon:'🛡️', label:'Security note',  hint:'Dark strip with shield icon' },
+];
+
+const DAY_COLORS = {
+  monday:'#4a9abf', tuesday:'#e07820', wednesday:'#22c55e', thursday:'#7c3aed', friday:'#f59e0b'
+};
+
+// ── API helpers ───────────────────────────────────────────────────────────
+// wrenApi and wrenToast are aliases for Wren.api / Wren.toast
+function wrenApi(url, opts) { return Wren.api(url, opts); }
+function wrenToast(msg, type) { return Wren.toast(msg, type || 'success'); }
+async function nlApi(path, opts) {
+  return wrenApi('/api/newsletter' + path, opts);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', () => {
+  loadList();
+  loadRecipientCount();
+});
+
+async function loadList() {
+  const el = document.getElementById('nlList');
+  try {
+    const rows = await nlApi('/');
+    if (!rows.length) {
+      el.innerHTML = '<div style="color:var(--c-muted);font-size:.82rem;text-align:center;padding:20px">No newsletters yet</div>';
+      return;
+    }
+    el.innerHTML = rows.map(r => `
+      <div class="nl-item ${currentNl && currentNl.id===r.id?'active':''}" data-nl-id="${r.id}">
+        <div class="nl-item-title">${esc(r.title||'Untitled')}</div>
+        <div class="nl-item-meta">
+          ${r.term ? `<span style="color:var(--c-muted)">${esc(r.term)}</span>` : ''}
+          <span class="badge ${statusBadge(r.status)}">${r.status||'draft'}</span>
+          ${r.sent_at ? `<span style="color:var(--c-muted)">${fmtDate(r.sent_at)}</span>` : ''}
+        </div>
+        ${r.status!=='sent' ? `<button class="nl-item-del" data-del-nl="${r.id}" title="Delete">✕</button>` : ''}
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444;font-size:.82rem">${esc(e.message)}</div>`;
+  }
+}
+
+async function loadRecipientCount() {
+  try {
+    const r = await wrenApi('/api/admin/children');
+    const emails = new Set();
+    (r||[]).forEach(c => {
+      if(c.parent_1_email) emails.add(c.parent_1_email.toLowerCase().trim());
+      if(c.parent_2_email) emails.add(c.parent_2_email.toLowerCase().trim());
+    });
+    document.getElementById('recipientCount').textContent = emails.size + ' parents';
+  } catch(e) {}
+}
+
+// ── Open newsletter ───────────────────────────────────────────────────────
+async function openNewsletter(id) {
+  try {
+    const data = await nlApi('/' + id);
+    currentNl = data;
+    renderComposer();
+    loadList();
+    document.getElementById('previewPanel').style.display = 'flex';
+    document.getElementById('previewPanel').style.flexDirection = 'column';
+    document.getElementById('btnSave').style.display = '';
+    document.getElementById('btnSend').style.display = '';
+    document.getElementById('btnExport').style.display = '';
+    document.getElementById('btnFullPreview').style.display = '';
+    schedulePreview();
+  } catch(e) { wrenToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Composer renderer ─────────────────────────────────────────────────────
+function renderComposer() {
+  const nl = currentNl;
+  const sections = (nl.sections || []).sort((a,b)=>(a.section_order||0)-(b.section_order||0));
+
+  document.getElementById('composerPanel').innerHTML = `
+    <!-- Header fields -->
+    <div class="nl-card">
+      <div class="nl-card-hd">Newsletter Details</div>
+      <div class="f-row">
+        <div class="f-group">
+          <label class="f-label">Title</label>
+          <input class="f-input" id="nlTitle" value="${esc(nl.title||'')}">
+        </div>
+        <div class="f-group">
+          <label class="f-label">Term</label>
+          <input class="f-input" id="nlTerm" value="${esc(nl.term||'')}" placeholder="Summer Term 2026">
+        </div>
+      </div>
+      <div class="f-row">
+        <div class="f-group">
+          <label class="f-label">Subject line (email)</label>
+          <input class="f-input" id="nlSubject" value="${esc(nl.subject||'')}" placeholder="e.g. Your Nursery Summer 2026 Newsletter">
+        </div>
+        <div class="f-group">
+          <label class="f-label">From name</label>
+          <input class="f-input" id="nlFromName" value="${esc(nl.from_name||'Nursery Manager')}">
+        </div>
+      </div>
+      <div class="f-row" style="margin-top:4px;align-items:center">
+        <div>
+          <label class="f-label">Status</label>
+          <select class="f-select" id="nlStatus">
+            <option value="draft" ${nl.status==='draft'?'selected':''}>Draft</option>
+            <option value="ready" ${nl.status==='ready'?'selected':''}>Ready to send</option>
+            <option value="sent" ${nl.status==='sent'?'selected':''} disabled>Sent</option>
+          </select>
+        </div>
+        <div style="flex:2"></div>
+      </div>
+    </div>
+
+    <!-- Sections -->
+    <div class="nl-card">
+      <div style="display:flex;align-items:center;margin-bottom:12px">
+        <div class="nl-card-hd" style="margin:0">Sections</div>
+        <div class="add-section-dd" style="margin-left:auto" id="addSectionDd">
+          <button class="btn btn-primary" style="font-size:.8rem;padding:6px 12px" data-action="toggle-add-menu">+ Add Section</button>
+          <div class="add-section-menu" id="addSectionMenu">
+            ${SECTION_TYPES.map(t => `
+              <div class="add-opt" data-add-type="${t.type}">
+                <span class="add-opt-icon">${t.icon}</span>
+                <div>
+                  <div style="font-weight:600">${t.label}</div>
+                  <div style="font-size:.7rem;color:var(--c-muted)">${t.hint}</div>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div id="sectionsList">
+        ${sections.length === 0
+          ? '<div style="color:var(--c-muted);font-size:.85rem;text-align:center;padding:20px">No sections yet — add one above</div>'
+          : sections.map((s, i) => renderSectionItem(s, i, sections.length)).join('')
+        }
+      </div>
+    </div>
+  `;
+
+  // Close add menu on outside click
+  document.addEventListener('click', closeAddMenuOutside, { once: true });
+}
+
+function renderSectionItem(s, idx, total) {
+  const type = s.section_type || 'text';
+  const typeDef = SECTION_TYPES.find(t => t.type === type) || SECTION_TYPES[0];
+  const approved = !!s.final_content;
+  const hasDraft = !!s.ai_draft;
+
+  return `
+<div class="section-item" id="secItem_${s.id}" data-sid="${s.id}">
+  <div class="section-hd" data-toggle-sid="${s.id}">
+    <span style="font-size:1rem">${typeDef.icon}</span>
+    <span class="stype stype-${type}">${typeDef.label}</span>
+    <span class="section-title-txt">${esc(s.title || '(untitled)')}</span>
+    ${approved ? '<span style="color:#22c55e;font-size:.75rem">✅</span>'
+               : (hasDraft ? '<span style="color:#f59e0b;font-size:.75rem">✏️</span>' : '')}
+    <div class="section-actions">
+      <button class="section-btn" data-move-sid="${s.id}" data-move-dir="up" title="Move up" ${idx===0?'disabled':''}>↑</button>
+      <button class="section-btn" data-move-sid="${s.id}" data-move-dir="down" title="Move down" ${idx===total-1?'disabled':''}>↓</button>
+      <button class="section-btn del" data-del-sid="${s.id}" title="Delete">✕</button>
+    </div>
+  </div>
+  <div class="section-editor">
+    ${renderSectionEditor(s)}
+  </div>
+</div>`;
+}
+
+function renderSectionEditor(s) {
+  const type = s.section_type || 'text';
+  switch(type) {
+    case 'text':          return renderTextEditor(s);
+    case 'planning_week': return renderPlanningEditor(s);
+    case 'feature_grid':  return renderFeatureGridEditor(s);
+    case 'card':          return renderCardEditor(s);
+    case 'cta':           return renderCtaEditor(s);
+    case 'security_note': return renderSecurityNoteEditor(s);
+    default: return renderTextEditor(s);
+  }
+}
+
+function renderTextEditor(s) {
+  const approved = !!s.final_content;
+  return `
+<div class="f-group">
+  <label class="f-label">Section title (label above content)</label>
+  <input class="f-input" id="st_${s.id}" value="${esc(s.title||'')}" placeholder="e.g. What's On This Term">
+</div>
+<div class="f-group">
+  <label class="f-label">Notes (rough bullet points or ideas)</label>
+  <textarea class="f-ta notes" id="sn_${s.id}" placeholder="• Point 1&#10;• Point 2&#10;• Point 3">${esc(s.raw_notes||'')}</textarea>
+</div>
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+  <button class="btn-ai" id="aibtn_${s.id}" data-ai-sid="${s.id}">✨ Write with AI</button>
+  <span class="ai-note">UK English · Always review before sending</span>
+</div>
+<div class="f-group">
+  <label class="f-label">AI draft (editable)</label>
+  <textarea class="f-ta draft" id="sd_${s.id}" placeholder="AI will write here…">${esc(s.ai_draft||'')}</textarea>
+</div>
+<div class="approve-strip">
+  <button class="btn btn-ghost" style="font-size:.75rem;padding:5px 10px" data-approve-sid="${s.id}">✅ Approve copy</button>
+  <span class="approve-status ${approved?'approved':'pending'}" id="appStatus_${s.id}">
+    ${approved ? '✅ Approved' : '⏳ Not approved'}
+  </span>
+</div>
+${s.final_content ? `<div style="margin-top:8px;background:#0f172a;border-radius:8px;padding:10px 12px;font-size:.82rem;color:#94a3b8;max-height:80px;overflow-y:auto;white-space:pre-wrap">${esc(s.final_content)}</div>` : ''}
+`;
+}
+
+function renderPlanningEditor(s) {
+  const meta = s.metadata || {};
+  const days = meta.days || [
+    {day:'monday',activity:''},{day:'tuesday',activity:''},{day:'wednesday',activity:''},
+    {day:'thursday',activity:''},{day:'friday',activity:''}
+  ];
+  const room = meta.room || 'Baby Room';
+  return `
+<div class="f-row">
+  <div class="f-group">
+    <label class="f-label">Title</label>
+    <input class="f-input" id="st_${s.id}" value="${esc(s.title||'')}" placeholder="Baby Room · Sample Week">
+  </div>
+  <div class="f-group">
+    <label class="f-label">Room</label>
+    <select class="f-select" id="pw_room_${s.id}">
+      <option ${room==='Baby Room'?'selected':''}>Baby Room</option>
+      <option ${room==='Pre-school'?'selected':''}>Pre-school</option>
+      <option ${room==='Both'?'selected':''}>Both</option>
+    </select>
+  </div>
+</div>
+<div style="margin-top:4px">
+  ${['monday','tuesday','wednesday','thursday','friday'].map(day => {
+    const d = days.find(x=>x.day===day) || {day,activity:''};
+    return `<div class="day-row">
+      <div class="day-dot" style="background:${DAY_COLORS[day]}"></div>
+      <div class="day-label">${day.charAt(0).toUpperCase()+day.slice(1)}</div>
+      <input class="day-input" id="pw_${s.id}_${day}" value="${esc(d.activity||'')}" placeholder="Activity for ${day}…">
+    </div>`;
+  }).join('')}
+</div>`;
+}
+
+function renderFeatureGridEditor(s) {
+  const meta = s.metadata || {};
+  const tiles = meta.tiles || [
+    {icon:'📓',name:'Daily Diary',description:'See what your child got up to today',color:'blue'},
+    {icon:'⭐',name:'Learning Journey',description:'Photo observations and milestones',color:'orange'},
+    {icon:'🔒',name:'Secure Access',description:'Protected with Cloudflare security',color:'navy'},
+  ];
+  const colors = ['blue','orange','green','navy','purple','amber'];
+  const colorHex = {blue:'#4a9abf',orange:'#e07820',green:'#22c55e',navy:'#0f172a',purple:'#7c3aed',amber:'#f59e0b'};
+
+  return `
+<div class="f-group">
+  <label class="f-label">Section title</label>
+  <input class="f-input" id="st_${s.id}" value="${esc(s.title||'')}" placeholder="e.g. New Parents Portal">
+</div>
+${tiles.map((t,i) => `
+<div class="tile-editor">
+  <div class="tile-editor-hd">Tile ${i+1}</div>
+  <div class="tile-row">
+    <input class="tile-icon-input" id="ti_${s.id}_${i}_icon" value="${esc(t.icon||'')}" placeholder="🌟">
+    <input class="tile-name-input" id="ti_${s.id}_${i}_name" value="${esc(t.name||'')}" placeholder="Feature name">
+  </div>
+  <textarea class="tile-desc-input" id="ti_${s.id}_${i}_desc" placeholder="Short description…">${esc(t.description||'')}</textarea>
+  <div class="color-chips" id="ti_${s.id}_${i}_colors">
+    ${colors.map(c => `<div class="color-chip ${t.color===c?'selected':''}" style="background:${colorHex[c]}" title="${c}" data-tile-section="${s.id}" data-tile-idx="${i}" data-tile-color="${c}"></div>`).join('')}
+  </div>
+</div>`).join('')}`;
+}
+
+function renderCardEditor(s) {
+  const approved = !!s.final_content;
+  return `
+<div class="f-group">
+  <label class="f-label">Card title</label>
+  <input class="f-input" id="st_${s.id}" value="${esc(s.title||'')}" placeholder="e.g. Important Reminder">
+</div>
+<div class="f-group">
+  <label class="f-label">Notes</label>
+  <textarea class="f-ta notes" id="sn_${s.id}" placeholder="Rough notes — AI will expand…">${esc(s.raw_notes||'')}</textarea>
+</div>
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+  <button class="btn-ai" id="aibtn_${s.id}" data-ai-sid="${s.id}">✨ Write with AI</button>
+  <span class="ai-note">UK English · Always review</span>
+</div>
+<div class="f-group">
+  <label class="f-label">Content (editable after AI)</label>
+  <textarea class="f-ta draft" id="sd_${s.id}" placeholder="AI will write here, or type directly…">${esc(s.ai_draft||s.final_content||'')}</textarea>
+</div>
+<div class="approve-strip">
+  <button class="btn btn-ghost" style="font-size:.75rem;padding:5px 10px" data-approve-sid="${s.id}">✅ Approve</button>
+  <span class="approve-status ${approved?'approved':'pending'}" id="appStatus_${s.id}">${approved?'✅ Approved':'⏳ Not approved'}</span>
+</div>`;
+}
+
+function renderCtaEditor(s) {
+  const meta = s.metadata || {};
+  return `
+<div class="f-group">
+  <label class="f-label">Heading</label>
+  <input class="f-input" id="cta_h_${s.id}" value="${esc(meta.heading||s.title||'')}" placeholder="e.g. We'd love to hear from you 💛">
+</div>
+<div class="f-group">
+  <label class="f-label">Body text</label>
+  <textarea class="f-ta notes" id="cta_b_${s.id}" placeholder="2–3 sentences…">${esc(meta.body||'')}</textarea>
+</div>
+<div class="f-row">
+  <div class="f-group">
+    <label class="f-label">Button label</label>
+    <input class="f-input" id="cta_bl_${s.id}" value="${esc(meta.button_label||'Find Out More →')}">
+  </div>
+  <div class="f-group">
+    <label class="f-label">Button URL</label>
+    <input class="f-input" id="cta_bu_${s.id}" value="${esc(meta.button_url||'')}" placeholder="https://…">
+  </div>
+</div>`;
+}
+
+function renderSecurityNoteEditor(s) {
+  const approved = !!s.final_content;
+  return `
+<div class="f-group">
+  <label class="f-label">Label (shown above text)</label>
+  <input class="f-input" id="st_${s.id}" value="${esc(s.title||'')}" placeholder="e.g. A note on security">
+</div>
+<div class="f-group">
+  <label class="f-label">Notes</label>
+  <textarea class="f-ta notes" id="sn_${s.id}" placeholder="Key points…">${esc(s.raw_notes||'')}</textarea>
+</div>
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+  <button class="btn-ai" id="aibtn_${s.id}" data-ai-sid="${s.id}">✨ Write with AI</button>
+  <span class="ai-note">UK English · Always review</span>
+</div>
+<div class="f-group">
+  <label class="f-label">Security note text (editable)</label>
+  <textarea class="f-ta draft" id="sd_${s.id}" placeholder="AI will write here…">${esc(s.ai_draft||s.final_content||'')}</textarea>
+</div>
+<div class="approve-strip">
+  <button class="btn btn-ghost" style="font-size:.75rem;padding:5px 10px" data-approve-sid="${s.id}">✅ Approve</button>
+  <span class="approve-status ${approved?'approved':'pending'}" id="appStatus_${s.id}">${approved?'✅ Approved':'⏳ Not approved'}</span>
+</div>`;
+}
+
+// ── Section expand/collapse ───────────────────────────────────────────────
+function toggleSection(sid) {
+  const el = document.getElementById('secItem_' + sid);
+  if (!el) return;
+  el.classList.toggle('expanded');
+}
+
+// ── Add section ───────────────────────────────────────────────────────────
+function toggleAddMenu() {
+  document.getElementById('addSectionMenu').classList.toggle('open');
+  document.addEventListener('click', closeAddMenuOutside);
+}
+function closeAddMenuOutside(e) {
+  const dd = document.getElementById('addSectionDd');
+  if (dd && !dd.contains(e.target)) {
+    const m = document.getElementById('addSectionMenu');
+    if (m) m.classList.remove('open');
+  }
+}
+
+async function addSection(type) {
+  document.getElementById('addSectionMenu')?.classList.remove('open');
+  if (!currentNl) return;
+  try {
+    const defaultMeta = {};
+    if (type === 'planning_week') defaultMeta.days = [
+      {day:'monday',activity:''},{day:'tuesday',activity:''},{day:'wednesday',activity:''},
+      {day:'thursday',activity:''},{day:'friday',activity:''}
+    ];
+    if (type === 'feature_grid') defaultMeta.tiles = [
+      {icon:'📓',name:'',description:'',color:'blue'},
+      {icon:'⭐',name:'',description:'',color:'orange'},
+      {icon:'📸',name:'',description:'',color:'green'},
+      {icon:'🔒',name:'',description:'',color:'navy'},
+    ];
+    const s = await nlApi('/' + currentNl.id + '/sections', {
+      method:'POST',
+      body: JSON.stringify({ section_type:type, metadata:defaultMeta })
+    });
+    currentNl.sections = [...(currentNl.sections||[]), s];
+    renderComposer();
+    // Auto-expand the new section
+    setTimeout(() => {
+      const el = document.getElementById('secItem_' + s.id);
+      if (el) { el.classList.add('expanded'); el.scrollIntoView({behavior:'smooth',block:'center'}); }
+    }, 50);
+    schedulePreview();
+  } catch(e) { wrenToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Delete section ────────────────────────────────────────────────────────
+async function deleteSection(sid, ev) {
+  ev.stopPropagation();
+  if (!confirm('Remove this section?')) return;
+  try {
+    await nlApi('/' + currentNl.id + '/sections/' + sid, { method:'DELETE' });
+    currentNl.sections = currentNl.sections.filter(s => s.id !== sid);
+    renderComposer();
+    schedulePreview();
+  } catch(e) { wrenToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Move section ──────────────────────────────────────────────────────────
+async function moveSection(sid, direction, ev) {
+  ev.stopPropagation();
+  try {
+    const updated = await nlApi('/' + currentNl.id + '/sections/' + sid + '/reorder', {
+      method:'POST', body: JSON.stringify({ direction })
+    });
+    currentNl.sections = updated;
+    renderComposer();
+    schedulePreview();
+  } catch(e) { wrenToast('Error: ' + e.message, 'error'); }
+}
+
+// ── AI draft ─────────────────────────────────────────────────────────────
+async function aiDraft(sid) {
+  const section = currentNl.sections.find(s => s.id === sid);
+  if (!section) return;
+  const type = section.section_type;
+
+  // Gather notes based on section type
+  let rawNotes = '';
+  if (['text','card','security_note'].includes(type)) {
+    rawNotes = document.getElementById('sn_' + sid)?.value || section.raw_notes || '';
+  } else if (type === 'cta') {
+    rawNotes = document.getElementById('cta_b_' + sid)?.value || '';
+  }
+  if (!rawNotes.trim()) { wrenToast('Add some notes first', 'warn'); return; }
+
+  const btn = document.getElementById('aibtn_' + sid);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ai-spinner"></span> Writing…'; }
+
+  try {
+    const r = await nlApi('/' + currentNl.id + '/ai-draft', {
+      method: 'POST',
+      body: JSON.stringify({ section_id:sid, raw_notes:rawNotes, section_type:type,
+                              context: currentNl.title + ' — ' + currentNl.term })
+    });
+    const draft = r.draft || '';
+
+    // Stream simulate
+    const draftEl = document.getElementById('sd_' + sid);
+    if (draftEl) {
+      draftEl.value = '';
+      let i = 0;
+      function stream() {
+        if (i < draft.length) {
+          draftEl.value += draft[i++];
+          setTimeout(stream, 6);
+        } else {
+          // Update in state
+          const s = currentNl.sections.find(s=>s.id===sid);
+          if (s) s.ai_draft = draft;
+          scheduleAutoSave();
+          schedulePreview();
+        }
+      }
+      stream();
+    }
+
+    if (btn) { btn.disabled = false; btn.className = 'btn-ai done'; btn.innerHTML = '↺ Rewrite'; }
+  } catch(e) {
+    wrenToast('AI error: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '✨ Write with AI'; btn.className = 'btn-ai'; }
+  }
+}
+
+// ── Approve section ───────────────────────────────────────────────────────
+async function approveSection(sid) {
+  const draftEl = document.getElementById('sd_' + sid);
+  const finalContent = draftEl ? draftEl.value : '';
+  if (!finalContent.trim()) { wrenToast('No draft to approve', 'warn'); return; }
+  try {
+    const updated = await nlApi('/' + currentNl.id + '/sections/' + sid, {
+      method:'PUT', body: JSON.stringify({ final_content: finalContent, ai_draft: finalContent })
+    });
+    const s = currentNl.sections.find(x=>x.id===sid);
+    if (s) Object.assign(s, updated);
+    const statusEl = document.getElementById('appStatus_' + sid);
+    if (statusEl) { statusEl.textContent='✅ Approved'; statusEl.className='approve-status approved'; }
+    wrenToast('Section approved');
+    schedulePreview();
+  } catch(e) { wrenToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Select feature tile colour ────────────────────────────────────────────
+function selectTileColor(sid, tileIdx, color, el) {
+  const container = document.getElementById(`ti_${sid}_${tileIdx}_colors`);
+  if (container) container.querySelectorAll('.color-chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  scheduleAutoSave();
+}
+
+// ── Auto-save ─────────────────────────────────────────────────────────────
+function scheduleAutoSave() {
+  clearTimeout(saveTimer);
+  setSaveStatus('saving');
+  saveTimer = setTimeout(saveNow, 1800);
+  schedulePreview();
+}
+
+async function saveNow() {
+  if (!currentNl) return;
+  clearTimeout(saveTimer);
+  try {
+    // Save newsletter header
+    const title    = document.getElementById('nlTitle')?.value;
+    const term     = document.getElementById('nlTerm')?.value;
+    const subject  = document.getElementById('nlSubject')?.value;
+    const fromName = document.getElementById('nlFromName')?.value;
+    const status   = document.getElementById('nlStatus')?.value;
+
+    await nlApi('/' + currentNl.id, {
+      method:'PUT',
+      body: JSON.stringify({ title, term, subject, from_name:fromName, status })
+    });
+
+    // Save each section
+    for (const s of (currentNl.sections || [])) {
+      const type = s.section_type;
+      const patch = {};
+
+      if (['text','card','security_note'].includes(type)) {
+        patch.title     = document.getElementById('st_' + s.id)?.value;
+        patch.raw_notes = document.getElementById('sn_' + s.id)?.value;
+        patch.ai_draft  = document.getElementById('sd_' + s.id)?.value;
+      } else if (type === 'planning_week') {
+        patch.title    = document.getElementById('st_' + s.id)?.value;
+        const meta     = s.metadata || {};
+        meta.room      = document.getElementById('pw_room_' + s.id)?.value;
+        meta.days = ['monday','tuesday','wednesday','thursday','friday'].map(day => ({
+          day, activity: document.getElementById('pw_' + s.id + '_' + day)?.value || ''
+        }));
+        patch.metadata = meta;
+      } else if (type === 'feature_grid') {
+        patch.title    = document.getElementById('st_' + s.id)?.value;
+        const meta     = s.metadata || {};
+        meta.tiles     = [0,1,2,3].map(i => {
+          const colorChips = document.getElementById(`ti_${s.id}_${i}_colors`);
+          const selected   = colorChips?.querySelector('.color-chip.selected');
+          return {
+            icon:        document.getElementById(`ti_${s.id}_${i}_icon`)?.value || '',
+            name:        document.getElementById(`ti_${s.id}_${i}_name`)?.value || '',
+            description: document.getElementById(`ti_${s.id}_${i}_desc`)?.value || '',
+            color:       selected?.title || 'blue'
+          };
+        });
+        patch.metadata = meta;
+      } else if (type === 'cta') {
+        const meta       = s.metadata || {};
+        meta.heading     = document.getElementById('cta_h_' + s.id)?.value;
+        meta.body        = document.getElementById('cta_b_' + s.id)?.value;
+        meta.button_label = document.getElementById('cta_bl_' + s.id)?.value;
+        meta.button_url  = document.getElementById('cta_bu_' + s.id)?.value;
+        patch.title    = meta.heading;
+        patch.metadata = meta;
+      }
+
+      if (Object.keys(patch).length) {
+        try {
+          const updated = await nlApi('/' + currentNl.id + '/sections/' + s.id, {
+            method:'PUT', body:JSON.stringify(patch)
+          });
+          Object.assign(s, updated);
+        } catch(_) {}
+      }
+    }
+
+    setSaveStatus('saved');
+  } catch(e) {
+    setSaveStatus('');
+    wrenToast('Save failed: ' + e.message, 'error');
+  }
+}
+
+function setSaveStatus(state) {
+  const el = document.getElementById('saveStatus');
+  if (!el) return;
+  if (state === 'saving') { el.className='save-status saving'; el.textContent='Saving…'; }
+  else if (state === 'saved') { el.className='save-status saved'; el.textContent='✓ Saved'; setTimeout(()=>{ el.textContent=''; el.className='save-status'; }, 2500); }
+  else { el.className='save-status'; el.textContent=''; }
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(refreshPreview, 600);
+}
+
+async function refreshPreview() {
+  if (!currentNl) return;
+  await saveNow(); // ensure latest saved
+  try {
+    const frame = document.getElementById('previewIframe');
+    if (!frame) return;
+    const token = sessionStorage.getItem('wrenToken');
+    const resp = await fetch('/api/newsletter/' + currentNl.id + '/preview', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!resp.ok) return;
+    const html = await resp.text();
+    const doc  = frame.contentDocument || frame.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+  } catch(_) {}
+}
+
+function openPreviewTab() {
+  if (!currentNl) return;
+  const token = sessionStorage.getItem('wrenToken');
+  window.open('/api/newsletter/' + currentNl.id + '/preview?t=' + token, '_blank');
+}
+
+async function exportHtml() {
+  if (!currentNl) return;
+  await saveNow();
+  const token = sessionStorage.getItem('wrenToken');
+  window.location.href = '/api/newsletter/' + currentNl.id + '/export';
+}
+
+// ── Send flow ─────────────────────────────────────────────────────────────
+async function showSendModal() {
+  if (!currentNl) return;
+  await saveNow();
+
+  let recipientText = '';
+  try {
+    const r = await wrenApi('/api/admin/children');
+    const emails = new Set();
+    (r||[]).forEach(c => {
+      if(c.parent_1_email) emails.add(c.parent_1_email.toLowerCase());
+      if(c.parent_2_email) emails.add(c.parent_2_email.toLowerCase());
+    });
+    recipientText = emails.size + ' parent email addresses';
+  } catch(_) { recipientText = 'all active parents'; }
+
+  document.getElementById('sendModalDesc').textContent =
+    `This will send "${currentNl.title || 'this newsletter'}" to ${recipientText}. This cannot be undone.`;
+  document.getElementById('sendProgress').style.display  = 'none';
+  document.getElementById('sendResult').style.display    = 'none';
+  document.getElementById('sendActions').style.display   = 'flex';
+  document.getElementById('sendModal').style.display     = 'flex';
+}
+
+function closeSendModal() {
+  document.getElementById('sendModal').style.display = 'none';
+}
+
+async function doSend() {
+  document.getElementById('sendActions').style.display = 'none';
+  document.getElementById('sendProgress').style.display = 'block';
+  const fill = document.getElementById('sendProgressFill');
+
+  // Animate progress bar
+  let pct = 0;
+  const prog = setInterval(() => {
+    pct = Math.min(pct + Math.random() * 8, 90);
+    fill.style.width = pct + '%';
+  }, 300);
+
+  try {
+    const r = await nlApi('/' + currentNl.id + '/send', { method:'POST', body:'{}' });
+    clearInterval(prog);
+    fill.style.width = '100%';
+
+    const res = document.getElementById('sendResult');
+    res.style.display = 'block';
+    if (r.smtp) {
+      res.innerHTML = `<div style="color:#22c55e;font-weight:700">✅ Sent to ${r.sent} parents</div>${r.failed?`<div style="color:#f59e0b;font-size:.8rem">⚠️ ${r.failed} failed</div>`:''}`;
+    } else {
+      res.innerHTML = `<div style="color:#f59e0b;font-weight:700">📝 Logged (SMTP not configured)</div><div style="font-size:.8rem;color:var(--c-muted)">${r.sent} recipients logged to newsletter-sends.log</div>`;
+    }
+
+    currentNl.status = 'sent';
+    document.getElementById('sendActions').innerHTML = '<button class="btn btn-ghost" data-action="close-send">Close</button>';
+    document.getElementById('sendActions').style.display = 'flex';
+    loadList();
+    renderComposer();
+    wrenToast(`Newsletter sent to ${r.sent} parents`);
+  } catch(e) {
+    clearInterval(prog);
+    const res = document.getElementById('sendResult');
+    res.style.display = 'block';
+    res.innerHTML = `<div style="color:#ef4444">❌ ${esc(e.message)}</div>`;
+    document.getElementById('sendActions').innerHTML = '<button class="btn btn-ghost" data-action="close-send">Close</button>';
+    document.getElementById('sendActions').style.display = 'flex';
+  }
+}
+
+// ── Create newsletter ─────────────────────────────────────────────────────
+function showCreateModal() {
+  document.getElementById('newNlTitle').value = '';
+  document.getElementById('newNlTerm').value  = '';
+  document.getElementById('createModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('newNlTitle').focus(), 50);
+}
+
+async function createNewsletter() {
+  const title = document.getElementById('newNlTitle').value.trim();
+  if (!title) { document.getElementById('newNlTitle').focus(); return; }
+  const term  = document.getElementById('newNlTerm').value.trim();
+  const year  = document.getElementById('newNlYear').value;
+  try {
+    const nl = await nlApi('/', {
+      method:'POST',
+      body: JSON.stringify({ title, term, academic_year:year, subject:title })
+    });
+    document.getElementById('createModal').style.display = 'none';
+    await loadList();
+    openNewsletter(nl.id);
+    wrenToast('Newsletter created');
+  } catch(e) { wrenToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Delete newsletter ─────────────────────────────────────────────────────
+async function deleteNewsletter(id, ev) {
+  ev.stopPropagation();
+  if (!confirm('Delete this newsletter? This cannot be undone.')) return;
+  try {
+    await nlApi('/' + id, { method:'DELETE' });
+    if (currentNl && currentNl.id === id) {
+      currentNl = null;
+      document.getElementById('composerPanel').innerHTML = '<div style="color:var(--c-muted);font-size:.9rem;text-align:center;padding:60px 20px"><div style="font-size:2.5rem;margin-bottom:12px">📰</div><div style="font-weight:600;color:var(--c-text);margin-bottom:6px">Newsletter deleted</div><div>Select or create another</div></div>';
+      document.getElementById('previewPanel').style.display = 'none';
+      document.getElementById('btnSave').style.display = 'none';
+      document.getElementById('btnSend').style.display = 'none';
+      document.getElementById('btnExport').style.display = 'none';
+      document.getElementById('btnFullPreview').style.display = 'none';
+    }
+    loadList();
+    wrenToast('Deleted');
+  } catch(e) { wrenToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Event bindings ────────────────────────────────────────────────────────
+(function bindNewsletter() {
+  // Static page-header buttons
+  document.getElementById('btnExport').addEventListener('click', exportHtml);
+  document.getElementById('btnFullPreview').addEventListener('click', openPreviewTab);
+  document.getElementById('btnSave').addEventListener('click', saveNow);
+  document.getElementById('btnSend').addEventListener('click', showSendModal);
+  document.getElementById('btn-nl-new').addEventListener('click', showCreateModal);
+  document.getElementById('btn-nl-preview-refresh').addEventListener('click', refreshPreview);
+
+  // Send modal
+  document.getElementById('sendModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeSendModal();
+  });
+  document.getElementById('btn-send-cancel').addEventListener('click', closeSendModal);
+  document.getElementById('btn-send-confirm').addEventListener('click', doSend);
+
+  // Create modal
+  document.getElementById('createModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+  });
+  document.getElementById('newNlTitle').addEventListener('keydown', e => {
+    if (e.key === 'Enter') createNewsletter();
+  });
+  document.getElementById('btn-create-cancel').addEventListener('click', () => {
+    document.getElementById('createModal').style.display = 'none';
+  });
+  document.getElementById('btn-create-confirm').addEventListener('click', createNewsletter);
+
+  // Newsletter list delegation (clicks on items and delete buttons)
+  document.getElementById('nlList').addEventListener('click', e => {
+    const delBtn = e.target.closest('[data-del-nl]');
+    if (delBtn) { deleteNewsletter(parseInt(delBtn.dataset.delNl), e); return; }
+    const item = e.target.closest('[data-nl-id]');
+    if (item) openNewsletter(parseInt(item.dataset.nlId));
+  });
+
+  // Composer panel: all input/change → scheduleAutoSave
+  document.getElementById('composerPanel').addEventListener('input', e => {
+    if (e.target.matches('input,textarea,select')) scheduleAutoSave();
+  });
+  document.getElementById('composerPanel').addEventListener('change', e => {
+    if (e.target.matches('select')) scheduleAutoSave();
+  });
+
+  // Composer panel: click delegation
+  document.getElementById('composerPanel').addEventListener('click', e => {
+    // Delete section (must check before toggle-sid since del btn is inside section-hd)
+    const delBtn = e.target.closest('[data-del-sid]');
+    if (delBtn) { e.stopPropagation(); deleteSection(parseInt(delBtn.dataset.delSid), e); return; }
+
+    // Move section
+    const moveBtn = e.target.closest('[data-move-sid]');
+    if (moveBtn) { e.stopPropagation(); moveSection(parseInt(moveBtn.dataset.moveSid), moveBtn.dataset.moveDir, e); return; }
+
+    // AI draft
+    const aiBtn = e.target.closest('[data-ai-sid]');
+    if (aiBtn) { aiDraft(parseInt(aiBtn.dataset.aiSid)); return; }
+
+    // Approve section
+    const appBtn = e.target.closest('[data-approve-sid]');
+    if (appBtn) { approveSection(parseInt(appBtn.dataset.approveSid)); return; }
+
+    // Color chip
+    const chip = e.target.closest('[data-tile-section]');
+    if (chip) { selectTileColor(parseInt(chip.dataset.tileSection), parseInt(chip.dataset.tileIdx), chip.dataset.tileColor, chip); return; }
+
+    // Add section type option
+    const addOpt = e.target.closest('[data-add-type]');
+    if (addOpt) { addSection(addOpt.dataset.addType); return; }
+
+    // Toggle add menu button
+    const addMenuBtn = e.target.closest('[data-action="toggle-add-menu"]');
+    if (addMenuBtn) { toggleAddMenu(); return; }
+
+    // Toggle section expand/collapse (section-hd — must be last, it's the widest target)
+    const secHd = e.target.closest('[data-toggle-sid]');
+    if (secHd) { toggleSection(parseInt(secHd.dataset.toggleSid)); return; }
+  });
+
+  // Send actions delegation (for dynamically generated close button after send)
+  document.getElementById('sendActions').addEventListener('click', e => {
+    if (e.target.closest('[data-action="close-send"]')) closeSendModal();
+  });
+})();
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function statusBadge(s) {
+  return { draft:'badge-draft', ready:'badge-ready', sent:'badge-sent' }[s] || 'badge-draft';
+}
+function fmtDate(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+}
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

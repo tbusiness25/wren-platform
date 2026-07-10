@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="primary">
+<title>CTF Import / Export — Wren Primary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.ctf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-bottom:26px}
+.card-panel{background:var(--c-surface);border:1px solid var(--c-border);border-radius:16px;padding:20px}
+.card-panel h2{font-size:1rem;font-weight:700;margin:0 0 6px}
+.card-panel .sub{font-size:.8rem;color:var(--c-muted);margin-bottom:16px;line-height:1.5}
+.field-lbl{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);display:block;margin-bottom:6px}
+.ctf-input,.ctf-textarea{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--c-border);background:#0f172a;color:var(--c-text);font-family:inherit;font-size:.85rem;box-sizing:border-box}
+.ctf-textarea{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:.76rem;resize:vertical}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.result-box{margin-top:14px;padding:12px 14px;border-radius:10px;font-size:.82rem;display:none}
+.result-ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#22c55e}
+.result-err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#ef4444}
+.hist-table{width:100%;border-collapse:collapse}
+.hist-table th{font-size:.66rem;font-weight:700;text-transform:uppercase;color:var(--c-muted);padding:8px 10px;border-bottom:2px solid var(--c-border);text-align:left}
+.hist-table td{font-size:.82rem;color:var(--c-text);padding:9px 10px;border-bottom:1px solid rgba(45,55,72,.4)}
+.hist-table tr:last-child td{border-bottom:none}
+.tag{display:inline-block;padding:2px 8px;border-radius:7px;font-size:.72rem;font-weight:700}
+.tag-export{background:rgba(74,154,191,.15);color:#4a9abf}
+.tag-import{background:rgba(34,197,94,.15);color:#22c55e}
+.tag-fail{background:rgba(239,68,68,.15);color:#ef4444}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-head h2{font-size:1rem;font-weight:700;margin:0}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">CTF Import / Export</div>
+      <div class="page-subtitle">Common Transfer File (CTF) data exchange — DfE format</div>
+    </div>
+  </div>
+
+  <div class="ctf-grid">
+    <!-- Export -->
+    <div class="card-panel">
+      <h2>Export pupils</h2>
+      <div class="sub">Generate a DfE Common Transfer File (XML) for active pupils, including prior attainment, SEN and attendance history. Leave the year group blank to export the whole school.</div>
+      <label class="field-lbl" for="exp-year">Year group (optional)</label>
+      <input id="exp-year" class="ctf-input" type="text" placeholder="e.g. Year 6">
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-export" onclick="doExport()">Download CTF file</button>
+      </div>
+      <div id="export-result" class="result-box"></div>
+    </div>
+
+    <!-- Import -->
+    <div class="card-panel">
+      <h2>Import a CTF</h2>
+      <div class="sub">Paste the contents of a CTF XML file received from another school. Pupils are matched on UPN; matched records are updated and new pupils created.</div>
+      <label class="field-lbl" for="imp-xml">CTF XML</label>
+      <textarea id="imp-xml" class="ctf-textarea" placeholder="<CTFile>…</CTFile>"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="document.getElementById('imp-file').click()">Load from file…</button>
+        <input id="imp-file" type="file" accept=".xml,text/xml" style="display:none" onchange="loadFile(event)">
+        <button class="btn btn-primary" id="btn-import" onclick="doImport()">Validate &amp; import</button>
+      </div>
+      <div id="import-result" class="result-box"></div>
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <div class="section-head"><h2>Recent transfers</h2></div>
+    <div id="hist-wrap"><div class="empty-state">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function showBox(id, ok, msg){
+  const el = document.getElementById(id);
+  el.className = 'result-box ' + (ok ? 'result-ok' : 'result-err');
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+
+document.addEventListener('wren:ready', loadHistory);
+
+async function loadHistory(){
+  try {
+    const data = await Wren.api('/api/ctf/history');
+    const exports = (data.exports||[]).map(e => ({ kind:'export', when:e.exported_at, count:e.child_count, detail:e.filename||(e.qualifier+' CTF') }));
+    const imports = (data.imports||[]).map(i => ({ kind:'import', when:i.created_at, count:i.row_count_imported, detail:`${i.row_count_imported||0}/${i.row_count_total||0} rows · ${i.status||''}`, failed: i.status && i.status!=='committed' }));
+    const rows = exports.concat(imports).sort((a,b)=> new Date(b.when) - new Date(a.when)).slice(0,25);
+    const wrap = document.getElementById('hist-wrap');
+    if (!rows.length){ wrap.innerHTML = '<div class="empty-state">No CTF transfers yet.</div>'; return; }
+    wrap.innerHTML = `
+      <table class="hist-table">
+        <thead><tr><th>Type</th><th>When</th><th>Pupils</th><th>Detail</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td><span class="tag ${r.kind==='export'?'tag-export':(r.failed?'tag-fail':'tag-import')}">${r.kind==='export'?'Export':'Import'}</span></td>
+              <td>${r.when ? new Date(r.when).toLocaleString('en-GB') : '—'}</td>
+              <td>${r.count!=null?esc(r.count):'—'}</td>
+              <td style="color:var(--c-muted)">${esc(r.detail||'')}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    document.getElementById('hist-wrap').innerHTML = `<div class="empty-state">Could not load history: ${esc(e.message)}</div>`;
+  }
+}
+
+async function doExport(){
+  const btn = document.getElementById('btn-export');
+  const yg = document.getElementById('exp-year').value.trim();
+  btn.disabled = true;
+  try {
+    const qs = yg ? ('?year_group=' + encodeURIComponent(yg)) : '';
+    const token = Wren.getToken ? Wren.getToken() : '';
+    const res = await fetch('/api/ctf/export' + qs, { headers: token ? { Authorization: 'Bearer ' + token } : {} });
+    if (!res.ok) {
+      let msg = 'Export failed (' + res.status + ')';
+      try { const j = await res.json(); if (j.error) msg = j.error; } catch(_){}
+      showBox('export-result', false, esc(msg));
+      return;
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const fname = m ? m[1] : 'ctf-export.xml';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    showBox('export-result', true, 'Downloaded <strong>' + esc(fname) + '</strong>.');
+    loadHistory();
+  } catch(e) {
+    showBox('export-result', false, esc(e.message));
+  } finally { btn.disabled = false; }
+}
+
+function loadFile(ev){
+  const f = ev.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { document.getElementById('imp-xml').value = r.result; };
+  r.readAsText(f);
+}
+
+async function doImport(){
+  const btn = document.getElementById('btn-import');
+  const xml = document.getElementById('imp-xml').value.trim();
+  if (!xml){ showBox('import-result', false, 'Paste or load a CTF XML first.'); return; }
+  btn.disabled = true;
+  document.getElementById('import-result').style.display = 'none';
+  try {
+    const res = await Wren.api('/api/ctf/import', { method:'POST', body:{ xml } });
+    showBox('import-result', true,
+      `Imported successfully — <strong>${res.created||0}</strong> created, <strong>${res.updated||0}</strong> updated, ${res.skipped||0} skipped (${res.total||0} rows total).`);
+    loadHistory();
+  } catch(e) {
+    // Wren.api rejects with the parsed error body ({error, errors}) on non-2xx
+    let msg = (e && (e.error || e.message)) || 'Import failed';
+    if (e && Array.isArray(e.errors)) msg += ': ' + e.errors.slice(0,4).join('; ');
+    showBox('import-result', false, esc(msg));
+  } finally { btn.disabled = false; }
+}
+</script>
+</body>
+</html>

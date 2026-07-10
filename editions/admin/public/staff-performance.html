@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Staff Performance — Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .perf-note { background:#1e293b; border:1px solid #2d3748; border-left:3px solid #4a9abf;
+      border-radius:10px; padding:12px 16px; color:#cbd5e1; font-size:.88rem; line-height:1.5; margin-bottom:14px; }
+    .perf-note.amber { border-left-color:#f59e0b; }
+    .perf-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:18px; }
+    .perf-controls select, .perf-controls button { font:inherit; }
+    .perf-controls select { background:#0f172a; color:#f1f5f9; border:1px solid #2d3748;
+      border-radius:10px; padding:9px 12px; min-height:42px; }
+    .perf-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:16px; }
+    .perf-card { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:16px; }
+    .perf-card.muted { opacity:.62; }
+    .perf-card h3 { margin:0; font-size:1.05rem; color:#f1f5f9;
+      font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif; }
+    .perf-role { color:#94a3b8; font-size:.78rem; text-transform:capitalize; margin-top:2px; }
+    .perf-metrics { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin:14px 0 4px; }
+    .perf-metric { background:#0f172a; border:1px solid #2d3748; border-radius:9px; padding:8px 10px; }
+    .perf-metric .v { font-size:1.35rem; font-weight:700; color:#f1f5f9; line-height:1.1; }
+    .perf-metric .l { font-size:.7rem; color:#64748b; text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
+    .perf-metric .sub { font-size:.7rem; color:#94a3b8; margin-top:2px; }
+    .areas { display:flex; flex-wrap:wrap; gap:5px; margin-top:10px; }
+    .area-chip { font-size:.68rem; padding:3px 7px; border-radius:20px; border:1px solid #2d3748;
+      color:#64748b; background:transparent; }
+    .area-chip.on { background:rgba(74,154,191,.16); border-color:#4a9abf; color:#bfe0ef; }
+    .perf-small { font-size:.74rem; color:#94a3b8; margin-top:10px; }
+    .ai-box { margin-top:12px; padding-top:12px; border-top:1px solid #2d3748; }
+    .ai-box .ai-head { font-size:.72rem; color:#e07820; font-weight:700; text-transform:uppercase;
+      letter-spacing:.03em; margin-bottom:6px; }
+    .ai-box .ai-body { font-size:.86rem; color:#e2e8f0; line-height:1.55; white-space:pre-wrap; }
+    .ai-box .ai-pending { font-size:.8rem; color:#64748b; font-style:italic; }
+    .pillbar { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+    .pill { font-size:.7rem; padding:2px 8px; border-radius:20px; }
+    .pill.green { background:rgba(34,197,94,.15); color:#86efac; }
+    .pill.amber { background:rgba(245,158,11,.15); color:#fcd34d; }
+    .pill.grey { background:#0f172a; color:#94a3b8; border:1px solid #2d3748; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <h1 class="page-title">Staff Performance — Observation Practice</h1>
+    <p style="color:#94a3b8;margin:0">Supportive, manager-facing insight into each practitioner's observation practice.</p>
+  </div>
+
+  <div class="perf-note">
+    🪺 <strong>How to read this.</strong> Quality of practice is a practitioner's <em>knowledge of the child</em> —
+    "where the child is, how they're doing, what's next" — not the number of observations. These are coaching
+    signals to support development conversations, not a ranking. The child- and parent-facing views
+    (learning journey, reports) stay focused on the child.
+  </div>
+
+  <div class="perf-controls">
+    <label style="color:#94a3b8;font-size:.85rem">Window
+      <select id="perf-window">
+        <option value="90">Last 90 days</option>
+        <option value="180" selected>Last 6 months</option>
+        <option value="365">Last 12 months</option>
+      </select>
+    </label>
+    <button id="perf-ai-btn" class="btn btn-primary" style="display:none">✨ Generate AI insight</button>
+    <span id="perf-ai-status" style="color:#94a3b8;font-size:.82rem"></span>
+  </div>
+
+  <div id="perf-databanner"></div>
+  <div id="perf-content"><div style="color:#94a3b8">Loading…</div></div>
+</div>
+
+<script>
+const AREA_SHORT = {
+  'Communication and Language':'C&L',
+  'Personal, Social and Emotional Development':'PSED',
+  'Physical Development':'PD',
+  'Literacy':'Lit',
+  'Mathematics':'Maths',
+  'Understanding the World':'UtW',
+  'Expressive Arts and Design':'EAD',
+};
+const AREAS_7 = Object.keys(AREA_SHORT);
+
+let _latestNarratives = {};   // staff_id -> narrative text
+let _pollTimer = null;
+
+function escHtml(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.addEventListener('wren:ready', () => {
+  // Only managers can trigger a fresh AI run (route is manager-gated).
+  const role = (window.Wren && Wren.user && Wren.user.role) || '';
+  if (role === 'manager') document.getElementById('perf-ai-btn').style.display = '';
+
+  document.getElementById('perf-window').addEventListener('change', loadBoard);
+  document.getElementById('perf-ai-btn').addEventListener('click', runAI);
+  loadBoard();
+});
+
+async function loadBoard() {
+  const el = document.getElementById('perf-content');
+  const win = document.getElementById('perf-window').value;
+  el.innerHTML = '<div style="color:#94a3b8">Loading…</div>';
+  try {
+    const [board, latest] = await Promise.all([
+      Wren.api('/api/staff-analytics/obs-performance?window_days=' + win),
+      Wren.api('/api/staff-analytics/obs-performance/latest').catch(() => ({ report: null })),
+    ]);
+    ingestLatest(latest);
+    renderBanner(board.data_notes, latest);
+    renderCards(board);
+  } catch (err) {
+    el.innerHTML = '<div style="color:#ef4444">Could not load performance data: ' +
+      escHtml(err && (err.error || err.message) || 'error') + '</div>';
+  }
+}
+
+function ingestLatest(latest) {
+  _latestNarratives = {};
+  if (latest && latest.report && latest.report.deterministic_stats) {
+    const stats = latest.report.deterministic_stats;
+    (stats.by_staff || []).forEach(s => { if (s.ai_narrative) _latestNarratives[s.staff_id] = s.ai_narrative; });
+  }
+}
+
+function renderBanner(notes, latest) {
+  const b = document.getElementById('perf-databanner');
+  let html = '';
+  if (notes && !notes.termly_update_flagging_in_use) {
+    html += '<div class="perf-note amber">⏳ <strong>Termly / 2-year-check tracking not in use yet.</strong> ' +
+      'No observations are flagged as a termly update in the system, so on-time completion of termly updates ' +
+      'and 2-year progress checks can’t be measured from the data. The cards below show observation-practice ' +
+      'signals instead. (Flag a termly update on the observation form to start tracking this.)</div>';
+  }
+  if (notes && !notes.framework_linking_in_use) {
+    html += '<div class="perf-note">🔗 <strong>Framework linking not captured.</strong> ' +
+      'Observations aren’t yet linking next steps to specific framework/curriculum statements, so the ' +
+      '"linked to framework" figure is a tooling gap rather than a reflection of any individual.</div>';
+  }
+  if (latest && latest.report) {
+    const when = new Date(latest.report.generated_at).toLocaleString('en-GB', { dateStyle:'medium', timeStyle:'short' });
+    html += '<div class="perf-note">✨ AI insight last generated <strong>' + escHtml(when) + '</strong>' +
+      (latest.report.model_used ? ' · model <strong>' + escHtml(latest.report.model_used) + '</strong> (on-premises, sovereign)' : '') + '.</div>';
+  }
+  b.innerHTML = html;
+}
+
+function renderCards(board) {
+  const el = document.getElementById('perf-content');
+  const staff = board.by_staff || [];
+  if (!staff.length) { el.innerHTML = '<div style="color:#94a3b8">No active staff found.</div>'; return; }
+
+  el.innerHTML = '<div class="perf-grid">' + staff.map(s => {
+    const obs = s.obs_window;
+    const areaChips = AREAS_7.map(a => {
+      const on = (s.eyfs_areas_covered_list || []).includes(a);
+      return '<span class="area-chip ' + (on ? 'on' : '') + '" title="' + escHtml(a) + '">' + AREA_SHORT[a] + '</span>';
+    }).join('');
+
+    const nsPill = obs ? '<span class="pill ' + (s.next_steps_pct >= 40 ? 'green' : s.next_steps_pct >= 15 ? 'amber' : 'grey') + '">' +
+      s.next_steps_pct + '% next steps</span>' : '';
+    const cov = '<span class="pill ' + (s.eyfs_areas_covered === 7 ? 'green' : s.eyfs_areas_covered >= 4 ? 'amber' : 'grey') + '">' +
+      s.eyfs_areas_covered + '/7 areas</span>';
+
+    // Termly only meaningful when flagging is in use; otherwise show neutral note.
+    let termlyHtml = '';
+    if (board.data_notes && board.data_notes.termly_update_flagging_in_use && s.key_children_termly) {
+      const t = s.key_children_termly;
+      termlyHtml = '<div class="perf-small">Key-children termly updates: ' +
+        t.done + ' done · ' + t.due + ' due · ' + t.overdue + ' overdue (of ' + t.total + ')</div>';
+    } else if (s.two_year_check_eligible > 0) {
+      termlyHtml = '<div class="perf-small">' + s.two_year_check_eligible +
+        ' key ' + (s.two_year_check_eligible === 1 ? 'child' : 'children') + ' in the 2-year-check age band.</div>';
+    }
+
+    const narr = _latestNarratives[s.staff_id];
+    let aiHtml = '';
+    if (narr) {
+      aiHtml = '<div class="ai-box"><div class="ai-head">🪺 AI insight</div><div class="ai-body">' + escHtml(narr) + '</div></div>';
+    } else if (obs) {
+      aiHtml = '<div class="ai-box"><div class="ai-pending">No AI insight yet — generate one above.</div></div>';
+    }
+
+    const lastObs = s.last_obs ? new Date(s.last_obs).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+
+    return '<div class="perf-card ' + (obs ? '' : 'muted') + '">' +
+        '<h3>' + escHtml(s.name || ('Staff #' + s.staff_id)) + '</h3>' +
+        '<div class="perf-role">' + escHtml((s.role || '').replace(/_/g,' ')) + '</div>' +
+        '<div class="perf-metrics">' +
+          '<div class="perf-metric"><div class="v">' + obs + '</div><div class="l">Observations</div><div class="sub">' + s.obs_all_time + ' all-time</div></div>' +
+          '<div class="perf-metric"><div class="v">' + s.eyfs_areas_covered + '<span style="font-size:.9rem;color:#64748b">/7</span></div><div class="l">EYFS areas</div><div class="sub">' + (s.eyfs_areas_missing.length ? 'lighter: ' + s.eyfs_areas_missing.map(a=>AREA_SHORT[a]).join(', ') : 'all seven') + '</div></div>' +
+          '<div class="perf-metric"><div class="v">' + s.next_steps_pct + '%</div><div class="l">Next steps</div><div class="sub">' + s.next_steps_count + ' obs</div></div>' +
+          '<div class="perf-metric"><div class="v">' + s.avg_words + '</div><div class="l">Avg length</div><div class="sub">words / obs</div></div>' +
+        '</div>' +
+        '<div class="areas">' + areaChips + '</div>' +
+        '<div class="pillbar">' + cov + nsPill +
+          (s.framework_linked_pct > 0 ? '<span class="pill amber">' + s.framework_linked_pct + '% framework-linked</span>' : '') +
+          '<span class="pill grey">shared ' + s.shared_count + '</span>' +
+        '</div>' +
+        termlyHtml +
+        '<div class="perf-small">Last observation: ' + lastObs + '</div>' +
+        aiHtml +
+      '</div>';
+  }).join('') + '</div>' +
+  '<p style="color:#64748b;font-size:.78rem;margin-top:16px">' +
+    'Observation counts are attributed to the practitioner who authored them. Termly / 2-year-check status is ' +
+    'attributed to a child’s key person. Figures are supportive signals for coaching, not a performance ranking.' +
+  '</p>';
+}
+
+async function runAI() {
+  const btn = document.getElementById('perf-ai-btn');
+  const status = document.getElementById('perf-ai-status');
+  const win = document.getElementById('perf-window').value;
+
+  // Note the current report timestamp so we know when a NEW one lands.
+  let baseline = null;
+  try { const l = await Wren.api('/api/staff-analytics/obs-performance/latest'); baseline = l.report ? l.report.generated_at : null; } catch (e) {}
+
+  btn.disabled = true;
+  status.textContent = 'Starting sovereign on-prem summarisation (gpt-oss:120b)…';
+  try {
+    const r = await Wren.api('/api/staff-analytics/obs-performance/run', { method:'POST', body:{ window_days: Number(win) } });
+    if (r.started === false && r.running) status.textContent = 'A run is already in progress — waiting for it to finish…';
+    else status.textContent = 'Generating insights on-premises (gpt-oss:120b @ Ascent). This takes a few minutes — you can leave this open…';
+  } catch (e) {
+    btn.disabled = false;
+    status.textContent = 'Could not start: ' + escHtml((e && (e.error || e.message)) || 'error');
+    if (e && e.error === 'Forbidden') status.textContent = 'Only a manager can generate AI insight.';
+    return;
+  }
+
+  const startedAt = Date.now();
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollTimer = setInterval(async () => {
+    try {
+      const l = await Wren.api('/api/staff-analytics/obs-performance/latest');
+      const got = l.report && l.report.generated_at;
+      if (got && got !== baseline) {
+        clearInterval(_pollTimer); _pollTimer = null;
+        btn.disabled = false;
+        const n = (l.report.deterministic_stats.by_staff || []).filter(x => x.ai_narrative).length;
+        status.textContent = '✓ AI insight ready (' + n + ' practitioners).';
+        ingestLatest(l);
+        await loadBoard();
+      } else if (!l.running && (Date.now() - startedAt) > 15000) {
+        // run finished but no new report (likely model error) — stop politely
+        clearInterval(_pollTimer); _pollTimer = null;
+        btn.disabled = false;
+        status.textContent = 'Run finished but no new insight was stored — check the model is reachable.';
+      } else if ((Date.now() - startedAt) > 12 * 60 * 1000) {
+        clearInterval(_pollTimer); _pollTimer = null;
+        btn.disabled = false;
+        status.textContent = 'Still running — refresh in a moment to see results.';
+      }
+    } catch (e) { /* keep polling */ }
+  }, 5000);
+}
+</script>
+</body>
+</html>

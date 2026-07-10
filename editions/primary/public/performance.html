@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="primary">
+<title>Performance Management — Wren Primary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.pm-cycle { background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:20px;margin-bottom:16px; }
+.staff-pill { display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;margin-bottom:8px;cursor:pointer;transition:.15s; }
+.staff-pill:hover { border-color:var(--c-blue); }
+.staff-avatar { width:36px;height:36px;border-radius:50%;background:var(--c-blue);display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:800;color:#fff;flex-shrink:0; }
+.staff-info { flex:1; }
+.staff-name { font-size:.9rem;font-weight:700;color:var(--c-text); }
+.staff-role { font-size:.75rem;color:var(--c-muted); }
+.pm-stage { display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:8px;font-size:.72rem;font-weight:700; }
+.st-plan    { background:rgba(74,154,191,.12);color:#4a9abf; }
+.st-obs     { background:rgba(139,92,246,.12);color:#8b5cf6; }
+.st-review  { background:rgba(245,158,11,.12);color:#f59e0b; }
+.st-done    { background:rgba(34,197,94,.12);color:#22c55e; }
+.obj-row { display:flex;align-items:flex-start;gap:10px;padding:10px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;margin-bottom:6px; }
+.obj-num { width:24px;height:24px;border-radius:6px;background:var(--c-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;flex-shrink:0; }
+.obj-text { flex:1;font-size:.85rem;color:var(--c-text); }
+.obj-rag { width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;cursor:pointer;flex-shrink:0; }
+.obj-rag.g { background:rgba(34,197,94,.15);color:#22c55e; }
+.obj-rag.a { background:rgba(245,158,11,.15);color:#f59e0b; }
+.obj-rag.r { background:rgba(239,68,68,.15);color:#ef4444; }
+.obj-rag.x { background:var(--c-surface);color:var(--c-muted);border:1px solid var(--c-border); }
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Performance Management</div>
+      <div class="page-subtitle">Annual appraisal cycle — objectives, observations, reviews</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <select class="form-control" id="cycle-year" style="flex:0 0 140px">
+        <option value="2025-26">2025–26</option>
+        <option value="2024-25">2024–25</option>
+      </select>
+      <button class="btn btn-primary" onclick="openAddCycle()">+ Start PM cycle</button>
+    </div>
+  </div>
+
+  <!-- Cycle overview -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px">
+    <div class="stat-card blue"><span class="stat-value" id="s-total">—</span><span class="stat-label">Staff in cycle</span></div>
+    <div class="stat-card green"><span class="stat-value" id="s-done">—</span><span class="stat-label">Cycles complete</span></div>
+    <div class="stat-card amber"><span class="stat-value" id="s-inprog">—</span><span class="stat-label">In progress</span></div>
+    <div class="stat-card grey" style="border-left:4px solid #8b5cf6"><span class="stat-value" id="s-pending">—</span><span class="stat-label">Not started</span></div>
+  </div>
+
+  <!-- PM cycle stages legend -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+    <span class="pm-stage st-plan">1. Plan</span>
+    <span style="color:var(--c-muted);font-size:.8rem;align-self:center">→</span>
+    <span class="pm-stage st-obs">2. Observe</span>
+    <span style="color:var(--c-muted);font-size:.8rem;align-self:center">→</span>
+    <span class="pm-stage st-review">3. Mid-year</span>
+    <span style="color:var(--c-muted);font-size:.8rem;align-self:center">→</span>
+    <span class="pm-stage st-done">4. Annual review</span>
+  </div>
+
+  <div id="pm-list">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- Add PM cycle modal -->
+<div id="add-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-content" style="max-width:520px">
+    <div class="modal-header"><div class="modal-title" id="modal-title">Start PM Cycle</div><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Staff member *</label>
+          <select class="form-control" id="pm-staff"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reviewer / line manager</label>
+          <input class="form-control" id="pm-reviewer" placeholder="Reviewer name">
+        </div>
+        <div style="font-weight:600;font-size:.88rem;margin-bottom:4px">Objectives (up to 5)</div>
+        <div id="obj-inputs">
+          <div style="display:flex;gap:8px;margin-bottom:6px"><input class="form-control" data-obj="0" placeholder="Objective 1"></div>
+          <div style="display:flex;gap:8px;margin-bottom:6px"><input class="form-control" data-obj="1" placeholder="Objective 2"></div>
+          <div style="display:flex;gap:8px;margin-bottom:6px"><input class="form-control" data-obj="2" placeholder="Objective 3"></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="addObjInput()" style="align-self:flex-start">+ Add objective</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCycle()">Start cycle</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let cycles = [], staffList = [], editIdx = null;
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  await loadStaff();
+  loadCycles();
+}
+
+async function loadStaff() {
+  try {
+    staffList = await Wren.api('/api/staff');
+    if (!Array.isArray(staffList)) staffList = [];
+    const sel = document.getElementById('pm-staff');
+    sel.innerHTML = '<option value="">Select staff member…</option>' +
+      staffList.map(s => `<option value="${s.id}">${s.first_name} ${s.last_name} (${s.role||'—'})</option>`).join('');
+  } catch { staffList = []; }
+}
+
+function loadCycles() {
+  const yr = document.getElementById('cycle-year').value;
+  try { cycles = JSON.parse(localStorage.getItem('pm-cycles-primary-' + yr) || '[]'); } catch { cycles = []; }
+  updateStats();
+  renderCycles();
+}
+
+function saveCycles() {
+  const yr = document.getElementById('cycle-year').value;
+  localStorage.setItem('pm-cycles-primary-' + yr, JSON.stringify(cycles));
+}
+
+function updateStats() {
+  document.getElementById('s-total').textContent  = cycles.length;
+  document.getElementById('s-done').textContent   = cycles.filter(c => c.stage === 'done').length;
+  document.getElementById('s-inprog').textContent = cycles.filter(c => ['obs','review'].includes(c.stage)).length;
+  document.getElementById('s-pending').textContent= cycles.filter(c => c.stage === 'plan').length;
+}
+
+function renderCycles() {
+  const list = document.getElementById('pm-list');
+  if (!cycles.length) {
+    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--c-muted)">
+      <div style="font-size:2rem;margin-bottom:10px">📈</div>
+      <div style="font-weight:700;margin-bottom:6px">No PM cycles started</div>
+      <div style="font-size:.85rem;margin-bottom:16px">Start a new performance management cycle for a staff member.</div>
+      <button class="btn btn-primary" onclick="openAddCycle()">+ Start PM cycle</button>
+    </div>`;
+    return;
+  }
+  list.innerHTML = cycles.map((c, idx) => {
+    const stageLabel = {plan:'Plan',obs:'Observe',review:'Mid-year',done:'Annual review'}[c.stage]||c.stage;
+    const stageClass = {plan:'st-plan',obs:'st-obs',review:'st-review',done:'st-done'}[c.stage]||'st-plan';
+    return `<div class="pm-cycle">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div class="staff-avatar">${(c.staffName||'?').split(' ').map(w=>w[0]).join('').toUpperCase()}</div>
+        <div style="flex:1">
+          <div style="font-size:.95rem;font-weight:700;color:var(--c-text)">${c.staffName||'Unknown'}</div>
+          <div style="font-size:.78rem;color:var(--c-muted)">${c.role||''} ${c.reviewer ? '· Reviewer: '+c.reviewer : ''}</div>
+        </div>
+        <span class="pm-stage ${stageClass}">Stage: ${stageLabel}</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-ghost btn-sm" onclick="advanceStage(${idx})">→ Next stage</button>
+          <button class="btn btn-ghost btn-sm" onclick="cycles.splice(${idx},1);saveCycles();loadCycles()">✕</button>
+        </div>
+      </div>
+      <div style="font-size:.78rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Objectives</div>
+      ${(c.objectives||[]).map((o, oi) => `<div class="obj-row">
+        <div class="obj-num">${oi+1}</div>
+        <div class="obj-text">${o.text||o}</div>
+        <div class="obj-rag ${o.rag||'x'}" onclick="cycleObjRAG(${idx},${oi})" title="Click to update RAG">${(o.rag||'x').toUpperCase()}</div>
+      </div>`).join('')}
+      ${c.notes ? `<div style="margin-top:10px;font-size:.82rem;color:var(--c-muted)">${c.notes}</div>` : ''}
+      <div style="margin-top:12px">
+        <textarea style="width:100%;min-height:70px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;padding:10px;color:var(--c-text);font-family:inherit;font-size:.85rem;resize:vertical" placeholder="Notes / observations…" onchange="cycles[${idx}].notes=this.value;saveCycles()">${c.notes||''}</textarea>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function advanceStage(idx) {
+  const cycle = ['plan','obs','review','done'];
+  const c = cycles[idx];
+  const curr = cycle.indexOf(c.stage);
+  if (curr < cycle.length - 1) { c.stage = cycle[curr + 1]; saveCycles(); loadCycles(); }
+  else Wren.toast('Cycle already complete', 'info');
+}
+
+function cycleObjRAG(ci, oi) {
+  const rags = ['x','g','a','r'];
+  const c = cycles[ci];
+  const obj = c.objectives[oi];
+  if (typeof obj === 'string') { c.objectives[oi] = { text: obj, rag: 'x' }; }
+  const curr = rags.indexOf(c.objectives[oi].rag || 'x');
+  c.objectives[oi].rag = rags[(curr + 1) % rags.length];
+  saveCycles(); renderCycles();
+}
+
+function openAddCycle() {
+  editIdx = null;
+  document.getElementById('modal-title').textContent = 'Start PM Cycle';
+  document.getElementById('pm-reviewer').value = '';
+  document.getElementById('pm-staff').selectedIndex = 0;
+  document.getElementById('obj-inputs').innerHTML = [1,2,3].map(i =>
+    `<div style="display:flex;gap:8px;margin-bottom:6px"><input class="form-control" data-obj="${i-1}" placeholder="Objective ${i}"></div>`
+  ).join('');
+  document.getElementById('add-modal').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('add-modal').style.display = 'none'; }
+
+function addObjInput() {
+  const cnt = document.querySelectorAll('#obj-inputs [data-obj]').length;
+  if (cnt >= 5) return;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px';
+  div.innerHTML = `<input class="form-control" data-obj="${cnt}" placeholder="Objective ${cnt+1}">`;
+  document.getElementById('obj-inputs').appendChild(div);
+}
+
+function saveCycle() {
+  const staffId   = document.getElementById('pm-staff').value;
+  const staffEl   = document.getElementById('pm-staff');
+  const staffName = staffEl.options[staffEl.selectedIndex]?.text || 'Unknown';
+  const reviewer  = document.getElementById('pm-reviewer').value;
+  const inputs    = document.querySelectorAll('#obj-inputs [data-obj]');
+  const objectives = Array.from(inputs).map(i => i.value.trim()).filter(Boolean).map(t => ({ text:t, rag:'x' }));
+  if (!staffId) { Wren.toast('Select a staff member', 'warning'); return; }
+  cycles.push({ staffId, staffName: staffName.split('(')[0].trim(), reviewer, objectives, stage:'plan', notes:'' });
+  saveCycles();
+  closeModal();
+  loadCycles();
+  Wren.toast('PM cycle started', 'success');
+}
+</script>
+</body>
+</html>

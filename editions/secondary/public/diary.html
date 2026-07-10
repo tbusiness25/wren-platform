@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Daily Diary — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📖 Daily Diary</div>
+    <button class="btn btn-primary" id="btn-new-entry">+ New Entry</button>
+  </div>
+
+  <!-- Child selector -->
+  <div class="filter-bar">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search" placeholder="Search...">
+    </div>
+    <select class="form-control" id="child-filter" style="flex:0 0 200px">
+      <option value="">All children (today)</option>
+    </select>
+  </div>
+
+  <div id="diary-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+let entries = [];
+let children = [];
+const MOODS = ['😊','😐','😢','😴','😡','🤒'];
+
+async function loadData() {
+  try {
+    [entries, children] = await Promise.all([
+      Wren.api('/api/diary/today'),
+      Wren.api('/api/children')
+    ]);
+    // Populate filter
+    const sel = document.getElementById('child-filter');
+    children.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.first_name} ${c.last_name}`;
+      sel.appendChild(opt);
+    });
+    renderEntries(entries);
+  } catch(e) {
+    Wren.toast('Failed to load', 'error');
+  }
+}
+
+async function loadForChild(childId) {
+  if (!childId) {
+    return loadData();
+  }
+  try {
+    entries = await Wren.api(`/api/diary/child/${childId}?limit=30`);
+    renderEntries(entries);
+  } catch(e) {}
+}
+
+function renderEntries(list) {
+  const area = document.getElementById('diary-area');
+  if (!list.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📖</div>
+      <div class="empty-title">No diary entries yet</div>
+    </div>`;
+    return;
+  }
+
+  area.innerHTML = list.map(e => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700;font-size:1rem">
+            ${e.mood ? `<span style="margin-right:6px">${e.mood}</span>` : ''}
+            ${e.child_name || ''}
+          </div>
+          <div style="font-size:.78rem;color:#64748b">
+            ${new Date(e.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}
+            ${e.staff_name ? `· by ${e.staff_name}` : ''}
+            ${e.shared_with_parents ? '· <span style="color:var(--c-blue)">👪 Shared</span>' : ''}
+          </div>
+        </div>
+        <button class="btn btn-sm btn-ghost" data-action="edit-entry" data-id="${e.id}">✏️</button>
+      </div>
+      <div style="margin-top:10px;display:grid;gap:8px;font-size:.875rem">
+        ${e.meals ? `<div><strong>🍽 Meals:</strong> ${e.meals}</div>` : ''}
+        ${e.naps ? `<div><strong>😴 Naps:</strong> ${e.naps}</div>` : ''}
+        ${e.activities ? `<div><strong>🎨 Activities:</strong> ${e.activities}</div>` : ''}
+        ${e.notes ? `<div><strong>📝 Notes:</strong> ${e.notes}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterEntries() {
+  const search = document.getElementById('search').value.toLowerCase();
+  renderEntries(entries.filter(e =>
+    (e.child_name || '').toLowerCase().includes(search) ||
+    (e.notes || '').toLowerCase().includes(search) ||
+    (e.activities || '').toLowerCase().includes(search)
+  ));
+}
+
+function newEntry() {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Child <span style="color:var(--c-red)">*</span></label>
+      <select class="form-control" id="diary-child">
+        <option value="">Select...</option>
+        ${children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mood</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${MOODS.map(m => `
+          <label style="cursor:pointer">
+            <input type="radio" name="mood" value="${m}" style="display:none">
+            <span style="font-size:1.8rem;cursor:pointer;opacity:.4;transition:.15s" data-mood="${m}">${m}</span>
+          </label>
+        `).join('')}
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">🍽 Meals</label>
+      <input class="form-control" id="diary-meals" placeholder="e.g. Ate well — all lunch, some snack">
+    </div>
+    <div class="form-group">
+      <label class="form-label">😴 Naps</label>
+      <input class="form-control" id="diary-naps" placeholder="e.g. 45 min nap 12:30–13:15">
+    </div>
+    <div class="form-group">
+      <label class="form-label">🎨 Activities</label>
+      <textarea class="form-control" id="diary-activities" rows="2" placeholder="What did they do today?"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">📝 Notes for parents</label>
+      <textarea class="form-control" id="diary-notes" rows="2" placeholder="Any notes for parents..."></textarea>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="diary-share" checked>
+        <span>Share with parents</span>
+      </label>
+    </div>
+  `;
+
+  function selectMood(mood) {
+    form.querySelectorAll('[name=mood]').forEach(r => r.checked = false);
+    form.querySelector(`[value="${mood}"]`).checked = true;
+    form.querySelectorAll('[name=mood]').forEach(r => {
+      r.nextElementSibling.style.opacity = r.value === mood ? '1' : '.4';
+    });
+  }
+  form.querySelector('.form-group:nth-child(2)').addEventListener('click', function(e) {
+    const span = e.target.closest('[data-mood]');
+    if (span) selectMood(span.dataset.mood);
+  });
+
+  Wren.modal('New Diary Entry', form, [
+    { label: 'Save Entry', class: 'btn-primary', close: false, action: async () => {
+      const child_id = document.getElementById('diary-child').value;
+      if (!child_id) { Wren.toast('Please select a child', 'warning'); return; }
+      const checkedMood = form.querySelector('[name=mood]:checked');
+      try {
+        await Wren.api('/api/diary', { method: 'POST', body: {
+          child_id: parseInt(child_id),
+          mood: checkedMood ? checkedMood.value : null,
+          meals: document.getElementById('diary-meals').value,
+          naps: document.getElementById('diary-naps').value,
+          activities: document.getElementById('diary-activities').value,
+          notes: document.getElementById('diary-notes').value,
+          shared_with_parents: document.getElementById('diary-share').checked
+        }});
+        Wren.toast('Diary entry saved ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed to save', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function editEntry(id) {
+  const e = entries.find(x => x.id === id);
+  if (!e) return;
+  Wren.modal('Edit Entry', `
+    <div class="form-group"><label class="form-label">Meals</label>
+      <input class="form-control" id="e-meals" value="${e.meals || ''}">
+    </div>
+    <div class="form-group"><label class="form-label">Naps</label>
+      <input class="form-control" id="e-naps" value="${e.naps || ''}">
+    </div>
+    <div class="form-group"><label class="form-label">Activities</label>
+      <textarea class="form-control" id="e-activities" rows="2">${e.activities || ''}</textarea>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label>
+      <textarea class="form-control" id="e-notes" rows="2">${e.notes || ''}</textarea>
+    </div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="e-share" ${e.shared_with_parents ? 'checked' : ''}>
+      <span>Share with parents</span>
+    </label></div>
+  `, [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/diary/${id}`, { method: 'PUT', body: {
+          meals: document.getElementById('e-meals').value,
+          naps: document.getElementById('e-naps').value,
+          activities: document.getElementById('e-activities').value,
+          notes: document.getElementById('e-notes').value,
+          shared_with_parents: document.getElementById('e-share').checked
+        }});
+        Wren.toast('Updated ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) {}
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+document.getElementById('btn-new-entry').addEventListener('click', newEntry);
+document.getElementById('search').addEventListener('input', filterEntries);
+document.getElementById('child-filter').addEventListener('change', function() { loadForChild(this.value); });
+document.getElementById('diary-area').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="edit-entry"]');
+  if (btn) editEntry(parseInt(btn.dataset.id));
+});
+document.addEventListener('wren:ready', () => { loadData(); });
+</script>
+</body>
+</html>

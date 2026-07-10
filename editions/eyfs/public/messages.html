@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="eyfs">
+<title>Messages — Wren EYFS</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.msg-layout { display: flex; height: calc(100vh - var(--topbar-h,60px)); overflow: hidden; gap: 0; }
+.msg-list-panel { width: 320px; min-width: 320px; border-right: 1px solid var(--c-border); display: flex; flex-direction: column; background: var(--c-surface); flex-shrink: 0; }
+@media(max-width:760px) {
+  .msg-list-panel { width: 100%; min-width: unset; }
+  .msg-detail-panel { display: none; }
+  .msg-list-panel.thread-open { display: none; }
+  .msg-detail-panel.thread-open { display: flex; }
+}
+.msg-detail-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.panel-header { padding: 14px 16px; border-bottom: 1px solid var(--c-border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.panel-header h2 { font-size: 0.95rem; font-weight: 700; flex: 1; }
+.section-tabs { display: flex; gap: 4px; padding: 10px 12px; border-bottom: 1px solid var(--c-border); flex-shrink: 0; }
+.section-tab { padding: 5px 14px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; border: none; cursor: pointer; background: transparent; color: var(--c-muted); transition: 0.15s; }
+.section-tab.active { background: var(--c-blue); color: white; }
+.thread-list { flex: 1; overflow-y: auto; }
+.thread-item { padding: 12px 16px; border-bottom: 1px solid var(--c-border); cursor: pointer; transition: background 0.15s; }
+.thread-item:hover, .thread-item.active { background: rgba(74,154,191,0.08); }
+.thread-item.active { border-left: 3px solid var(--c-blue); }
+.thread-item.unread .thread-from { font-weight: 700; }
+.thread-from { font-size: 0.85rem; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.thread-subject { font-size: 0.78rem; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.thread-meta { font-size: 0.72rem; color: var(--c-muted); margin-top: 3px; }
+.unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-orange); display: inline-block; flex-shrink: 0; }
+.unread-count { background: var(--c-orange); color: white; border-radius: 99px; font-size: 0.65rem; padding: 1px 6px; font-weight: 700; }
+/* Staff initials avatar */
+.staff-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--c-blue); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; color: white; flex-shrink: 0; }
+.staff-avatar.orange { background: var(--c-orange); }
+/* Conversation */
+.convo-area { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.bubble-wrap { display: flex; align-items: flex-end; gap: 8px; }
+.bubble-wrap.mine { flex-direction: row-reverse; }
+.bubble { max-width: 75%; padding: 10px 14px; border-radius: 12px; font-size: 0.85rem; line-height: 1.5; }
+.bubble.staff-msg { background: var(--c-surface); border: 1px solid var(--c-border); border-bottom-left-radius: 4px; }
+.bubble.mine-msg { background: rgba(74,154,191,0.18); border: 1px solid rgba(74,154,191,0.3); border-bottom-right-radius: 4px; }
+.bubble.parent-msg { background: rgba(224,120,32,0.12); border: 1px solid rgba(224,120,32,0.25); border-bottom-left-radius: 4px; }
+.bubble .b-name { font-size: 0.68rem; color: var(--c-muted); margin-bottom: 3px; }
+.bubble .b-time { font-size: 0.65rem; color: #64748b; margin-top: 4px; text-align: right; }
+.reply-bar { border-top: 1px solid var(--c-border); padding: 12px 16px; display: flex; gap: 8px; flex-shrink: 0; background: var(--c-surface); }
+.reply-bar textarea { flex: 1; background: var(--c-input,#0f172a); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px; color: var(--c-text); font-size: 0.88rem; resize: none; height: 46px; outline: none; font-family: inherit; }
+.reply-bar textarea:focus { border-color: var(--c-blue); }
+.reply-bar button { background: var(--c-blue); border: none; border-radius: 8px; color: white; padding: 0 16px; font-weight: 700; cursor: pointer; min-width: 60px; }
+.detail-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--c-muted); gap: 8px; }
+.detail-empty .icon { font-size: 3rem; opacity: 0.4; }
+.empty-list { text-align: center; padding: 40px 20px; color: var(--c-muted); font-size: 0.85rem; }
+/* New message form */
+.compose-form { padding: 16px; }
+.compose-form .form-group { margin-bottom: 12px; }
+.compose-form label { display: block; font-size: 0.78rem; color: var(--c-muted); margin-bottom: 4px; }
+.compose-form input, .compose-form select, .compose-form textarea { width: 100%; background: var(--c-input,#0f172a); border: 1.5px solid var(--c-border); border-radius: 8px; padding: 10px; color: var(--c-text); font-size: 0.88rem; outline: none; font-family: inherit; }
+.compose-form input:focus, .compose-form select:focus, .compose-form textarea:focus { border-color: var(--c-blue); }
+.compose-form textarea { resize: none; min-height: 90px; }
+.back-btn { background: none; border: none; color: var(--c-blue); cursor: pointer; font-size: 0.85rem; padding: 0; min-height: 44px; }
+.attach-label { cursor:pointer; padding:8px 10px; border-radius:8px; border:1px solid var(--c-border); background:var(--c-surface); font-size:16px; line-height:1; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.attach-label:hover { background:var(--c-hover); }
+.photo-preview-wrap { font-size:12px; color:var(--c-muted); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.photo-preview-img { max-height:60px; border-radius:6px; }
+.pending-badge { font-size:0.65rem; color:var(--c-orange); margin-top:4px; }
+.rejected-badge { font-size:0.65rem; color:#ef4444; margin-top:4px; }
+</style>
+  <meta name="wren-hide-modules" content="HR,Staff,IT Settings,Reports,Action Plans,Supervisions,CPD">
+</head>
+<body>
+<div id="wren-content">
+<div class="msg-layout" id="msgLayout">
+
+  <!-- LIST PANEL -->
+  <div class="msg-list-panel" id="listPanel">
+    <div class="panel-header">
+      <h2>💬 Messages</h2>
+      <button class="btn btn-primary btn-sm" onclick="showCompose()">+ New</button>
+    </div>
+    <div class="section-tabs">
+      <button class="section-tab active" id="tabParent" onclick="switchSection('parent',this)">Parent Messages</button>
+      <button class="section-tab" id="tabStaff" onclick="switchSection('staff',this)">Staff Chat</button>
+    </div>
+    <div class="thread-list" id="threadList">
+      <div class="empty-list">Loading…</div>
+    </div>
+  </div>
+
+  <!-- DETAIL PANEL -->
+  <div class="msg-detail-panel" id="detailPanel">
+    <div class="detail-empty">
+      <div class="icon">💬</div>
+      <p>Select a conversation</p>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+let _section = 'parent'; // 'parent' | 'staff'
+let _currentThread = null;
+let _currentType = null; // 'parent' | 'staff'
+let _selfId = null;
+let _selfName = null;
+
+document.addEventListener('wren:ready', async () => {
+  // Get current user
+  try {
+    const me = await Wren.api('/api/auth/me');
+    _selfId = me.id;
+    _selfName = me.first_name + ' ' + me.last_name;
+  } catch(e) {}
+  loadList();
+});
+
+async function switchSection(s, btn) {
+  _section = s;
+  document.querySelectorAll('.section-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  clearDetail();
+  loadList();
+}
+
+async function loadList() {
+  const el = document.getElementById('threadList');
+  el.innerHTML = '<div class="empty-list">Loading…</div>';
+  try {
+    if (_section === 'parent') {
+      const threads = await Wren.api('/api/messages/threads');
+      renderParentList(threads);
+    } else {
+      const threads = await Wren.api('/api/messages/staff-threads');
+      renderStaffList(threads);
+    }
+  } catch(e) {
+    el.innerHTML = `<div class="empty-list">Error: ${escHtml(e.message||e.error||'Failed to load')}</div>`;
+  }
+}
+
+function renderParentList(threads) {
+  const el = document.getElementById('threadList');
+  if (!threads.length) {
+    el.innerHTML = '<div class="empty-list">No parent messages yet.</div>';
+    return;
+  }
+  // Group by child
+  const byChild = {};
+  threads.forEach(t => {
+    const k = t.child_name || 'Unknown Child';
+    if (!byChild[k]) byChild[k] = [];
+    byChild[k].push(t);
+  });
+  let html = '';
+  Object.entries(byChild).forEach(([childName, ts]) => {
+    html += `<div style="padding:8px 16px 4px;font-size:0.7rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.06em">${escHtml(childName)}</div>`;
+    ts.forEach(t => {
+      const unread = parseInt(t.unread_count) || 0;
+      html += `<div class="thread-item ${unread ? 'unread' : ''} ${_currentThread === t.id && _currentType === 'parent' ? 'active' : ''}" onclick="openParentThread(${t.id},'${escHtml(t.subject||'Message')}','${escHtml(childName)}')">
+        <div class="thread-from">
+          <span class="staff-avatar orange">${escHtml((childName||'?')[0])}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escHtml(t.subject||'Message')}</span>
+          ${unread ? `<span class="unread-count">${unread}</span>` : ''}
+        </div>
+        <div class="thread-meta">${timeAgo(t.last_message_at)}</div>
+      </div>`;
+    });
+  });
+  el.innerHTML = html;
+}
+
+function renderStaffList(threads) {
+  const el = document.getElementById('threadList');
+  if (!threads.length) {
+    el.innerHTML = '<div class="empty-list">No topics yet.<br>Tap + New to start one.</div>';
+    return;
+  }
+  let html = threads.map(t => {
+    const unread = parseInt(t.unread_count) || 0;
+    const preview = t.last_message ? t.last_message.substring(0,60) + (t.last_message.length>60?'…':'') : '';
+    return `<div class="thread-item ${unread ? 'unread' : ''} ${_currentThread === t.id && _currentType === 'staff' ? 'active' : ''}" onclick="openStaffThread(${t.id},'${escHtml(t.subject||'Topic')}')">
+      <div class="thread-from">
+        <span style="font-size:0.88rem;flex:1;overflow:hidden;text-overflow:ellipsis">${escHtml(t.subject||'Topic')}</span>
+        ${unread ? `<span class="unread-count">${unread}</span>` : ''}
+      </div>
+      ${preview ? `<div class="thread-subject">${escHtml(preview)}</div>` : ''}
+      <div class="thread-meta">${timeAgo(t.last_message_at)}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML = html;
+}
+
+async function openParentThread(id, subject, childName) {
+  _currentThread = id;
+  _currentType = 'parent';
+  mobileShowDetail();
+  setDetail(`
+    <div class="panel-header">
+      <button class="back-btn" onclick="mobileShowList()">←</button>
+      <h2>${escHtml(subject)}</h2>
+      <small style="color:var(--c-muted);font-size:0.75rem">${escHtml(childName)}</small>
+    </div>
+    <div class="convo-area" id="convoArea"><div style="text-align:center;padding:20px;color:var(--c-muted)">Loading…</div></div>
+    <div class="reply-bar" style="flex-direction:column;gap:6px">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="replyBox" placeholder="Reply…" rows="2" style="flex:1"></textarea>
+        <label class="attach-label" title="Attach photo">📎<input type="file" id="photoInput" accept="image/*" style="display:none" onchange="showPhotoPreview()"></label>
+        <button onclick="sendParentReply(${id})" style="align-self:stretch">Send</button>
+      </div>
+      <div id="photo-preview" style="display:none" class="photo-preview-wrap"></div>
+      <div style="font-size:0.72rem;color:var(--c-muted)">📎 Photos are reviewed by management before sending</div>
+    </div>`);
+  await Wren.api('/api/messages/thread/' + id + '/read', { method: 'POST' });
+  try {
+    const data = await Wren.api('/api/messages/thread/' + id);
+    const msgs = data.messages || [];
+    const ca = document.getElementById('convoArea');
+    if (!ca) return;
+    ca.innerHTML = msgs.map(m => {
+      const isMine = m.sender_type === 'staff' && m.sender_id === _selfId;
+      const bubbleCls = isMine ? 'mine-msg' : (m.sender_type === 'parent' ? 'parent-msg' : 'staff-msg');
+      const name = m.sender_type === 'parent' ? (m.parent_email || 'Parent') : (m.staff_name || 'Staff');
+      return `<div class="bubble-wrap ${isMine ? 'mine' : ''}">
+        ${!isMine ? `<div class="staff-avatar ${m.sender_type==='parent'?'orange':''}">${escHtml((name||'?')[0].toUpperCase())}</div>` : ''}
+        <div class="bubble ${bubbleCls}">
+          <div class="b-name">${escHtml(name)}</div>
+          ${m.body ? escHtml(m.body) : ''}
+          ${m.attachment_path ? `<div style="margin-top:6px"><img src="${escHtml(m.attachment_path)}" class="photo-preview-img" style="max-width:200px" onerror="this.style.display='none'"></div>` : ''}
+          ${isMine && m.pending_review ? '<div class="pending-badge">⏳ Pending review</div>' : ''}
+          ${isMine && m.review_decision === 'rejected' ? '<div class="rejected-badge">✕ Not approved by management</div>' : ''}
+          <div class="b-time">${timeAgo(m.created_at)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    ca.scrollTop = ca.scrollHeight;
+  } catch(e) { Wren.toast('Failed to load thread', 'error'); }
+  loadList();
+}
+
+async function openStaffThread(id, subject) {
+  _currentThread = id;
+  _currentType = 'staff';
+  mobileShowDetail();
+  setDetail(`
+    <div class="panel-header">
+      <button class="back-btn" onclick="mobileShowList()">←</button>
+      <h2>${escHtml(subject)}</h2>
+    </div>
+    <div class="convo-area" id="convoArea"><div style="text-align:center;padding:20px;color:var(--c-muted)">Loading…</div></div>
+    <div class="reply-bar">
+      <textarea id="replyBox" placeholder="Reply…" rows="2"></textarea>
+      <button onclick="sendStaffReply(${id})">Send</button>
+    </div>`);
+  try {
+    const data = await Wren.api('/api/messages/thread/' + id);
+    const msgs = data.messages || [];
+    const ca = document.getElementById('convoArea');
+    if (!ca) return;
+    ca.innerHTML = msgs.map(m => {
+      const isMine = m.sender_id === _selfId;
+      const name = m.staff_name || 'Staff';
+      const initials = name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+      return `<div class="bubble-wrap ${isMine ? 'mine' : ''}">
+        ${!isMine ? `<div class="staff-avatar">${escHtml(initials)}</div>` : ''}
+        <div class="bubble ${isMine ? 'mine-msg' : 'staff-msg'}">
+          <div class="b-name">${escHtml(name)}</div>
+          ${escHtml(m.body)}
+          <div class="b-time">${timeAgo(m.created_at)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    ca.scrollTop = ca.scrollHeight;
+  } catch(e) { Wren.toast('Failed to load thread', 'error'); }
+}
+
+async function sendParentReply(threadId) {
+  const box = document.getElementById('replyBox');
+  const body = (box?.value||'').trim();
+  const photoInput = document.getElementById('photoInput');
+  const photo = photoInput?.files?.[0];
+  if (!body && !photo) { Wren.toast('Write a message or attach a photo', 'warning'); return; }
+  if (box) box.disabled = true;
+  try {
+    if (photo) {
+      const fd = new FormData();
+      fd.append('photo', photo);
+      if (body) fd.append('body', body);
+      const token = localStorage.getItem('wren_token') || localStorage.getItem('wren_staff_token');
+      const resp = await fetch('/api/messages/thread/' + threadId + '/reply-photo', {
+        method: 'POST',
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+        body: fd
+      });
+      if (!resp.ok) { const e = await resp.json().catch(()=>({})); throw e; }
+      Wren.toast('Photo sent — awaiting management review', 'info');
+    } else {
+      await Wren.api('/api/messages/thread/' + threadId + '/reply', { method: 'POST', body: { body } });
+    }
+    await openParentThread(threadId, document.querySelector('#detailPanel h2')?.textContent || 'Message', '');
+  } catch(e) {
+    const msg = e.error || e.message || 'Failed to send';
+    Wren.toast(msg.toLowerCase().includes('block') ? 'This parent has been blocked from receiving messages' : 'Failed to send: ' + msg, 'error');
+    if (box) box.disabled = false;
+  }
+}
+
+function showPhotoPreview() {
+  const input = document.getElementById('photoInput');
+  const preview = document.getElementById('photo-preview');
+  if (!input?.files?.[0] || !preview) return;
+  const url = URL.createObjectURL(input.files[0]);
+  preview.style.display = '';
+  preview.innerHTML = `<img src="${url}" class="photo-preview-img"><span style="color:var(--c-muted);font-size:12px">${escHtml(input.files[0].name)}</span><button class="btn btn-sm btn-ghost" onclick="clearPhoto()" style="padding:2px 8px;font-size:11px">✕</button>`;
+}
+
+function clearPhoto() {
+  const input = document.getElementById('photoInput');
+  const preview = document.getElementById('photo-preview');
+  if (input) input.value = '';
+  if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
+}
+
+async function sendStaffReply(threadId) {
+  const box = document.getElementById('replyBox');
+  const body = (box?.value||'').trim();
+  if (!body) return;
+  box.disabled = true;
+  try {
+    await Wren.api('/api/messages/thread/' + threadId + '/reply', { method: 'POST', body: { body } });
+    await openStaffThread(threadId, document.querySelector('#detailPanel h2')?.textContent || 'Topic');
+  } catch(e) { Wren.toast('Failed to send', 'error'); box.disabled = false; }
+}
+
+function showCompose() {
+  clearDetail();
+  if (_section === 'parent') showComposeParent();
+  else showComposeStaff();
+}
+
+async function showComposeParent() {
+  // Load children list
+  let children = [];
+  try { children = await Wren.api('/api/children'); } catch(e) {}
+  setDetail(`
+    <div class="panel-header">
+      <button class="back-btn" onclick="clearDetail();loadList()">←</button>
+      <h2>New Message to Parent</h2>
+    </div>
+    <div class="compose-form">
+      <div class="form-group">
+        <label>Child</label>
+        <select id="composeChild">
+          <option value="">Select child…</option>
+          ${children.map(c=>`<option value="${c.id}">${escHtml(c.first_name+' '+c.last_name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <input type="text" id="composeSubject" placeholder="e.g. Settling in update">
+      </div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea id="composeBody" placeholder="Write your message…"></textarea>
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="sendNewParentThread()">Send Message</button>
+    </div>`);
+  mobileShowDetail();
+}
+
+async function sendNewParentThread() {
+  const child_id = parseInt(document.getElementById('composeChild').value);
+  const subject = document.getElementById('composeSubject').value.trim() || 'Message';
+  const body = document.getElementById('composeBody').value.trim();
+  if (!child_id) { Wren.toast('Please select a child', 'warning'); return; }
+  if (!body) { Wren.toast('Please write a message', 'warning'); return; }
+  try {
+    const thread = await Wren.api('/api/messages/thread', { method: 'POST', body: { child_id, subject, body } });
+    Wren.toast('Message sent', 'success');
+    await openParentThread(thread.id, subject, '');
+    loadList();
+  } catch(e) { Wren.toast('Failed: ' + (e.error || e.message), 'error'); }
+}
+
+function showComposeStaff() {
+  setDetail(`
+    <div class="panel-header">
+      <button class="back-btn" onclick="clearDetail();loadList()">←</button>
+      <h2>Start a Topic</h2>
+    </div>
+    <div class="compose-form">
+      <div class="form-group">
+        <label>Topic title</label>
+        <input type="text" id="topicSubject" placeholder="e.g. Tomorrow's planning, Staff meeting notes">
+      </div>
+      <div class="form-group">
+        <label>First message</label>
+        <textarea id="topicBody" placeholder="Start the conversation…"></textarea>
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="sendNewStaffThread()">Post Topic</button>
+    </div>`);
+  mobileShowDetail();
+}
+
+async function sendNewStaffThread() {
+  const subject = document.getElementById('topicSubject').value.trim();
+  const body = document.getElementById('topicBody').value.trim();
+  if (!subject) { Wren.toast('Please enter a topic title', 'warning'); return; }
+  if (!body) { Wren.toast('Please write a message', 'warning'); return; }
+  try {
+    const thread = await Wren.api('/api/messages/staff-thread', { method: 'POST', body: { subject, body } });
+    Wren.toast('Topic started', 'success');
+    await openStaffThread(thread.id, subject);
+    loadList();
+  } catch(e) { Wren.toast('Failed: ' + (e.error || e.message), 'error'); }
+}
+
+function setDetail(html) {
+  document.getElementById('detailPanel').innerHTML = html;
+}
+
+function clearDetail() {
+  _currentThread = null;
+  _currentType = null;
+  document.getElementById('detailPanel').innerHTML = `
+    <div class="detail-empty">
+      <div class="icon">💬</div>
+      <p>Select a conversation</p>
+    </div>`;
+}
+
+// Mobile: toggle panels
+function mobileShowDetail() {
+  document.getElementById('listPanel').classList.add('thread-open');
+  document.getElementById('detailPanel').classList.add('thread-open');
+}
+function mobileShowList() {
+  document.getElementById('listPanel').classList.remove('thread-open');
+  document.getElementById('detailPanel').classList.remove('thread-open');
+  clearDetail();
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function timeAgo(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), now = new Date(), diff = (now - d) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+}
+
+// Poll for unread counts
+setInterval(loadList, 60000);
+
+// CSP-safe photo error handler (replaces inline onerror on dynamic images)
+document.addEventListener('error', function(e) {
+  if (e.target.classList && e.target.classList.contains('photo-preview-img')) e.target.style.display='none';
+}, true);
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

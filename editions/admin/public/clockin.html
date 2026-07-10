@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Clock In/Out — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* ── Layout ── */
+.ci-page { display:flex; flex-direction:column; gap:20px; }
+.ci-tabs { display:flex; gap:4px; border-bottom:1px solid var(--c-border); margin-bottom:4px; }
+.ci-tab { padding:10px 18px; font-size:.82rem; font-weight:700; color:var(--c-muted); cursor:pointer; border-bottom:2px solid transparent; transition:.15s; }
+.ci-tab.active { color:#4a9abf; border-bottom-color:#4a9abf; }
+.ci-tab:hover:not(.active) { color:var(--c-text); }
+.ci-panel { display:none; }
+.ci-panel.active { display:block; }
+
+/* ── Live status strip ── */
+.status-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; }
+.staff-card { background:var(--c-card); border:1px solid var(--c-border); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+.staff-card.in { border-color:#22c55e44; }
+.staff-card.out { border-color:#64748b44; }
+.staff-card.overdue { border-color:#ef444444; }
+.staff-card .sc-name { font-size:.95rem; font-weight:700; color:var(--c-text); }
+.staff-card .sc-role { font-size:.72rem; color:var(--c-muted); text-transform:capitalize; }
+.staff-card .sc-status { display:flex; align-items:center; gap:6px; margin-top:4px; }
+.sc-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.sc-dot.in { background:#22c55e; }
+.sc-dot.out { background:#64748b; }
+.sc-dot.overdue { background:#ef4444; }
+.sc-dot.pending { background:#f59e0b; }
+.sc-time { font-size:.8rem; color:var(--c-text); font-weight:600; }
+.sc-hours { font-size:.72rem; color:var(--c-muted); }
+.sc-fob { font-size:.65rem; padding:2px 6px; border-radius:4px; font-weight:700; margin-top:2px; width:fit-content; }
+.sc-fob.registered { background:rgba(74,154,191,.12); color:#4a9abf; }
+.sc-fob.unregistered { background:rgba(239,68,68,.12); color:#ef4444; }
+
+.manual-btn { padding:6px 14px; border-radius:8px; font-size:.75rem; font-weight:700; border:1px solid var(--c-border); background:transparent; color:var(--c-muted); cursor:pointer; margin-top:6px; transition:.15s; }
+.manual-btn:hover { background:var(--c-border); color:var(--c-text); }
+.manual-btn.in { border-color:#22c55e55; color:#22c55e; }
+.manual-btn.out { border-color:#ef444455; color:#ef4444; }
+
+/* ── Fob management ── */
+.fob-table-wrap { overflow-x:auto; border-radius:8px; border:1px solid var(--c-border); margin-top:12px; }
+.fob-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.fob-table th { text-align:left; padding:10px 14px; font-size:.7rem; font-weight:800; color:var(--c-muted); text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--c-border); background:#0f172a; }
+.fob-table td { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.04); color:var(--c-text); vertical-align:middle; }
+.fob-table tr:last-child td { border-bottom:none; }
+.fob-table tr:hover td { background:rgba(255,255,255,.02); }
+.badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; }
+.badge-active { background:rgba(34,197,94,.12); color:#22c55e; }
+.badge-inactive { background:rgba(100,116,139,.12); color:#64748b; }
+.badge-method { background:rgba(74,154,191,.12); color:#4a9abf; }
+.help-box { background:#0f172a; border:1px solid var(--c-border); border-radius:8px; padding:14px 16px; margin-top:16px; font-size:.8rem; color:var(--c-muted); }
+.help-box strong { color:var(--c-text); display:block; margin-bottom:4px; }
+
+/* ── Shift history ── */
+.hist-controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+.hist-controls input[type="date"] { padding:8px 12px; background:var(--c-card); border:1px solid var(--c-border); border-radius:8px; color:var(--c-text); font-size:.85rem; }
+.hist-controls select { padding:8px 12px; background:var(--c-card); border:1px solid var(--c-border); border-radius:8px; color:var(--c-text); font-size:.85rem; cursor:pointer; }
+.hist-table-wrap { overflow-x:auto; border-radius:8px; border:1px solid var(--c-border); }
+.hist-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.hist-table th { text-align:left; padding:10px 14px; font-size:.7rem; font-weight:800; color:var(--c-muted); text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--c-border); background:#0f172a; }
+.hist-table td { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.04); color:var(--c-text); }
+.hist-table tr:last-child td { border-bottom:none; }
+.status-badge { padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; }
+.status-complete { background:rgba(34,197,94,.12); color:#22c55e; }
+.status-open { background:rgba(245,158,11,.12); color:#f59e0b; }
+.status-incomplete { background:rgba(239,68,68,.12); color:#ef4444; }
+
+/* ── Toolbar ── */
+.toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.refresh-info { font-size:.72rem; color:var(--c-muted); }
+</style>
+</head>
+<body>
+<div id="wren-shell"></div>
+<div class="page-content" data-role="manager deputy_manager">
+
+<div class="ci-page">
+  <div class="toolbar">
+    <div>
+      <h2 style="margin:0;font-size:1.15rem;color:var(--c-text)">Clock In / Out</h2>
+      <div class="refresh-info" id="last-refresh">Updating every 30s</div>
+    </div>
+    <button class="btn" id="btn-refresh-status" style="font-size:.8rem;padding:8px 14px">Refresh</button>
+  </div>
+
+  <div class="ci-tabs">
+    <div class="ci-tab active" data-tab="live">Live Status</div>
+    <div class="ci-tab" data-tab="fobs">Fob Management</div>
+    <div class="ci-tab" data-tab="history">Shift History</div>
+  </div>
+
+  <!-- ── LIVE STATUS ── -->
+  <div class="ci-panel active" id="panel-live">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="flex:1;min-width:160px;background:var(--c-card);border:1px solid #22c55e33;border-radius:10px;padding:14px 16px">
+        <div style="font-size:1.6rem;font-weight:800;color:#22c55e" id="count-in">—</div>
+        <div style="font-size:.72rem;color:var(--c-muted);font-weight:700">Staff currently IN</div>
+      </div>
+      <div style="flex:1;min-width:160px;background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:14px 16px">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--c-muted)" id="count-pending">—</div>
+        <div style="font-size:.72rem;color:var(--c-muted);font-weight:700">Not yet arrived</div>
+      </div>
+      <div style="flex:1;min-width:160px;background:var(--c-card);border:1px solid #ef444433;border-radius:10px;padding:14px 16px">
+        <div style="font-size:1.6rem;font-weight:800;color:#ef4444" id="count-out">—</div>
+        <div style="font-size:.72rem;color:var(--c-muted);font-weight:700">Left today</div>
+      </div>
+    </div>
+    <div class="status-grid" id="status-grid">
+      <div style="color:var(--c-muted);font-size:.85rem">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ── FOB MANAGEMENT ── -->
+  <div class="ci-panel" id="panel-fobs">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <span style="font-size:.85rem;color:var(--c-muted)">Registered Mifare Classic 1K fobs</span>
+      <button class="btn btn-primary" id="btn-open-register-modal" style="font-size:.82rem;padding:8px 16px">+ Register New Fob</button>
+    </div>
+    <div class="fob-table-wrap">
+      <table class="fob-table">
+        <thead>
+          <tr><th>Staff</th><th>Fob UID</th><th>Label</th><th>Status</th><th>Registered</th><th>Action</th></tr>
+        </thead>
+        <tbody id="fob-tbody">
+          <tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="help-box">
+      <strong>How to find a fob UID</strong>
+      Log into your door access controller (its admin web UI on your LAN) → Access → Card Management → scan the fob — the UID (e.g. <code>A1B2C3D4</code>) appears in the card number field.
+      Alternatively, tap them on the door reader/intercom and check the unknown-fob alerts — the UID will be in the alert message.
+    </div>
+  </div>
+
+  <!-- ── SHIFT HISTORY ── -->
+  <div class="ci-panel" id="panel-history">
+    <div class="hist-controls">
+      <label style="font-size:.82rem;color:var(--c-muted)">Staff:
+        <select id="hist-staff-select" style="margin-left:6px">
+          <option value="">All staff</option>
+        </select>
+      </label>
+      <label style="font-size:.82rem;color:var(--c-muted)">Days:
+        <select id="hist-days-select" style="margin-left:6px">
+          <option value="7">7 days</option>
+          <option value="14" selected>14 days</option>
+          <option value="30">30 days</option>
+        </select>
+      </label>
+      <button class="btn" id="btn-export-csv" style="font-size:.78rem;padding:7px 14px">Export CSV</button>
+    </div>
+    <div class="hist-table-wrap">
+      <table class="hist-table">
+        <thead>
+          <tr><th>Date</th><th>Staff</th><th>Clock In</th><th>Clock Out</th><th>Total</th><th>Method</th><th>Status</th></tr>
+        </thead>
+        <tbody id="hist-tbody">
+          <tr><td colspan="7" style="text-align:center;color:var(--c-muted);padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- Manual clock modal -->
+<div id="manual-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:24px;width:100%;max-width:380px;margin:16px">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:16px" id="manual-modal-title">Manual Clock</div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Staff member</label>
+      <select id="manual-staff-id" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem">
+        <option value="">Select staff…</option>
+      </select>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Action</label>
+      <select id="manual-event-type" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem">
+        <option value="clock_in">Clock IN</option>
+        <option value="clock_out">Clock OUT</option>
+      </select>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Notes (optional)</label>
+      <input id="manual-notes" type="text" placeholder="e.g. Fob forgotten" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="btn-close-manual-modal" style="padding:9px 18px">Cancel</button>
+      <button class="btn btn-primary" id="manual-submit-btn" style="padding:9px 18px">Submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Register fob modal -->
+<div id="fob-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:24px;width:100%;max-width:400px;margin:16px">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:16px">Register New Fob</div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Staff member</label>
+      <select id="fob-staff-id" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem">
+        <option value="">Select staff…</option>
+      </select>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Fob UID <span style="color:var(--c-muted)">(from your access controller's card management)</span></label>
+      <input id="fob-uid-input" type="text" placeholder="e.g. A1B2C3D4" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box;text-transform:uppercase">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Label <span style="color:var(--c-muted)">(optional, e.g. "Blue keyring fob")</span></label>
+      <input id="fob-label-input" type="text" placeholder="Blue keyring fob" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="btn-close-fob-modal" style="padding:9px 18px">Cancel</button>
+      <button class="btn btn-primary" id="btn-register-fob" style="padding:9px 18px">Register Fob</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtTime(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/London'});
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'2-digit'});
+}
+function fmtHours(h) {
+  if (h == null) return '—';
+  const hrs = Math.floor(h);
+  const mins = Math.round((h % 1) * 60);
+  return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+}
+function fmtMinutes(m) {
+  if (m == null) return '—';
+  const h = Math.floor(m / 60);
+  const mn = m % 60;
+  return h > 0 ? `${h}h ${mn}m` : `${mn}m`;
+}
+
+let allStaff = [];
+let statusInterval;
+
+function switchTab(tab) {
+  document.querySelectorAll('.ci-tab').forEach((el,i) => {
+    el.classList.toggle('active', ['live','fobs','history'][i] === tab);
+  });
+  document.querySelectorAll('.ci-panel').forEach(el => el.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'fobs') loadFobs();
+  if (tab === 'history') loadHistory();
+}
+
+async function loadStatus() {
+  try {
+    const data = await Wren.api('/api/clockin/today');
+    const grid = document.getElementById('status-grid');
+    let cIn = 0, cOut = 0, cPending = 0;
+    if (!data.length) {
+      grid.innerHTML = '<div style="color:var(--c-muted);font-size:.85rem">No staff records</div>';
+      return;
+    }
+    grid.innerHTML = data.map(s => {
+      const isClockedIn = s.status === 'in';
+      const isOut = s.status === 'out';
+      const isPending = s.status === 'not_arrived';
+      if (isClockedIn) cIn++;
+      if (isOut) cOut++;
+      if (isPending) cPending++;
+      const dotClass = isClockedIn ? 'in' : isOut ? 'out' : 'pending';
+      const cardClass = isClockedIn ? 'in' : isOut ? 'out' : '';
+      const statusText = isClockedIn
+        ? `IN since ${fmtTime(s.clock_in_time)}`
+        : isOut ? `Left at ${fmtTime(s.clock_out_time)}` : 'Not yet arrived';
+      const hoursText = isClockedIn && s.hours_today != null
+        ? `${fmtHours(s.hours_today)} today`
+        : isOut && s.clock_out_time ? `${fmtMinutes(s.total_minutes)} worked` : '';
+      const fobBadge = s.fob_registered
+        ? '<span class="sc-fob registered">Fob registered</span>'
+        : '<span class="sc-fob unregistered">No fob</span>';
+      const manualType = isClockedIn ? 'clock_out' : 'clock_in';
+      const manualLabel = isClockedIn ? 'Clock out' : 'Clock in';
+      const manualClass = isClockedIn ? 'out' : 'in';
+      return `
+        <div class="staff-card ${cardClass}">
+          <div class="sc-name">${esc(s.name)}</div>
+          <div class="sc-role">${esc((s.role||'').replace(/_/g,' '))} · ${esc(s.room||'')}</div>
+          <div class="sc-status">
+            <div class="sc-dot ${dotClass}"></div>
+            <div class="sc-time">${esc(statusText)}</div>
+          </div>
+          ${hoursText ? `<div class="sc-hours">${esc(hoursText)}</div>` : ''}
+          ${fobBadge}
+          <button class="manual-btn ${manualClass}" data-action="quick-manual" data-staff-id="${s.staff_id}" data-type="${manualType}">${manualLabel} (manual)</button>
+        </div>
+      `;
+    }).join('');
+    document.getElementById('count-in').textContent = cIn;
+    document.getElementById('count-out').textContent = cOut;
+    document.getElementById('count-pending').textContent = cPending;
+    document.getElementById('last-refresh').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  } catch(e) {
+    console.error('Status load error:', e);
+  }
+}
+
+async function loadFobs() {
+  try {
+    const fobs = await Wren.api('/api/clockin/fobs');
+    const tbody = document.getElementById('fob-tbody');
+    if (!fobs.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">No fobs registered yet — click Register New Fob above to add the first one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = fobs.map(f => `
+      <tr>
+        <td><strong>${esc(f.staff_name)}</strong></td>
+        <td><code style="font-family:monospace;color:#4a9abf;font-size:.85rem">${esc(f.fob_uid)}</code></td>
+        <td>${esc(f.label || '—')}</td>
+        <td><span class="badge ${f.is_active ? 'badge-active' : 'badge-inactive'}">${f.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td style="font-size:.8rem;color:var(--c-muted)">${fmtDate(f.registered_at)}</td>
+        <td>
+          ${f.is_active
+            ? `<button class="btn" data-action="deactivate" data-id="${f.id}" data-uid="${esc(f.fob_uid)}" style="font-size:.72rem;padding:5px 10px;color:#ef4444;border-color:#ef444433">Deactivate</button>`
+            : '<span style="font-size:.75rem;color:var(--c-muted)">Inactive</span>'
+          }
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    console.error('Fob load error:', e);
+  }
+}
+
+async function loadHistory() {
+  const staffId = document.getElementById('hist-staff-select').value;
+  const days = document.getElementById('hist-days-select').value || 14;
+  try {
+    let url;
+    if (staffId) {
+      url = `/api/clockin/staff/${staffId}/history?days=${days}`;
+    } else {
+      // Load all staff history by fetching each — build from today's data
+      url = `/api/clockin/staff/0/history?days=${days}`;
+    }
+    // For all staff, iterate each active staff member
+    let shifts = [];
+    if (!staffId && allStaff.length) {
+      const results = await Promise.all(
+        allStaff.map(s => Wren.api(`/api/clockin/staff/${s.id}/history?days=${days}`).catch(()=>[]))
+      );
+      shifts = results.flat();
+    } else if (staffId) {
+      shifts = await Wren.api(url).catch(()=>[]);
+    }
+    shifts.sort((a, b) => new Date(b.shift_date) - new Date(a.shift_date));
+    const tbody = document.getElementById('hist-tbody');
+    if (!shifts.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--c-muted);padding:20px">No shift records for this period</td></tr>';
+      return;
+    }
+    tbody.innerHTML = shifts.map(s => {
+      const statusClass = s.status === 'complete' ? 'status-complete' : s.status === 'open' ? 'status-open' : 'status-incomplete';
+      const methodBadge = s.method ? `<span class="badge badge-method">${esc(s.method)}</span>` : '—';
+      return `
+        <tr>
+          <td style="font-weight:600">${fmtDate(s.shift_date)}</td>
+          <td>${esc(s.staff_name || '—')}</td>
+          <td>${fmtTime(s.clock_in_time)}</td>
+          <td>${fmtTime(s.clock_out_time)}</td>
+          <td>${fmtMinutes(s.total_minutes)}</td>
+          <td>${methodBadge}</td>
+          <td><span class="status-badge ${statusClass}">${esc(s.status||'—')}</span></td>
+        </tr>
+      `;
+    }).join('');
+  } catch(e) {
+    console.error('History load error:', e);
+  }
+}
+
+function exportCsv() {
+  const rows = document.querySelectorAll('#hist-tbody tr');
+  if (!rows.length) return;
+  const headers = ['Date','Staff','Clock In','Clock Out','Total Hours','Method','Status'];
+  const lines = [headers.join(',')];
+  rows.forEach(row => {
+    const cols = Array.from(row.querySelectorAll('td')).map(td => `"${td.textContent.trim().replace(/"/g,'""')}"`);
+    if (cols.length > 1) lines.push(cols.join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `shifts-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+function openRegisterModal() {
+  const sel = document.getElementById('fob-staff-id');
+  sel.innerHTML = '<option value="">Select staff…</option>';
+  allStaff.forEach(s => {
+    sel.innerHTML += `<option value="${s.id}">${esc(s.first_name)} ${esc(s.last_name)}</option>`;
+  });
+  document.getElementById('fob-uid-input').value = '';
+  document.getElementById('fob-label-input').value = '';
+  document.getElementById('fob-modal').style.display = 'flex';
+}
+function closeFobModal() { document.getElementById('fob-modal').style.display = 'none'; }
+
+async function registerFob() {
+  const staff_id = document.getElementById('fob-staff-id').value;
+  const fob_uid = document.getElementById('fob-uid-input').value.trim().toUpperCase();
+  const label = document.getElementById('fob-label-input').value.trim();
+  if (!staff_id || !fob_uid) { Wren.toast('Please select staff and enter fob UID', 'warning'); return; }
+  try {
+    await Wren.api('/api/clockin/fobs', { method: 'POST', body: { staff_id: parseInt(staff_id), fob_uid, label: label || null } });
+    closeFobModal();
+    Wren.toast('Fob registered successfully', 'success');
+    loadFobs();
+  } catch(e) {
+    Wren.toast('Error: ' + (e.error || e.message || 'Failed to register fob'), 'error');
+  }
+}
+
+async function deactivateFob(id, uid) {
+  if (!confirm(`Deactivate fob ${uid}? Staff will not be able to clock in/out with this fob.`)) return;
+  try {
+    await Wren.api(`/api/clockin/fobs/${id}`, { method: 'DELETE' });
+    Wren.toast('Fob deactivated', 'success');
+    loadFobs();
+  } catch(e) {
+    Wren.toast('Error: ' + (e.error || e.message || 'Failed'), 'error');
+  }
+}
+
+// Manual clock modal
+let manualTargetStaffId = null;
+function quickManual(staffId, eventType) {
+  manualTargetStaffId = staffId;
+  document.getElementById('manual-event-type').value = eventType;
+  const s = allStaff.find(x => x.id === staffId);
+  document.getElementById('manual-modal-title').textContent = `Manual ${eventType === 'clock_in' ? 'Clock In' : 'Clock Out'}${s ? ' — ' + s.first_name + ' ' + s.last_name : ''}`;
+  const sel = document.getElementById('manual-staff-id');
+  sel.innerHTML = '<option value="">Select staff…</option>';
+  allStaff.forEach(x => {
+    sel.innerHTML += `<option value="${x.id}" ${x.id === staffId ? 'selected' : ''}>${esc(x.first_name)} ${esc(x.last_name)}</option>`;
+  });
+  document.getElementById('manual-notes').value = '';
+  document.getElementById('manual-modal').style.display = 'flex';
+}
+function closeManualModal() { document.getElementById('manual-modal').style.display = 'none'; }
+async function submitManual() {
+  const staff_id = parseInt(document.getElementById('manual-staff-id').value);
+  const event_type = document.getElementById('manual-event-type').value;
+  const notes = document.getElementById('manual-notes').value.trim();
+  if (!staff_id) { Wren.toast('Please select a staff member', 'warning'); return; }
+  const btn = document.getElementById('manual-submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    await Wren.api('/api/clockin/manual', { method: 'POST', body: { staff_id, event_type, notes: notes || null } });
+    closeManualModal();
+    Wren.toast(`${event_type === 'clock_in' ? 'Clocked in' : 'Clocked out'} successfully`, 'success');
+    loadStatus();
+  } catch(e) {
+    Wren.toast('Error: ' + (e.error || e.message || 'Failed'), 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit';
+  }
+}
+
+async function init() {
+  try {
+    const staffData = await Wren.api('/api/staff');
+    allStaff = (staffData || []).filter(s => s.is_active);
+    // Populate history staff selector
+    const sel = document.getElementById('hist-staff-select');
+    allStaff.forEach(s => {
+      sel.innerHTML += `<option value="${s.id}">${esc(s.first_name)} ${esc(s.last_name)}</option>`;
+    });
+  } catch(e) { console.error('Staff load error:', e); }
+  loadStatus();
+  statusInterval = setInterval(loadStatus, 30000);
+}
+
+document.getElementById('btn-refresh-status').addEventListener('click', loadStatus);
+document.querySelector('.ci-tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.ci-tab[data-tab]');
+  if (tab) switchTab(tab.dataset.tab);
+});
+document.getElementById('btn-open-register-modal').addEventListener('click', openRegisterModal);
+document.getElementById('hist-staff-select').addEventListener('change', loadHistory);
+document.getElementById('hist-days-select').addEventListener('change', loadHistory);
+document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
+document.getElementById('btn-close-manual-modal').addEventListener('click', closeManualModal);
+document.getElementById('manual-submit-btn').addEventListener('click', submitManual);
+document.getElementById('btn-close-fob-modal').addEventListener('click', closeFobModal);
+document.getElementById('btn-register-fob').addEventListener('click', registerFob);
+document.getElementById('status-grid').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action="quick-manual"]');
+  if (btn) quickManual(parseInt(btn.dataset.staffId), btn.dataset.type);
+});
+document.getElementById('fob-tbody').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action="deactivate"]');
+  if (btn) deactivateFob(parseInt(btn.dataset.id), btn.dataset.uid);
+});
+
+if (window._wrenReady) {
+  init();
+} else {
+  document.addEventListener('wren:ready', init);
+}
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

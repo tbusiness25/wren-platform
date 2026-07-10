@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>SEND — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">SEND Register</div>
+      <div class="page-subtitle" id="subtitle">Special Educational Needs and Disabilities</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="exportCSV()">Export</button>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Add SEND Record</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px" id="stats-bar">
+    <div class="stat-card blue"><span class="stat-value" id="stat-total">—</span><span class="stat-label">On SEND Register</span></div>
+    <div class="stat-card amber"><span class="stat-value" id="stat-support">—</span><span class="stat-label">SEN Support</span></div>
+    <div class="stat-card red"><span class="stat-value" id="stat-ehcp">—</span><span class="stat-label">EHCP</span></div>
+    <div class="stat-card green"><span class="stat-value" id="stat-monitored">—</span><span class="stat-label">Monitored</span></div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-bar" style="margin-bottom:16px">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search" placeholder="Search pupils..." oninput="filterPupils()">
+    </div>
+    <select class="form-control" id="filter-class" onchange="filterPupils()" style="width:150px">
+      <option value="">All Classes</option>
+    </select>
+    <select class="form-control" id="filter-status" onchange="filterPupils()" style="width:160px">
+      <option value="">All Statuses</option>
+      <option value="ehcp">EHCP</option>
+      <option value="sen_support">SEN Support</option>
+      <option value="monitored">Monitored</option>
+    </select>
+    <select class="form-control" id="filter-need" onchange="filterPupils()" style="width:160px">
+      <option value="">All Need Types</option>
+      <option value="SEMH">SEMH</option>
+      <option value="Communication">Communication &amp; Interaction</option>
+      <option value="Cognition">Cognition &amp; Learning</option>
+      <option value="Physical">Physical &amp; Sensory</option>
+    </select>
+  </div>
+
+  <!-- SEND Register Table -->
+  <div id="send-area">
+    <div class="loading-state"><div class="spinner"></div><span>Loading SEND register...</span></div>
+  </div>
+</div>
+
+<!-- Add SEND Modal -->
+<div id="send-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-content" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Add SEND Record</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Pupil *</label>
+        <select class="form-control" id="new-child-id" onchange="checkExisting()">
+          <option value="">Select pupil...</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">SEN Status *</label>
+          <select class="form-control" id="new-sen-status">
+            <option value="monitored">Monitored</option>
+            <option value="sen_support">SEN Support</option>
+            <option value="ehcp">EHCP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Primary Need</label>
+          <select class="form-control" id="new-need-type">
+            <option value="">Select...</option>
+            <option value="SEMH">SEMH</option>
+            <option value="Communication">Communication &amp; Interaction</option>
+            <option value="Cognition">Cognition &amp; Learning</option>
+            <option value="Physical">Physical &amp; Sensory</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Provisions / Interventions</label>
+        <textarea class="form-control" id="new-provisions" rows="2" placeholder="e.g. 1:1 reading, speech therapy, sensory breaks..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">EHCP Review Date</label>
+        <input type="date" class="form-control" id="new-review-date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea class="form-control" id="new-notes" rows="2" placeholder="Additional context..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRecord()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allPupils = [];
+let sendPupils = [];
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  await loadChildren();
+}
+
+async function loadChildren() {
+  try {
+    const res = await fetch('/api/children', { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    allPupils = await res.json();
+    const classes = [...new Set(allPupils.map(c => c.class_group).filter(Boolean))].sort();
+    document.getElementById('filter-class').innerHTML = '<option value="">All Classes</option>' + classes.map(c => `<option value="${c}">${c}</option>`).join('');
+    document.getElementById('new-child-id').innerHTML = '<option value="">Select pupil...</option>' +
+      allPupils.sort((a,b) => a.last_name.localeCompare(b.last_name))
+        .map(c => `<option value="${c.id}" data-sen="${c.sen_status||''}">${c.last_name}, ${c.first_name} (${c.class_group||c.year_group||'—'})</option>`).join('');
+
+    // Build SEND list from children with SEN flags
+    sendPupils = allPupils.filter(p => p.sen_status && p.sen_status !== 'none');
+    updateStats();
+    filterPupils();
+  } catch(e) {
+    document.getElementById('send-area').innerHTML = '<div class="empty-state">Failed to load data</div>';
+  }
+}
+
+function updateStats() {
+  document.getElementById('stat-total').textContent = sendPupils.length;
+  document.getElementById('stat-support').textContent = sendPupils.filter(p => p.sen_status === 'sen_support').length;
+  document.getElementById('stat-ehcp').textContent = sendPupils.filter(p => p.sen_status === 'ehcp').length;
+  document.getElementById('stat-monitored').textContent = sendPupils.filter(p => p.sen_status === 'monitored').length;
+}
+
+function filterPupils() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const cls = document.getElementById('filter-class').value;
+  const status = document.getElementById('filter-status').value;
+  const need = document.getElementById('filter-need').value;
+
+  const filtered = sendPupils.filter(p => {
+    const name = (p.first_name + ' ' + p.last_name).toLowerCase();
+    if (q && !name.includes(q)) return false;
+    if (cls && p.class_group !== cls) return false;
+    if (status && p.sen_status !== status) return false;
+    if (need && (!p.sen_needs || !p.sen_needs.includes(need))) return false;
+    return true;
+  });
+  renderRegister(filtered);
+}
+
+function renderRegister(pupils) {
+  const area = document.getElementById('send-area');
+  if (!pupils.length) {
+    area.innerHTML = sendPupils.length === 0
+      ? '<div class="empty-state">No pupils on the SEND register. Use "+ Add SEND Record" to add pupils.</div>'
+      : '<div class="empty-state">No pupils match the current filters</div>';
+    return;
+  }
+
+  area.innerHTML = '<div class="table-wrapper"><table class="data-table"><thead><tr>' +
+    '<th>Name</th><th>Class</th><th>Year</th><th>Status</th><th>Primary Need</th><th>Provisions</th><th>Review Date</th><th>Notes</th><th></th>' +
+    '</tr></thead><tbody>' +
+    pupils.map(p => {
+      const statusBadge = p.sen_status === 'ehcp' ? '<span class="badge badge-red">EHCP</span>' :
+        p.sen_status === 'sen_support' ? '<span class="badge badge-amber">SEN Support</span>' :
+        '<span class="badge badge-grey">Monitored</span>';
+      return `<tr>
+        <td><strong>${p.first_name} ${p.last_name}</strong></td>
+        <td>${p.class_group||'—'}</td>
+        <td>${p.year_group||'—'}</td>
+        <td>${statusBadge}</td>
+        <td>${p.sen_needs||'—'}</td>
+        <td style="max-width:200px;font-size:13px">${p.sen_provisions||'—'}</td>
+        <td>${p.sen_review_date||'—'}</td>
+        <td style="max-width:180px;font-size:12px;color:var(--text-muted)">${p.sen_notes||'—'}</td>
+        <td><button class="btn btn-secondary" style="padding:2px 8px;font-size:12px" onclick="editRecord(${p.id})">Edit</button></td>
+      </tr>`;
+    }).join('') +
+    '</tbody></table></div>';
+}
+
+function openAddModal() {
+  document.getElementById('modal-title').textContent = 'Add SEND Record';
+  document.getElementById('send-modal').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('send-modal').style.display = 'none'; }
+
+function checkExisting() {
+  const id = parseInt(document.getElementById('new-child-id').value);
+  const p = allPupils.find(x => x.id === id);
+  if (p && p.sen_status && p.sen_status !== 'none') {
+    document.getElementById('new-sen-status').value = p.sen_status;
+    document.getElementById('new-notes').value = p.sen_notes || '';
+    document.getElementById('new-provisions').value = p.sen_provisions || '';
+  }
+}
+
+async function saveRecord() {
+  const childId = document.getElementById('new-child-id').value;
+  const status = document.getElementById('new-sen-status').value;
+  if (!childId) { alert('Select a pupil'); return; }
+  // Update child record via children API with SEN fields
+  try {
+    const body = {
+      sen_status: status,
+      sen_needs: document.getElementById('new-need-type').value || null,
+      sen_provisions: document.getElementById('new-provisions').value.trim() || null,
+      sen_review_date: document.getElementById('new-review-date').value || null,
+      sen_notes: document.getElementById('new-notes').value.trim() || null
+    };
+    const res = await fetch('/api/children/' + childId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to save');
+    closeModal();
+    loadChildren();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function editRecord(id) {
+  const p = allPupils.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('modal-title').textContent = 'Edit SEND Record — ' + p.first_name + ' ' + p.last_name;
+  document.getElementById('new-child-id').value = id;
+  document.getElementById('new-sen-status').value = p.sen_status || 'monitored';
+  document.getElementById('new-need-type').value = p.sen_needs || '';
+  document.getElementById('new-provisions').value = p.sen_provisions || '';
+  document.getElementById('new-review-date').value = p.sen_review_date || '';
+  document.getElementById('new-notes').value = p.sen_notes || '';
+  document.getElementById('send-modal').style.display = 'flex';
+}
+
+function exportCSV() {
+  const headers = ['Name','Class','Year','SEN Status','Primary Need','Provisions','Review Date','Notes'];
+  const rows = sendPupils.map(p => [p.first_name+' '+p.last_name, p.class_group||'', p.year_group||'', p.sen_status||'', p.sen_needs||'', p.sen_provisions||'', p.sen_review_date||'', p.sen_notes||'']);
+  const csv = [headers,...rows].map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'send-register-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+</script>
+</body>
+</html>

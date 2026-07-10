@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Audit Log — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .audit-filters {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
+      margin-bottom: 18px;
+    }
+    .audit-filters label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: #94a3b8; }
+    .audit-filters input, .audit-filters select {
+      background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 7px 10px; font-size: .875rem; min-width: 130px;
+    }
+    .audit-filters .btn { align-self: flex-end; }
+    .audit-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .audit-table th { text-align: left; padding: 8px 10px; color: #94a3b8; font-weight:600;
+      border-bottom: 1px solid #2d3748; white-space: nowrap; }
+    .audit-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; vertical-align: top; }
+    .audit-table tr:hover td { background: #1e293b; cursor: pointer; }
+    .badge-action { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size:.75rem; font-weight:600; }
+    .ba-login    { background: #1d4ed8; color: #bfdbfe; }
+    .ba-logout   { background: #374151; color: #9ca3af; }
+    .ba-create   { background: #166534; color: #bbf7d0; }
+    .ba-update   { background: #92400e; color: #fde68a; }
+    .ba-delete   { background: #7f1d1d; color: #fecaca; }
+    .ba-export   { background: #4a1d96; color: #ddd6fe; }
+    .ba-view     { background: #0e7490; color: #a5f3fc; }
+    .audit-ts    { color: #94a3b8; white-space: nowrap; font-size: .78rem; }
+    .pagination  { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top:12px; }
+    .diff-old    { background: #450a0a; color: #fca5a5; padding: 2px 6px; border-radius: 4px; }
+    .diff-new    { background: #052e16; color: #86efac; padding: 2px 6px; border-radius: 4px; }
+    .diff-row    { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; flex-wrap: wrap; }
+    .diff-key    { color: #94a3b8; font-size: .8rem; min-width: 100px; }
+    #audit-count { color: #94a3b8; font-size: .85rem; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🔍 Audit Log</div>
+    <div class="page-actions">
+      <button class="btn btn-ghost" id="btn-export-csv">⬇ Export CSV</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="audit-filters" id="audit-filters">
+      <label>From
+        <input type="date" id="f-from">
+      </label>
+      <label>To
+        <input type="date" id="f-to">
+      </label>
+      <label>Actor
+        <select id="f-actor"><option value="">All staff</option></select>
+      </label>
+      <label>Entity type
+        <select id="f-entity">
+          <option value="">All types</option>
+          <option value="staff">staff</option>
+          <option value="child">child</option>
+          <option value="module_record">module_record</option>
+          <option value="observation">observation</option>
+        </select>
+      </label>
+      <label>Action
+        <select id="f-action">
+          <option value="">All actions</option>
+          <option value="login">login</option>
+          <option value="logout">logout</option>
+          <option value="create">create</option>
+          <option value="update">update</option>
+          <option value="delete">delete</option>
+          <option value="export">export</option>
+          <option value="view">view</option>
+        </select>
+      </label>
+      <label>Search
+        <input type="text" id="f-q" placeholder="email, entity id…" style="min-width:160px">
+      </label>
+      <button class="btn btn-primary" id="btn-filter">Filter</button>
+      <button class="btn btn-ghost" id="btn-clear-filters">Clear</button>
+    </div>
+    <span id="audit-count"></span>
+  </div>
+
+  <div class="card">
+    <div class="table-wrapper" id="audit-table-wrap">
+      <div class="loading-state"><div class="spinner"></div></div>
+    </div>
+    <div class="pagination" id="audit-pagination"></div>
+  </div>
+</div>
+
+<script>
+let currentPage = 1;
+let currentTotal = 0;
+const PER_PAGE = 50;
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
+  document.getElementById('btn-filter').addEventListener('click', function() { loadAudit(1); });
+  document.getElementById('btn-clear-filters').addEventListener('click', clearFilters);
+
+  // Delegation on audit table for row clicks
+  document.getElementById('audit-table-wrap').addEventListener('click', function(e) {
+    const tr = e.target.closest('[data-action="show-detail"]');
+    if (tr) showDetail(decodeURIComponent(tr.dataset.row));
+  });
+
+  // Delegation on pagination for page buttons
+  document.getElementById('audit-pagination').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="go-page"]');
+    if (btn && !btn.disabled) loadAudit(parseInt(btn.dataset.page));
+  });
+
+  init();
+});
+
+async function init() {
+  // Only managers may see this page
+  if (!['manager','deputy_manager','admin'].includes(Wren.user?.role)) {
+    document.getElementById('wren-content').innerHTML =
+      '<div class="alert alert-danger" style="margin:24px">Audit log is restricted to managers.</div>';
+    return;
+  }
+  // Default date range: last 7 days
+  const to = new Date();
+  const from = new Date(to); from.setDate(from.getDate() - 7);
+  document.getElementById('f-from').value = from.toISOString().slice(0,10);
+  document.getElementById('f-to').value   = to.toISOString().slice(0,10);
+
+  await loadStaffList();
+  await loadAudit(1);
+}
+
+async function loadStaffList() {
+  try {
+    const rows = await Wren.api('/api/audit/staff-list');
+    const sel = document.getElementById('f-actor');
+    rows.forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.id; o.textContent = s.name;
+      sel.appendChild(o);
+    });
+  } catch (_) {}
+}
+
+function buildQuery(page) {
+  const p = new URLSearchParams();
+  const from = document.getElementById('f-from').value;
+  const to   = document.getElementById('f-to').value;
+  const actor = document.getElementById('f-actor').value;
+  const entity = document.getElementById('f-entity').value;
+  const action = document.getElementById('f-action').value;
+  const q    = document.getElementById('f-q').value.trim();
+  if (from)  p.set('from', from);
+  if (to)    p.set('to', to);
+  if (actor) p.set('actor_id', actor);
+  if (entity) p.set('entity_type', entity);
+  if (action) p.set('action', action);
+  if (q)     p.set('q', q);
+  p.set('page', page);
+  p.set('per_page', PER_PAGE);
+  return p.toString();
+}
+
+async function loadAudit(page) {
+  currentPage = page;
+  const wrap = document.getElementById('audit-table-wrap');
+  wrap.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const data = await Wren.api('/api/audit?' + buildQuery(page));
+    currentTotal = data.total;
+    document.getElementById('audit-count').textContent =
+      `${data.total.toLocaleString()} result${data.total !== 1 ? 's' : ''}`;
+    renderTable(data.rows);
+    renderPagination(data.total, page);
+  } catch (e) {
+    wrap.innerHTML = `<div class="alert alert-danger">Failed to load audit log: ${e.error || e.message || 'Unknown error'}</div>`;
+  }
+}
+
+function renderTable(rows) {
+  const wrap = document.getElementById('audit-table-wrap');
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:32px;text-align:center;color:#94a3b8">No entries for the selected filters.</div>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table class="audit-table">
+      <thead><tr>
+        <th>When</th><th>Actor</th><th>Action</th>
+        <th>Entity type</th><th>Entity ID</th><th>Edition</th><th>IP</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr data-action="show-detail" data-row="${encodeURIComponent(JSON.stringify(r))}">
+            <td class="audit-ts">${fmtDate(r.occurred_at)}</td>
+            <td>${r.actor_name || r.actor_email || '<em style="color:#475569">anonymous</em>'}</td>
+            <td><span class="badge-action ba-${r.action}">${r.action}</span></td>
+            <td>${r.entity_type}</td>
+            <td style="font-family:monospace;font-size:.8rem">${r.entity_id || '—'}</td>
+            <td>${r.edition || '—'}</td>
+            <td style="font-size:.78rem;color:#64748b">${r.ip || '—'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function renderPagination(total, page) {
+  const pages = Math.ceil(total / PER_PAGE);
+  const pg = document.getElementById('audit-pagination');
+  if (pages <= 1) { pg.innerHTML = ''; return; }
+  pg.innerHTML = `
+    <button class="btn btn-ghost btn-sm" ${page <= 1 ? 'disabled' : ''} data-action="go-page" data-page="${page-1}">← Prev</button>
+    <span style="color:#94a3b8;font-size:.85rem">Page ${page} / ${pages}</span>
+    <button class="btn btn-ghost btn-sm" ${page >= pages ? 'disabled' : ''} data-action="go-page" data-page="${page+1}">Next →</button>`;
+}
+
+function showDetail(rowJsonOrStr) {
+  const r = typeof rowJsonOrStr === 'string' ? JSON.parse(rowJsonOrStr) : rowJsonOrStr;
+  let diffHtml = '';
+  if (r.diff) {
+    const d = typeof r.diff === 'string' ? JSON.parse(r.diff) : r.diff;
+    const keys = Object.keys(d.old || d.new || {});
+    diffHtml = `<div style="margin-top:12px">
+      <div style="color:#94a3b8;font-size:.8rem;margin-bottom:6px;font-weight:600">CHANGES</div>
+      ${keys.map(k => `
+        <div class="diff-row">
+          <span class="diff-key">${k}</span>
+          <span class="diff-old">${jsonVal(d.old?.[k])}</span>
+          <span style="color:#64748b">→</span>
+          <span class="diff-new">${jsonVal(d.new?.[k])}</span>
+        </div>`).join('')}
+    </div>`;
+  }
+
+  const metaHtml = r.meta
+    ? `<div style="margin-top:12px"><div style="color:#94a3b8;font-size:.8rem;margin-bottom:4px;font-weight:600">META</div>
+       <pre style="background:#0f172a;padding:10px;border-radius:6px;font-size:.8rem;color:#94a3b8;overflow:auto;max-height:200px">${JSON.stringify(typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta, null, 2)}</pre></div>`
+    : '';
+
+  const body = `
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:6px 12px;font-size:.875rem">
+      <span style="color:#94a3b8">When</span>      <span>${fmtDate(r.occurred_at)}</span>
+      <span style="color:#94a3b8">Actor</span>     <span>${r.actor_name || r.actor_email || 'anonymous'} (${r.actor_type}${r.actor_id ? ' #'+r.actor_id : ''})</span>
+      <span style="color:#94a3b8">Action</span>    <span><span class="badge-action ba-${r.action}">${r.action}</span></span>
+      <span style="color:#94a3b8">Entity</span>    <span>${r.entity_type} ${r.entity_id ? '#'+r.entity_id : ''}</span>
+      <span style="color:#94a3b8">Edition</span>   <span>${r.edition || '—'}</span>
+      <span style="color:#94a3b8">IP</span>        <span>${r.ip || '—'}</span>
+      <span style="color:#94a3b8">User agent</span><span style="font-size:.78rem;word-break:break-all">${r.user_agent || '—'}</span>
+    </div>
+    ${diffHtml}${metaHtml}`;
+
+  Wren.modal(`Audit entry #${r.id}`, body);
+}
+
+function jsonVal(v) {
+  if (v === undefined || v === null) return '<em>null</em>';
+  if (typeof v === 'object') return JSON.stringify(v).slice(0, 120);
+  return String(v).slice(0, 120);
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
+    + ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+function clearFilters() {
+  document.getElementById('f-from').value = '';
+  document.getElementById('f-to').value = '';
+  document.getElementById('f-actor').value = '';
+  document.getElementById('f-entity').value = '';
+  document.getElementById('f-action').value = '';
+  document.getElementById('f-q').value = '';
+  loadAudit(1);
+}
+
+function exportCsv() {
+  const qs = buildQuery(1);
+  const url = '/api/audit/export.csv?' + qs.replace(/page=\d+&per_page=\d+&?/, '');
+  window.location.href = url;
+}
+</script>
+</body>
+</html>

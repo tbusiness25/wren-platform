@@ -1,0 +1,45 @@
+# Wren on Raspberry Pi — resource-tuned override for the eyfs-selfhost bundle.
+#
+# Usage (from docker/eyfs-selfhost/):
+#   docker compose -f docker-compose.yml -f pi/docker-compose.pi.yml up -d
+#
+# Target hardware: Raspberry Pi 5 (4/8GB) recommended, Pi 4 4GB minimum,
+# 64-bit Raspberry Pi OS, boot from USB SSD strongly recommended (SD cards
+# die under Postgres write load). Both base images (postgres:16-alpine,
+# node:20-alpine) publish linux/arm64 — no image changes needed.
+#
+# AI note: no local Ollama on a Pi. Set AI_PROVIDER=groq + GROQ_API_KEY in .env
+# for AI features, or leave unset — every AI feature degrades gracefully
+# (keyword fallback / feature hidden).
+
+services:
+  db:
+    # Keep Postgres small: a 2-tablet setting is a handful of writes a minute.
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c effective_cache_size=384MB
+      -c maintenance_work_mem=32MB
+      -c max_connections=30
+      -c random_page_cost=1.1
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
+
+  wren-eyfs:
+    environment:
+      # Cap the Node heap well under Pi RAM so the OOM killer never fires.
+      NODE_OPTIONS: "--max-old-space-size=768"
+      # Cloud AI or nothing — no local model on a Pi.
+      AI_PROVIDER: ${AI_PROVIDER:-none}
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }

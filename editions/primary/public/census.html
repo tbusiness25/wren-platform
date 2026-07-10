@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="primary">
+<title>DfE School Census — Wren Primary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.census-card { background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:20px;margin-bottom:16px; }
+.field-row { display:flex;align-items:center;gap:10px;padding:10px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;margin-bottom:6px; }
+.field-icon { font-size:1rem;width:24px;text-align:center;flex-shrink:0; }
+.field-label { flex:1;font-size:.85rem;font-weight:600;color:var(--c-text); }
+.field-val { font-size:.85rem;color:var(--c-blue);font-weight:700; }
+.field-status { font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:6px; }
+.st-ok   { background:rgba(34,197,94,.12);color:#22c55e; }
+.st-warn { background:rgba(245,158,11,.12);color:#f59e0b; }
+.st-miss { background:rgba(239,68,68,.12);color:#ef4444; }
+.deadline-chip { display:inline-flex;align-items:center;gap:5px;background:rgba(74,154,191,.08);border:1px solid rgba(74,154,191,.2);border-radius:8px;padding:6px 12px;font-size:.82rem;font-weight:600;color:var(--c-blue); }
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">DfE School Census</div>
+      <div class="page-subtitle">Submission preparation and data quality checks</div>
+    </div>
+    <button class="btn btn-primary" id="btn-generate-return">Generate census return</button>
+  </div>
+
+  <!-- Census deadlines -->
+  <div class="census-card">
+    <div style="font-size:.85rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">2025–26 Census deadlines</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <span class="deadline-chip">📅 Autumn: 2 October 2025</span>
+      <span class="deadline-chip">📅 Spring: 15 January 2026</span>
+      <span class="deadline-chip">📅 Summer: 19 May 2026</span>
+    </div>
+    <p style="font-size:.78rem;color:var(--c-muted);margin-top:10px">Submit via <strong>COLLECT</strong> (DfE data collection system). Wren generates the XML return file; you upload it to COLLECT.</p>
+  </div>
+
+  <!-- Data quality checks -->
+  <div class="census-card">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:4px">Data quality checks</div>
+    <div style="font-size:.82rem;color:var(--c-muted);margin-bottom:16px">Wren checks your data against known DfE validation rules before you submit.</div>
+    <div id="quality-list">
+      <div class="loading-state"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- Pupil summary -->
+  <div class="census-card">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:14px">Pupil data summary</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px" id="pupil-summary">
+      <div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- School details -->
+  <div class="census-card">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:4px">School details for census</div>
+    <div style="font-size:.82rem;color:var(--c-muted);margin-bottom:16px">These must match your DfE establishment record exactly.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:600px">
+      <div class="form-group">
+        <label class="form-label">School name</label>
+        <input class="form-control" id="school-name" placeholder="Official establishment name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">URN</label>
+        <input class="form-control" id="school-urn" placeholder="7-digit URN">
+      </div>
+      <div class="form-group">
+        <label class="form-label">LA number</label>
+        <input class="form-control" id="school-la" placeholder="3-digit LA code">
+      </div>
+      <div class="form-group">
+        <label class="form-label">DfE establishment number</label>
+        <input class="form-control" id="school-estab" placeholder="4-digit number">
+      </div>
+      <div class="form-group">
+        <label class="form-label">School phase</label>
+        <select class="form-control" id="school-phase">
+          <option value="primary">Primary</option>
+          <option value="junior">Junior</option>
+          <option value="infant">Infant</option>
+          <option value="all_through">All-through</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Census reference date</label>
+        <input class="form-control" id="census-date" type="date">
+      </div>
+    </div>
+    <button class="btn btn-secondary" id="btn-save-school" style="margin-top:8px">Save details</button>
+  </div>
+
+  <div id="export-area" style="display:none" class="census-card">
+    <div style="font-size:1rem;font-weight:700;margin-bottom:4px">Census XML ready</div>
+    <p style="font-size:.83rem;color:var(--c-muted);margin-bottom:12px">Download the XML file and upload it to COLLECT via the DfE portal.</p>
+    <button class="btn btn-primary" id="download-btn">Download census XML</button>
+  </div>
+</div>
+
+<script>
+let pupils = [], censusXML = null;
+
+document.getElementById('btn-generate-return').addEventListener('click', generateReturn);
+document.getElementById('btn-save-school').addEventListener('click', saveSchoolDetails);
+document.getElementById('download-btn').addEventListener('click', downloadXML);
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  loadSchoolDetails();
+  const today = new Date().toISOString().slice(0,10);
+  if (!document.getElementById('census-date').value) document.getElementById('census-date').value = today;
+  await loadPupils();
+}
+
+function loadSchoolDetails() {
+  try {
+    const d = JSON.parse(localStorage.getItem('census-school-primary') || '{}');
+    ['school-name','school-urn','school-la','school-estab','school-phase','census-date'].forEach(id => {
+      const k = id.replace(/-/g,'_');
+      if (d[k]) document.getElementById(id).value = d[k];
+    });
+  } catch {}
+}
+
+function saveSchoolDetails() {
+  const d = {};
+  ['school-name','school-urn','school-la','school-estab','school-phase','census-date'].forEach(id => {
+    d[id.replace(/-/g,'_')] = document.getElementById(id).value;
+  });
+  localStorage.setItem('census-school-primary', JSON.stringify(d));
+  Wren.toast('School details saved', 'success');
+}
+
+async function loadPupils() {
+  try {
+    pupils = await Wren.api('/api/children');
+    buildQualityChecks();
+    buildPupilSummary();
+  } catch {
+    document.getElementById('quality-list').innerHTML = '<p style="color:var(--c-muted)">Could not load pupil data</p>';
+  }
+}
+
+function buildQualityChecks() {
+  const checks = [];
+  const noUPN   = pupils.filter(p => !p.upn);
+  const noDOB   = pupils.filter(p => !p.date_of_birth);
+  const noGender = pupils.filter(p => !p.gender);
+  const noEthn  = pupils.filter(p => !p.ethnicity_code);
+
+  checks.push({ icon:'🔑', label:'All pupils have UPN', val:`${pupils.length - noUPN.length}/${pupils.length}`, ok: noUPN.length === 0, warn: noUPN.map(p=>p.first_name+' '+p.last_name).join(', ').slice(0,80) });
+  checks.push({ icon:'📅', label:'All pupils have date of birth', val:`${pupils.length - noDOB.length}/${pupils.length}`, ok: noDOB.length === 0 });
+  checks.push({ icon:'👤', label:'All pupils have gender recorded', val:`${pupils.length - noGender.length}/${pupils.length}`, ok: noGender.length === 0 });
+  checks.push({ icon:'🌍', label:'All pupils have ethnicity code', val:`${pupils.length - noEthn.length}/${pupils.length}`, ok: noEthn.length === 0, warn:'Required for census; can be coded as "NOBT" if not collected' });
+  checks.push({ icon:'🏫', label:'School URN entered', val: document.getElementById('school-urn').value || '—', ok: !!document.getElementById('school-urn').value });
+  checks.push({ icon:'🗓️', label:'Census reference date set', val: document.getElementById('census-date').value || '—', ok: !!document.getElementById('census-date').value });
+
+  document.getElementById('quality-list').innerHTML = checks.map(c => {
+    const st = c.ok ? 'ok' : 'warn';
+    return `<div class="field-row">
+      <span class="field-icon">${c.icon}</span>
+      <span class="field-label">${c.label}</span>
+      <span class="field-val">${c.val}</span>
+      <span class="field-status st-${st}">${c.ok ? 'OK' : 'Fix needed'}</span>
+      ${c.warn && !c.ok ? `<span style="font-size:.72rem;color:var(--c-muted)">${c.warn}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function buildPupilSummary() {
+  const yr = {};
+  pupils.forEach(p => { yr[p.year_group] = (yr[p.year_group]||0) + 1; });
+  const ORDER = ['R','1','2','3','4','5','6'];
+  const cards = ORDER.filter(y => yr[y]).map(y => `
+    <div style="background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:12px;text-align:center">
+      <div style="font-size:1.4rem;font-weight:800;color:var(--c-blue)">${yr[y]}</div>
+      <div style="font-size:.75rem;color:var(--c-muted);font-weight:600">${y==='R'?'Reception':'Year '+y}</div>
+    </div>`);
+  cards.push(`<div style="background:rgba(74,154,191,.06);border:2px solid rgba(74,154,191,.3);border-radius:10px;padding:12px;text-align:center">
+    <div style="font-size:1.4rem;font-weight:800;color:var(--c-text)">${pupils.length}</div>
+    <div style="font-size:.75rem;color:var(--c-muted);font-weight:600">Total on roll</div>
+  </div>`);
+  document.getElementById('pupil-summary').innerHTML = cards.join('');
+}
+
+function generateReturn() {
+  saveSchoolDetails();
+  const schoolName  = document.getElementById('school-name').value || 'Unknown School';
+  const urn         = document.getElementById('school-urn').value  || '000000';
+  const la          = document.getElementById('school-la').value   || '000';
+  const estab       = document.getElementById('school-estab').value || '0000';
+  const refDate     = document.getElementById('census-date').value  || new Date().toISOString().slice(0,10);
+
+  const pupilXML = pupils.map(p => `    <Pupil>
+      <UPN>${p.upn || ''}</UPN>
+      <Forename>${escXML(p.first_name)}</Forename>
+      <Surname>${escXML(p.last_name)}</Surname>
+      <DOB>${p.date_of_birth ? p.date_of_birth.slice(0,10) : ''}</DOB>
+      <Gender>${p.gender || ''}</Gender>
+      <NCyear>${p.year_group === 'R' ? 'R' : String(p.year_group)}</NCyear>
+      <SENstatus>${p.sen_status && p.sen_status !== 'none' ? p.sen_status.toUpperCase() : ''}</SENstatus>
+      <EligibleForFSM>${p.pupil_premium ? 'true' : 'false'}</EligibleForFSM>
+      <EthnicityCodes>${p.ethnicity_code || 'NOBT'}</EthnicityCodes>
+    </Pupil>`).join('\n');
+
+  censusXML = `<?xml version="1.0" encoding="UTF-8"?>
+<CTfile xmlns="http://www.gov.uk/schoolcensus">
+  <Header>
+    <DocumentName>School Census Return</DocumentName>
+    <SchoolName>${escXML(schoolName)}</SchoolName>
+    <URN>${urn}</URN>
+    <LA>${la}</LA>
+    <Estab>${estab}</Estab>
+    <CensusDate>${refDate}</CensusDate>
+    <DateTime>${new Date().toISOString()}</DateTime>
+  </Header>
+  <Pupils>
+${pupilXML}
+  </Pupils>
+</CTfile>`;
+
+  document.getElementById('export-area').style.display = 'block';
+  document.getElementById('export-area').scrollIntoView({ behavior:'smooth' });
+  Wren.toast(`Census return generated for ${pupils.length} pupils`, 'success');
+}
+
+function downloadXML() {
+  if (!censusXML) return;
+  const a = document.createElement('a');
+  a.href = 'data:application/xml;charset=utf-8,' + encodeURIComponent(censusXML);
+  a.download = 'school-census-' + new Date().toISOString().slice(0,10) + '.xml';
+  a.click();
+}
+
+function escXML(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

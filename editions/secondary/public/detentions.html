@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Detentions — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div><div class="page-title">Detentions</div><div class="page-subtitle">Scheduled and served detentions</div></div>
+    <div style="display:flex;gap:8px">
+      <select class="btn btn-secondary" id="filter-served">
+        <option value="">All</option><option value="false">Pending</option><option value="true">Served</option>
+      </select>
+      <button class="btn btn-primary" id="btn-set-detention">+ Set Detention</button>
+    </div>
+  </div>
+  <div id="det-list"><div class="empty-state">Loading…</div></div>
+</div>
+<script>
+const _auth = () => ({ Authorization: 'Bearer ' + (sessionStorage.getItem('wrenToken') || sessionStorage.getItem('wren_token') || '') });
+
+async function load() {
+  const served = document.getElementById('filter-served').value;
+  const p = new URLSearchParams();
+  if (served) p.set('served', served);
+  const data = await fetch('/api/detentions?' + p, { headers: _auth() }).then(r=>r.json()).catch(()=>[]);
+  const fmt = d => { if(!d)return'—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; };
+  document.getElementById('det-list').innerHTML = data.length ? data.map(d => `
+    <div style="background:var(--card-bg);border:1px solid ${d.served?'var(--border)':'#7f1d1d'};border-radius:10px;padding:14px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px">${d.pupil_name||'—'}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${d.reason||'—'}</div>
+        <div style="font-size:12px;color:var(--text-muted)">Set by: ${d.teacher_name||'—'} &nbsp;·&nbsp; ${fmt(d.scheduled_date)} &nbsp;·&nbsp; ${d.duration_minutes} min</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;background:${d.served?'#14532d':'#7f1d1d'};color:${d.served?'#4ade80':'#fca5a5'}">${d.served?'Served':'Pending'}</span>
+        ${!d.served ? `<button class="btn btn-sm" data-action="serve-detention" data-id="${d.id}">Mark Served</button>` : ''}
+      </div>
+    </div>`).join('') : '<div class="empty-state">No items yet</div>';
+}
+async function serve(id) {
+  await fetch('/api/detentions/' + id + '/serve', { method:'PATCH', headers: _auth() });
+  Wren.toast('Detention marked as served', 'success');
+  load();
+}
+document.getElementById('filter-served').addEventListener('change', load);
+document.getElementById('btn-set-detention').addEventListener('click', () => alert('Set detention — to be wired up'));
+document.getElementById('det-list').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="serve-detention"]');
+  if (btn) serve(parseInt(btn.dataset.id));
+});
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

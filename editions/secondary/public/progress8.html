@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="secondary">
+<title>Progress 8 — Wren Secondary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.p8-hero{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:28px}
+.p8-tile{background:var(--c-surface);border:1px solid var(--c-border);border-radius:16px;padding:20px;text-align:center}
+.p8-tile .pt-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--c-muted);margin-bottom:8px}
+.p8-tile .pt-val{font-size:2.4rem;font-weight:900;line-height:1;margin-bottom:6px}
+.p8-tile .pt-bench{font-size:.75rem;color:var(--c-muted)}
+.p8-positive{color:#22c55e}.p8-negative{color:#ef4444}.p8-neutral{color:var(--c-blue)}
+
+.pupil-table{width:100%;border-collapse:collapse}
+.pupil-table th{font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--c-muted);padding:8px 10px;border-bottom:2px solid var(--c-border);text-align:left}
+.pupil-table td{font-size:.82rem;color:var(--c-text);padding:9px 10px;border-bottom:1px solid rgba(45,55,72,.4)}
+.pupil-table tr:hover td{background:rgba(255,255,255,.02)}
+.pupil-table tr:last-child td{border-bottom:none}
+
+.grade-chip{display:inline-block;padding:2px 8px;border-radius:6px;font-size:.75rem;font-weight:700}
+.grade-9,.grade-8{background:rgba(34,197,94,.15);color:#22c55e}
+.grade-7,.grade-6{background:rgba(74,154,191,.15);color:#4a9abf}
+.grade-5,.grade-4{background:rgba(245,158,11,.15);color:#f59e0b}
+.grade-3,.grade-2,.grade-1,.grade-U{background:rgba(239,68,68,.15);color:#ef4444}
+
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
+.filter-row select,.filter-row input{padding:8px 12px;border-radius:10px;border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text);font-family:inherit;font-size:.85rem}
+
+.barchart{display:flex;gap:10px;align-items:flex-end;height:160px;margin-bottom:24px}
+.bar-col{display:flex;flex-direction:column;align-items:center;flex:1;gap:4px}
+.bar-rect{width:100%;border-radius:6px 6px 0 0;transition:height .4s ease;min-height:2px}
+.bar-lbl{font-size:.72rem;color:var(--c-muted);font-weight:700}
+.bar-val{font-size:.72rem;color:var(--c-text);font-weight:700}
+
+.subj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:24px}
+.subj-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:14px}
+.subj-name{font-size:.88rem;font-weight:700;margin-bottom:8px}
+.subj-avg{font-size:1.5rem;font-weight:800;color:var(--c-blue);margin-bottom:4px}
+.subj-bar{height:8px;border-radius:4px;background:#0f172a;overflow:hidden;margin-bottom:6px}
+.subj-bar-fill{height:100%;border-radius:4px}
+.subj-meta{font-size:.72rem;color:var(--c-muted)}
+
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-head h2{font-size:1rem;font-weight:700;margin:0}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Progress 8 / Attainment 8</div>
+      <div class="page-subtitle">KS4 performance — Year 11 · 2025–26</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" id="btn-export-csv">Export CSV</button>
+      <button class="btn btn-primary" id="btn-destinations">Y11 Destinations →</button>
+    </div>
+  </div>
+
+  <!-- ── Hero metrics ── -->
+  <div class="p8-hero" id="p8-hero">
+    <div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div></div>
+  </div>
+
+  <!-- ── Grade distribution chart ── -->
+  <div class="section-head">
+    <h2>Grade Distribution — All Subjects</h2>
+    <div class="filter-row" style="margin:0">
+      <select id="dist-year">
+        <option value="Year 11">Year 11</option>
+        <option value="Year 10">Year 10</option>
+      </select>
+    </div>
+  </div>
+  <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:20px 20px 12px;margin-bottom:24px">
+    <div class="barchart" id="grade-chart">
+      <div class="loading-state" style="width:100%"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- ── Subject averages ── -->
+  <div class="section-head"><h2>Subject Averages — Year 11</h2></div>
+  <div class="subj-grid" id="subj-grid">
+    <div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div></div>
+  </div>
+
+  <!-- ── Pupil breakdown ── -->
+  <div class="section-head">
+    <h2>Pupil Breakdown</h2>
+  </div>
+  <div class="filter-row">
+    <input type="text" id="pupil-search" placeholder="Search pupil...">
+    <select id="year-filter">
+      <option value="">All Years</option>
+      <option value="Year 10">Year 10</option>
+      <option value="Year 11" selected>Year 11</option>
+    </select>
+    <select id="subj-filter">
+      <option value="">All Subjects</option>
+    </select>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table class="pupil-table" id="pupil-table">
+      <thead>
+        <tr>
+          <th>Pupil</th><th>Year</th><th>Subject</th><th>Grade</th><th>Term</th><th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="table-body">
+        <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--c-muted)">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let allData = [];
+document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
+document.getElementById('btn-destinations').addEventListener('click', () => { location.href = '/destinations.html'; });
+document.getElementById('dist-year').addEventListener('change', rebuildDist);
+document.getElementById('pupil-search').addEventListener('input', filterTable);
+document.getElementById('year-filter').addEventListener('change', filterTable);
+document.getElementById('subj-filter').addEventListener('change', filterTable);
+document.addEventListener('wren:ready', init);
+
+const gradeToNum = g => {
+  if (!g) return 0;
+  if (/^\d/.test(g)) { const n = parseInt(g.split('-')[0]); return isNaN(n)?0:n; }
+  const m = {'A*':9,'A':8,'B':7,'C':6,'D':5,'E':4,'F':3,'G':2,'U':1};
+  return m[g.toUpperCase()] || 0;
+};
+
+const numToColour = n => n>=7?'#22c55e':n>=5?'#4a9abf':n>=4?'#f59e0b':'#ef4444';
+
+async function init() {
+  try {
+    const [y11, y10] = await Promise.all([
+      Wren.api('/api/assessments-secondary?key_stage=KS4').catch(() => []),
+      Wren.api('/api/assessments-secondary?year_group=Year+10').catch(() => []),
+    ]);
+    allData = [...(Array.isArray(y11)?y11:[]), ...(Array.isArray(y10)?y10:[])];
+
+    buildHero();
+    rebuildDist();
+    buildSubjectGrid();
+    buildTable();
+    populateSubjectFilter();
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function buildHero() {
+  const y11 = allData.filter(a=>a.year_group==='Year 11'&&a.grade);
+  const grades = y11.map(a=>gradeToNum(a.grade)).filter(g=>g>0);
+  const avg = grades.length ? (grades.reduce((a,b)=>a+b,0)/grades.length) : null;
+  const att8 = avg ? avg.toFixed(1) : '—';
+
+  // P8 estimate: avg - national_avg(5.0), scaled
+  const p8Raw = avg ? avg - 5.0 : null;
+  const p8 = p8Raw !== null ? (p8Raw * 0.6).toFixed(2) : '—';
+  const p8Sign = p8 !== '—' && parseFloat(p8) >= 0 ? '+' : '';
+
+  // Basics
+  const pupils = [...new Set(y11.map(a=>a.child_id))];
+  const basics4 = pupils.filter(id=>{
+    const en = Math.max(...y11.filter(a=>a.child_id===id&&(a.subject==='English Language'||a.subject==='English Literature')).map(a=>gradeToNum(a.grade)),0);
+    const ma = Math.max(...y11.filter(a=>a.child_id===id&&a.subject==='Mathematics').map(a=>gradeToNum(a.grade)),0);
+    return en>=4&&ma>=4;
+  }).length;
+  const basics5 = pupils.filter(id=>{
+    const en = Math.max(...y11.filter(a=>a.child_id===id&&(a.subject==='English Language'||a.subject==='English Literature')).map(a=>gradeToNum(a.grade)),0);
+    const ma = Math.max(...y11.filter(a=>a.child_id===id&&a.subject==='Mathematics').map(a=>gradeToNum(a.grade)),0);
+    return en>=5&&ma>=5;
+  }).length;
+
+  const p8Colour = p8==='—'?'var(--c-muted)':parseFloat(p8)>=0?'#22c55e':'#ef4444';
+
+  document.getElementById('p8-hero').innerHTML = `
+    <div class="p8-tile">
+      <div class="pt-label">Progress 8</div>
+      <div class="pt-val" style="color:${p8Colour}">${p8==='—'?'—':p8Sign+p8}</div>
+      <div class="pt-bench">National avg: 0.00<br>Above = positive progress</div>
+    </div>
+    <div class="p8-tile">
+      <div class="pt-label">Attainment 8</div>
+      <div class="pt-val p8-neutral">${att8}</div>
+      <div class="pt-bench">National avg: 46.3<br>Scale: 0 – 90</div>
+    </div>
+    <div class="p8-tile">
+      <div class="pt-label">Basics Grade 4+</div>
+      <div class="pt-val p8-positive">${pupils.length?`${basics4}/${pupils.length}`:'—'}</div>
+      <div class="pt-bench">English & Maths<br>${pupils.length?Math.round(basics4/pupils.length*100)+'%':''}</div>
+    </div>
+    <div class="p8-tile">
+      <div class="pt-label">Basics Grade 5+</div>
+      <div class="pt-val p8-neutral">${pupils.length?`${basics5}/${pupils.length}`:'—'}</div>
+      <div class="pt-bench">English & Maths<br>${pupils.length?Math.round(basics5/pupils.length*100)+'%':''}</div>
+    </div>
+    <div class="p8-tile">
+      <div class="pt-label">Y11 Cohort</div>
+      <div class="pt-val" style="color:var(--c-text)">${pupils.length}</div>
+      <div class="pt-bench">Pupils with grades recorded</div>
+    </div>
+    <div class="p8-tile">
+      <div class="pt-label">Data Points</div>
+      <div class="pt-val" style="color:var(--c-text)">${y11.length}</div>
+      <div class="pt-bench">Grade entries this term</div>
+    </div>
+  `;
+}
+
+function rebuildDist() {
+  const year = document.getElementById('dist-year').value;
+  const filtered = allData.filter(a=>a.year_group===year&&a.grade);
+  const counts = {9:0,8:0,7:0,6:0,5:0,4:0,3:0,2:0,1:0};
+  filtered.forEach(a=>{ const n=gradeToNum(a.grade); if(n>=1&&n<=9) counts[n]++; });
+  const max = Math.max(...Object.values(counts), 1);
+  const colours = {9:'#22c55e',8:'#22c55e',7:'#4a9abf',6:'#4a9abf',5:'#f59e0b',4:'#f59e0b',3:'#ef4444',2:'#ef4444',1:'#ef4444'};
+  document.getElementById('grade-chart').innerHTML = [9,8,7,6,5,4,3,2,1].map(g => {
+    const h = Math.round(counts[g]/max*140);
+    return `<div class="bar-col">
+      <span class="bar-val">${counts[g]||''}</span>
+      <div class="bar-rect" style="height:${h}px;background:${colours[g]};min-height:${counts[g]?2:0}px"></div>
+      <span class="bar-lbl">${g}</span>
+    </div>`;
+  }).join('');
+}
+
+function buildSubjectGrid() {
+  const y11 = allData.filter(a=>a.year_group==='Year 11'&&a.grade);
+  const bySubj = {};
+  y11.forEach(a=>{ if(!bySubj[a.subject]) bySubj[a.subject]=[]; bySubj[a.subject].push(gradeToNum(a.grade)); });
+  const subjects = Object.entries(bySubj).filter(([,gs])=>gs.some(g=>g>0));
+  subjects.sort((a,b)=>b[1].reduce((x,y)=>x+y,0)/b[1].length - a[1].reduce((x,y)=>x+y,0)/a[1].length);
+
+  document.getElementById('subj-grid').innerHTML = subjects.map(([subj,gs]) => {
+    const valid = gs.filter(g=>g>0);
+    const avg = valid.length ? (valid.reduce((a,b)=>a+b,0)/valid.length).toFixed(1) : '—';
+    const col = numToColour(parseFloat(avg)||0);
+    const w = avg==='—' ? 0 : Math.min(100, parseFloat(avg)/9*100);
+    return `<div class="subj-card">
+      <div class="subj-name">${subj}</div>
+      <div class="subj-avg" style="color:${col}">${avg}</div>
+      <div class="subj-bar"><div class="subj-bar-fill" style="width:${w}%;background:${col}"></div></div>
+      <div class="subj-meta">${valid.length} pupil${valid.length!==1?'s':''} · Min ${Math.min(...valid)} · Max ${Math.max(...valid)}</div>
+    </div>`;
+  }).join('');
+}
+
+let tableRows = [];
+
+function buildTable() {
+  tableRows = allData.filter(a=>a.grade);
+  tableRows.sort((a,b)=>a.last_name?.localeCompare(b.last_name)||0);
+  renderTable(tableRows);
+}
+
+function filterTable() {
+  const search = document.getElementById('pupil-search').value.toLowerCase();
+  const year = document.getElementById('year-filter').value;
+  const subj = document.getElementById('subj-filter').value;
+  const filtered = tableRows.filter(r =>
+    (!search || (`${r.first_name} ${r.last_name}`).toLowerCase().includes(search)) &&
+    (!year || r.year_group === year) &&
+    (!subj || r.subject === subj)
+  );
+  renderTable(filtered);
+}
+
+function renderTable(rows) {
+  const gradeClass = g => {
+    const n = gradeToNum(g); return `grade-${n||'U'}`;
+  };
+  document.getElementById('table-body').innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td><strong>${r.first_name||''} ${r.last_name||''}</strong></td>
+      <td style="color:var(--c-muted)">${r.year_group||'—'}</td>
+      <td>${r.subject||'—'}</td>
+      <td><span class="grade-chip ${gradeClass(r.grade)}">${r.grade||'—'}</span></td>
+      <td style="color:var(--c-muted)">${r.term||'—'}</td>
+      <td style="color:var(--c-muted);font-size:.76rem">${r.notes||''}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--c-muted)">No data matching filters</td></tr>';
+}
+
+function populateSubjectFilter() {
+  const subjects = [...new Set(allData.map(a=>a.subject).filter(Boolean))].sort();
+  const sel = document.getElementById('subj-filter');
+  subjects.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = s;
+    sel.appendChild(opt);
+  });
+}
+
+function exportCSV() {
+  const rows = [['First Name','Last Name','Year Group','Subject','Grade','Term','Notes']];
+  tableRows.forEach(r => rows.push([r.first_name,r.last_name,r.year_group,r.subject,r.grade,r.term,r.notes||'']));
+  const csv = rows.map(r=>r.map(c=>JSON.stringify(c||'')).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'progress8-export.csv';
+  a.click();
+}
+</script>
+</body>
+</html>

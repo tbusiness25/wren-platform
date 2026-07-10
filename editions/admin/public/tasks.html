@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Tasks — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.task-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1e293b;border:1px solid #2d3748;border-radius:8px;margin-bottom:6px}
+.task-row:hover{border-color:#4a9abf}
+.task-check{width:20px;height:20px;border-radius:5px;border:2px solid #2d3748;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+.task-check.done{background:#22c55e;border-color:#22c55e}
+.task-check.done::after{content:'✓';color:#fff;font-size:12px;font-weight:800}
+.p-badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;flex-shrink:0}
+.p-urgent{background:#ef444422;color:#ef4444}
+.p-high{background:#f59e0b22;color:#f59e0b}
+.p-medium{background:#4a9abf22;color:#4a9abf}
+.p-low{background:#2d374822;color:#94a3b8}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.chip{padding:5px 13px;border-radius:6px;font-size:12px;background:#1e293b;border:1px solid #2d3748;color:#94a3b8;cursor:pointer;transition:.15s}
+.chip.active{background:#4a9abf22;border-color:#4a9abf;color:#4a9abf}
+.add-task-row{display:flex;gap:8px;margin-bottom:20px}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">Tasks</div>
+    <button class="btn btn-primary" id="btn-new-task">+ New Task</button>
+  </div>
+
+  <div class="add-task-row">
+    <input class="form-control" id="quick-title" placeholder="Quick add task…" style="flex:1">
+    <select class="form-control" id="quick-priority" style="width:110px">
+      <option value="low">Low</option>
+      <option value="medium" selected>Medium</option>
+      <option value="high">High</option>
+      <option value="urgent">Urgent</option>
+    </select>
+    <input type="date" class="form-control" id="quick-due" style="width:145px">
+    <button class="btn btn-primary" id="btn-quick-add">Add</button>
+  </div>
+
+  <div class="filter-bar">
+    <span class="chip active" data-f="open,in_progress">Open</span>
+    <span class="chip" data-f="done">Done</span>
+    <span class="chip" data-f="cancelled">Cancelled</span>
+    <span class="chip" data-f="">All</span>
+  </div>
+
+  <div id="tasks-list"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<!-- Edit modal -->
+<div id="edit-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">Edit Task</div>
+    <input type="hidden" id="edit-id">
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Title *</div>
+      <input class="form-control" id="edit-title">
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Description</div>
+      <textarea class="form-control" id="edit-desc" rows="2"></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Priority</div>
+        <select class="form-control" id="edit-priority">
+          <option value="low">Low</option><option value="medium">Medium</option>
+          <option value="high">High</option><option value="urgent">Urgent</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Status</div>
+        <select class="form-control" id="edit-status">
+          <option value="open">Open</option><option value="in_progress">In Progress</option>
+          <option value="done">Done</option><option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Due date</div>
+        <input type="date" class="form-control" id="edit-due">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-secondary" id="btn-cancel-edit">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-edit">Save</button>
+      <button class="btn btn-ghost" style="color:#ef4444;margin-left:auto" id="btn-delete-task">Delete</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.modal-overlay{position:fixed;inset:0;background:#0008;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:#1e293b;border:1px solid #2d3748;border-radius:16px;padding:24px;width:100%;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px}
+</style>
+
+<script>
+let tasks = [], activeFilter = 'open,in_progress';
+const P_CLASS = {urgent:'p-urgent',high:'p-high',medium:'p-medium',low:'p-low'};
+
+function setFilter(el) {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  activeFilter = el.dataset.f;
+  renderTasks();
+}
+
+async function loadTasks() {
+  tasks = await Wren.api('/api/tasks').catch(() => []);
+  renderTasks();
+}
+
+function renderTasks() {
+  const filters = activeFilter ? activeFilter.split(',') : [];
+  const filtered = filters.length ? tasks.filter(t => filters.includes(t.status)) : tasks;
+  const el = document.getElementById('tasks-list');
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty-state">No tasks here.</div>';
+    return;
+  }
+  el.innerHTML = filtered.map(t => `
+    <div class="task-row" id="tr-${t.id}">
+      <div class="task-check${t.status==='done'?' done':''}" data-action="toggle" data-id="${t.id}"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.9rem;font-weight:600;color:${t.status==='done'?'#475569':'#f1f5f9'};${t.status==='done'?'text-decoration:line-through':''}">
+          ${esc(t.title)}
+        </div>
+        ${t.description ? `<div style="font-size:.75rem;color:#94a3b8;margin-top:2px">${esc(t.description)}</div>` : ''}
+        <div style="font-size:.72rem;color:#94a3b8;margin-top:3px">
+          ${t.due_date ? `Due ${new Date(t.due_date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}` : ''}
+          ${t.owner_name ? ` · ${esc(t.owner_name)}` : ''}
+          ${t.source && t.source !== 'manual' ? ` · ${esc(t.source)}` : ''}
+        </div>
+      </div>
+      <span class="p-badge ${P_CLASS[t.priority]||'p-medium'}">${(t.priority||'').toUpperCase()}</span>
+      <button class="btn btn-ghost" style="padding:4px 8px;font-size:12px" data-action="edit" data-id="${t.id}">Edit</button>
+    </div>`).join('');
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function quickAdd() {
+  const title = document.getElementById('quick-title').value.trim();
+  if (!title) return;
+  const priority = document.getElementById('quick-priority').value;
+  const due_date = document.getElementById('quick-due').value || null;
+  await Wren.api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, priority, due_date }) });
+  document.getElementById('quick-title').value = '';
+  Wren.toast('Task added');
+  loadTasks();
+}
+
+document.getElementById('quick-title').addEventListener('keydown', e => {
+  if (e.key === 'Enter') quickAdd();
+});
+document.getElementById('btn-new-task').addEventListener('click', () => openAddModal());
+document.getElementById('btn-quick-add').addEventListener('click', quickAdd);
+document.getElementById('btn-cancel-edit').addEventListener('click', closeEditModal);
+document.getElementById('btn-save-edit').addEventListener('click', saveEdit);
+document.getElementById('btn-delete-task').addEventListener('click', deleteTask);
+document.querySelector('.filter-bar').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (chip) setFilter(chip);
+});
+document.getElementById('tasks-list').addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const id = parseInt(el.dataset.id);
+  if (el.dataset.action === 'toggle') toggleDone(id);
+  else if (el.dataset.action === 'edit') openEdit(id);
+});
+
+async function toggleDone(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  const newStatus = t.status === 'done' ? 'open' : 'done';
+  await Wren.api(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
+  t.status = newStatus;
+  renderTasks();
+}
+
+function openEdit(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('edit-id').value = id;
+  document.getElementById('edit-title').value = t.title || '';
+  document.getElementById('edit-desc').value = t.description || '';
+  document.getElementById('edit-priority').value = t.priority || 'medium';
+  document.getElementById('edit-status').value = t.status || 'open';
+  document.getElementById('edit-due').value = t.due_date ? t.due_date.split('T')[0] : '';
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function closeEditModal() { document.getElementById('edit-modal').style.display = 'none'; }
+
+async function saveEdit() {
+  const id = document.getElementById('edit-id').value;
+  const data = {
+    title: document.getElementById('edit-title').value.trim(),
+    description: document.getElementById('edit-desc').value || null,
+    priority: document.getElementById('edit-priority').value,
+    status: document.getElementById('edit-status').value,
+    due_date: document.getElementById('edit-due').value || null,
+  };
+  if (!data.title) return Wren.toast('Title required', 'error');
+  await Wren.api(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  Wren.toast('Task saved');
+  closeEditModal();
+  loadTasks();
+}
+
+async function deleteTask() {
+  const id = document.getElementById('edit-id').value;
+  if (!confirm('Delete this task?')) return;
+  await Wren.api(`/api/tasks/${id}`, { method: 'DELETE' });
+  Wren.toast('Task deleted');
+  closeEditModal();
+  loadTasks();
+}
+
+document.addEventListener('wren:ready', loadTasks);
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

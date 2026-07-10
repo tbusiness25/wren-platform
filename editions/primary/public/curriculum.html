@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="primary">
+  <title>Curriculum — Wren Primary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📅 Curriculum Planning</div>
+    <button class="btn btn-primary" id="btn-new-plan">+ New Plan</button>
+  </div>
+
+  <div class="filter-bar">
+    <select class="form-control" id="room-filter" style="flex:0 0 160px">
+      <option value="">All Rooms</option>
+    </select>
+    <select class="form-control" id="term-filter" style="flex:0 0 150px">
+      <option value="">All Terms</option>
+      <option value="Autumn 1">Autumn 1</option>
+      <option value="Autumn 2">Autumn 2</option>
+      <option value="Spring 1">Spring 1</option>
+      <option value="Spring 2">Spring 2</option>
+      <option value="Summer 1">Summer 1</option>
+      <option value="Summer 2">Summer 2</option>
+    </select>
+  </div>
+
+  <div id="plans-area"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<script>
+let rooms = [];
+
+async function init() {
+  rooms = await Wren.api('/api/staff/rooms').catch(() => []);
+  const sel = document.getElementById('room-filter');
+  rooms.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.id; opt.textContent = r.name;
+    sel.appendChild(opt);
+  });
+  loadPlans();
+}
+
+async function loadPlans() {
+  const room = document.getElementById('room-filter').value;
+  const term = document.getElementById('term-filter').value;
+  let url = '/api/curriculum/plans?';
+  if (room) url += `room_id=${room}&`;
+  if (term) url += `term=${encodeURIComponent(term)}`;
+  try {
+    const plans = await Wren.api(url);
+    renderPlans(plans);
+  } catch(e) {
+    document.getElementById('plans-area').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderPlans(plans) {
+  const area = document.getElementById('plans-area');
+  if (!plans.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📅</div>
+      <div class="empty-title">No curriculum plans yet</div>
+    </div>`;
+    return;
+  }
+  area.innerHTML = plans.map(p => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700">${p.title || `Week ${p.week_number} — ${p.term}`}</div>
+          <div style="font-size:.78rem;color:#64748b">
+            ${p.room_name} · ${p.term}
+            ${p.week_start ? `· w/c ${new Date(p.week_start).toLocaleDateString('en-GB')}` : ''}
+            · ${p.staff_name}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <span class="badge ${p.status==='published'?'badge-green':'badge-amber'}">${p.status}</span>
+          ${p.status !== 'published' ?
+            `<button class="btn btn-sm btn-primary" data-action="publish-plan" data-id="${p.id}">Publish</button>` : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function publishPlan(id) {
+  await Wren.api(`/api/curriculum/plans/${id}/publish`, { method: 'PUT' });
+  Wren.toast('Plan published ✓', 'success');
+  loadPlans();
+}
+
+function newPlan() {
+  Wren.modal('New Curriculum Plan', `
+    <div class="form-group">
+      <label class="form-label">Room</label>
+      <select class="form-control" id="plan-room">
+        ${rooms.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Term</label>
+        <select class="form-control" id="plan-term">
+          <option>Autumn 1</option><option>Autumn 2</option>
+          <option>Spring 1</option><option>Spring 2</option>
+          <option>Summer 1</option><option>Summer 2</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Week Number</label>
+        <input type="number" class="form-control" id="plan-week" min="1" max="7" value="1">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Week Starting</label>
+      <input type="date" class="form-control" id="plan-weekstart">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Title / Theme</label>
+      <input class="form-control" id="plan-title" placeholder="e.g. Autumn Animals">
+    </div>
+  `, [
+    { label: 'Create', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api('/api/curriculum/plans', { method: 'POST', body: {
+          room_id: document.getElementById('plan-room').value,
+          term: document.getElementById('plan-term').value,
+          week_number: document.getElementById('plan-week').value,
+          week_start: document.getElementById('plan-weekstart').value,
+          title: document.getElementById('plan-title').value
+        }});
+        Wren.toast('Plan created ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadPlans();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+document.getElementById('btn-new-plan').addEventListener('click', newPlan);
+document.getElementById('room-filter').addEventListener('change', loadPlans);
+document.getElementById('term-filter').addEventListener('change', loadPlans);
+document.getElementById('plans-area').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="publish-plan"]');
+  if (btn) publishPlan(parseInt(btn.dataset.id));
+});
+document.addEventListener('DOMContentLoaded', () => { init(); });
+</script>
+</body>
+</html>

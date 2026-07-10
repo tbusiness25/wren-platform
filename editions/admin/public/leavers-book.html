@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Leavers Book — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .leaver-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:18px 20px;margin-bottom:12px}
+    .leaver-name{font-size:16px;font-weight:700;margin-bottom:4px}
+    .leaver-meta{font-size:12px;color:var(--c-muted);margin-bottom:12px}
+    .leaver-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .editor-area{width:100%;min-height:200px;background:var(--c-bg);border:1px solid var(--c-border);
+                 border-radius:10px;color:var(--c-text);padding:16px;font-size:14px;
+                 font-family:inherit;line-height:1.8;resize:vertical;transition:border-color .15s}
+    .editor-area:focus{outline:none;border-color:var(--c-blue)}
+    .ai-loading{display:none;align-items:center;gap:10px;color:var(--c-muted);font-size:14px}
+    .ai-loading.visible{display:flex}
+    .book-editor{display:none}
+    .book-editor.open{display:block}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📖 Leavers Book</div>
+      <div class="page-subtitle">Farewell books for children moving on to school</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-label">Children Approaching School Age (4y 10m+)</div>
+    <div id="leaversList"><div class="spinner"></div></div>
+  </div>
+
+  <!-- Editor panel — shown when a book is open -->
+  <div class="card book-editor" id="bookEditor">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <div class="card-label" style="margin:0" id="editorTitle">Leavers Book</div>
+        <div id="editorMeta" style="font-size:12px;color:var(--c-muted);margin-top:2px"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="close-editor-btn">← Back to list</button>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div class="card-label">AI Farewell Message</div>
+      <div class="ai-loading" id="genLoading">
+        <div class="spinner"></div>
+        <span>Writing farewell message — 30–60 seconds…</span>
+      </div>
+      <textarea class="editor-area" id="aiArea" placeholder="AI-generated farewell message will appear here…"></textarea>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <div class="card-label">Personal Staff Farewell (optional)</div>
+      <textarea class="editor-area" id="farewellArea" style="min-height:120px"
+        placeholder="Add a personal note from the team…"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="flex:1;min-width:200px">
+        <div class="card-label">Cover Title</div>
+        <input type="text" id="coverTitle" class="form-control" placeholder="e.g. Lily's Leavers Book">
+      </div>
+      <div style="min-width:160px">
+        <div class="card-label">Leaving Date</div>
+        <input type="date" id="leavingDate" class="form-control">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-ghost" id="regenAiBtn">✨ Regenerate AI message</button>
+      <button class="btn btn-primary" id="saveBookBtn">💾 Save</button>
+      <button class="btn btn-success" id="finalisePdfBtn">📄 Finalise & Download PDF</button>
+      <div id="bookSavedBadge" style="display:none"><span class="badge badge-success">Saved</span></div>
+    </div>
+
+    <!-- Memory Keepsake (PROMPT 46) — the free gift for the family -->
+    <div id="keepsakePanel" style="margin-top:22px;padding-top:18px;border-top:1px solid var(--c-border)">
+      <div class="card-label" style="display:flex;align-items:center;gap:8px">💛 Memory Keepsake <span class="badge badge-grey" style="font-weight:600">the family's free gift</span></div>
+      <div style="font-size:12.5px;color:var(--c-muted);margin:4px 0 12px;line-height:1.6">
+        Generates a rich, beautiful package of the child's whole journey — photos, videos, milestones, learning journey and "all about me".
+        Creates a <b>no-login link</b> the parent can open, install to their phone as an app, and download to keep forever.
+      </div>
+      <div id="keepsakeState"><div class="spinner"></div></div>
+      <div class="leaver-actions" style="margin-top:12px">
+        <button class="btn btn-primary" id="genKeepsakeBtn">🎁 Generate keepsake &amp; link</button>
+        <button class="btn btn-ghost btn-sm" id="revokeKeepsakeBtn" style="display:none">Revoke link</button>
+      </div>
+      <div id="keepsakeLinkBox" style="display:none;margin-top:12px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:14px">
+        <div style="font-size:12px;color:var(--c-muted);margin-bottom:6px">Shareable link for the parent (no login needed)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="keepsakeLink" readonly class="form-control" style="flex:1;min-width:220px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px">
+          <button class="btn btn-ghost btn-sm" id="copyKeepsakeBtn">📋 Copy</button>
+        </div>
+        <div class="leaver-actions" style="margin-top:10px">
+          <a class="btn btn-success btn-sm" id="openKeepsakeBtn" target="_blank" rel="noopener">📖 Open / preview</a>
+          <a class="btn btn-ghost btn-sm" id="dlKeepsakeHtmlBtn" target="_blank" rel="noopener">💾 Download HTML</a>
+          <a class="btn btn-ghost btn-sm" id="dlKeepsakePdfBtn" target="_blank" rel="noopener">📄 Download PDF</a>
+          <span id="keepsakeMeta" style="font-size:11.5px;color:var(--c-muted)"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+let currentBook = null, currentChildId = null;
+const $ = id => document.getElementById(id);
+function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtDate(d){ if(!d) return ''; return new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
+
+async function init() {
+  try {
+    const d = await Wren.api('/api/leavers-book/leavers');
+    renderLeavers(d.children||[]);
+  } catch(e) {
+    $('leaversList').innerHTML = `<div class="alert alert-danger">Failed: ${escH(e.message)}</div>`;
+  }
+}
+
+function renderLeavers(children) {
+  if (!children.length) {
+    $('leaversList').innerHTML = '<div class="empty-state"><div class="empty-icon">🎓</div><div class="empty-title">No children at leaving age</div><div class="empty-body">Children aged 4y 10m+ will appear here when it\'s time to create their leavers book.</div></div>';
+    return;
+  }
+  $('leaversList').innerHTML = children.map(c => {
+    const nm = c.first_name+' '+c.last_name;
+    const ageM = Math.round(parseFloat(c.age_months)||0);
+    const ageStr = Math.floor(ageM/12)+'y '+ageM%12+'m';
+    const statusBadge = c.book_status === 'finalised'
+      ? `<span class="badge badge-success">Finalised</span>`
+      : c.book_status === 'draft'
+        ? `<span class="badge badge-grey">Draft</span>`
+        : `<span class="badge badge-grey">Not started</span>`;
+    return `<div class="leaver-card">
+      <div class="leaver-name">${escH(nm)}</div>
+      <div class="leaver-meta">${escH(c.room_name||'')} · ${ageStr} · DOB: ${fmtDate(c.date_of_birth)}</div>
+      <div class="leaver-actions">
+        ${statusBadge}
+        <button class="btn btn-primary btn-sm" data-action="open-book" data-id="${c.id}">
+          ${c.book_id ? 'Open Book' : '✨ Generate Book'}
+        </button>
+        ${c.book_id && c.book_status!=='finalised' ? `<button class="btn btn-success btn-sm" data-action="download-book" data-id="${c.id}">📄 Download PDF</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openBook(childId, downloadNow) {
+  currentChildId = childId;
+  $('genLoading').classList.remove('visible');
+
+  // Load or generate
+  try {
+    const d = await Wren.api(`/api/leavers-book/${childId}`);
+    if (d.book) {
+      currentBook = d.book;
+      populateEditor(d.book);
+      if (downloadNow) { finalisePdf(); return; }
+    } else {
+      // Auto-generate
+      currentBook = null;
+      await generateBook(childId);
+    }
+    openEditor(childId);
+  } catch(e) {
+    Wren.toast('Failed: '+e.message,'error');
+  }
+}
+
+async function generateBook(childId) {
+  $('genLoading').classList.add('visible');
+  $('aiArea').value = '';
+  try {
+    const d = await Wren.api(`/api/leavers-book/generate/${childId}`,{method:'POST'});
+    currentBook = d.book;
+    populateEditor(d.book);
+    Wren.toast('Book generated!','success');
+  } catch(e) {
+    Wren.toast('Generation failed: '+e.message,'error');
+    $('aiArea').value = 'Generation failed — please write manually.';
+  } finally {
+    $('genLoading').classList.remove('visible');
+  }
+}
+
+function populateEditor(book) {
+  $('aiArea').value = book.ai_highlights||'';
+  $('farewellArea').value = book.staff_farewell||'';
+  $('coverTitle').value = book.cover_title||'';
+  $('leavingDate').value = book.leaving_date||'';
+  $('editorTitle').textContent = (book.cover_title||'Leavers Book');
+  $('editorMeta').textContent = `Book #${book.id} · Status: ${book.status}`;
+  $('bookSavedBadge').style.display = 'none';
+  // Attach voice
+  setTimeout(()=>{ if(window.WrenVoice){ WrenVoice.attachTo($('aiArea'),{context:'leavers-book'}); WrenVoice.attachTo($('farewellArea'),{context:'farewell'}); } },100);
+}
+
+function openEditor(childId) {
+  $('bookEditor').classList.add('open');
+  $('bookEditor').scrollIntoView({behavior:'smooth',block:'start'});
+  loadKeepsake(childId);
+}
+
+// ── Memory Keepsake (PROMPT 46) ──────────────────────────────────────────────
+function renderKeepsake(pkg) {
+  const box = $('keepsakeLinkBox'), state = $('keepsakeState'), revoke = $('revokeKeepsakeBtn');
+  if (pkg && pkg.status === 'active') {
+    const url = location.origin + '/keepsake/' + pkg.token;
+    $('keepsakeLink').value = url;
+    $('openKeepsakeBtn').href = '/keepsake/' + pkg.token;
+    $('dlKeepsakeHtmlBtn').href = '/keepsake/' + pkg.token + '/download';
+    $('dlKeepsakePdfBtn').href = '/keepsake/' + pkg.token + '/book.pdf';
+    $('keepsakeMeta').textContent = `${pkg.media_count||0} photos/videos · created ${fmtDate(pkg.created_at)}` + (pkg.access_count ? ` · opened ${pkg.access_count}×` : '');
+    box.style.display = ''; revoke.style.display = '';
+    state.innerHTML = '<span class="badge badge-success">Link active</span>';
+    $('genKeepsakeBtn').textContent = '🔄 Regenerate keepsake';
+    $('genKeepsakeBtn')._pkgId = pkg.id;
+    revoke._pkgId = pkg.id;
+  } else {
+    box.style.display = 'none'; revoke.style.display = 'none';
+    state.innerHTML = '<span style="font-size:12.5px;color:var(--c-muted)">No keepsake generated yet.</span>';
+    $('genKeepsakeBtn').textContent = '🎁 Generate keepsake & link';
+  }
+}
+async function loadKeepsake(childId) {
+  $('keepsakeState').innerHTML = '<div class="spinner"></div>';
+  try { const d = await Wren.api('/api/leavers-gift/gift/' + childId); renderKeepsake(d.package); }
+  catch(e) { $('keepsakeState').innerHTML = '<span style="color:var(--c-muted);font-size:12px">Could not load keepsake.</span>'; }
+}
+async function generateKeepsake() {
+  if (!currentChildId) return;
+  const btn = $('genKeepsakeBtn'); const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    const d = await Wren.api('/api/leavers-gift/gift/' + currentChildId + '/generate', { method:'POST', body:{ valid_days:365 } });
+    renderKeepsake(d.package);
+    Wren.toast('Keepsake ready — share the link with the family 💛','success');
+  } catch(e) { Wren.toast('Keepsake failed: '+(e.error||e.message||''),'error'); btn.textContent = orig; }
+  finally { btn.disabled = false; }
+}
+async function revokeKeepsake() {
+  const id = $('revokeKeepsakeBtn')._pkgId; if (!id) return;
+  if (!confirm('Revoke this keepsake link? The parent will no longer be able to open it (they keep anything already downloaded).')) return;
+  try { await Wren.api('/api/leavers-gift/packages/' + id + '/revoke', { method:'POST' }); renderKeepsake(null); Wren.toast('Link revoked','info'); }
+  catch(e) { Wren.toast('Failed: '+(e.error||e.message||''),'error'); }
+}
+
+function closeEditor() {
+  $('bookEditor').classList.remove('open');
+  currentBook = null;
+  currentChildId = null;
+  init(); // refresh list
+}
+
+$('regenAiBtn').addEventListener('click', async () => {
+  if (!currentChildId) return;
+  await generateBook(currentChildId);
+});
+
+$('saveBookBtn').addEventListener('click', async () => {
+  if (!currentBook) { Wren.toast('Generate first','warning'); return; }
+  try {
+    await Wren.api(`/api/leavers-book/${currentBook.id}`,{
+      method:'PUT',
+      body:{
+        cover_title: $('coverTitle').value.trim()||null,
+        leaving_date: $('leavingDate').value||null,
+        staff_farewell: $('farewellArea').value.trim()||null,
+        ai_highlights: $('aiArea').value.trim()||null,
+      }
+    });
+    Wren.toast('Saved!','success');
+    $('bookSavedBadge').style.display = '';
+  } catch(e) {
+    Wren.toast('Save failed: '+e.message,'error');
+  }
+});
+
+$('finalisePdfBtn').addEventListener('click', finalisePdf);
+async function finalisePdf() {
+  if (!currentBook) { Wren.toast('Generate book first','warning'); return; }
+  // Save latest edits first
+  try {
+    await Wren.api(`/api/leavers-book/${currentBook.id}`,{
+      method:'PUT',
+      body:{
+        cover_title: $('coverTitle').value.trim()||null,
+        leaving_date: $('leavingDate').value||null,
+        staff_farewell: $('farewellArea').value.trim()||null,
+        ai_highlights: $('aiArea').value.trim()||null,
+      }
+    });
+  } catch(_) {}
+
+  try {
+    const resp = await fetch(`/api/leavers-book/${currentBook.id}/finalise`,{
+      method:'POST',
+      headers: {'Authorization':'Bearer '+sessionStorage.getItem('wrenToken')}
+    });
+    if (!resp.ok) { const e=await resp.json(); Wren.toast(e.error||'Failed','error'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download=($('coverTitle').value||'leavers-book')+'.pdf'; a.click();
+    URL.revokeObjectURL(url);
+    Wren.toast('PDF downloaded!','success');
+    if (currentBook) currentBook.status='finalised';
+    $('editorMeta').textContent = `Book #${currentBook?.id||''} · Status: finalised`;
+  } catch(e) {
+    Wren.toast('PDF failed: '+e.message,'error');
+  }
+}
+
+document.addEventListener('wren:ready', init);
+document.getElementById('close-editor-btn').addEventListener('click', closeEditor);
+$('genKeepsakeBtn').addEventListener('click', generateKeepsake);
+$('revokeKeepsakeBtn').addEventListener('click', revokeKeepsake);
+$('copyKeepsakeBtn').addEventListener('click', () => {
+  const v = $('keepsakeLink').value;
+  navigator.clipboard?.writeText(v).then(()=>Wren.toast('Link copied','success')).catch(()=>{ $('keepsakeLink').select(); document.execCommand('copy'); Wren.toast('Link copied','success'); });
+});
+document.getElementById('leaversList').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = parseInt(btn.dataset.id);
+  if (btn.dataset.action === 'open-book') openBook(id);
+  else if (btn.dataset.action === 'download-book') openBook(id, true);
+});
+</script>
+<script src="/js/wren-voice.js"></script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="wren-edition" content="primary">
+  <title>Classroom Tools — Wren Primary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Tool grid ── */
+    .tools-grid {
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+      gap:14px; padding:14px;
+    }
+    @media(min-width:768px) { .tools-grid { grid-template-columns:repeat(4,1fr); } }
+
+    .tool-tile {
+      background:var(--card-bg); border:2px solid var(--border); border-radius:16px;
+      padding:24px 16px; cursor:pointer; text-align:center; transition:.15s;
+      display:flex; flex-direction:column; align-items:center; gap:10px;
+      min-height:140px; -webkit-tap-highlight-color:transparent;
+    }
+    .tool-tile:hover { border-color:var(--primary); background:rgba(74,154,191,.06); transform:translateY(-2px); }
+    .tool-tile:active { transform:scale(.97); }
+    .tool-icon { font-size:3rem; line-height:1; }
+    .tool-name { font-size:14px; font-weight:700; color:var(--text); }
+
+    /* ── Full-screen tool overlay ── */
+    .tool-overlay {
+      position:fixed; inset:0; background:var(--bg,#0f172a); z-index:300;
+      display:none; flex-direction:column; align-items:stretch;
+    }
+    .tool-overlay.open { display:flex; }
+
+    .tool-header {
+      background:var(--card-bg); border-bottom:1px solid var(--border);
+      padding:12px 16px; display:flex; align-items:center; gap:12px; flex-shrink:0;
+    }
+    .tool-header h2 { font-size:16px; font-weight:700; flex:1; }
+    .tool-close { background:none; border:1px solid var(--border); border-radius:8px;
+      color:var(--text); cursor:pointer; padding:8px 12px; font-size:14px;
+      min-height:40px; }
+    .tool-close:hover { border-color:var(--danger); color:var(--danger); }
+    .tool-body { flex:1; display:flex; align-items:center; justify-content:center;
+      flex-direction:column; padding:20px; overflow-y:auto; }
+
+    /* ── 1. Sand Timer ── */
+    #timer-svg { width:min(220px,50vw); height:min(300px,55vh); }
+    .timer-display { font-size:4rem; font-weight:800; color:var(--primary); font-variant-numeric:tabular-nums; letter-spacing:-2px; }
+    .timer-presets { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin:14px 0; }
+    .preset-btn { background:var(--surface); border:2px solid var(--border); border-radius:10px;
+      color:var(--text); cursor:pointer; padding:10px 16px; font-size:14px; font-weight:600;
+      min-height:48px; transition:.15s; }
+    .preset-btn:hover,.preset-btn.active { border-color:var(--primary); color:var(--primary); }
+    .timer-controls { display:flex; gap:10px; }
+    .big-btn { padding:14px 28px; border-radius:12px; font-size:16px; font-weight:700;
+      cursor:pointer; border:none; min-height:56px; min-width:120px; transition:.15s; }
+    .big-btn-primary { background:var(--primary); color:#fff; }
+    .big-btn-primary:hover { opacity:.85; }
+    .big-btn-secondary { background:var(--surface); border:1px solid var(--border); color:var(--text); }
+    .big-btn-secondary:hover { border-color:var(--primary); }
+
+    /* ── 2. Name picker ── */
+    .wheel-ring { display:flex; align-items:center; justify-content:center; margin:16px 0; }
+    .wheel-canvas { width:min(280px,70vw); height:min(280px,70vw); }
+    .picked-name { font-size:2.4rem; font-weight:800; color:var(--primary); min-height:60px; text-align:center; }
+    .picker-history { font-size:12px; color:var(--text-muted); max-width:400px; text-align:center; }
+
+    /* ── 3. Group generator ── */
+    .group-config { display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:center; margin-bottom:16px; }
+    .groups-display { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; width:100%; max-width:800px; }
+    .group-card { background:var(--card-bg); border:1px solid var(--border); border-radius:12px;
+      padding:14px; min-width:140px; max-width:200px; }
+    .group-card h4 { font-size:12px; font-weight:700; color:var(--primary); margin-bottom:8px; }
+    .group-member { font-size:13px; padding:4px 0; border-bottom:1px solid var(--border); }
+    .group-member:last-child { border-bottom:none; }
+
+    /* ── 4. Noise meter ── */
+    .noise-meter-bar { width:min(300px,70vw); height:28px; background:var(--surface);
+      border:1px solid var(--border); border-radius:14px; overflow:hidden; margin:10px auto; }
+    .noise-fill { height:100%; border-radius:14px; transition:width .1s, background .1s; background:#22c55e; }
+    .noise-level-label { font-size:3rem; font-weight:800; color:var(--text); text-align:center; }
+    .noise-threshold-row { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-top:12px; }
+    .threshold-chip { display:flex; align-items:center; gap:6px; font-size:13px; }
+    .threshold-dot { width:12px; height:12px; border-radius:50%; }
+
+    /* ── 5. Dice roller ── */
+    .dice-face { font-size:8rem; text-align:center; line-height:1; user-select:none;
+      transition:transform .15s; }
+    .dice-face.rolling { animation:diceRoll .4s ease; }
+    @keyframes diceRoll { 0%{transform:rotate(0)} 25%{transform:rotate(-20deg) scale(.9)} 75%{transform:rotate(20deg) scale(1.1)} 100%{transform:rotate(0) scale(1)} }
+    .dice-config { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
+    .dice-sides-select { padding:8px 14px; border-radius:8px; border:1px solid var(--border);
+      background:var(--surface); color:var(--text); font-size:14px; }
+
+    /* ── 6. Decision wheel ── */
+    .dw-canvas { width:min(280px,70vw); height:min(280px,70vw); cursor:pointer; }
+    .dw-options-row { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; max-width:400px; margin:12px 0; }
+    .dw-tag { display:flex; align-items:center; gap:4px; background:var(--surface);
+      border:1px solid var(--border); border-radius:20px; padding:5px 12px; font-size:13px; }
+    .dw-tag button { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; }
+    .dw-add-row { display:flex; gap:8px; }
+    .dw-add-row input { padding:8px 12px; border-radius:8px; border:1px solid var(--border);
+      background:var(--surface); color:var(--text); font-size:14px; min-width:160px; }
+
+    /* ── 7. Mood check-in ── */
+    .mood-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
+      gap:10px; width:100%; max-width:800px; }
+    .mood-pupil-card { background:var(--card-bg); border:2px solid var(--border);
+      border-radius:12px; padding:12px 8px; text-align:center; }
+    .mood-pupil-name { font-size:11px; font-weight:600; margin-bottom:8px; color:var(--text-muted); }
+    .mood-faces { display:flex; gap:4px; justify-content:center; }
+    .mood-face { font-size:1.4rem; cursor:pointer; padding:2px; border-radius:6px;
+      border:2px solid transparent; transition:.1s; line-height:1; min-width:32px; min-height:32px;
+      display:flex; align-items:center; justify-content:center; }
+    .mood-face:hover,.mood-face.selected { border-color:var(--primary); background:rgba(74,154,191,.1); }
+    .mood-face.selected { border-color:var(--primary); }
+    .mood-save-row { display:flex; gap:10px; justify-content:center; margin-top:16px; }
+
+    /* ── 8. Big-text countdown ── */
+    .btc-display { font-size:min(28vw,18rem); font-weight:800; color:var(--primary);
+      text-align:center; line-height:1; font-variant-numeric:tabular-nums; }
+    .btc-display.urgent { color:#ef4444; animation:urgentPulse .5s ease infinite alternate; }
+    @keyframes urgentPulse { from{opacity:1} to{opacity:.5} }
+    .btc-message { font-size:clamp(16px,3vw,32px); color:var(--text-muted); text-align:center;
+      max-width:600px; margin:12px auto; }
+    .btc-presets { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin:14px 0; }
+
+    /* ── Class selector topbar ── */
+    .tool-class-sel { padding:6px 10px; border-radius:8px; border:1px solid var(--border);
+      background:var(--surface); color:var(--text); font-size:13px; max-width:180px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">✨ Classroom Tools</div>
+      <div class="page-subtitle">Interactive tools for the 100" screen</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <select class="tool-class-sel" id="global-class" onchange="onClassChange()">
+        <option value="">Choose class…</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="tools-grid">
+    <div class="tool-tile" onclick="openTool('timer')"><div class="tool-icon">⏳</div><div class="tool-name">Sand Timer</div></div>
+    <div class="tool-tile" onclick="openTool('picker')"><div class="tool-icon">🎲</div><div class="tool-name">Name Picker</div></div>
+    <div class="tool-tile" onclick="openTool('groups')"><div class="tool-icon">👥</div><div class="tool-name">Group Generator</div></div>
+    <div class="tool-tile" onclick="openTool('noise')"><div class="tool-icon">🔊</div><div class="tool-name">Noise Meter</div></div>
+    <div class="tool-tile" onclick="openTool('dice')"><div class="tool-icon">🎯</div><div class="tool-name">Dice Roller</div></div>
+    <div class="tool-tile" onclick="openTool('wheel')"><div class="tool-icon">🎡</div><div class="tool-name">Decision Wheel</div></div>
+    <div class="tool-tile" onclick="openTool('mood')"><div class="tool-icon">😊</div><div class="tool-name">Mood Check-in</div></div>
+    <div class="tool-tile" onclick="openTool('countdown')"><div class="tool-icon">📢</div><div class="tool-name">Countdown</div></div>
+  </div>
+</div>
+
+<!-- ══ Tool 1: Sand Timer ══ -->
+<div class="tool-overlay" id="tool-timer">
+  <div class="tool-header">
+    <h2>⏳ Sand Timer</h2>
+    <button class="tool-close" onclick="closeTool('timer')">✕ Close</button>
+  </div>
+  <div class="tool-body">
+    <div class="timer-display" id="timer-display">5:00</div>
+    <svg id="timer-svg" viewBox="0 0 120 160" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="10,10 110,10 60,80" fill="#4a9abf" opacity=".8" id="sand-top"/>
+      <polygon points="10,150 110,150 60,80" fill="#4a9abf" opacity=".4" id="sand-bot"/>
+      <line x1="60" y1="80" x2="60" y2="80" stroke="#e07820" stroke-width="3" id="sand-stream"/>
+      <rect x="8" y="8" width="104" height="4" rx="2" fill="#2d3748"/>
+      <rect x="8" y="148" width="104" height="4" rx="2" fill="#2d3748"/>
+    </svg>
+    <div class="timer-presets">
+      <button class="preset-btn" onclick="setTimer(60)">1 min</button>
+      <button class="preset-btn active" onclick="setTimer(300)">5 min</button>
+      <button class="preset-btn" onclick="setTimer(600)">10 min</button>
+      <button class="preset-btn" onclick="setTimer(900)">15 min</button>
+      <button class="preset-btn" onclick="setTimer(1800)">30 min</button>
+      <button class="preset-btn" onclick="promptCustomTimer()">Custom…</button>
+    </div>
+    <div class="timer-controls" style="margin-top:8px">
+      <button class="big-btn big-btn-primary" id="timer-start-btn" onclick="toggleTimer()">▶ Start</button>
+      <button class="big-btn big-btn-secondary" onclick="resetTimer()">↺ Reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Tool 2: Random Name Picker ══ -->
+<div class="tool-overlay" id="tool-picker">
+  <div class="tool-header">
+    <h2>🎲 Random Name Picker</h2>
+    <button class="tool-close" onclick="closeTool('picker')">✕ Close</button>
+  </div>
+  <div class="tool-body">
+    <div class="picked-name" id="picked-name">Ready…</div>
+    <div style="margin:16px 0">
+      <canvas class="wheel-canvas" id="wheel-canvas" onclick="spinWheel()"></canvas>
+    </div>
+    <button class="big-btn big-btn-primary" onclick="spinWheel()" id="spin-btn">🎲 Pick!</button>
+    <div class="picker-history" id="picker-history" style="margin-top:14px"></div>
+    <button class="big-btn big-btn-secondary" onclick="resetPicker()" style="margin-top:10px;font-size:14px;padding:10px 20px">Reset</button>
+  </div>
+</div>
+
+<!-- ══ Tool 3: Group Generator ══ -->
+<div class="tool-overlay" id="tool-groups">
+  <div class="tool-header">
+    <h2>👥 Group Generator</h2>
+    <button class="tool-close" onclick="closeTool('groups')">✕ Close</button>
+  </div>
+  <div class="tool-body">
+    <div class="group-config">
+      <label style="font-size:14px;font-weight:600">Groups:</label>
+      <input type="number" id="group-count" value="4" min="2" max="10" style="width:70px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:16px;text-align:center">
+      <select id="group-mode" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px">
+        <option value="random">Random</option>
+        <option value="balanced">Balanced (by points)</option>
+      </select>
+      <button class="big-btn big-btn-primary" onclick="generateGroups()" style="font-size:14px;padding:10px 20px">Generate</button>
+    </div>
+    <div class="groups-display" id="groups-display">
+      <div style="color:var(--text-muted);font-size:14px">Select a class and generate groups</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Tool 4: Noise Meter ══ -->
+<div class="tool-overlay" id="tool-noise">
+  <div class="tool-header">
+    <h2>🔊 Noise Meter</h2>
+    <button class="tool-close" onclick="closeTool('noise')">✕ Close</button>
+  </div>
+  <div class="tool-body">
+    <div class="noise-level-label" id="noise-emoji">🟢</div>
+    <div style="font-size:1.5rem;font-weight:700;color:var(--text-muted);margin:4px 0" id="noise-label">Quiet</div>
+    <div class="noise-meter-bar" style="width:min(400px,80vw);height:36px">
+      <div class="noise-fill" id="noise-fill" style="width:0%"></div>
+    </div>
+    <div id="noise-db" style="font-size:13px;color:var(--text-muted);margin-top:6px">0 dB</div>
+    <div class="noise-threshold-row">
+      <div class="threshold-chip"><div class="threshold-dot" style="background:#22c55e"></div> 🟢 Whisper (&lt;45dB)</div>
+      <div class="threshold-chip"><div class="threshold-dot" style="background:#f59e0b"></div> 🟡 Talk (45–60dB)</div>
+      <div class="threshold-chip"><div class="threshold-dot" style="background:#ef4444"></div> 🔴 Loud (&gt;60dB)</div>
+    </div>
+    <div style="margin-top:20px;display:flex;gap:12px">
+      <button class="big-btn big-btn-primary" id="noise-start-btn" onclick="toggleNoiseMeter()">🎤 Start</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Tool 5: Dice Roller ══ -->
+<div class="tool-overlay" id="tool-dice">
+  <div class="tool-header">
+    <h2>🎯 Dice Roller</h2>
+    <button class="tool-close" onclick="closeTool('dice')">✕ Close</button>
+  </div>
+  <div class="tool-body">
+    <div class="dice-face" id="dice-face">⚀</div>
+    <div style="font-size:3rem;font-weight:800;color:var(--primary);margin:8px 0" id="dice-result">1</div>
+    <div class="dice-config">
+      <label style="font-size:14px;font-weight:600">Sides:</label>
+      <select class="dice-sides-select" id="dice-sides">
+        <option value="4">D4</option>
+        <option value="6" selected>D6</option>
+        <option value="8">D8</option>
+        <option value="10">D10</option>
+        <option value="12">D12</option>
+        <option value="20">D20</option>
+      </select>
+      <label style="font-size:14px;font-weight:600">Dice:</label>
+      <input type="number" id="dice-count" value="1" min="1" max="6" style="width:60px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:16px;text-align:center">
+    </div>
+    <button class="big-btn big-btn-primary" onclick="rollDice()" style="margin-top:16px;font-size:18px;padding:16px 40px">🎲 Roll!</button>
+  </div>
+</div>
+
+<!-- ══ Tool 6: Decision Wheel ══ -->
+<div class="tool-overlay" id="tool-wheel">
+  <div class="tool-header">
+    <h2>🎡 Decision Wheel</h2>
+    <button class="tool-close" onclick="closeTool('wheel')">✕ Close</button>
+  </div>
+  <div class="tool-body">
+    <div id="dw-result" style="font-size:1.8rem;font-weight:800;color:var(--primary);min-height:48px;text-align:center"></div>
+    <canvas class="dw-canvas" id="dw-canvas" onclick="spinDecisionWheel()"></canvas>
+    <div class="dw-options-row" id="dw-options-row"></div>
+    <div class="dw-add-row">
+      <input type="text" id="dw-add-input" placeholder="Add option…" onkeydown="if(event.key==='Enter')dwAddOption()">
+      <button class="big-btn big-btn-secondary" onclick="dwAddOption()" style="font-size:14px;padding:10px 18px">Add</button>
+      <button class="big-btn big-btn-secondary" onclick="dwSavePreset()" style="font-size:13px;padding:10px 14px">💾</button>
+    </div>
+    <button class="big-btn big-btn-primary" onclick="spinDecisionWheel()" style="margin-top:12px;font-size:16px">🎡 Spin!</button>
+  </div>
+</div>
+
+<!-- ══ Tool 7: Mood Check-in ══ -->
+<div class="tool-overlay" id="tool-mood">
+  <div class="tool-header">
+    <h2>😊 Mood Check-in</h2>
+    <button class="tool-close" onclick="closeTool('mood')">✕ Close</button>
+  </div>
+  <div class="tool-body" style="align-items:stretch">
+    <div id="mood-grid" class="mood-grid"></div>
+    <div class="mood-save-row">
+      <button class="big-btn big-btn-primary" onclick="saveMoodCheckin()">💾 Save Check-in</button>
+      <button class="big-btn big-btn-secondary" onclick="clearMoodCheckin()">Clear</button>
+    </div>
+    <div id="mood-summary" style="font-size:13px;color:var(--text-muted);text-align:center;margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ══ Tool 8: Big-text Countdown ══ -->
+<div class="tool-overlay" id="tool-countdown">
+  <div class="tool-header">
+    <h2>📢 Countdown</h2>
+    <button class="tool-close" onclick="closeTool('countdown')">✕ Close</button>
+  </div>
+  <div class="tool-body">
+    <div class="btc-display" id="btc-display">5</div>
+    <div class="btc-message" id="btc-message">Line up quietly</div>
+    <div class="btc-presets">
+      <button class="preset-btn" onclick="startCountdown(5,'Line up quietly')">5 — Line up</button>
+      <button class="preset-btn" onclick="startCountdown(10,'Tidy up time')">10 — Tidy up</button>
+      <button class="preset-btn" onclick="startCountdown(3,'Stop and listen')">3 — Stop!</button>
+      <button class="preset-btn" onclick="promptCountdown()">Custom…</button>
+    </div>
+    <div class="timer-controls">
+      <button class="big-btn big-btn-primary" id="btc-start-btn" onclick="toggleCountdown()">▶ Start</button>
+      <button class="big-btn big-btn-secondary" onclick="resetCountdown()">↺ Reset</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Global state ──
+let CLASSES = [], PUPILS = [];
+let CURRENT_TOOL = null;
+
+document.addEventListener('wren:ready', init);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && CURRENT_TOOL) closeTool(CURRENT_TOOL);
+  if (e.code === 'Space' && CURRENT_TOOL === 'timer') { e.preventDefault(); toggleTimer(); }
+  if (e.code === 'Space' && CURRENT_TOOL === 'countdown') { e.preventDefault(); toggleCountdown(); }
+});
+
+async function init() {
+  CLASSES = await Wren.api('/api/classes').catch(()=>[]);
+  const sel = document.getElementById('global-class');
+  CLASSES.forEach(c => { sel.innerHTML += `<option value="${c.id}">${c.name}</option>`; });
+  const saved = sessionStorage.getItem('tools_class');
+  if (saved) { sel.value = saved; await onClassChange(); }
+  dwInit();
+}
+
+async function onClassChange() {
+  const classId = document.getElementById('global-class').value;
+  if (!classId) return;
+  sessionStorage.setItem('tools_class', classId);
+  const data = await Wren.api(`/api/classes/${classId}`).catch(()=>null);
+  PUPILS = data?.pupils || [];
+  if (CURRENT_TOOL === 'picker') initWheel();
+  if (CURRENT_TOOL === 'groups') document.getElementById('groups-display').innerHTML = '<div style="color:var(--text-muted);font-size:14px">Click Generate</div>';
+  if (CURRENT_TOOL === 'mood') renderMoodGrid();
+}
+
+function openTool(name) {
+  CURRENT_TOOL = name;
+  document.querySelectorAll('.tool-overlay').forEach(o => o.classList.remove('open'));
+  document.getElementById('tool-' + name).classList.add('open');
+  if (name === 'picker') initWheel();
+  if (name === 'mood') renderMoodGrid();
+  if (name === 'noise') initNoiseMeter();
+  if (name === 'wheel') { dwDraw(); }
+}
+
+function closeTool(name) {
+  document.getElementById('tool-' + name)?.classList.remove('open');
+  if (name === 'noise') stopNoiseMeter();
+  if (name === 'timer') clearInterval(timerInterval);
+  if (name === 'countdown') clearInterval(countdownInterval);
+  CURRENT_TOOL = null;
+}
+
+// ══════════════════════════════════
+// TOOL 1: Sand Timer
+// ══════════════════════════════════
+let timerDuration = 300, timerRemaining = 300, timerRunning = false, timerInterval = null;
+
+function setTimer(secs) {
+  clearInterval(timerInterval); timerRunning = false;
+  timerDuration = secs; timerRemaining = secs;
+  document.getElementById('timer-start-btn').textContent = '▶ Start';
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() !== 'Custom…' && Math.round(parseFloat(b.textContent)*60) === secs));
+  updateTimerDisplay();
+  updateSandSVG(1);
+}
+
+function promptCustomTimer() {
+  const v = prompt('Enter duration (minutes):');
+  if (v && !isNaN(v) && parseFloat(v) > 0) setTimer(Math.round(parseFloat(v)*60));
+}
+
+function toggleTimer() {
+  if (timerRunning) {
+    clearInterval(timerInterval); timerRunning = false;
+    document.getElementById('timer-start-btn').textContent = '▶ Resume';
+  } else {
+    if (timerRemaining <= 0) resetTimer();
+    timerRunning = true;
+    document.getElementById('timer-start-btn').textContent = '⏸ Pause';
+    timerInterval = setInterval(() => {
+      timerRemaining--;
+      updateTimerDisplay();
+      updateSandSVG(timerRemaining / timerDuration);
+      if (timerRemaining <= 0) { clearInterval(timerInterval); timerRunning = false; playBell(); document.getElementById('timer-start-btn').textContent = '▶ Start'; }
+    }, 1000);
+  }
+}
+
+function resetTimer() {
+  clearInterval(timerInterval); timerRunning = false;
+  timerRemaining = timerDuration;
+  document.getElementById('timer-start-btn').textContent = '▶ Start';
+  updateTimerDisplay(); updateSandSVG(1);
+}
+
+function updateTimerDisplay() {
+  const m = Math.floor(timerRemaining/60), s = timerRemaining%60;
+  document.getElementById('timer-display').textContent = `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function updateSandSVG(fraction) {
+  const svg = document.getElementById('timer-svg');
+  if (!svg) return;
+  const top = document.getElementById('sand-top'), bot = document.getElementById('sand-bot');
+  const stream = document.getElementById('sand-stream');
+  const mid = 80;
+  const topH = fraction * 70;
+  top?.setAttribute('points', `10,10 110,10 60,${10 + topH}`);
+  const botH = (1-fraction) * 70;
+  bot?.setAttribute('points', `10,150 110,150 60,${150-botH}`);
+  if (timerRunning && stream) { stream.setAttribute('x1','60'); stream.setAttribute('y1', String(10+topH)); stream.setAttribute('x2','60'); stream.setAttribute('y2', String(150-botH)); stream.setAttribute('stroke','#e07820'); stream.setAttribute('stroke-width','2'); }
+  else if (stream) { stream.setAttribute('stroke-width','0'); }
+}
+
+function playBell() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.1, 0.2].forEach(delay => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880; osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 1);
+      osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 1.1);
+    });
+  } catch(_) {}
+}
+
+// ══════════════════════════════════
+// TOOL 2: Name Picker (wheel)
+// ══════════════════════════════════
+let pickerPool = [], pickerHistory = [], wheelSpinning = false;
+const WHEEL_COLORS = ['#4a9abf','#e07820','#22c55e','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#ec4899'];
+
+function initWheel() {
+  pickerPool = [...PUPILS.map(p => p.name||(`${p.first_name} ${p.last_name}`))];;
+  drawWheel(0);
+  document.getElementById('picked-name').textContent = 'Tap the wheel or press Pick!';
+  updatePickerHistory();
+}
+
+function drawWheel(angle) {
+  const canvas = document.getElementById('wheel-canvas'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.offsetWidth || 280;
+  const H = canvas.height = canvas.offsetHeight || 280;
+  const cx = W/2, cy = H/2, r = Math.min(cx,cy)-8;
+  ctx.clearRect(0,0,W,H);
+  if (!pickerPool.length) {
+    ctx.fillStyle = '#94a3b8'; ctx.font = '14px system-ui'; ctx.textAlign='center';
+    ctx.fillText('No pupils loaded', cx, cy); return;
+  }
+  const arc = (2*Math.PI)/pickerPool.length;
+  pickerPool.forEach((name, i) => {
+    const start = angle + i*arc, end = start + arc;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,end);
+    ctx.fillStyle = WHEEL_COLORS[i%WHEEL_COLORS.length]; ctx.fill();
+    ctx.strokeStyle = '#0f172a'; ctx.lineWidth=2; ctx.stroke();
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(start + arc/2);
+    ctx.textAlign='right'; ctx.fillStyle='#fff'; ctx.font=`bold ${Math.min(14,Math.floor(260/pickerPool.length))}px system-ui`;
+    ctx.fillText(name.split(' ')[0], r-10, 5); ctx.restore();
+  });
+  // Pointer
+  ctx.beginPath(); ctx.moveTo(cx+r-4,cy); ctx.lineTo(cx+r+14,cy-8); ctx.lineTo(cx+r+14,cy+8);
+  ctx.fillStyle='#fff'; ctx.fill();
+}
+
+function spinWheel() {
+  if (wheelSpinning || !pickerPool.length) return;
+  wheelSpinning = true;
+  const btn = document.getElementById('spin-btn'); if (btn) btn.disabled = true;
+  const totalRotation = (4 + Math.random()*4) * 2 * Math.PI;
+  const startAngle = 0; const duration = 2500;
+  const startTime = performance.now();
+  function animate(now) {
+    const elapsed = now - startTime, progress = Math.min(elapsed/duration, 1);
+    const ease = 1 - Math.pow(1-progress, 3);
+    const current = startAngle + totalRotation * ease;
+    drawWheel(current);
+    if (progress < 1) { requestAnimationFrame(animate); return; }
+    wheelSpinning = false; if (btn) btn.disabled = false;
+    const arc = (2*Math.PI)/pickerPool.length;
+    const finalAngle = ((totalRotation % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+    const idx = pickerPool.length - 1 - Math.floor(finalAngle / arc) % pickerPool.length;
+    const picked = pickerPool[Math.max(0, Math.min(idx, pickerPool.length-1))];
+    document.getElementById('picked-name').textContent = '🎉 ' + picked;
+    pickerHistory.push(picked);
+    pickerPool = pickerPool.filter(n => n !== picked);
+    updatePickerHistory();
+    if (!pickerPool.length) { pickerPool = [...PUPILS.map(p => p.name||(`${p.first_name} ${p.last_name}`))]; document.getElementById('picker-history').textContent += ' — Restarted'; }
+  }
+  requestAnimationFrame(animate);
+}
+
+function updatePickerHistory() {
+  const el = document.getElementById('picker-history');
+  if (!el) return;
+  if (!pickerHistory.length) { el.textContent = ''; return; }
+  el.textContent = `Already picked: ${pickerHistory.join(', ')}`;
+}
+
+function resetPicker() {
+  pickerHistory = []; initWheel();
+  document.getElementById('picked-name').textContent = 'Ready…';
+}
+
+// ══════════════════════════════════
+// TOOL 3: Group Generator
+// ══════════════════════════════════
+async function generateGroups() {
+  const count = parseInt(document.getElementById('group-count').value) || 4;
+  const mode = document.getElementById('group-mode').value;
+  let pupils = [...PUPILS];
+  if (!pupils.length) { document.getElementById('groups-display').innerHTML = '<div style="color:var(--text-muted)">Select a class first</div>'; return; }
+
+  if (mode === 'balanced') {
+    // Try to fetch today's points for balancing
+    const classId = document.getElementById('global-class').value;
+    if (classId) {
+      const data = await Wren.api(`/api/behaviour-points/today-totals?class_id=${classId}`).catch(()=>[]);
+      const scoreMap = {};
+      data.forEach(p => { scoreMap[p.pupil_id] = parseInt(p.total_today)||0; });
+      pupils.sort((a,b) => (scoreMap[b.id]||0) - (scoreMap[a.id]||0));
+      // Distribute: high-low-high-low (serpentine)
+      const groups = Array.from({length:count}, (_,i) => ({ name:`Group ${i+1}`, members:[] }));
+      pupils.forEach((p, i) => {
+        const groupIdx = i % (count*2) < count ? i%count : count-1-(i%count);
+        groups[Math.min(groupIdx,count-1)].members.push(p);
+      });
+      renderGroups(groups); return;
+    }
+  }
+
+  // Random
+  const shuffled = [...pupils].sort(()=>Math.random()-.5);
+  const groups = Array.from({length:count}, (_,i) => ({ name:`Group ${i+1}`, members:[] }));
+  shuffled.forEach((p,i) => groups[i%count].members.push(p));
+  renderGroups(groups);
+}
+
+function renderGroups(groups) {
+  const html = groups.map(g => `<div class="group-card">
+    <h4>${g.name} (${g.members.length})</h4>
+    ${g.members.map(m => `<div class="group-member">${m.name||(`${m.first_name} ${m.last_name}`)}</div>`).join('')}
+  </div>`).join('');
+  document.getElementById('groups-display').innerHTML = html;
+}
+
+// ══════════════════════════════════
+// TOOL 4: Noise Meter
+// ══════════════════════════════════
+let noiseActive = false, noiseStream = null, noiseAnalyser = null, noiseAF = null;
+
+function initNoiseMeter() {} // start on demand
+
+async function toggleNoiseMeter() {
+  if (noiseActive) { stopNoiseMeter(); return; }
+  try {
+    noiseStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(noiseStream);
+    noiseAnalyser = ctx.createAnalyser();
+    noiseAnalyser.fftSize = 256;
+    src.connect(noiseAnalyser);
+    noiseActive = true;
+    document.getElementById('noise-start-btn').textContent = '⏹ Stop';
+    runNoiseLoop();
+  } catch(e) {
+    if (e.name === 'NotAllowedError') alert('Microphone permission denied. Please allow microphone access.');
+    else alert('Microphone unavailable: ' + e.message);
+  }
+}
+
+function stopNoiseMeter() {
+  noiseActive = false;
+  cancelAnimationFrame(noiseAF);
+  if (noiseStream) { noiseStream.getTracks().forEach(t => t.stop()); noiseStream = null; }
+  document.getElementById('noise-start-btn').textContent = '🎤 Start';
+  document.getElementById('noise-fill').style.width = '0%';
+  document.getElementById('noise-db').textContent = '—';
+}
+
+function runNoiseLoop() {
+  if (!noiseActive || !noiseAnalyser) return;
+  const data = new Uint8Array(noiseAnalyser.frequencyBinCount);
+  noiseAnalyser.getByteFrequencyData(data);
+  const avg = data.reduce((s,v)=>s+v,0)/data.length;
+  const db = Math.round(avg * 80 / 255); // approx dB
+  const pct = Math.min(100, (avg/255)*100);
+  document.getElementById('noise-fill').style.width = pct + '%';
+  document.getElementById('noise-db').textContent = `~${db} dB`;
+  let colour, emoji, label;
+  if (avg < 45) { colour='#22c55e'; emoji='🟢'; label='Quiet'; }
+  else if (avg < 100) { colour='#f59e0b'; emoji='🟡'; label='Getting noisy'; }
+  else { colour='🔴'; emoji='🔴'; label='Too loud!'; colour='#ef4444'; }
+  document.getElementById('noise-fill').style.background = colour;
+  document.getElementById('noise-emoji').textContent = emoji;
+  document.getElementById('noise-label').textContent = label;
+  noiseAF = requestAnimationFrame(runNoiseLoop);
+}
+
+// ══════════════════════════════════
+// TOOL 5: Dice Roller
+// ══════════════════════════════════
+const D6_FACES = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+
+function rollDice() {
+  const sides = parseInt(document.getElementById('dice-sides').value) || 6;
+  const count = parseInt(document.getElementById('dice-count').value) || 1;
+  const results = Array.from({length:count}, () => 1 + Math.floor(Math.random()*sides));
+  const total = results.reduce((s,v)=>s+v,0);
+  const faceEl = document.getElementById('dice-face');
+  faceEl.classList.add('rolling');
+  setTimeout(() => faceEl.classList.remove('rolling'), 400);
+  if (sides === 6 && count === 1) {
+    faceEl.textContent = D6_FACES[results[0]-1];
+  } else {
+    faceEl.textContent = count > 1 ? '🎲'.repeat(Math.min(count,6)) : '🎲';
+  }
+  document.getElementById('dice-result').textContent = count > 1 ? `${results.join(' + ')} = ${total}` : String(results[0]);
+}
+
+// ══════════════════════════════════
+// TOOL 6: Decision Wheel
+// ══════════════════════════════════
+let dwOptions = ['Option 1','Option 2','Option 3','Option 4'], dwSpinning = false, dwAngle = 0;
+const DW_COLORS = ['#4a9abf','#e07820','#22c55e','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#ec4899'];
+const DW_PRESETS_KEY = 'wren_dw_presets';
+
+function dwInit() {
+  const saved = localStorage.getItem('wren_dw_options');
+  if (saved) { try { dwOptions = JSON.parse(saved); } catch(_) {} }
+  dwDraw(); dwRenderTags();
+}
+
+function dwDraw(angle = dwAngle) {
+  const canvas = document.getElementById('dw-canvas'); if (!canvas) return;
+  canvas.width = canvas.offsetWidth || 280; canvas.height = canvas.offsetHeight || 280;
+  const ctx = canvas.getContext('2d');
+  const cx = canvas.width/2, cy = canvas.height/2, r = Math.min(cx,cy)-8;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if (!dwOptions.length) return;
+  const arc = (2*Math.PI)/dwOptions.length;
+  dwOptions.forEach((opt, i) => {
+    const start = angle + i*arc, end = start+arc;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,end);
+    ctx.fillStyle = DW_COLORS[i%DW_COLORS.length]; ctx.fill();
+    ctx.strokeStyle='#0f172a'; ctx.lineWidth=2; ctx.stroke();
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(start+arc/2);
+    ctx.textAlign='right'; ctx.fillStyle='#fff';
+    const fs = Math.min(14, Math.floor(200/dwOptions.length));
+    ctx.font=`bold ${fs}px system-ui`;
+    ctx.fillText(opt.length>12?opt.slice(0,12)+'…':opt, r-10, 5); ctx.restore();
+  });
+  ctx.beginPath(); ctx.moveTo(cx+r-4,cy); ctx.lineTo(cx+r+14,cy-8); ctx.lineTo(cx+r+14,cy+8);
+  ctx.fillStyle='#fff'; ctx.fill();
+}
+
+function dwAddOption() {
+  const inp = document.getElementById('dw-add-input');
+  const val = inp.value.trim();
+  if (!val) return;
+  dwOptions.push(val); inp.value = '';
+  localStorage.setItem('wren_dw_options', JSON.stringify(dwOptions));
+  dwDraw(); dwRenderTags();
+}
+
+function dwRemoveOption(i) {
+  dwOptions.splice(i, 1);
+  localStorage.setItem('wren_dw_options', JSON.stringify(dwOptions));
+  dwDraw(); dwRenderTags();
+}
+
+function dwRenderTags() {
+  document.getElementById('dw-options-row').innerHTML = dwOptions.map((o,i) =>
+    `<div class="dw-tag">${escHtml(o)}<button onclick="dwRemoveOption(${i})">×</button></div>`
+  ).join('');
+}
+
+function spinDecisionWheel() {
+  if (dwSpinning || !dwOptions.length) return;
+  dwSpinning = true;
+  document.getElementById('dw-result').textContent = '';
+  const totalRot = (5 + Math.random()*5) * 2 * Math.PI;
+  const start = dwAngle, dur = 3000, startTime = performance.now();
+  function animate(now) {
+    const t = Math.min((now-startTime)/dur, 1);
+    const ease = 1-Math.pow(1-t,4);
+    dwAngle = start + totalRot*ease;
+    dwDraw(dwAngle);
+    if (t < 1) { requestAnimationFrame(animate); return; }
+    dwSpinning = false;
+    const arc = (2*Math.PI)/dwOptions.length;
+    const norm = ((dwAngle % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+    const idx = dwOptions.length - 1 - Math.floor(norm/arc) % dwOptions.length;
+    document.getElementById('dw-result').textContent = '🎉 ' + dwOptions[Math.max(0,Math.min(idx,dwOptions.length-1))];
+  }
+  requestAnimationFrame(animate);
+}
+
+function dwSavePreset() {
+  const name = prompt('Preset name?');
+  if (!name) return;
+  const presets = JSON.parse(localStorage.getItem(DW_PRESETS_KEY)||'{}');
+  presets[name] = [...dwOptions];
+  localStorage.setItem(DW_PRESETS_KEY, JSON.stringify(presets));
+  alert('Preset saved: ' + name);
+}
+
+// ══════════════════════════════════
+// TOOL 7: Mood Check-in
+// ══════════════════════════════════
+const MOOD_FACES = ['😢','😟','😐','🙂','😊'];
+const MOOD_LABELS = ['Sad','Worried','Okay','Good','Happy'];
+let moodSelections = {};
+
+function renderMoodGrid() {
+  if (!PUPILS.length) {
+    document.getElementById('mood-grid').innerHTML = '<div style="color:var(--text-muted);grid-column:1/-1;text-align:center;padding:20px">Select a class to begin</div>';
+    return;
+  }
+  const grid = document.getElementById('mood-grid');
+  grid.innerHTML = PUPILS.map(p => {
+    const name = p.name || `${p.first_name} ${p.last_name}`;
+    return `<div class="mood-pupil-card">
+      <div class="mood-pupil-name">${escHtml(name.split(' ')[0])}</div>
+      <div class="mood-faces">
+        ${MOOD_FACES.map((f,i) => `<div class="mood-face ${moodSelections[p.id]===i?'selected':''}" onclick="setMood(${p.id},${i})" title="${MOOD_LABELS[i]}">${f}</div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setMood(pupilId, moodIdx) {
+  moodSelections[pupilId] = moodIdx;
+  renderMoodGrid();
+}
+
+async function saveMoodCheckin() {
+  const classId = document.getElementById('global-class').value;
+  const entries = Object.entries(moodSelections).filter(([,v]) => v !== undefined);
+  if (!entries.length) { alert('No moods selected yet'); return; }
+  try {
+    await Promise.all(entries.map(([pupilId, score]) =>
+      Wren.api('/api/wellbeing', {
+        method: 'POST',
+        body: { pupil_id: parseInt(pupilId), mood_score: score+1, class_id: classId || null, source: 'classroom-tool' }
+      })
+    ));
+    const summary = Object.values(moodSelections).reduce((s,v)=>{s[MOOD_LABELS[v]]=(s[MOOD_LABELS[v]]||0)+1; return s},{});
+    document.getElementById('mood-summary').textContent = '✅ Saved! ' + Object.entries(summary).map(([k,v])=>`${k}: ${v}`).join(' · ');
+    moodSelections = {};
+    setTimeout(() => renderMoodGrid(), 800);
+  } catch(e) { alert('Error saving: ' + e.message); }
+}
+
+function clearMoodCheckin() { moodSelections = {}; renderMoodGrid(); document.getElementById('mood-summary').textContent = ''; }
+
+// ══════════════════════════════════
+// TOOL 8: Big-text Countdown
+// ══════════════════════════════════
+let btcValue = 5, btcRunning = false, btcInterval = null, btcMessage = 'Line up quietly';
+
+function startCountdown(n, msg) {
+  clearInterval(btcInterval); btcRunning = false;
+  btcValue = n; btcMessage = msg;
+  document.getElementById('btc-display').textContent = btcValue;
+  document.getElementById('btc-display').classList.remove('urgent');
+  document.getElementById('btc-message').textContent = btcMessage;
+  document.getElementById('btc-start-btn').textContent = '▶ Start';
+  if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
+}
+
+function promptCountdown() {
+  const n = prompt('Count from (number):','10');
+  const msg = prompt('Message:', 'Get ready!');
+  if (n && !isNaN(n)) startCountdown(parseInt(n), msg || '');
+}
+
+function toggleCountdown() {
+  if (btcRunning) {
+    clearInterval(btcInterval); btcRunning = false;
+    document.getElementById('btc-start-btn').textContent = '▶ Resume';
+  } else {
+    if (btcValue <= 0) startCountdown(5, btcMessage);
+    btcRunning = true;
+    document.getElementById('btc-start-btn').textContent = '⏸ Pause';
+    speakCountdownNum(btcValue);
+    btcInterval = setInterval(() => {
+      btcValue--;
+      const el = document.getElementById('btc-display');
+      el.textContent = btcValue > 0 ? btcValue : (btcMessage ? '🎉' : '0');
+      el.classList.toggle('urgent', btcValue <= 3 && btcValue > 0);
+      speakCountdownNum(btcValue);
+      if (btcValue <= 0) {
+        clearInterval(btcInterval); btcRunning = false;
+        document.getElementById('btc-start-btn').textContent = '▶ Start';
+        el.classList.remove('urgent');
+      }
+    }, 1000);
+  }
+}
+
+function resetCountdown() {
+  clearInterval(btcInterval); btcRunning = false; btcValue = 5;
+  document.getElementById('btc-display').textContent = '5';
+  document.getElementById('btc-display').classList.remove('urgent');
+  document.getElementById('btc-start-btn').textContent = '▶ Start';
+  if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
+}
+
+function speakCountdownNum(n) {
+  if (typeof window.speechSynthesis === 'undefined') return;
+  const text = n > 0 ? String(n) : btcMessage || 'Go!';
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-GB'; utter.rate = 0.9;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utter);
+}
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

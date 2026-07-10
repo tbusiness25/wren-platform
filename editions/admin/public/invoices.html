@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Invoices — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.inv-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1e293b;border:1px solid #2d3748;border-radius:8px;margin-bottom:6px}
+.status-badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px}
+.s-draft{background:#2d374822;color:#94a3b8}.s-sent{background:#4a9abf22;color:#4a9abf}
+.s-paid{background:#22c55e22;color:#22c55e}.s-overdue{background:#ef444422;color:#ef4444}
+.s-written_off{background:#2d374822;color:#64748b}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.chip{padding:5px 13px;border-radius:6px;font-size:12px;background:#1e293b;border:1px solid #2d3748;color:#94a3b8;cursor:pointer}
+.chip.active{background:#4a9abf22;border-color:#4a9abf;color:#4a9abf}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">Invoices</div>
+  </div>
+  <div class="filter-bar">
+    <span class="chip active" data-f="">All</span>
+    <span class="chip" data-f="overdue">Overdue</span>
+    <span class="chip" data-f="sent">Sent</span>
+    <span class="chip" data-f="draft">Draft</span>
+    <span class="chip" data-f="paid">Paid</span>
+  </div>
+  <div id="inv-list"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+<script>
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtMoney(p){return'£'+((p||0)/100).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtDate(d){return d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';}
+let currentFilter='';
+function setFilter(el,f){
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');currentFilter=f;loadInvoices();
+}
+async function loadInvoices(){
+  const url='/api/invoices'+(currentFilter?'?status='+currentFilter:'');
+  const invs=await Wren.api(url).catch(()=>[]);
+  const el=document.getElementById('inv-list');
+  if(!invs.length){el.innerHTML='<div class="empty-state">No invoices found.</div>';return;}
+  el.innerHTML=invs.map(i=>`
+    <div class="inv-row">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.88rem;font-weight:600;color:#f1f5f9">${esc(i.child_name||'Unknown child')}</div>
+        <div style="font-size:.75rem;color:#94a3b8">Due: ${fmtDate(i.due_on)}${i.bill_payer_email?' · '+esc(i.bill_payer_email):''}</div>
+        ${i.days_overdue>0?`<div style="font-size:.72rem;color:#ef4444">${i.days_overdue} days overdue</div>`:''}
+      </div>
+      <div style="font-size:1rem;font-weight:800;color:${i.status==='overdue'?'#ef4444':i.status==='paid'?'#22c55e':'#f1f5f9'}">${fmtMoney(i.amount_pence)}</div>
+      <span class="status-badge s-${i.status}">${(i.status||'').replace('_',' ').toUpperCase()}</span>
+      ${i.status==='overdue'||i.status==='sent'?`<button class="btn btn-secondary" style="font-size:.75rem;padding:5px 10px" data-action="send-reminder" data-id="${i.id}">Remind</button>`:''}
+    </div>`).join('');
+}
+async function sendReminder(id,btn){
+  btn.disabled=true;btn.textContent='…';
+  try{await Wren.api('/api/invoices/'+id+'/send-reminder',{method:'POST',body:'{}'});Wren.toast('Reminder sent');btn.textContent='Sent ✓';}
+  catch{btn.disabled=false;btn.textContent='Remind';}
+}
+document.addEventListener('wren:ready', function() {
+  // Filter chip delegation
+  document.querySelector('.filter-bar').addEventListener('click', function(e) {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    setFilter(chip, chip.dataset.f);
+  });
+  // Send reminder delegation
+  document.getElementById('inv-list').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="send-reminder"]');
+    if (btn) sendReminder(parseInt(btn.dataset.id), btn);
+  });
+  loadInvoices();
+});
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

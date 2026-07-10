@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="primary">
+  <title>Homework — Wren Primary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <script src="/js/twinkl-modal.js" defer></script>
+  <style>
+    .hw-card { background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px; }
+    .hw-card:hover { border-color:var(--primary); }
+    .hw-badge { display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px; }
+    .badge-draft { background:#374151;color:#9ca3af; }
+    .badge-published { background:#14532d;color:#4ade80; }
+    .badge-overdue { background:#7f1d1d;color:#fca5a5; }
+    .hw-type { display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;background:var(--surface);color:var(--text-muted); }
+    .sub-row { display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border); }
+    .sub-row:last-child { border-bottom:none; }
+    .grade-input { width:80px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text); }
+    .url-preview { background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-top:8px; }
+    .url-preview img { width:20px;height:20px;object-fit:contain; }
+    .url-preview-title { font-weight:600;font-size:13px; }
+    .filter-row { display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center; }
+    .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px; }
+    .modal-box { background:var(--card-bg);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:620px;width:100%;max-height:90vh;overflow-y:auto; }
+    .form-row { margin-bottom:14px; }
+    .form-row label { display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px; }
+    .form-row select, .form-row input, .form-row textarea { width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px; }
+    .form-row textarea { resize:vertical;min-height:80px; }
+    .type-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:8px; }
+    .type-chip { padding:8px;border-radius:8px;border:2px solid var(--border);background:var(--surface);color:var(--text-muted);cursor:pointer;text-align:center;font-size:12px;font-weight:600;transition:.15s; }
+    .type-chip.selected { border-color:var(--primary);color:var(--primary);background:rgba(74,154,191,.1); }
+    .submission-count { font-size:12px;color:var(--text-muted); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Homework</div>
+      <div class="page-subtitle">Set and manage homework</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <select class="btn btn-secondary" id="filter-status" onchange="loadHomework()" style="min-width:100px">
+        <option value="all">All</option>
+        <option value="draft">Drafts</option>
+        <option value="published">Published</option>
+      </select>
+      <button class="btn btn-primary" onclick="openNewHW()">+ Set Homework</button>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <select class="form-control" id="filter-class" onchange="loadHomework()" style="max-width:200px">
+      <option value="">All Classes</option>
+    </select>
+    <select class="form-control" id="filter-subject" onchange="loadHomework()" style="max-width:180px">
+      <option value="">All Subjects</option>
+    </select>
+    <input type="date" class="form-control" id="filter-from" onchange="loadHomework()" style="max-width:160px" title="Due from">
+    <input type="date" class="form-control" id="filter-to" onchange="loadHomework()" style="max-width:160px" title="Due to">
+  </div>
+
+  <div id="hw-list"><div class="empty-state">Loading…</div></div>
+</div>
+
+<!-- New Homework Modal -->
+<div id="modal-new" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeNew()">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h2 style="margin:0;font-size:18px">Set Homework</h2>
+      <button onclick="closeNew()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer">&times;</button>
+    </div>
+
+    <div class="form-row">
+      <label>Class</label>
+      <select id="new-class"></select>
+    </div>
+    <div class="form-row">
+      <label>Subject</label>
+      <select id="new-subject"></select>
+    </div>
+    <div class="form-row">
+      <label>Title</label>
+      <input type="text" id="new-title" placeholder="e.g. Times Tables Practice — Week 3">
+    </div>
+    <div class="form-row">
+      <label style="display:flex;justify-content:space-between;align-items:center">
+        Description / Instructions
+        <button type="button" onclick="aiAssistDesc()" id="ai-assist-btn"
+          style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--primary);background:rgba(74,154,191,.1);color:var(--primary);cursor:pointer;font-weight:600;white-space:nowrap">
+          ✨ AI Assist
+        </button>
+      </label>
+      <textarea id="new-desc" placeholder="What should pupils do? Include page numbers, links, quantities…"></textarea>
+    </div>
+    <div class="form-row">
+      <label>Due Date</label>
+      <input type="date" id="new-due">
+    </div>
+    <div class="form-row">
+      <label>Type</label>
+      <div class="type-grid" id="type-grid">
+        <div class="type-chip selected" data-type="worksheet" onclick="selectType(this)">📄 Worksheet</div>
+        <div class="type-chip" data-type="reading" onclick="selectType(this)">📚 Reading</div>
+        <div class="type-chip" data-type="project" onclick="selectType(this)">🔬 Project</div>
+        <div class="type-chip" data-type="research" onclick="selectType(this)">🔍 Research</div>
+        <div class="type-chip" data-type="online_task" onclick="selectType(this)">💻 Online Task</div>
+        <div class="type-chip" data-type="practice" onclick="selectType(this)">🏆 Practice</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Estimated Time (minutes)</label>
+      <input type="number" id="new-duration" value="20" min="5" max="180">
+    </div>
+    <div class="form-row">
+      <label style="display:flex;justify-content:space-between;align-items:center">
+        External Link (MyMaths, BBC Bitesize, Oak National…)
+        <button type="button" id="twinkl-search-btn" onclick="openTwinklSearch()"
+          style="font-size:11px;padding:4px 12px;border-radius:6px;border:none;background:#00b3e1;color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:5px">
+          <img src="https://www.twinkl.co.uk/favicon.ico" width="12" height="12" alt="" style="vertical-align:middle">
+          Search Twinkl
+        </button>
+      </label>
+      <input type="url" id="new-url" placeholder="https://…" oninput="previewUrl(this.value)">
+      <div id="url-preview" style="display:none" class="url-preview">
+        <img id="url-favicon" src="" alt="">
+        <div>
+          <div class="url-preview-title" id="url-site-name"></div>
+          <div style="font-size:12px;color:var(--text-muted)" id="url-display"></div>
+        </div>
+      </div>
+    </div>
+    <div class="form-row" id="twinkl-attached-section" style="display:none">
+      <label>Attached Twinkl Resources</label>
+      <div id="twinkl-attached-list"></div>
+    </div>
+    <div class="form-row">
+      <label>Attachments (up to 5 files)</label>
+      <input type="file" id="new-files" multiple accept=".pdf,.doc,.docx,.jpg,.png">
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-secondary" onclick="closeNew()">Cancel</button>
+      <button class="btn btn-secondary" onclick="saveHW(false)">Save as Draft</button>
+      <button class="btn btn-primary" onclick="saveHW(true)">Publish</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mark Submissions Modal -->
+<div id="modal-mark" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeMark()">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0;font-size:18px" id="mark-title">Submissions</h2>
+      <button onclick="closeMark()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer">&times;</button>
+    </div>
+    <div id="submissions-list"><div class="empty-state">No items yet</div></div>
+  </div>
+</div>
+
+<script>
+const SOURCES = {
+  'twinkl.co.uk':         { name:'Twinkl',        favicon:'https://www.twinkl.co.uk/favicon.ico' },
+  'mymaths.co.uk':        { name:'MyMaths',        favicon:'https://www.mymaths.co.uk/favicon.ico' },
+  'bugclub.co.uk':        { name:'Bug Club',       favicon:'https://www.bugclub.co.uk/favicon.ico' },
+  'thenational.academy':  { name:'Oak National',   favicon:'https://www.thenational.academy/favicon.ico' },
+  'bbc.co.uk/bitesize':   { name:'BBC Bitesize',   favicon:'https://www.bbc.co.uk/favicon.ico' },
+};
+
+let classes = [], subjects = [], currentHW = null;
+
+async function init() {
+  [classes, subjects] = await Promise.all([
+    Wren.api('/api/classes').catch(()=>[]),
+    Wren.api('/api/subjects').catch(()=>[]),
+  ]);
+  const cs = document.getElementById('filter-class');
+  const ns = document.getElementById('new-class');
+  classes.forEach(c => {
+    cs.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    ns.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+  });
+  const ss = document.getElementById('filter-subject');
+  const nss = document.getElementById('new-subject');
+  subjects.forEach(s => {
+    ss.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+    nss.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+  });
+  loadHomework();
+}
+
+async function loadHomework() {
+  const params = new URLSearchParams();
+  const st = document.getElementById('filter-status').value;
+  if (st !== 'all') params.set('status', st);
+  const cl = document.getElementById('filter-class').value;
+  if (cl) params.set('class_id', cl);
+  const su = document.getElementById('filter-subject').value;
+  if (su) params.set('subject_id', su);
+  document.getElementById('hw-list').innerHTML = '<div class="empty-state">Loading…</div>';
+  const data = await Wren.api('/api/homework?' + params).catch(()=>[]);
+  renderList(data);
+}
+
+function renderList(items) {
+  if (!items.length) {
+    document.getElementById('hw-list').innerHTML = '<div class="empty-state">No items yet</div>';
+    return;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('hw-list').innerHTML = items.map(h => {
+    const overdue = !h.is_published && h.due_date < today;
+    const statusBadge = h.is_published ? `<span class="hw-badge badge-published">Published</span>` :
+      overdue ? `<span class="hw-badge badge-overdue">Overdue (draft)</span>` :
+      `<span class="hw-badge badge-draft">Draft</span>`;
+    const subCount = (h.submissions||[]).length;
+    return `<div class="hw-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:700;font-size:15px;margin-bottom:4px">${h.title}</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">
+            ${h.class_name || '—'} &nbsp;·&nbsp; ${h.subject_name || '—'} &nbsp;·&nbsp;
+            Due <strong>${formatDate(h.due_date)}</strong> &nbsp;·&nbsp; ~${h.estimated_duration_minutes} min
+          </div>
+          <span class="hw-type">${typeLabel(h.type)}</span>
+          ${h.external_resource_url ? `<a href="${h.external_resource_url}" target="_blank" style="font-size:12px;color:var(--primary);margin-left:8px">🔗 External link</a>` : ''}
+          <span id="twinkl-badge-${h.id}"></span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${statusBadge}
+          <span class="submission-count">${subCount} submission${subCount!==1?'s':''}</span>
+          <button class="btn btn-sm" onclick="viewSubmissions(${h.id},'${escHtml(h.title)}')">Mark</button>
+          <button class="btn btn-sm btn-secondary" onclick="togglePublish(${h.id},${h.is_published})">${h.is_published?'Unpublish':'Publish'}</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteHW(${h.id})">Delete</button>
+        </div>
+      </div>
+      ${h.description ? `<div style="font-size:13px;color:var(--text-muted);margin-top:8px;white-space:pre-wrap">${h.description.slice(0,180)}${h.description.length>180?'…':''}</div>` : ''}
+    </div>`;
+  }).join('');
+  // Load Twinkl badges asynchronously after DOM is painted
+  setTimeout(() => items.forEach(h => loadTwinklResources(h.id)), 0);
+}
+
+function typeLabel(t) {
+  const map = { worksheet:'Worksheet', reading:'Reading', project:'Project', research:'Research', online_task:'Online Task', practice:'Practice' };
+  return map[t] || t;
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const [y,m,day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+function escHtml(s) { return (s||'').replace(/'/g, "\\'"); }
+
+function openNewHW() {
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-desc').value = '';
+  document.getElementById('new-url').value = '';
+  document.getElementById('url-preview').style.display = 'none';
+  const d = new Date(); d.setDate(d.getDate() + 7);
+  document.getElementById('new-due').value = d.toISOString().slice(0,10);
+  document.querySelectorAll('.type-chip').forEach((c,i) => c.classList.toggle('selected', i===0));
+  document.getElementById('modal-new').style.display = 'flex';
+}
+
+function closeNew() { document.getElementById('modal-new').style.display = 'none'; }
+
+function selectType(el) {
+  document.querySelectorAll('.type-chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function previewUrl(url) {
+  const prev = document.getElementById('url-preview');
+  if (!url) { prev.style.display = 'none'; return; }
+  let matched = null;
+  for (const [domain, info] of Object.entries(SOURCES)) {
+    if (url.includes(domain)) { matched = info; break; }
+  }
+  if (matched) {
+    document.getElementById('url-favicon').src = matched.favicon;
+    document.getElementById('url-site-name').textContent = matched.name;
+    document.getElementById('url-display').textContent = url.slice(0, 60) + (url.length > 60 ? '…' : '');
+    prev.style.display = 'flex';
+  } else {
+    try {
+      const u = new URL(url);
+      document.getElementById('url-favicon').src = u.origin + '/favicon.ico';
+      document.getElementById('url-site-name').textContent = u.hostname;
+      document.getElementById('url-display').textContent = url.slice(0, 60);
+      prev.style.display = 'flex';
+    } catch { prev.style.display = 'none'; }
+  }
+}
+
+async function saveHW(publish) {
+  const classId = document.getElementById('new-class').value;
+  const subjectId = document.getElementById('new-subject').value;
+  const title = document.getElementById('new-title').value.trim();
+  const due = document.getElementById('new-due').value;
+  if (!classId || !title || !due) { wrenToast('Class, title and due date are required.', 'error'); return; }
+  const selectedType = document.querySelector('.type-chip.selected');
+  const body = {
+    class_id: parseInt(classId),
+    subject_id: subjectId ? parseInt(subjectId) : null,
+    title,
+    description: document.getElementById('new-desc').value.trim(),
+    due_date: due,
+    type: selectedType ? selectedType.dataset.type : 'worksheet',
+    estimated_duration_minutes: parseInt(document.getElementById('new-duration').value) || 20,
+    external_resource_url: document.getElementById('new-url').value.trim() || null,
+    is_published: publish,
+  };
+  try {
+    await Wren.api('/api/homework', { method:'POST', body });
+  } catch(e) { wrenToast('Failed to save homework.', 'error'); return; }
+  closeNew();
+  wrenToast(publish ? 'Homework published' : 'Saved as draft', 'success');
+  loadHomework();
+}
+
+async function togglePublish(id, current) {
+  await Wren.api(`/api/homework/${id}`, { method:'PATCH', body: { is_published: !current } });
+  loadHomework();
+}
+
+async function deleteHW(id) {
+  if (!confirm('Delete this homework? Submissions will also be deleted.')) return;
+  await Wren.api(`/api/homework/${id}`, { method:'DELETE' });
+  wrenToast('Deleted', 'info');
+  loadHomework();
+}
+
+async function viewSubmissions(id, title) {
+  document.getElementById('mark-title').textContent = `Submissions — ${title}`;
+  document.getElementById('submissions-list').innerHTML = '<div class="empty-state">Loading…</div>';
+  document.getElementById('modal-mark').style.display = 'flex';
+  currentHW = id;
+  const data = await Wren.api(`/api/homework/${id}`).catch(()=>null);
+  if (!data) return;
+  const subs = data.submissions || [];
+  // Get pupil list for this class
+  const pupils = await Wren.api(`/api/classes/${data.class_id}`).then(c=>c.pupils||[]).catch(()=>[]);
+  const subMap = {};
+  subs.forEach(s => { subMap[s.pupil_id] = s; });
+  document.getElementById('submissions-list').innerHTML = pupils.length ? pupils.map(p => {
+    const sub = subMap[p.id];
+    return `<div class="sub-row">
+      <div style="flex:1;font-weight:600;font-size:14px">${p.name}</div>
+      <div style="font-size:12px;color:var(--text-muted);min-width:80px">${sub ? (sub.submitted_at ? '✅ Submitted' : (sub.parent_acknowledged ? '👨‍👩‍👦 Done (parent)' : '—')) : 'Not submitted'}</div>
+      ${sub ? `<input class="grade-input" type="text" placeholder="Grade" value="${sub.grade||''}" id="grade-${p.id}"
+        onblur="markSub(${sub.id},${p.id})">
+        <input class="grade-input" type="text" placeholder="Feedback" value="${sub.teacher_feedback||''}" id="fb-${p.id}"
+          style="width:160px" onblur="markSub(${sub.id},${p.id})">` : '<span style="font-size:12px;color:var(--text-muted)">No submission</span>'}
+    </div>`;
+  }).join('') : '<div class="empty-state">No items yet</div>';
+}
+
+async function markSub(subId, pupilId) {
+  const grade = document.getElementById(`grade-${pupilId}`)?.value;
+  const fb = document.getElementById(`fb-${pupilId}`)?.value;
+  await Wren.api(`/api/homework/${currentHW}/submissions/${subId}/mark`, {
+    method:'PATCH',
+    body: { grade, teacher_feedback: fb, marked_by: 1 }
+  });
+}
+
+function closeMark() { document.getElementById('modal-mark').style.display = 'none'; }
+
+async function aiAssistDesc() {
+  const title = document.getElementById('new-title').value.trim();
+  const type = document.querySelector('.type-chip.selected')?.dataset.type || 'worksheet';
+  const classId = document.getElementById('new-class').value;
+  const cls = classes.find(c => String(c.id) === String(classId));
+  if (!title) { wrenToast('Enter a title first so AI can generate a description.', 'info'); return; }
+  const btn = document.getElementById('ai-assist-btn');
+  btn.textContent = '⏳ Generating…'; btn.disabled = true;
+  try {
+    const prompt = `Write concise, clear homework instructions for a primary school ${type} task titled "${title}"` +
+      (cls ? ` for ${cls.name}` : '') +
+      '. 2-3 sentences. Friendly, encouraging tone. Include what pupils should do and any helpful tips.';
+    const d = await Wren.api('/api/ai', {
+      method: 'POST',
+      body: { message: prompt, persona: 'primary_teacher', stream: false }
+    });
+    const text = d.reply || d.text || d.message || '';
+    if (text) {
+      document.getElementById('new-desc').value = text.trim();
+      wrenToast('AI description generated', 'success');
+    } else {
+      wrenToast('AI did not return a description', 'error');
+    }
+  } catch(e) {
+    wrenToast('AI assist failed: ' + e.message, 'error');
+  } finally {
+    btn.textContent = '✨ AI Assist'; btn.disabled = false;
+  }
+}
+
+// ── Twinkl integration ──────────────────────────────────────────────────────
+
+let twinklModal = null;
+let twinklCurrentHWId = null;
+
+function getTwinklModal() {
+  if (!twinklModal && window.TwinklModal) {
+    twinklModal = new TwinklModal({ onAttach: onTwinklAttach });
+  }
+  return twinklModal;
+}
+
+function openTwinklSearch() {
+  const modal = getTwinklModal();
+  if (!modal) { wrenToast('Twinkl not available', 'error'); return; }
+  const title = document.getElementById('new-title').value.trim();
+  // In the creation modal, entity_id is not known yet — attach after save
+  twinklCurrentHWId = null;
+  modal.open({ entityType: 'homework', entityId: '__pending__', title });
+}
+
+function openTwinklForHW(hwId, hwTitle) {
+  const modal = getTwinklModal();
+  if (!modal) return;
+  twinklCurrentHWId = hwId;
+  modal.open({ entityType: 'homework', entityId: hwId, title: hwTitle });
+}
+
+function onTwinklAttach(resource) {
+  const section = document.getElementById('twinkl-attached-section');
+  const list = document.getElementById('twinkl-attached-list');
+  if (section && list) {
+    section.style.display = '';
+    // Refresh list from API if we have a saved HW id
+    if (twinklCurrentHWId) {
+      loadTwinklResources(twinklCurrentHWId);
+    } else {
+      // Pre-save: show inline preview
+      TwinklModal.renderAttached(list, [resource]);
+      section.style.display = '';
+    }
+  }
+  wrenToast('Twinkl resource attached', 'success');
+}
+
+async function loadTwinklResources(hwId) {
+  try {
+    const data = await Wren.api(`/api/twinkl/resources?entity_type=homework&entity_id=${hwId}`);
+    const badge = document.getElementById(`twinkl-badge-${hwId}`);
+    if (badge && data.length) {
+      badge.innerHTML = `<span style="font-size:11px;background:#00b3e122;border:1px solid #00b3e144;border-radius:5px;padding:2px 8px;color:#7dd3fc;cursor:pointer;margin-left:4px"
+        onclick="openTwinklForHW(${hwId},'')">📚 ${data.length} Twinkl</span>`;
+    }
+  } catch { /* non-critical */ }
+}
+
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

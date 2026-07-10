@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Module Builder — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <script src="/js/wren-module-renderer.js" defer></script>
+  <style>
+    /* Full-screen workspace — strip wren-main default padding */
+    #wren-main {
+      padding: 0 !important;
+      height: calc(100vh - var(--topbar-h)) !important;
+      min-height: unset !important;
+      overflow: hidden !important;
+    }
+    #wren-content {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Draft indicator ── */
+    #draft-indicator {
+      position: fixed;
+      top: calc(var(--topbar-h) + 8px);
+      right: 20px;
+      z-index: 300;
+      font-size: .73rem;
+      padding: 3px 10px;
+      border-radius: 99px;
+      background: rgba(0,0,0,.4);
+      backdrop-filter: blur(4px);
+      border: 1px solid var(--c-border);
+      color: var(--c-muted);
+    }
+    #draft-indicator.saved  { color: var(--c-green); }
+    #draft-indicator.dirty  { color: var(--c-amber); }
+
+    /* ── Mobile tab bar ── */
+    #mobile-tab-bar { display: none; }
+    @media (max-width: 900px) {
+      #mobile-tab-bar {
+        display: flex;
+        border-bottom: 1px solid var(--c-border);
+        background: var(--c-surface);
+        flex-shrink: 0;
+      }
+      #mobile-tab-bar button {
+        flex: 1; padding: 10px 6px; border: none; background: none;
+        color: var(--c-muted); cursor: pointer; font-size: .8rem;
+        font-family: var(--font); border-bottom: 2px solid transparent;
+        transition: .15s;
+      }
+      #mobile-tab-bar button.active { color: var(--c-blue); border-bottom-color: var(--c-blue); }
+      #builder-workspace { grid-template-columns: 1fr !important; }
+      .builder-panel { display: none !important; }
+      .builder-panel.mob-active { display: flex !important; }
+    }
+
+    /* ── Workspace ── */
+    #builder-workspace {
+      display: grid;
+      grid-template-columns: 240px 1fr 320px;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    /* ── Shared panel ── */
+    .builder-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--c-border);
+      min-height: 0;
+    }
+    .builder-panel:last-child { border-right: none; }
+    .panel-hdr {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--c-border);
+      font-size: .72rem; font-weight: 800; color: var(--c-muted);
+      text-transform: uppercase; letter-spacing: .07em;
+      flex-shrink: 0; background: rgba(255,255,255,.02);
+    }
+    .panel-scroll {
+      flex: 1; overflow-y: auto; padding: 10px;
+      min-height: 0;
+    }
+    .panel-scroll::-webkit-scrollbar { width: 3px; }
+    .panel-scroll::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 2px; }
+
+    /* ── LEFT: Palette ── */
+    .ft-tile {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 10px; border-radius: 8px; cursor: pointer;
+      transition: background .15s; margin-bottom: 3px;
+    }
+    .ft-tile:hover { background: rgba(91,143,255,.1); }
+    .ft-tile:active { background: rgba(91,143,255,.18); }
+    .ft-icon { font-size: 1.25rem; flex-shrink: 0; }
+    .ft-name { font-size: .84rem; font-weight: 600; color: var(--c-text); }
+    .ft-desc { font-size: .7rem; color: var(--c-muted); }
+
+    /* ── MIDDLE: Canvas ── */
+    #module-canvas {
+      display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+      border-right: 1px solid var(--c-border);
+    }
+    .canvas-scroll {
+      flex: 1; overflow-y: auto; padding: 14px; min-height: 0;
+    }
+    .canvas-scroll::-webkit-scrollbar { width: 3px; }
+    .canvas-scroll::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 2px; }
+
+    /* Meta card */
+    .meta-card {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 12px; padding: 14px; margin-bottom: 14px;
+    }
+    .form-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .form-row .fg { flex: 1; min-width: 140px; }
+    .fg { margin-bottom: 10px; }
+    .fg label { display: block; font-size: .72rem; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .fg input, .fg textarea, .fg select {
+      width: 100%; padding: 7px 10px; background: rgba(255,255,255,.04);
+      border: 1px solid var(--c-border); border-radius: 8px;
+      color: var(--c-text); font-size: .85rem; font-family: var(--font);
+    }
+    .fg input:focus, .fg textarea:focus, .fg select:focus { outline: none; border-color: var(--c-blue); }
+    .fg textarea { resize: vertical; min-height: 60px; }
+    .slug-hint { font-size: .7rem; color: var(--c-muted); margin-top: 3px; font-family: monospace; }
+
+    /* Icon picker */
+    .icon-trigger {
+      width: 54px; height: 54px; font-size: 1.8rem;
+      background: rgba(255,255,255,.05); border: 1px solid var(--c-border);
+      border-radius: 10px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      transition: background .15s; flex-shrink: 0;
+    }
+    .icon-trigger:hover { background: rgba(255,255,255,.1); }
+    .icon-popover {
+      position: absolute; z-index: 400; background: #141e36;
+      border: 1px solid var(--c-border); border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.5); padding: 8px;
+      display: none;
+    }
+    .icon-popover.open { display: block; }
+    .icon-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+    .icon-grid span {
+      font-size: 1.2rem; padding: 5px; text-align: center;
+      cursor: pointer; border-radius: 5px; transition: background .1s;
+    }
+    .icon-grid span:hover { background: rgba(255,255,255,.1); }
+
+    /* Attaches-to pills */
+    .pill-group { display: flex; flex-wrap: wrap; gap: 5px; }
+    .pill-group label {
+      display: flex; align-items: center; gap: 5px;
+      padding: 5px 11px; border: 1px solid var(--c-border);
+      border-radius: 99px; cursor: pointer; font-size: .8rem;
+      color: var(--c-text); transition: .15s;
+    }
+    .pill-group label:hover { border-color: var(--c-blue); }
+    .pill-group input { display: none; }
+    .pill-group label:has(input:checked) { border-color: var(--c-blue); background: rgba(91,143,255,.12); color: var(--c-blue); }
+
+    /* Fields section */
+    .fields-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .fields-title { font-size: .88rem; font-weight: 700; color: var(--c-text); }
+    .fields-count { font-size: .72rem; color: var(--c-muted); }
+
+    .field-empty {
+      padding: 28px 16px; text-align: center; color: var(--c-muted);
+      font-size: .82rem; border: 2px dashed var(--c-border); border-radius: 10px;
+      line-height: 1.6;
+    }
+
+    /* Field card */
+    .field-card {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 9px; padding: 9px 11px; margin-bottom: 7px;
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; transition: border-color .15s;
+      position: relative;
+    }
+    .field-card:hover { border-color: rgba(91,143,255,.35); }
+    .field-card.selected { border-color: var(--c-blue); background: rgba(91,143,255,.07); }
+    .field-card.drag-over { border-color: var(--c-amber); border-style: dashed; }
+    .drag-handle {
+      cursor: grab; color: var(--c-muted); font-size: .9rem;
+      padding: 0 3px; flex-shrink: 0; user-select: none;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .field-type-ico { font-size: 1.1rem; flex-shrink: 0; }
+    .field-card-body { flex: 1; min-width: 0; }
+    .field-card-label { font-size: .85rem; font-weight: 600; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .field-card-type { font-size: .7rem; color: var(--c-muted); }
+    .req-badge { font-size: .62rem; color: var(--c-amber); border: 1px solid rgba(251,191,36,.3); border-radius: 4px; padding: 1px 4px; flex-shrink: 0; }
+    .fcard-menu { position: relative; flex-shrink: 0; }
+    .fcard-kebab { background: none; border: none; color: var(--c-muted); cursor: pointer; font-size: .95rem; padding: 1px 5px; border-radius: 4px; }
+    .fcard-kebab:hover { background: rgba(255,255,255,.06); }
+
+    /* Action bar */
+    #action-bar {
+      flex-shrink: 0; padding: 11px 14px;
+      border-top: 1px solid var(--c-border);
+      display: flex; gap: 8px; align-items: center;
+      background: rgba(255,255,255,.02);
+    }
+
+    /* ── RIGHT: Inspector ── */
+    .itab-bar {
+      display: flex; border-bottom: 1px solid var(--c-border);
+      flex-shrink: 0; overflow-x: auto;
+    }
+    .itab-bar::-webkit-scrollbar { display: none; }
+    .itab-btn {
+      padding: 9px 11px; border: none; background: none;
+      color: var(--c-muted); cursor: pointer; font-size: .75rem;
+      font-weight: 700; font-family: var(--font); white-space: nowrap;
+      border-bottom: 2px solid transparent; transition: .15s;
+    }
+    .itab-btn:hover { color: var(--c-text); }
+    .itab-btn.active { color: var(--c-blue); border-bottom-color: var(--c-blue); }
+    .itab-content { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+    .itab-content.active { display: block; }
+    .itab-content::-webkit-scrollbar { width: 3px; }
+    .itab-content::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 2px; }
+
+    .insp-placeholder {
+      padding: 32px 12px; text-align: center;
+      color: var(--c-muted); font-size: .82rem; line-height: 1.7;
+    }
+
+    /* Inspector form */
+    .insp-fg { margin-bottom: 10px; }
+    .insp-fg label { display: block; font-size: .72rem; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .insp-fg input, .insp-fg textarea, .insp-fg select {
+      width: 100%; padding: 6px 9px;
+      background: rgba(255,255,255,.04); border: 1px solid var(--c-border);
+      border-radius: 7px; color: var(--c-text); font-size: .82rem; font-family: var(--font);
+    }
+    .insp-fg input:focus, .insp-fg textarea:focus, .insp-fg select:focus { outline: none; border-color: var(--c-blue); }
+    .insp-toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 0; font-size: .82rem; color: var(--c-text);
+    }
+
+    /* Options editor */
+    .options-editor { display: flex; flex-direction: column; gap: 5px; }
+    .option-row { display: flex; gap: 5px; align-items: center; }
+    .option-row input { flex: 1; }
+    .opt-del { background: none; border: none; color: var(--c-red); cursor: pointer; font-size: 1rem; padding: 2px 5px; border-radius: 4px; }
+    .opt-del:hover { background: rgba(248,113,113,.1); }
+
+    /* Permissions tab */
+    .perm-portal { margin-bottom: 14px; }
+    .perm-portal-title { font-size: .72rem; font-weight: 800; color: var(--c-text); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 7px; }
+    .perm-role { padding: 7px 9px; background: rgba(255,255,255,.03); border-radius: 7px; margin-bottom: 5px; }
+    .perm-role-name { font-size: .73rem; color: var(--c-muted); margin-bottom: 5px; }
+    .perm-checks { display: flex; flex-wrap: wrap; gap: 3px; }
+    .perm-chk {
+      display: flex; align-items: center; gap: 2px;
+      font-size: .67rem; color: var(--c-text);
+      padding: 2px 6px; border: 1px solid var(--c-border);
+      border-radius: 4px; cursor: pointer;
+    }
+    .perm-chk input { display: none; }
+    .perm-chk:has(input:checked) { background: rgba(91,143,255,.15); border-color: rgba(91,143,255,.4); color: var(--c-blue); }
+
+    /* AI & Workflows tab */
+    .ai-accordion { margin-bottom: 10px; }
+    .ai-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 11px; background: rgba(255,255,255,.04);
+      border: 1px solid var(--c-border); border-radius: 8px;
+      cursor: pointer; user-select: none;
+    }
+    .ai-hdr-title { font-size: .83rem; font-weight: 600; color: var(--c-text); }
+    .ai-body { padding: 8px; display: none; }
+    .ai-body.open { display: block; }
+    .ai-item {
+      padding: 7px 9px; background: var(--c-surface);
+      border: 1px solid var(--c-border); border-radius: 6px;
+      margin-bottom: 5px; font-size: .78rem; color: var(--c-text);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+
+    /* Toggle switch (for required, etc.) */
+    .tw { position: relative; width: 38px; height: 21px; flex-shrink: 0; }
+    .tw input { display: none; }
+    .tw-slider {
+      position: absolute; inset: 0; background: rgba(255,255,255,.1);
+      border-radius: 999px; cursor: pointer; transition: .2s;
+    }
+    .tw-slider::before {
+      content: ''; position: absolute; width: 15px; height: 15px;
+      left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s;
+    }
+    .tw input:checked + .tw-slider { background: var(--c-green); }
+    .tw input:checked + .tw-slider::before { transform: translateX(17px); }
+
+    /* Shared dropdown menu */
+    .drop-menu {
+      position: absolute; right: 0; top: calc(100% + 3px);
+      background: #141e36; border: 1px solid var(--c-border);
+      border-radius: 8px; min-width: 130px; z-index: 300;
+      box-shadow: 0 4px 16px rgba(0,0,0,.5); overflow: hidden;
+    }
+    .drop-menu button {
+      display: block; width: 100%; text-align: left;
+      padding: 7px 12px; font-size: .8rem; color: var(--c-text);
+      background: none; border: none; cursor: pointer; font-family: var(--font);
+    }
+    .drop-menu button:hover { background: rgba(255,255,255,.06); }
+    .drop-menu button.danger { color: var(--c-red); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div id="draft-indicator">● All saved</div>
+
+  <div id="mobile-tab-bar">
+    <button class="active" data-tab-idx="0">🎨 Palette</button>
+    <button data-tab-idx="1">🏗 Builder</button>
+    <button data-tab-idx="2">⚙️ Inspector</button>
+  </div>
+
+  <div id="builder-workspace">
+
+    <!-- LEFT: Field palette -->
+    <div class="builder-panel" id="panel-palette">
+      <div class="panel-hdr">Add fields</div>
+      <div class="panel-scroll" id="palette-body"></div>
+    </div>
+
+    <!-- MIDDLE: Canvas -->
+    <div id="module-canvas">
+      <div class="canvas-scroll" id="canvas-scroll">
+
+        <div class="meta-card" id="meta-card"></div>
+
+        <div>
+          <div class="fields-hdr">
+            <span class="fields-title">Fields</span>
+            <span class="fields-count" id="field-count">0 fields</span>
+          </div>
+          <div id="field-list"></div>
+        </div>
+
+      </div>
+      <div id="action-bar">
+        <button id="btn-save-draft" class="btn btn-orange">Save as draft</button>
+        <button id="btn-save-activate" class="btn btn-green">Save and activate</button>
+        <button id="btn-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+        <div style="flex:1"></div>
+        <span id="save-msg" style="font-size:.72rem;color:var(--c-muted)"></span>
+      </div>
+    </div>
+
+    <!-- RIGHT: Inspector -->
+    <div class="builder-panel" id="panel-inspector">
+      <div class="itab-bar">
+        <button class="itab-btn active" data-tab="field">Field</button>
+        <button class="itab-btn" data-tab="permissions">Permissions</button>
+        <button class="itab-btn" data-tab="preview">Preview</button>
+        <button class="itab-btn" data-tab="ai">AI &amp; Workflows</button>
+      </div>
+      <div class="itab-content active" id="tab-field"></div>
+      <div class="itab-content" id="tab-permissions"></div>
+      <div class="itab-content" id="tab-preview"></div>
+      <div class="itab-content" id="tab-ai"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const FIELD_TYPES = [
+  { type:'text',           icon:'✏️',  label:'Short text',       desc:'Single line of text' },
+  { type:'long_text',      icon:'📝',  label:'Long text',        desc:'Multi-line notes or comments' },
+  { type:'number',         icon:'🔢',  label:'Number',           desc:'Numeric value with optional min/max' },
+  { type:'date',           icon:'📅',  label:'Date',             desc:'Date picker (no time)' },
+  { type:'datetime',       icon:'🕐',  label:'Date & time',      desc:'Date and time picker' },
+  { type:'timestamp_auto', icon:'⏱️',  label:'Auto timestamp',   desc:'Fills in automatically on submit' },
+  { type:'yes_no',         icon:'✅',  label:'Yes / No',         desc:'Simple boolean toggle' },
+  { type:'dropdown',       icon:'🔽',  label:'Dropdown',         desc:'Choose from a list of options' },
+  { type:'radio',          icon:'🔘',  label:'Radio buttons',    desc:'Select one from visible choices' },
+  { type:'photo',          icon:'📷',  label:'Photo',            desc:'Single photo upload' },
+  { type:'photo_multi',    icon:'📸',  label:'Multiple photos',  desc:'Upload up to 20 photos' },
+  { type:'signature',      icon:'✍️',  label:'Signature',        desc:'Drawn signature capture' },
+];
+
+const ICONS_GRID = ['📋','🩹','💊','🎒','📸','📝','⚠️','🚗','🍽️','🧒','👶','👨‍🏫','🛁','💤','🎨','📚','🏃','🎵','🌳','🔑','📞','✉️','🏥','💉','🩺','🧻','🥛','🍎','⏰','📅','🗓️','✏️','📂','🗂️','📌','🔔','⭐','💡','🆘','📢'];
+
+const PORTALS_CFG = [
+  { key:'ey',      label:'EY Portal',      roles:[{key:'practitioner',label:'Practitioner'},{key:'room_leader',label:'Room Leader'},{key:'manager',label:'Manager'}] },
+  { key:'admin',   label:'Admin Portal',   roles:[{key:'manager',label:'Manager'}] },
+  { key:'parents', label:'Parents Portal', roles:[{key:'parent',label:'Parent'}] },
+  { key:'hr',      label:'HR Portal',      roles:[{key:'practitioner',label:'Staff'},{key:'manager',label:'Manager'}] },
+];
+const PERM_KEYS = ['submit','view_own','view_all','edit_own','edit_all','delete'];
+
+// ── ModuleState ──────────────────────────────────────────────────────────────
+
+const ModuleState = {
+  id: null,
+  name: '',
+  slug: '',
+  description: '',
+  icon: '📋',
+  attaches_to: 'child',
+  portals: ['ey','admin'],
+  permissions: {},
+  fields: [],
+  workflows: [],
+  ai_prompts: [],
+  is_active: false,
+  _dirty: false,
+  _selectedFieldIdx: null,
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function toArray(v) { if (Array.isArray(v)) return v; if (typeof v==='string') { try { return JSON.parse(v); } catch { return []; } } return []; }
+
+function slugify(s) { return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
+
+function makeKey(label, type) {
+  const base = slugify(label || type).replace(/-/g,'_') || type;
+  const existing = ModuleState.fields.map(f=>f.key);
+  if (!existing.includes(base)) return base;
+  let i = 2;
+  while (existing.includes(base + '_' + i)) i++;
+  return base + '_' + i;
+}
+
+function ftByType(type) { return FIELD_TYPES.find(f=>f.type===type) || {icon:'📋',label:type}; }
+
+// ── Draft autosave ───────────────────────────────────────────────────────────
+
+const DRAFT_KEY = 'wrenModuleDraft';
+let _draftTimer;
+
+function markDirty() {
+  ModuleState._dirty = true;
+  setDraftIndicator('dirty', '● Unsaved changes');
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(saveDraft, 500);
+  schedulePreviewUpdate();
+}
+
+function saveDraft() {
+  const d = { ...ModuleState, _savedAt: new Date().toISOString() };
+  delete d._dirty; delete d._selectedFieldIdx;
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+  setDraftIndicator('saved', '● Draft saved');
+}
+
+function setDraftIndicator(cls, text) {
+  const el = document.getElementById('draft-indicator');
+  if (!el) return;
+  el.textContent = text;
+  el.className = cls;
+}
+
+// ── Default permissions ──────────────────────────────────────────────────────
+
+function defaultPerms(attaches_to) {
+  switch(attaches_to) {
+    case 'child': return {
+      ey:      { practitioner:['submit','view_own'], manager:['view_all','edit_all','delete'] },
+      admin:   { manager:['view_all','edit_all','delete'] },
+      parents: { parent:['view_own'] }
+    };
+    case 'staff': return {
+      hr:    { practitioner:['view_own','submit'], manager:['view_all','edit_all','delete'] },
+      admin: { manager:['view_all','edit_all','delete'] }
+    };
+    case 'parent': return {
+      parents: { parent:['view_own'] },
+      admin:   { manager:['view_all','edit_all','delete'] }
+    };
+    default: return {
+      admin: { manager:['view_all','edit_all','delete'] }
+    };
+  }
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+
+function renderAll() {
+  renderPalette();
+  renderMetaCard();
+  renderFieldList();
+  renderInspector();
+  renderPermissionsTab();
+  renderPreviewTab();
+  // renderAITab() is async — only call when AI tab is visible
+  if (document.getElementById('tab-ai')?.classList.contains('active')) {
+    renderAITab();
+  }
+}
+
+function renderPalette() {
+  document.getElementById('palette-body').innerHTML = FIELD_TYPES.map(ft => `
+    <div class="ft-tile" data-type="${ft.type}">
+      <span class="ft-icon">${ft.icon}</span>
+      <div><div class="ft-name">${ft.label}</div><div class="ft-desc">${ft.desc}</div></div>
+    </div>
+  `).join('');
+}
+
+function renderMetaCard() {
+  const m = ModuleState;
+  const portalsArr = toArray(m.portals);
+  document.getElementById('meta-card').innerHTML = `
+    <div class="form-row">
+      <div style="flex-shrink:0;position:relative">
+        <div class="icon-trigger" id="icon-trigger">${esc(m.icon||'📋')}</div>
+        <div class="icon-popover" id="icon-popover">
+          <div class="icon-grid">
+            ${ICONS_GRID.map(e=>`<span data-icon="${e}" title="${e}">${e}</span>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="fg" style="flex:1">
+        <label>Module name *</label>
+        <input id="m-name" value="${esc(m.name)}" placeholder="e.g. Accident Report">
+      </div>
+    </div>
+    <div class="fg">
+      <label>Slug (URL)</label>
+      <input id="m-slug" value="${esc(m.slug)}" readonly
+        style="opacity:.5;cursor:default;font-family:monospace;font-size:.82rem">
+      <div class="slug-hint">admin.example-nursery.co.uk/modules/<span id="slug-preview">${esc(m.slug||'…')}</span></div>
+    </div>
+    <div class="fg">
+      <label>Description</label>
+      <textarea id="m-desc" rows="2" placeholder="What is this module for?">${esc(m.description)}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="fg">
+        <label>Attaches to</label>
+        <div class="pill-group" id="attaches-group">
+          ${['child','staff','parent','standalone','multi'].map(v=>`
+            <label>
+              <input type="radio" name="attaches" value="${v}" ${m.attaches_to===v?'checked':''}>
+              <span>${v.charAt(0).toUpperCase()+v.slice(1)}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="fg">
+      <label>Visible on portals</label>
+      <div class="pill-group" id="portals-group">
+        ${[{k:'ey',l:'EY'},{k:'admin',l:'Admin'},{k:'parents',l:'Parents'},{k:'hr',l:'HR'}].map(p=>`
+          <label>
+            <input type="checkbox" value="${p.k}" ${portalsArr.includes(p.k)?'checked':''}>
+            <span>${p.l}</span>
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.getElementById('icon-trigger')?.addEventListener('click', toggleIconPicker);
+  document.querySelector('.icon-grid')?.addEventListener('click', function(e) {
+    const span = e.target.closest('[data-icon]');
+    if (span) pickIcon(span.dataset.icon);
+  });
+  document.getElementById('m-name')?.addEventListener('input', function() { onNameInput(this.value); });
+  document.getElementById('m-desc')?.addEventListener('input', onFieldChange);
+  document.getElementById('attaches-group')?.addEventListener('change', function(e) {
+    if (e.target.name === 'attaches') onAttachesChange(e.target.value);
+  });
+  document.getElementById('portals-group')?.addEventListener('change', function(e) {
+    if (e.target.type === 'checkbox') onPortalsChange();
+  });
+}
+
+function renderFieldList() {
+  const fields = ModuleState.fields;
+  const countEl = document.getElementById('field-count');
+  if (countEl) countEl.textContent = `${fields.length} field${fields.length===1?'':'s'}`;
+
+  const container = document.getElementById('field-list');
+  if (!fields.length) {
+    container.innerHTML = `<div class="field-empty">
+      Click a field type on the left to add it.<br>
+      Drag ⋮⋮ to reorder. Click a field to configure it in the right panel.
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = fields.map((f, i) => {
+    const ft = ftByType(f.type);
+    const sel = ModuleState._selectedFieldIdx === i;
+    return `
+      <div class="field-card${sel?' selected':''}"
+           draggable="true"
+           data-idx="${i}"
+           ondragstart="onDragStart(event,${i})"
+           ondragover="onDragOver(event,${i})"
+           ondragleave="onDragLeave(event)"
+           ondrop="onDrop(event,${i})">
+        <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+        <span class="field-type-ico">${ft.icon}</span>
+        <div class="field-card-body">
+          <div class="field-card-label">${esc(f.label||ft.label)}</div>
+          <div class="field-card-type">${ft.label}</div>
+        </div>
+        ${f.required ? '<span class="req-badge">required</span>' : ''}
+        <div class="fcard-menu">
+          <button class="fcard-kebab" data-idx="${i}">⋮</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderInspector() {
+  const idx = ModuleState._selectedFieldIdx;
+  const container = document.getElementById('tab-field');
+  if (idx === null || idx === undefined || !ModuleState.fields[idx]) {
+    container.innerHTML = `<div class="insp-placeholder">
+      Select a field to configure it.<br><br>
+      Click a field type on the left panel to add a new field.
+    </div>`;
+    return;
+  }
+  const f = ModuleState.fields[idx];
+  const ft = ftByType(f.type);
+
+  let extraHtml = '';
+
+  if (['text','long_text','number'].includes(f.type)) {
+    extraHtml += `
+      <div class="insp-fg">
+        <label>Placeholder</label>
+        <input id="f-placeholder" value="${esc(f.placeholder||'')}" placeholder="Shown in the empty field">
+      </div>`;
+  }
+  if (['yes_no','dropdown','radio'].includes(f.type)) {
+    extraHtml += `
+      <div class="insp-fg">
+        <label>Default value</label>
+        ${f.type==='yes_no'
+          ? `<select id="f-default-value">
+               <option value="" ${!f.default_value?'selected':''}>No default</option>
+               <option value="true"  ${f.default_value==='true'?'selected':''}>Yes</option>
+               <option value="false" ${f.default_value==='false'?'selected':''}>No</option>
+             </select>`
+          : `<input id="f-default-value" value="${esc(f.default_value||'')}" placeholder="Optional default">`
+        }
+      </div>`;
+  }
+  if (['dropdown','radio'].includes(f.type)) {
+    const opts = f.options || [];
+    extraHtml += `
+      <div class="insp-fg">
+        <label>Options</label>
+        <div class="options-editor" id="opts-editor">
+          ${opts.map((o,oi)=>`
+            <div class="option-row">
+              <input data-oi="${oi}" value="${esc(o)}" placeholder="Option ${oi+1}">
+              <button class="opt-del" data-oi="${oi}" title="Remove">✕</button>
+            </div>`).join('')}
+        </div>
+        <button id="btn-add-option" class="btn btn-sm btn-ghost" style="margin-top:6px;width:100%">+ Add option</button>
+      </div>`;
+  }
+  if (f.type === 'number') {
+    extraHtml += `
+      <div class="form-row" style="gap:8px">
+        <div class="insp-fg" style="flex:1">
+          <label>Min</label>
+          <input id="f-min" type="number" value="${f.min??''}" placeholder="—">
+        </div>
+        <div class="insp-fg" style="flex:1">
+          <label>Max</label>
+          <input id="f-max" type="number" value="${f.max??''}" placeholder="—">
+        </div>
+      </div>`;
+  }
+  if (f.type === 'photo_multi') {
+    extraHtml += `
+      <div class="insp-fg">
+        <label>Max photos (1–20)</label>
+        <input id="f-max-photos" type="number" min="1" max="20" value="${f.max_photos||5}">
+      </div>`;
+  }
+  if (['photo','photo_multi','signature'].includes(f.type)) {
+    extraHtml += `
+      <div class="insp-fg">
+        <label>Max file size (MB)</label>
+        <input id="f-max-file-size" type="number" min="1" max="20" value="${f.max_file_size_mb||5}">
+      </div>`;
+  }
+
+  container.innerHTML = `
+    <div style="font-size:.72rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">
+      ${ft.icon} ${ft.label}
+    </div>
+    <div class="insp-fg">
+      <label>Label *</label>
+      <input id="f-label" value="${esc(f.label||ft.label)}">
+    </div>
+    <div class="insp-fg">
+      <label>Help text</label>
+      <input id="f-help-text" value="${esc(f.help_text||'')}"
+        placeholder="Shown beneath the field to explain what to enter">
+    </div>
+    <div class="insp-toggle-row">
+      <span>Required</span>
+      <label class="tw">
+        <input id="f-required" type="checkbox" ${f.required?'checked':''}>
+        <span class="tw-slider"></span>
+      </label>
+    </div>
+    ${f.type === 'timestamp_auto' ? '<div style="font-size:.75rem;color:var(--c-muted);padding:6px 0">Auto-filled on submit — no user input needed.</div>' : ''}
+    ${extraHtml}
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--c-border)">
+      <div style="font-size:.7rem;color:var(--c-muted);margin-bottom:4px">Field key: <code>${esc(f.key)}</code></div>
+    </div>
+  `;
+  attachInspectorListeners(idx);
+}
+
+function renderPermissionsTab() {
+  const container = document.getElementById('tab-permissions');
+  let html = '';
+  for (const portal of PORTALS_CFG) {
+    html += `<div class="perm-portal"><div class="perm-portal-title">${portal.label}</div>`;
+    for (const role of portal.roles) {
+      const cur = ((ModuleState.permissions[portal.key]||{})[role.key]) || [];
+      html += `<div class="perm-role">
+        <div class="perm-role-name">${role.label}</div>
+        <div class="perm-checks">
+          ${PERM_KEYS.map(pk=>`
+            <label class="perm-chk" title="${pk}">
+              <input type="checkbox" ${cur.includes(pk)?'checked':''}
+                data-portal="${portal.key}" data-role="${role.key}" data-perm="${pk}">
+              <span>${pk.replace('_',' ')}</span>
+            </label>`).join('')}
+        </div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  container.innerHTML = html;
+}
+
+// ── Preview tab state ─────────────────────────────────────────────────────────
+
+let _previewPortal = 'ey';
+let _previewRole   = 'practitioner';
+let _previewTimer  = null;
+
+const _previewRolesByPortal = {
+  ey:      ['practitioner','room_leader','manager'],
+  admin:   ['manager'],
+  parents: ['parent'],
+  hr:      ['practitioner','manager'],
+};
+const _previewPortalLabels = { ey:'EY', admin:'Admin', parents:'Parents', hr:'HR' };
+
+function renderPreviewTab() {
+  const container = document.getElementById('tab-preview');
+  const portals = Object.keys(_previewPortalLabels);
+  container.innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:.72rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Portal</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap" id="preview-portal-btns">
+        ${portals.map(k=>`
+          <button class="btn btn-sm ${_previewPortal===k?'btn-primary':'btn-ghost'}"
+            data-portal="${k}" style="flex:1">
+            ${_previewPortalLabels[k]}
+          </button>`).join('')}
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:.72rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Role</div>
+      <select id="preview-role-sel"
+        style="width:100%;padding:6px 9px;background:rgba(255,255,255,.04);border:1px solid var(--c-border);border-radius:7px;color:var(--c-text);font-size:.82rem;font-family:var(--font)">
+        ${(_previewRolesByPortal[_previewPortal]||['practitioner']).map(r=>
+          `<option value="${r}" ${r===_previewRole?'selected':''}>${r.replace(/_/g,' ')}</option>`).join('')}
+      </select>
+    </div>
+    <div style="font-size:.72rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Live preview</div>
+    <div id="preview-form-container" style="padding:2px 0"></div>`;
+  schedulePreviewUpdate();
+}
+
+function setPreviewPortal(p) {
+  _previewPortal = p;
+  _previewRole = (_previewRolesByPortal[p] || ['practitioner'])[0];
+  // Update button styles without re-rendering whole tab
+  document.querySelectorAll('#preview-portal-btns button').forEach(btn => {
+    btn.className = 'btn btn-sm ' + (btn.dataset.portal === p ? 'btn-primary' : 'btn-ghost');
+    btn.style.flex = '1';
+  });
+  const sel = document.getElementById('preview-role-sel');
+  if (sel) {
+    sel.innerHTML = (_previewRolesByPortal[p]||['practitioner']).map(r=>
+      `<option value="${r}" ${r===_previewRole?'selected':''}>${r.replace(/_/g,' ')}</option>`).join('');
+  }
+  schedulePreviewUpdate();
+}
+
+function setPreviewRole(r) {
+  _previewRole = r;
+  schedulePreviewUpdate();
+}
+
+function schedulePreviewUpdate() {
+  clearTimeout(_previewTimer);
+  _previewTimer = setTimeout(doPreviewUpdate, 300);
+}
+
+function doPreviewUpdate() {
+  const tab = document.getElementById('tab-preview');
+  if (!tab || !tab.classList.contains('active')) return;
+  const container = document.getElementById('preview-form-container');
+  if (!container) return;
+  if (typeof WrenModuleRenderer === 'undefined') {
+    container.innerHTML = '<div style="font-size:.8rem;color:var(--c-muted);padding:12px">Renderer loading…</div>';
+    return;
+  }
+  if (!ModuleState.fields.length) {
+    container.innerHTML = '<div style="padding:20px;border:2px dashed var(--c-border);border-radius:10px;text-align:center;color:var(--c-muted);font-size:.82rem">Add fields to the builder to preview the form here.</div>';
+    return;
+  }
+  WrenModuleRenderer.renderForm(ModuleState, container, {
+    portal: _previewPortal,
+    role:   _previewRole,
+    onSubmit: function (data) {
+      alert('Preview mode — not saved.\n\nSubmitted data:\n' + JSON.stringify(data, null, 2));
+      return Promise.resolve({});
+    }
+  });
+}
+
+// Holds DB-persisted workflows for a saved module
+let _dbWorkflows = [];
+
+async function renderAITab() {
+  const container = document.getElementById('tab-ai');
+  const prompts = toArray(ModuleState.ai_prompts);
+
+  // Load DB workflows if module is saved
+  if (ModuleState.id) {
+    try {
+      _dbWorkflows = await Wren.api(`/api/modules/${ModuleState.id}/workflows`);
+    } catch { _dbWorkflows = []; }
+  }
+
+  const workflows = _dbWorkflows;
+  container.innerHTML = `
+    <div class="ai-accordion">
+      <div class="ai-hdr" data-action="toggle-accordion" data-accordion-id="acc-ai">
+        <span class="ai-hdr-title">🤖 AI Summaries</span>
+        <span style="font-size:.72rem;color:var(--c-muted)">${prompts.length} prompt${prompts.length===1?'':'s'} ▾</span>
+      </div>
+      <div class="ai-body" id="acc-ai">
+        ${prompts.length ? prompts.map((p,i)=>`
+          <div class="ai-item">
+            <span>${esc(p.name||'Unnamed prompt')}</span>
+            <button class="btn btn-sm btn-ghost" data-action="remove-ai-prompt" data-idx="${i}">✕</button>
+          </div>`).join('') : '<div style="font-size:.75rem;color:var(--c-muted);margin-bottom:8px">No AI prompts yet</div>'}
+        <button class="btn btn-sm btn-ghost" style="width:100%" data-action="add-ai-prompt">+ Add AI summary prompt</button>
+      </div>
+    </div>
+    <div class="ai-accordion">
+      <div class="ai-hdr" data-action="toggle-accordion" data-accordion-id="acc-wf">
+        <span class="ai-hdr-title">⚡ Workflows</span>
+        <span style="font-size:.72rem;color:var(--c-muted)">${workflows.length} workflow${workflows.length===1?'':'s'} ▾</span>
+      </div>
+      <div class="ai-body open" id="acc-wf">
+        ${!ModuleState.id ? '<div style="font-size:.75rem;color:var(--c-muted);margin-bottom:8px">Save the module first to add workflows.</div>' :
+          workflows.length ? workflows.map((w,i)=>`
+            <div class="ai-item">
+              <div style="min-width:0">
+                <div style="font-weight:600;font-size:.82rem">${esc(w.name)}</div>
+                <div style="font-size:.7rem;color:var(--c-muted)">${esc(w.trigger)} → ${esc(w.action_type)}${!w.is_active?' · <span style="color:var(--c-amber)">inactive</span>':''}</div>
+              </div>
+              <div style="display:flex;gap:5px;flex-shrink:0">
+                <button class="btn btn-sm btn-ghost" data-action="toggle-wf" data-idx="${i}">${w.is_active?'Pause':'Resume'}</button>
+                <button class="btn btn-sm btn-ghost" style="color:var(--c-red)" data-action="delete-wf" data-idx="${i}">✕</button>
+              </div>
+            </div>`).join('') :
+          '<div style="font-size:.75rem;color:var(--c-muted);margin-bottom:8px">No workflows yet</div>'
+        }
+        ${ModuleState.id ? '<button class="btn btn-sm btn-ghost" style="width:100%;margin-top:4px" data-action="add-workflow">+ Add workflow</button>' : ''}
+      </div>
+    </div>`;
+}
+
+// ── Field operations ─────────────────────────────────────────────────────────
+
+function addField(type) {
+  const ft = ftByType(type);
+  const f = {
+    key: makeKey(ft.label, type),
+    type,
+    label: ft.label,
+    required: false,
+    help_text: '',
+    placeholder: '',
+    default_value: null,
+    options: (type==='dropdown'||type==='radio') ? ['Option 1','Option 2'] : [],
+    min: null, max: null,
+    max_photos: 5,
+    max_file_size_mb: 5,
+  };
+  ModuleState.fields.push(f);
+  ModuleState._selectedFieldIdx = ModuleState.fields.length - 1;
+  renderFieldList();
+  renderInspector();
+  updateFieldCount();
+  markDirty();
+  // Switch to Field inspector tab
+  document.querySelector('.itab-btn.active')?.classList.remove('active');
+  document.querySelectorAll('.itab-btn')[0].classList.add('active');
+  document.querySelectorAll('.itab-content').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-field').classList.add('active');
+}
+
+function selectField(idx) {
+  ModuleState._selectedFieldIdx = idx;
+  renderFieldList();
+  renderInspector();
+}
+
+function updateField(idx, key, value) {
+  if (!ModuleState.fields[idx]) return;
+  ModuleState.fields[idx][key] = value;
+  // Update label preview in field list without full re-render
+  const cards = document.querySelectorAll('.field-card');
+  if (cards[idx]) {
+    const labelEl = cards[idx].querySelector('.field-card-label');
+    if (labelEl && key === 'label') labelEl.textContent = value || ftByType(ModuleState.fields[idx].type).label;
+    const reqBadge = cards[idx].querySelector('.req-badge');
+    if (key === 'required') {
+      if (value && !reqBadge) {
+        cards[idx].querySelector('.fcard-menu').insertAdjacentHTML('beforebegin','<span class="req-badge">required</span>');
+      } else if (!value && reqBadge) { reqBadge.remove(); }
+    }
+  }
+  markDirty();
+}
+
+function updateOption(fieldIdx, optIdx, value) {
+  const opts = ModuleState.fields[fieldIdx].options;
+  opts[optIdx] = value;
+  markDirty();
+}
+
+function addOption(fieldIdx) {
+  const f = ModuleState.fields[fieldIdx];
+  f.options = f.options || [];
+  f.options.push('');
+  renderInspector();
+  markDirty();
+}
+
+function removeOption(fieldIdx, optIdx) {
+  ModuleState.fields[fieldIdx].options.splice(optIdx, 1);
+  renderInspector();
+  markDirty();
+}
+
+function showFieldMenu(e, idx) {
+  e.stopPropagation();
+  document.querySelectorAll('.drop-menu').forEach(el=>el.remove());
+  const btn = e.currentTarget;
+  const menu = document.createElement('div');
+  menu.className = 'drop-menu';
+  menu.innerHTML = `
+    <button data-action="dup-field">📋 Duplicate</button>
+    <button class="danger" data-action="del-field">🗑 Delete</button>
+  `;
+  menu.addEventListener('click', function(e) {
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'dup-field') duplicateField(idx);
+    else if (action === 'del-field') deleteField(idx);
+  });
+  btn.parentElement.appendChild(menu);
+  const close = ev => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+function duplicateField(idx) {
+  const f = JSON.parse(JSON.stringify(ModuleState.fields[idx]));
+  f.key = makeKey(f.label + ' copy', f.type);
+  f.label = f.label + ' (copy)';
+  ModuleState.fields.splice(idx + 1, 0, f);
+  renderFieldList();
+  updateFieldCount();
+  markDirty();
+}
+
+function deleteField(idx) {
+  ModuleState.fields.splice(idx, 1);
+  if (ModuleState._selectedFieldIdx >= ModuleState.fields.length) {
+    ModuleState._selectedFieldIdx = ModuleState.fields.length - 1;
+    if (ModuleState._selectedFieldIdx < 0) ModuleState._selectedFieldIdx = null;
+  }
+  renderFieldList();
+  renderInspector();
+  updateFieldCount();
+  markDirty();
+}
+
+function updateFieldCount() {
+  const n = ModuleState.fields.length;
+  const el = document.getElementById('field-count');
+  if (el) el.textContent = `${n} field${n===1?'':'s'}`;
+}
+
+// ── Drag and drop ────────────────────────────────────────────────────────────
+
+let _dragFromIdx = null;
+
+function onDragStart(e, idx) {
+  _dragFromIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragOver(e, idx) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.field-card').forEach((el,i) => {
+    el.classList.toggle('drag-over', i === idx && i !== _dragFromIdx);
+  });
+}
+
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+function onDrop(e, idx) {
+  e.preventDefault();
+  document.querySelectorAll('.field-card').forEach(el => el.classList.remove('drag-over'));
+  if (_dragFromIdx === null || _dragFromIdx === idx) { _dragFromIdx = null; return; }
+  const fields = ModuleState.fields;
+  const [moved] = fields.splice(_dragFromIdx, 1);
+  fields.splice(idx, 0, moved);
+  if (ModuleState._selectedFieldIdx === _dragFromIdx) ModuleState._selectedFieldIdx = idx;
+  _dragFromIdx = null;
+  renderFieldList();
+  markDirty();
+}
+
+// ── Meta card handlers ────────────────────────────────────────────────────────
+
+function onNameInput(val) {
+  ModuleState.name = val;
+  const slug = slugify(val);
+  if (!ModuleState.id) { // Only auto-update slug for new modules
+    ModuleState.slug = slug;
+    const si = document.getElementById('m-slug');
+    const sp = document.getElementById('slug-preview');
+    if (si) si.value = slug;
+    if (sp) sp.textContent = slug || '…';
+  }
+  markDirty();
+}
+
+function onFieldChange() {
+  ModuleState.description = document.getElementById('m-desc')?.value || '';
+  markDirty();
+}
+
+function onAttachesChange(val) {
+  ModuleState.attaches_to = val;
+  if (!Object.keys(ModuleState.permissions).length) {
+    ModuleState.permissions = defaultPerms(val);
+    renderPermissionsTab();
+  }
+  markDirty();
+}
+
+function onPortalsChange() {
+  const checked = [...document.querySelectorAll('.pill-group input[type=checkbox]')]
+    .filter(el => el.checked).map(el => el.value);
+  ModuleState.portals = checked;
+  markDirty();
+}
+
+// ── Icon picker ───────────────────────────────────────────────────────────────
+
+function toggleIconPicker(e) {
+  e.stopPropagation();
+  const pop = document.getElementById('icon-popover');
+  if (pop) pop.classList.toggle('open');
+}
+
+function pickIcon(emoji) {
+  ModuleState.icon = emoji;
+  const trig = document.getElementById('icon-trigger');
+  if (trig) trig.textContent = emoji;
+  const pop = document.getElementById('icon-popover');
+  if (pop) pop.classList.remove('open');
+  markDirty();
+}
+
+document.addEventListener('click', e => {
+  const pop = document.getElementById('icon-popover');
+  const trig = document.getElementById('icon-trigger');
+  if (pop && !pop.contains(e.target) && e.target !== trig) pop.classList.remove('open');
+});
+
+// ── Permissions ───────────────────────────────────────────────────────────────
+
+function togglePerm(portal, role, perm, checked) {
+  if (!ModuleState.permissions[portal]) ModuleState.permissions[portal] = {};
+  if (!ModuleState.permissions[portal][role]) ModuleState.permissions[portal][role] = [];
+  const perms = ModuleState.permissions[portal][role];
+  const idx = perms.indexOf(perm);
+  if (checked && idx === -1) perms.push(perm);
+  if (!checked && idx >= 0) perms.splice(idx, 1);
+  markDirty();
+}
+
+// ── Inspector tabs ────────────────────────────────────────────────────────────
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.itab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.itab-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'preview') schedulePreviewUpdate();
+  if (name === 'ai') renderAITab();
+}
+
+// ── AI & Workflows ────────────────────────────────────────────────────────────
+
+function toggleAccordion(id) {
+  const body = document.getElementById(id);
+  if (body) body.classList.toggle('open');
+}
+
+function addAIPrompt() {
+  Wren.modal('Add AI Summary Prompt', `
+    <div class="fg"><label>Name</label><input id="ai-name" class="form-control" placeholder="e.g. Weekly summary"></div>
+    <div class="fg"><label>Prompt</label>
+      <textarea id="ai-prompt" class="form-control" rows="4"
+        placeholder="Summarise all records for {filter} grouped by {group_by} in the last week…"></textarea></div>
+    <div class="fg"><label>Run on</label>
+      <select id="ai-run" class="form-control">
+        <option value="manual">Manual only</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select></div>
+  `, [
+    { label: 'Add', class: 'btn-primary', close: false, action: () => {
+      const name = document.getElementById('ai-name').value.trim();
+      const prompt = document.getElementById('ai-prompt').value.trim();
+      const run_on = document.getElementById('ai-run').value;
+      if (!name || !prompt) { Wren.toast('Name and prompt are required', 'warning'); return; }
+      ModuleState.ai_prompts = toArray(ModuleState.ai_prompts);
+      ModuleState.ai_prompts.push({ name, prompt, run_on });
+      renderAITab();
+      markDirty();
+      document.querySelector('.wren-modal-overlay')?.remove();
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function removeAIPrompt(idx) {
+  toArray(ModuleState.ai_prompts).splice(idx, 1);
+  renderAITab();
+  markDirty();
+}
+
+function addWorkflow() {
+  if (!ModuleState.id) { Wren.toast('Save the module first', 'warning'); return; }
+
+  const fieldOptions = ModuleState.fields
+    .filter(f => f.type === 'text' || f.type === 'long_text' || f.type === 'dropdown' || f.type === 'radio')
+    .map(f => `<option value="${esc(f.key)}">${esc(f.label||f.key)}</option>`).join('');
+
+  Wren.modal('Add Workflow', `
+    <div class="fg">
+      <label>Name</label>
+      <input id="wf-name" class="form-control" placeholder="e.g. AI summary on submit">
+    </div>
+    <div class="fg">
+      <label>Trigger</label>
+      <select id="wf-trigger" class="form-control">
+        <option value="on_submit">On submit</option>
+        <option value="on_update">On update</option>
+        <option value="scheduled">Scheduled (stub — cron not yet active)</option>
+      </select>
+    </div>
+    <div class="fg" id="wf-cron-wrap" style="display:none">
+      <label>Cron expression</label>
+      <input id="wf-cron" class="form-control" placeholder="e.g. 0 8 * * 1 (Mon 8am)">
+    </div>
+    <div class="fg">
+      <label>Action</label>
+      <select id="wf-action" class="form-control">
+        <option value="ai_summary">AI summary (Ollama — saves to record)</option>
+        <option value="email">Send email</option>
+        <option value="create_record">Create record in another module</option>
+        <option value="webhook">POST webhook</option>
+      </select>
+    </div>
+    <!-- Action-specific config panels -->
+    <div id="wf-cfg-ai_summary" class="wf-cfg-panel" style="font-size:.78rem;color:var(--c-muted);padding:6px 0">
+      Uses Ollama qwen3.5:4b to generate a 2-3 sentence summary and save it to the record.
+      Requires the <strong>ai_observation_writer</strong> feature flag to be enabled.
+    </div>
+    <div id="wf-cfg-email" class="wf-cfg-panel" style="display:none">
+      <div class="fg"><label>Recipient address (literal)</label>
+        <input id="wf-email-to" class="form-control" placeholder="e.g. manager@nursery.com"></div>
+      <div class="fg"><label>Or use field value for recipient</label>
+        <select id="wf-email-field" class="form-control"><option value="">— None —</option>${fieldOptions}</select></div>
+      <div class="fg"><label>Subject</label>
+        <input id="wf-email-subj" class="form-control" placeholder="New {module_name} record"></div>
+    </div>
+    <div id="wf-cfg-create_record" class="wf-cfg-panel" style="display:none">
+      <div class="fg"><label>Target module ID</label>
+        <input id="wf-cr-target" class="form-control" placeholder="Module ID to create record in" type="number"></div>
+    </div>
+    <div id="wf-cfg-webhook" class="wf-cfg-panel" style="display:none">
+      <div class="fg"><label>Webhook URL</label>
+        <input id="wf-wh-url" class="form-control" placeholder="https://…"></div>
+    </div>
+  `, [
+    { label: 'Save workflow', class: 'btn-primary', close: false, action: async () => {
+      const name = document.getElementById('wf-name').value.trim();
+      const trigger = document.getElementById('wf-trigger').value;
+      const action_type = document.getElementById('wf-action').value;
+      const schedule_cron = document.getElementById('wf-cron')?.value.trim() || null;
+      if (!name) { Wren.toast('Name is required', 'warning'); return; }
+
+      let config = {};
+      if (action_type === 'email') {
+        config = {
+          to_address: document.getElementById('wf-email-to').value.trim() || null,
+          to_field: document.getElementById('wf-email-field').value || null,
+          subject: document.getElementById('wf-email-subj').value.trim() || null,
+        };
+      } else if (action_type === 'create_record') {
+        config = { target_module_id: parseInt(document.getElementById('wf-cr-target').value) || null };
+      } else if (action_type === 'webhook') {
+        const url = document.getElementById('wf-wh-url').value.trim();
+        if (!url) { Wren.toast('Webhook URL required', 'warning'); return; }
+        config = { url };
+      }
+
+      try {
+        await Wren.api(`/api/modules/${ModuleState.id}/workflows`, {
+          method: 'POST', body: { name, trigger, schedule_cron, action_type, config }
+        });
+        document.querySelector('.wren-modal-overlay')?.remove();
+        renderAITab();
+        Wren.toast('Workflow saved ✓', 'success');
+      } catch(e) {
+        Wren.toast(e.error || 'Save failed', 'error');
+      }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+  requestAnimationFrame(() => {
+    document.getElementById('wf-trigger')?.addEventListener('change', onWfTriggerChange);
+    document.getElementById('wf-action')?.addEventListener('change', onWfActionChange);
+  });
+}
+
+function onWfTriggerChange() {
+  const trigger = document.getElementById('wf-trigger')?.value;
+  const cronWrap = document.getElementById('wf-cron-wrap');
+  if (cronWrap) cronWrap.style.display = trigger === 'scheduled' ? '' : 'none';
+}
+
+function onWfActionChange() {
+  const action = document.getElementById('wf-action')?.value;
+  document.querySelectorAll('.wf-cfg-panel').forEach(el => { el.style.display = 'none'; });
+  const panel = document.getElementById('wf-cfg-' + action);
+  if (panel) panel.style.display = '';
+}
+
+async function toggleWorkflowActive(idx) {
+  const wf = _dbWorkflows[idx];
+  if (!wf) return;
+  try {
+    const updated = await Wren.api(`/api/modules/${ModuleState.id}/workflows/${wf.id}`, {
+      method: 'PUT', body: { is_active: !wf.is_active }
+    });
+    _dbWorkflows[idx] = updated;
+    renderAITab();
+    Wren.toast(updated.is_active ? 'Workflow activated' : 'Workflow paused', 'success');
+  } catch(e) { Wren.toast(e.error || 'Failed', 'error'); }
+}
+
+async function deleteDbWorkflow(idx) {
+  const wf = _dbWorkflows[idx];
+  if (!wf || !confirm(`Delete workflow "${wf.name}"?`)) return;
+  try {
+    await Wren.api(`/api/modules/${ModuleState.id}/workflows/${wf.id}`, { method: 'DELETE' });
+    _dbWorkflows.splice(idx, 1);
+    renderAITab();
+    Wren.toast('Workflow deleted', 'success');
+  } catch(e) { Wren.toast(e.error || 'Failed', 'error'); }
+}
+
+function removeWorkflow(idx) {
+  toArray(ModuleState.workflows).splice(idx, 1);
+  renderAITab();
+  markDirty();
+}
+
+// ── Mobile tabs ───────────────────────────────────────────────────────────────
+
+function setMobTab(tabIdx, btn) {
+  document.querySelectorAll('#mobile-tab-bar button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const panels = ['panel-palette', 'module-canvas', 'panel-inspector'];
+  panels.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('mob-active', i === tabIdx);
+  });
+}
+
+// ── Action bar handlers ───────────────────────────────────────────────────────
+
+async function saveModule(activate) {
+  const name = (document.getElementById('m-name')?.value || ModuleState.name || '').trim();
+  if (!name) { Wren.toast('Module name is required', 'warning'); return; }
+  ModuleState.name = name;
+  ModuleState.is_active = activate;
+
+  const body = {
+    name:         ModuleState.name,
+    slug:         ModuleState.slug || slugify(ModuleState.name),
+    description:  ModuleState.description,
+    icon:         ModuleState.icon,
+    attaches_to:  ModuleState.attaches_to,
+    portals:      toArray(ModuleState.portals),
+    permissions:  ModuleState.permissions || {},
+    fields:       ModuleState.fields,
+    workflows:    toArray(ModuleState.workflows),
+    ai_prompts:   toArray(ModuleState.ai_prompts),
+    is_active:    activate,
+  };
+
+  const msgEl = document.getElementById('save-msg');
+  try {
+    if (msgEl) msgEl.textContent = 'Saving…';
+    let result;
+    if (ModuleState.id) {
+      result = await Wren.api(`/api/modules/${ModuleState.id}`, { method: 'PUT', body });
+    } else {
+      result = await Wren.api('/api/modules', { method: 'POST', body });
+      ModuleState.id = result.id;
+    }
+    localStorage.removeItem(DRAFT_KEY);
+    ModuleState._dirty = false;
+    setDraftIndicator('saved', '● Saved');
+    if (msgEl) msgEl.textContent = '';
+    Wren.toast(activate ? 'Module saved and activated ✓' : 'Draft saved ✓', 'success');
+    setTimeout(() => location.href = '/modules.html', 1200);
+  } catch(e) {
+    if (msgEl) msgEl.textContent = '';
+    Wren.toast(e.error || 'Save failed', 'error');
+  }
+}
+
+function cancelBuilder() {
+  if (ModuleState._dirty && !confirm('You have unsaved changes. Leave without saving?')) return;
+  location.href = '/modules.html';
+}
+
+// ── Load from server ──────────────────────────────────────────────────────────
+
+async function loadFromServer(id) {
+  try {
+    const m = await Wren.api(`/api/modules/${id}`);
+    Object.assign(ModuleState, {
+      id:          m.id,
+      name:        m.name || '',
+      slug:        m.slug || '',
+      description: m.description || '',
+      icon:        m.icon || '📋',
+      attaches_to: m.attaches_to || 'child',
+      portals:     toArray(m.portals),
+      permissions: m.permissions || {},
+      fields:      toArray(m.fields),
+      workflows:   toArray(m.workflows),
+      ai_prompts:  toArray(m.ai_prompts),
+      is_active:   m.is_active,
+    });
+    document.title = `Edit: ${m.name} — Wren Admin`;
+  } catch(e) {
+    Wren.toast('Failed to load module', 'error');
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+async function init() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id');
+
+  if (id) {
+    await loadFromServer(id);
+  } else {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        if (data && data.name !== undefined) {
+          const savedAt = data._savedAt ? new Date(data._savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : 'earlier';
+          const resume = confirm(`You have an unsaved draft from ${savedAt}.\n\nContinue editing?\n\nOK = Continue | Cancel = Start fresh`);
+          if (resume) {
+            Object.assign(ModuleState, data);
+            delete ModuleState._savedAt;
+          } else {
+            localStorage.removeItem(DRAFT_KEY);
+          }
+        }
+      } catch { localStorage.removeItem(DRAFT_KEY); }
+    }
+    // Apply default permissions for new modules
+    if (!Object.keys(ModuleState.permissions).length) {
+      ModuleState.permissions = defaultPerms(ModuleState.attaches_to);
+    }
+  }
+
+  wireStaticHandlers();
+  renderAll();
+
+  // Mobile: show builder panel by default
+  if (window.innerWidth <= 900) {
+    const palEl = document.getElementById('panel-palette');
+    const canEl = document.getElementById('module-canvas');
+    const insEl = document.getElementById('panel-inspector');
+    if (palEl) palEl.classList.remove('mob-active');
+    if (canEl) canEl.classList.add('mob-active');
+    if (insEl) insEl.classList.remove('mob-active');
+  }
+}
+
+// ── Inspector listener attachment ─────────────────────────────────────────────
+function attachInspectorListeners(idx) {
+  const g = id => document.getElementById(id);
+  g('f-label')?.addEventListener('input', function() { updateField(idx,'label',this.value); });
+  g('f-help-text')?.addEventListener('input', function() { updateField(idx,'help_text',this.value); });
+  g('f-required')?.addEventListener('change', function() { updateField(idx,'required',this.checked); });
+  g('f-placeholder')?.addEventListener('input', function() { updateField(idx,'placeholder',this.value); });
+  const defVal = g('f-default-value');
+  if (defVal) {
+    const ev = defVal.tagName === 'SELECT' ? 'change' : 'input';
+    defVal.addEventListener(ev, function() { updateField(idx,'default_value',this.value); });
+  }
+  g('f-min')?.addEventListener('input', function() { updateField(idx,'min',this.value===''?null:+this.value); });
+  g('f-max')?.addEventListener('input', function() { updateField(idx,'max',this.value===''?null:+this.value); });
+  g('f-max-photos')?.addEventListener('input', function() { updateField(idx,'max_photos',Math.min(20,Math.max(1,+this.value||5))); });
+  g('f-max-file-size')?.addEventListener('input', function() { updateField(idx,'max_file_size_mb',Math.min(20,Math.max(1,+this.value||5))); });
+  g('btn-add-option')?.addEventListener('click', function() { addOption(idx); });
+  const optsEditor = g('opts-editor');
+  if (optsEditor) {
+    optsEditor.addEventListener('input', function(e) {
+      const inp = e.target.closest('input[data-oi]');
+      if (inp) updateOption(idx, parseInt(inp.dataset.oi), inp.value);
+    });
+    optsEditor.addEventListener('click', function(e) {
+      const btn = e.target.closest('.opt-del[data-oi]');
+      if (btn) removeOption(idx, parseInt(btn.dataset.oi));
+    });
+  }
+}
+
+// ── One-time event wiring (called from init) ──────────────────────────────────
+function wireStaticHandlers() {
+  // Action bar
+  document.getElementById('btn-save-draft')?.addEventListener('click', function() { saveModule(false); });
+  document.getElementById('btn-save-activate')?.addEventListener('click', function() { saveModule(true); });
+  document.getElementById('btn-cancel')?.addEventListener('click', cancelBuilder);
+
+  // Mobile tab bar
+  document.getElementById('mobile-tab-bar')?.addEventListener('click', function(e) {
+    const btn = e.target.closest('button[data-tab-idx]');
+    if (btn) setMobTab(parseInt(btn.dataset.tabIdx), btn);
+  });
+
+  // Inspector tabs
+  document.querySelector('.itab-bar')?.addEventListener('click', function(e) {
+    const btn = e.target.closest('.itab-btn[data-tab]');
+    if (btn) switchTab(btn.dataset.tab, btn);
+  });
+
+  // Palette → addField
+  document.getElementById('palette-body')?.addEventListener('click', function(e) {
+    const tile = e.target.closest('.ft-tile[data-type]');
+    if (tile) addField(tile.dataset.type);
+  });
+
+  // Field list → selectField / showFieldMenu
+  document.getElementById('field-list')?.addEventListener('click', function(e) {
+    const kebab = e.target.closest('.fcard-kebab[data-idx]');
+    if (kebab) { e.stopPropagation(); showFieldMenu(e, parseInt(kebab.dataset.idx)); return; }
+    if (e.target.closest('.fcard-menu')) { e.stopPropagation(); return; }
+    const card = e.target.closest('.field-card[data-idx]');
+    if (card) selectField(parseInt(card.dataset.idx));
+  });
+
+  // Permissions tab → togglePerm
+  document.getElementById('tab-permissions')?.addEventListener('change', function(e) {
+    const cb = e.target.closest('input[type=checkbox][data-perm]');
+    if (cb) togglePerm(cb.dataset.portal, cb.dataset.role, cb.dataset.perm, cb.checked);
+  });
+
+  // Preview tab → portal buttons + role select
+  document.getElementById('tab-preview')?.addEventListener('click', function(e) {
+    const btn = e.target.closest('button[data-portal]');
+    if (btn) setPreviewPortal(btn.dataset.portal);
+  });
+  document.getElementById('tab-preview')?.addEventListener('change', function(e) {
+    if (e.target.id === 'preview-role-sel') setPreviewRole(e.target.value);
+  });
+
+  // AI tab → toggle accordion, prompts, workflows
+  document.getElementById('tab-ai')?.addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    if (action === 'toggle-accordion') { toggleAccordion(el.dataset.accordionId); }
+    else if (action === 'remove-ai-prompt') { removeAIPrompt(parseInt(el.dataset.idx)); }
+    else if (action === 'add-ai-prompt') { addAIPrompt(); }
+    else if (action === 'toggle-wf') { toggleWorkflowActive(parseInt(el.dataset.idx)); }
+    else if (action === 'delete-wf') { deleteDbWorkflow(parseInt(el.dataset.idx)); }
+    else if (action === 'add-workflow') { addWorkflow(); }
+  });
+}
+
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

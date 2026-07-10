@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Survey — Your Nursery</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,Arial,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px 16px 60px;min-height:100vh}
+.wrap{max-width:640px;margin:0 auto}
+.header{text-align:center;margin-bottom:28px;padding-top:8px}
+.logo-wrap{background:#fff;border-radius:12px;display:inline-block;padding:10px 18px;margin-bottom:16px}
+.logo-wrap img{height:44px}
+h1{font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif;font-size:1.25rem;margin-bottom:6px}
+.blue{color:#4a9abf}.orange{color:#e07820}
+.subtitle{color:#94a3b8;font-size:.85rem;line-height:1.5}
+
+/* Questions */
+.section{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:18px;margin-bottom:14px}
+.q-label{font-size:.875rem;color:#cbd5e1;margin-bottom:10px;font-weight:500;line-height:1.45}
+.q-required{color:#ef4444;margin-left:3px}
+input[type=text],textarea,select{width:100%;background:#0f172a;border:1px solid #2d3748;border-radius:10px;color:#f1f5f9;padding:11px 13px;font-size:.875rem;font-family:inherit;outline:none;transition:.2s}
+input[type=text]:focus,textarea:focus,select:focus{border-color:#4a9abf}
+textarea{min-height:80px;resize:vertical}
+.radio-group,.check-group{display:flex;flex-direction:column;gap:7px}
+.radio-item,.check-item{display:flex;align-items:center;gap:10px;padding:9px 13px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;cursor:pointer;transition:.2s}
+.radio-item:hover,.check-item:hover{border-color:#4a9abf}
+.radio-item input,.check-item input{width:17px;height:17px;accent-color:#4a9abf;flex-shrink:0}
+/* Star rating */
+.star-row{display:flex;gap:6px}
+.star{font-size:1.6rem;cursor:pointer;color:#2d3748;line-height:1;transition:.1s;user-select:none}
+.star.lit{color:#f59e0b}
+/* Yes/No */
+.yn-row{display:flex;gap:10px}
+.yn-btn{flex:1;padding:12px;border-radius:10px;border:2px solid #2d3748;background:#0f172a;color:#94a3b8;font-size:.875rem;font-weight:600;cursor:pointer;transition:.2s;font-family:inherit}
+.yn-btn:hover{border-color:#4a9abf;color:#f1f5f9}
+.yn-btn.selected-yes{border-color:#22c55e;background:#22c55e22;color:#22c55e}
+.yn-btn.selected-no{border-color:#ef4444;background:#ef444422;color:#ef4444}
+
+/* Submit */
+.btn{width:100%;background:#e07820;color:#fff;border:none;border-radius:12px;padding:14px;font-size:1rem;font-weight:700;cursor:pointer;min-height:44px;transition:.2s}
+.btn:hover{background:#c96810}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.success{background:#22c55e22;border:1px solid #22c55e;border-radius:12px;padding:32px;text-align:center;display:none}
+.success h2{color:#22c55e;font-size:1.2rem;margin-bottom:8px}
+.error-msg{background:#ef444422;border:1px solid #ef4444;border-radius:10px;padding:12px 16px;font-size:.82rem;color:#ef4444;margin-bottom:14px;display:none}
+.loading{text-align:center;padding:48px;color:#94a3b8;font-size:.875rem}
+.not-found{text-align:center;padding:48px;color:#94a3b8}
+.not-found h2{color:#f1f5f9;margin-bottom:8px;font-size:1rem}
+</style>
+<script src="/pwa.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="logo-wrap"><img src="/little-angels-logo.png" alt="Your Nursery"></div>
+    <h1><span class="blue">Your Nursery</span> <span class="orange">Day Nursery</span></h1>
+  </div>
+
+  <div id="loading" class="loading">Loading survey…</div>
+  <div id="not-found" class="not-found" style="display:none">
+    <h2>Survey not found</h2>
+    <p>This link may have expired or the survey is no longer available.</p>
+  </div>
+
+  <div id="survey-wrap" style="display:none">
+    <div class="section" style="margin-bottom:18px">
+      <h2 id="sv-name" style="font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif;font-size:1.1rem;color:#4a9abf;margin-bottom:6px"></h2>
+      <p id="sv-desc" class="subtitle"></p>
+    </div>
+
+    <div id="error-msg" class="error-msg"></div>
+    <div id="questions"></div>
+
+    <div style="margin-top:16px">
+      <button class="btn" id="submit-btn">Submit Survey</button>
+    </div>
+  </div>
+
+  <div id="success-msg" class="success">
+    <h2>Thank you!</h2>
+    <p>Your response has been recorded. We really appreciate you taking the time to share your thoughts.</p>
+  </div>
+</div>
+
+<script>
+(function(){
+  const slug = (window.location.pathname.match(/\/surveys\/([^/?#]+)/) || [])[1];
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('t') || '';
+
+  if (!slug) { showNotFound(); return; }
+
+  // Fetch template from API
+  const apiUrl = '/api/survey/render/' + slug + (token ? '?t=' + encodeURIComponent(token) : '');
+  fetch(apiUrl)
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(template => renderSurvey(template))
+    .catch(code => {
+      document.getElementById('loading').style.display = 'none';
+      showNotFound();
+    });
+
+  function showNotFound() {
+    document.getElementById('not-found').style.display = 'block';
+  }
+
+  function renderSurvey(t) {
+    document.getElementById('loading').style.display = 'none';
+    document.title = t.name + ' — Your Nursery';
+    document.getElementById('sv-name').textContent = t.name;
+    const descEl = document.getElementById('sv-desc');
+    if (t.description) { descEl.textContent = t.description; } else { descEl.style.display = 'none'; }
+
+    const qContainer = document.getElementById('questions');
+    const answers = {};
+
+    (t.questions || []).forEach((q, idx) => {
+      const section = document.createElement('div');
+      section.className = 'section';
+      const label = document.createElement('div');
+      label.className = 'q-label';
+      label.innerHTML = `${idx+1}. ${q.label}${q.required ? '<span class="q-required">*</span>' : ''}`;
+      section.appendChild(label);
+
+      if (q.type === 'rating') {
+        const row = document.createElement('div');
+        row.className = 'star-row';
+        answers[q.id] = 0;
+        for (let s = 1; s <= 5; s++) {
+          const star = document.createElement('span');
+          star.className = 'star';
+          star.textContent = '★';
+          star.dataset.val = s;
+          star.addEventListener('click', () => {
+            answers[q.id] = s;
+            row.querySelectorAll('.star').forEach((st, i) => st.classList.toggle('lit', i < s));
+          });
+          row.appendChild(star);
+        }
+        section.appendChild(row);
+      } else if (q.type === 'yes_no') {
+        answers[q.id] = null;
+        const row = document.createElement('div');
+        row.className = 'yn-row';
+        ['Yes', 'No'].forEach(opt => {
+          const btn = document.createElement('button');
+          btn.className = 'yn-btn';
+          btn.textContent = opt;
+          btn.addEventListener('click', () => {
+            answers[q.id] = opt.toLowerCase();
+            row.querySelectorAll('.yn-btn').forEach(b => {
+              b.classList.remove('selected-yes', 'selected-no');
+            });
+            btn.classList.add(opt === 'Yes' ? 'selected-yes' : 'selected-no');
+          });
+          row.appendChild(btn);
+        });
+        section.appendChild(row);
+      } else if (q.type === 'multi_choice') {
+        answers[q.id] = [];
+        const group = document.createElement('div');
+        group.className = 'check-group';
+        (q.options || []).forEach(opt => {
+          const item = document.createElement('label');
+          item.className = 'check-item';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = opt;
+          cb.addEventListener('change', () => {
+            if (cb.checked) { if (!answers[q.id].includes(opt)) answers[q.id].push(opt); }
+            else answers[q.id] = answers[q.id].filter(v => v !== opt);
+          });
+          item.appendChild(cb);
+          item.appendChild(document.createTextNode(opt));
+          group.appendChild(item);
+        });
+        section.appendChild(group);
+      } else if (q.type === 'text') {
+        answers[q.id] = '';
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = 'Your answer…';
+        inp.addEventListener('input', () => { answers[q.id] = inp.value; });
+        section.appendChild(inp);
+      } else if (q.type === 'long_text') {
+        answers[q.id] = '';
+        const ta = document.createElement('textarea');
+        ta.placeholder = 'Your answer…';
+        ta.addEventListener('input', () => { answers[q.id] = ta.value; });
+        section.appendChild(ta);
+      }
+
+      qContainer.appendChild(section);
+    });
+
+    document.getElementById('survey-wrap').style.display = 'block';
+
+    document.getElementById('submit-btn').addEventListener('click', function() {
+      // Validate required questions
+      const questions = t.questions || [];
+      for (const q of questions) {
+        if (!q.required) continue;
+        const val = answers[q.id];
+        if (val === null || val === '' || val === 0 || (Array.isArray(val) && val.length === 0)) {
+          showError('Please answer all required questions (marked with *).');
+          return;
+        }
+      }
+
+      this.disabled = true;
+      this.textContent = 'Submitting…';
+
+      fetch('/api/survey/submit-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: t.slug, responses: answers, token })
+      })
+      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d)))
+      .then(() => {
+        document.getElementById('survey-wrap').style.display = 'none';
+        document.getElementById('success-msg').style.display = 'block';
+      })
+      .catch(e => {
+        this.disabled = false;
+        this.textContent = 'Submit Survey';
+        showError(e.error || 'Something went wrong. Please try again.');
+      });
+    });
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-msg');
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Behaviour — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Behaviour Log</div>
+      <div class="page-subtitle" id="subtitle">Primary behaviour tracking</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="showTab('stats')">Stats</button>
+      <button class="btn btn-primary" onclick="openNewEntry()">+ Log Behaviour</button>
+    </div>
+  </div>
+
+  <!-- Stats bar -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px" id="stats-bar">
+    <div class="stat-card green"><span class="stat-value" id="stat-pos">—</span><span class="stat-label">Positive</span></div>
+    <div class="stat-card red"><span class="stat-value" id="stat-neg">—</span><span class="stat-label">Concerns</span></div>
+    <div class="stat-card blue"><span class="stat-value" id="stat-total">—</span><span class="stat-label">Total Entries</span></div>
+  </div>
+
+  <!-- Tabs -->
+  <div style="display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid var(--border)">
+    <button class="tab-btn active" id="tab-log" onclick="showTab('log')">Log</button>
+    <button class="tab-btn" id="tab-stats" onclick="showTab('stats')">Class Stats</button>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-bar" style="margin-bottom:16px">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search" placeholder="Search pupil name..." oninput="filterEntries()">
+    </div>
+    <select class="form-control" id="filter-class" onchange="loadBehaviour()" style="width:150px">
+      <option value="">All Classes</option>
+    </select>
+    <select class="form-control" id="filter-type" onchange="filterEntries()" style="width:140px">
+      <option value="">All Types</option>
+      <option value="positive">Positive</option>
+      <option value="negative">Concern</option>
+    </select>
+    <input type="date" class="form-control" id="filter-from" onchange="loadBehaviour()" style="width:150px" placeholder="From">
+    <input type="date" class="form-control" id="filter-to" onchange="loadBehaviour()" style="width:150px" placeholder="To">
+  </div>
+
+  <!-- Log pane -->
+  <div id="pane-log">
+    <div id="log-area"><div class="loading-state"><div class="spinner"></div><span>Loading...</span></div></div>
+  </div>
+
+  <!-- Stats pane -->
+  <div id="pane-stats" style="display:none">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">From date</label>
+        <input type="date" class="form-control" id="stats-from" style="width:160px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Class</label>
+        <select class="form-control" id="stats-class" style="width:150px">
+          <option value="">All Classes</option>
+        </select>
+      </div>
+      <div style="margin-top:20px"><button class="btn btn-primary" onclick="loadStats()">Load Stats</button></div>
+    </div>
+    <div id="stats-area"><div class="empty-state">Select filters and load stats</div></div>
+  </div>
+</div>
+
+<!-- New Entry Modal -->
+<div id="entry-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-content" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title">Log Behaviour</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Pupil *</label>
+        <select class="form-control" id="new-child-id">
+          <option value="">Select pupil...</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" class="form-control" id="new-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type *</label>
+          <select class="form-control" id="new-type" onchange="updateCategories()">
+            <option value="positive">Positive</option>
+            <option value="negative">Concern</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select class="form-control" id="new-category">
+          <option value="">Select category...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description *</label>
+        <textarea class="form-control" id="new-desc" rows="3" placeholder="Describe what happened..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Action Taken</label>
+        <textarea class="form-control" id="new-action" rows="2" placeholder="Any actions taken..."></textarea>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="new-parent"> Parent/carer notified
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEntry()">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const POS_CATEGORIES = ['Good work','Helping others','Excellent effort','Kindness','Leadership','Improvement','Good behaviour'];
+const NEG_CATEGORIES = ['Disruption','Bullying/unkindness','Defiance','Physical','Damage to property','Language','Persistent low-level'];
+
+let allEntries = [];
+let allChildren = [];
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  document.getElementById('new-date').value = new Date().toISOString().slice(0,10);
+  await loadChildren();
+  loadBehaviour();
+  updateCategories();
+}
+
+async function loadChildren() {
+  try {
+    const res = await fetch('/api/children', { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    allChildren = await res.json();
+    const classes = [...new Set(allChildren.map(c => c.class_group).filter(Boolean))].sort();
+    ['filter-class','stats-class'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (sel) sel.innerHTML = '<option value="">All Classes</option>' + classes.map(c => `<option value="${c}">${c}</option>`).join('');
+    });
+    document.getElementById('new-child-id').innerHTML = '<option value="">Select pupil...</option>' +
+      allChildren.sort((a,b) => a.last_name.localeCompare(b.last_name))
+        .map(c => `<option value="${c.id}">${c.last_name}, ${c.first_name} (${c.class_group||c.year_group||'—'})</option>`).join('');
+  } catch(e) {}
+}
+
+async function loadBehaviour() {
+  const cls = document.getElementById('filter-class').value;
+  const from = document.getElementById('filter-from').value;
+  const to = document.getElementById('filter-to').value;
+  try {
+    let url = '/api/behaviour-secondary?';
+    if (cls) url += 'class_group=' + encodeURIComponent(cls) + '&';
+    if (from) url += 'from=' + from + '&';
+    if (to) url += 'to=' + to + '&';
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    allEntries = await res.json();
+    updateStatBar();
+    filterEntries();
+  } catch(e) {
+    document.getElementById('log-area').innerHTML = '<div class="empty-state">Failed to load behaviour log</div>';
+  }
+}
+
+function updateStatBar() {
+  const pos = allEntries.filter(e => e.type === 'positive').length;
+  const neg = allEntries.filter(e => e.type === 'negative').length;
+  document.getElementById('stat-pos').textContent = pos;
+  document.getElementById('stat-neg').textContent = neg;
+  document.getElementById('stat-total').textContent = allEntries.length;
+}
+
+function filterEntries() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const type = document.getElementById('filter-type').value;
+  const filtered = allEntries.filter(e => {
+    const name = (e.first_name + ' ' + e.last_name).toLowerCase();
+    if (q && !name.includes(q)) return false;
+    if (type && e.type !== type) return false;
+    return true;
+  });
+  renderLog(filtered);
+}
+
+function renderLog(entries) {
+  const area = document.getElementById('log-area');
+  if (!entries.length) { area.innerHTML = '<div class="empty-state">No behaviour entries found</div>'; return; }
+  area.innerHTML = '<div class="table-wrapper"><table class="data-table"><thead><tr>' +
+    '<th>Date</th><th>Pupil</th><th>Class</th><th>Type</th><th>Category</th><th>Description</th><th>Action</th><th>Parent Notified</th><th>Logged By</th>' +
+    '</tr></thead><tbody>' +
+    entries.map(e => `<tr>
+      <td style="white-space:nowrap">${e.date}</td>
+      <td><strong>${e.first_name} ${e.last_name}</strong></td>
+      <td>${e.class_group||'—'}</td>
+      <td>${e.type === 'positive'
+        ? '<span class="badge badge-green">Positive</span>'
+        : '<span class="badge badge-red">Concern</span>'}</td>
+      <td>${e.category||'—'}</td>
+      <td style="max-width:250px">${e.description}</td>
+      <td style="max-width:180px;color:var(--text-muted);font-size:13px">${e.action_taken||'—'}</td>
+      <td>${e.parent_notified ? '<span class="badge badge-blue">Yes</span>' : '—'}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${e.logged_by_name||'—'}</td>
+    </tr>`).join('') +
+    '</tbody></table></div>';
+}
+
+function updateCategories() {
+  const type = document.getElementById('new-type').value;
+  const cats = type === 'positive' ? POS_CATEGORIES : NEG_CATEGORIES;
+  document.getElementById('new-category').innerHTML = '<option value="">Select category...</option>' +
+    cats.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function openNewEntry() { document.getElementById('entry-modal').style.display = 'flex'; }
+function closeModal() { document.getElementById('entry-modal').style.display = 'none'; }
+
+async function saveEntry() {
+  const body = {
+    child_id: parseInt(document.getElementById('new-child-id').value),
+    date: document.getElementById('new-date').value,
+    type: document.getElementById('new-type').value,
+    category: document.getElementById('new-category').value || null,
+    description: document.getElementById('new-desc').value.trim(),
+    action_taken: document.getElementById('new-action').value.trim() || null,
+    parent_notified: document.getElementById('new-parent').checked
+  };
+  if (!body.child_id || !body.description) { alert('Pupil and description required'); return; }
+  try {
+    const res = await fetch('/api/behaviour-secondary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    closeModal();
+    document.getElementById('new-desc').value = '';
+    document.getElementById('new-action').value = '';
+    document.getElementById('new-parent').checked = false;
+    loadBehaviour();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function loadStats() {
+  const from = document.getElementById('stats-from').value;
+  const cls = document.getElementById('stats-class').value;
+  try {
+    let url = '/api/behaviour-secondary/stats?';
+    if (from) url += 'from=' + from + '&';
+    if (cls) url += 'class_group=' + encodeURIComponent(cls) + '&';
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + sessionStorage.getItem('wren_token') } });
+    const rows = await res.json();
+    renderStats(rows);
+  } catch(e) { document.getElementById('stats-area').innerHTML = '<div class="empty-state">Failed to load stats</div>'; }
+}
+
+function renderStats(rows) {
+  const area = document.getElementById('stats-area');
+  if (!rows.length) { area.innerHTML = '<div class="empty-state">No data</div>'; return; }
+  const concerns = rows.filter(r => parseInt(r.negative_count) >= 3);
+  let html = '';
+  if (concerns.length) {
+    html += `<div class="card" style="border-left:4px solid #dc2626;margin-bottom:16px;padding:12px 16px">
+      <strong style="color:#dc2626">${concerns.length} pupil${concerns.length>1?'s':''} with 3+ concerns this period</strong>
+      <div style="margin-top:4px;font-size:13px">${concerns.map(r => r.first_name + ' ' + r.last_name + ' (' + r.negative_count + ')').join(', ')}</div>
+    </div>`;
+  }
+  html += '<div class="table-wrapper"><table class="data-table"><thead><tr>' +
+    '<th>Name</th><th>Class</th><th>Year</th><th>Positive</th><th>Concerns</th>' +
+    '</tr></thead><tbody>' +
+    rows.map(r => `<tr>
+      <td><strong>${r.first_name} ${r.last_name}</strong></td>
+      <td>${r.class_group||'—'}</td>
+      <td>${r.year_group||'—'}</td>
+      <td>${parseInt(r.positive_count) > 0 ? '<span class="badge badge-green">'+r.positive_count+'</span>' : '0'}</td>
+      <td>${parseInt(r.negative_count) >= 3 ? '<span class="badge badge-red">'+r.negative_count+'</span>' : r.negative_count||'0'}</td>
+    </tr>`).join('') +
+    '</tbody></table></div>';
+  area.innerHTML = html;
+}
+
+function showTab(tab) {
+  ['log','stats'].forEach(t => {
+    document.getElementById('pane-'+t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('tab-'+t).classList.toggle('active', t === tab);
+  });
+}
+</script>
+</body>
+</html>

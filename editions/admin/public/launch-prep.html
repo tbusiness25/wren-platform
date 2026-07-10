@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Launch Prep · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .lp-wrap{padding:18px;max-width:1000px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .countdown{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--bd);
+   border-radius:999px;padding:6px 16px;font-weight:800;font-size:.95rem;margin-left:10px;vertical-align:middle}
+ .countdown.red{border-color:var(--bad);color:var(--bad)}
+ .checks{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+ .chk{display:flex;align-items:flex-start;gap:12px;background:var(--card);border:1px solid var(--bd);
+   border-radius:12px;padding:12px 14px}
+ .chk .dot{width:12px;height:12px;border-radius:50%;margin-top:4px;flex:none}
+ .dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
+ .chk .body{flex:1;min-width:0}
+ .chk .name{font-weight:700;font-size:.9rem}
+ .chk .detail{color:var(--mut);font-size:.78rem;margin-top:2px}
+ .chk .action{font-size:.78rem;margin-top:4px}
+ .chk .action a{color:var(--blue)}
+ .exitcard{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:18px 0}
+ .exitcard.red{border-color:var(--bad)}
+ .exitcard h3{margin:0 0 8px;font-size:1rem}
+ .exitcard ul{margin:8px 0 0;padding-left:20px;color:var(--mut);font-size:.82rem;line-height:1.7}
+ .actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+ .btn{background:var(--card);border:1px solid var(--bd);color:var(--txt);border-radius:10px;
+   padding:10px 16px;font-size:.85rem;cursor:pointer}
+ .btn:hover{border-color:var(--blue)}
+ .btn.primary{background:var(--blue);border-color:var(--blue);color:#06121f;font-weight:700}
+ .btn:disabled{opacity:.5;cursor:default}
+ .note{color:var(--mut);font-size:.75rem;margin-top:8px}
+ #lp-msg{margin:10px 0;font-size:.82rem;color:var(--warn);min-height:1em}
+</style></head>
+<body data-portal="admin">
+<div class="lp-wrap">
+  <h1>🚀 EyLog Exit — July 31 Launch Checklist
+    <span class="countdown" id="lp-countdown">…</span></h1>
+  <div class="sub">Live readiness checks against the production database. Refreshes on load.</div>
+  <div id="lp-msg"></div>
+  <div class="checks" id="lp-checks"><div class="chk"><div class="body">Loading…</div></div></div>
+
+  <div class="exitcard" id="lp-exitcard">
+    <h3>📦 Before cancelling EyLog</h3>
+    <ul>
+      <li>Export all observations as PDF / learning journeys from EyLog</li>
+      <li>Export child records + registers (already mirrored nightly into Wren — verify counts above match)</li>
+      <li>Export staff records and any funding history held in EyMan</li>
+      <li>Check the notice period on the EyLog contract before cancelling</li>
+    </ul>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btn-refresh">↻ Refresh status</button>
+    <button class="btn" id="btn-derive">Re-run bookings derivation</button>
+    <button class="btn" id="btn-test-email">✉️ Send TEST onboarding email (to Toby)</button>
+    <button class="btn primary" id="btn-send-all">Send parent onboarding email…</button>
+  </div>
+  <div class="note">“Send parent onboarding” asks for confirmation and shows the recipient count first — nothing is sent without it.</div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var S = null;
+
+  function dot(state){ return '<div class="dot ' + state + '"></div>'; }
+  function chk(state, name, detail, action){
+    return '<div class="chk">' + dot(state) +
+      '<div class="body"><div class="name">' + name + '</div>' +
+      '<div class="detail">' + detail + '</div>' +
+      (action ? '<div class="action">' + action + '</div>' : '') + '</div></div>';
+  }
+  function esc(s){ var d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+
+  function render(){
+    var el = document.getElementById('lp-checks');
+    if (!S) { el.innerHTML = chk('bad','Status unavailable','Could not load /api/launch-prep/status',''); return; }
+    var rows = [];
+
+    var st = S.staff || {};
+    rows.push(chk((st.with_pin >= 5 && st.with_email >= 5) ? 'ok' : 'warn',
+      'Staff accounts',
+      (st.total||0) + ' active staff · ' + (st.with_pin||0) + ' with PIN · ' + (st.with_email||0) + ' with email · roles: ' + esc(JSON.stringify(st.roles||{})),
+      (st.with_pin >= 5) ? '' : '<a href="/staff.html">Add PINs in Staff →</a>'));
+
+    var ch = S.children || {};
+    rows.push(chk((ch.missing_room||[]).length === 0 ? 'ok' : 'warn',
+      'Children',
+      (ch.total_active||0) + ' active · ' + (ch.with_room||0) + ' with room · ' + esc(JSON.stringify(ch.by_room||{})),
+      (ch.missing_room||[]).length ? 'Missing room: ' + esc((ch.missing_room||[]).join(', ')) + ' — <a href="/children.html">fix →</a>' : ''));
+
+    var bk = S.bookings || {};
+    rows.push(chk((bk.total||0) >= 20 ? 'ok' : 'bad',
+      'Daily bookings',
+      (bk.total||0) + ' active bookings (' + esc(bk.main_source||'—') + ') · Mon ' + (bk.mon||0) + ' / Tue ' + (bk.tue||0) + ' / Wed ' + (bk.wed||0) + ' / Thu ' + (bk.thu||0) + ' / Fri ' + (bk.fri||0),
+      (bk.total||0) >= 20 ? '' : 'Add bookings on child profiles in Roost'));
+
+    var pa = S.parents || {};
+    rows.push(chk((pa.portal_access||0) >= 50 ? 'ok' : 'warn',
+      'Parent portal enrolment',
+      (pa.portal_access||0) + ' portal accounts · ' + (pa.children_with_parent_email||0) + ' children with a parent email',
+      (pa.portal_access||0) >= 50 ? '' : 'Use the onboarding email button below once ready'));
+
+    var ey = S.eylog_data || {};
+    rows.push(chk((ey.observations_imported||0) >= 12000 ? 'ok' : 'warn',
+      'EyLog data imported',
+      (ey.observations_imported||0) + ' observations · ' + (ey.attendance_rows||0) + ' attendance rows · ' + (ey.diary_rows||0) + ' diary rows · ' + (ey.framework_tracker_entries||0) + ' tracker entries', ''));
+
+    var ob = S.observations || {};
+    var pct = ob.total ? Math.round(100 * (ob.with_statements||0) / ob.total) : 0;
+    rows.push(chk(pct > 50 ? 'ok' : 'warn',
+      'Observation → statement links',
+      (ob.with_statements||0) + ' of ' + (ob.total||0) + ' linked (' + pct + '%) · ' + (ob.recent_7d||0) + ' new obs in 7d',
+      pct > 50 ? '' : 'Historic EyLog imports have no links — new obs link via the ✨ statement picker'));
+
+    var rg = S.register || {};
+    rows.push(chk((rg.todays_seeded||0) > 0 ? 'ok' : 'warn',
+      'Daily register',
+      'Today: ' + (rg.todays_seeded||0) + ' seeded · ' + (rg.todays_signed_in||0) + ' signed in · last register day: ' + esc(rg.last_register_date||'—'),
+      (rg.todays_seeded||0) > 0 ? '' : 'Weekend / seeding runs 6am weekdays'));
+
+    var fu = S.funding || {};
+    rows.push(chk((fu.funded_children_this_term||0) >= 20 ? 'ok' : 'warn',
+      'Funding (current term)',
+      (fu.funded_children_this_term||0) + ' funded children · ' + (fu.total_hours_week||0) + ' hrs/week · ' + esc(fu.term_name||'no current term'),
+      (fu.funded_children_this_term||0) >= 20 ? '' : '<a href="/funding.html">Open Funding →</a>'));
+
+    var em = S.email || {};
+    rows.push(chk(em.gmail_dwd_send ? 'ok' : 'bad',
+      'Email relay (Gmail DWD)',
+      'Send: ' + (em.gmail_dwd_send ? 'working' : 'broken') + ' · read-only scope: ' + (em.gmail_readonly_dwd ? 'granted' : 'pending') + ' · SMTP fallback: ' + (em.smtp_configured ? 'configured' : 'not set'),
+      em.gmail_readonly_dwd ? '' : 'Add admin.directory.group scopes in Workspace Admin (weekly sync self-heals)'));
+
+    var ba = S.banking || {};
+    rows.push(chk((ba.xero_connected||0) >= 1 ? 'ok' : 'warn',
+      'Xero banking',
+      (ba.xero_connected||0) ? ('Connected · last sync ' + esc(ba.last_sync||'never')) : 'Not connected',
+      (ba.xero_connected||0) ? '' : 'Connect in System → Integrations → Xero'));
+
+    el.innerHTML = rows.join('');
+
+    var ex = S.eylog_exit || {};
+    var cd = document.getElementById('lp-countdown');
+    cd.textContent = (ex.days_remaining!=null ? ex.days_remaining : '—') + ' days left';
+    if ((ex.days_remaining||99) <= 14) { cd.classList.add('red'); document.getElementById('lp-exitcard').classList.add('red'); }
+  }
+
+  function msg(t, isErr){ var m=document.getElementById('lp-msg'); m.textContent=t; m.style.color=isErr?'var(--bad)':'var(--ok)'; }
+
+  async function load(){
+    try { S = await Wren.api('/api/launch-prep/status'); render(); }
+    catch(e){ S = null; render(); msg('Status load failed: ' + (e.error||e.message||''), true); }
+  }
+
+  function wire(){
+    document.getElementById('btn-refresh').addEventListener('click', load);
+
+    document.getElementById('btn-derive').addEventListener('click', async function(){
+      this.disabled = true;
+      try {
+        await Wren.api('/api/bookings/derive-from-attendance', { method:'POST', body:{} });
+        msg('Bookings derivation re-run ✓'); load();
+      } catch(e){ msg('Derivation failed: ' + (e.error||e.message||''), true); }
+      this.disabled = false;
+    });
+
+    document.getElementById('btn-test-email').addEventListener('click', async function(){
+      this.disabled = true;
+      try {
+        var r = await Wren.api('/api/launch-prep/send-parent-onboarding', { method:'POST', body:{ mode:'test' } });
+        msg('Test email sent to ' + r.sent_to + ' — check the inbox before the real send.');
+      } catch(e){ msg('Test send failed: ' + (e.error||e.message||''), true); }
+      this.disabled = false;
+    });
+
+    document.getElementById('btn-send-all').addEventListener('click', async function(){
+      var btn = this; btn.disabled = true;
+      try {
+        var d = await Wren.api('/api/launch-prep/send-parent-onboarding', { method:'POST', body:{ mode:'dry_run' } });
+        var go = window.confirm('Send the portal onboarding email to ' + d.recipients + ' parents?\n\nSubject: ' + d.subject + '\n\nThis cannot be un-sent.');
+        if (go) {
+          var r = await Wren.api('/api/launch-prep/send-parent-onboarding', { method:'POST', body:{ mode:'send', confirm:'SEND-TO-ALL-PARENTS' } });
+          msg('Sent to ' + r.sent + ' parents' + (r.failed ? (' · ' + r.failed + ' failed') : '') + ' ✓');
+        } else { msg('Cancelled — nothing sent.'); }
+      } catch(e){ msg('Send failed: ' + (e.error||e.message||''), true); }
+      btn.disabled = false;
+    });
+  }
+
+  document.addEventListener('wren:ready', function(){ wire(); load(); });
+})();
+</script>
+</body></html>

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Timetable — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .tt-grid { display:grid; grid-template-columns: 90px repeat(5,1fr); border:1px solid var(--border); border-radius:8px; overflow:hidden; font-size:13px; }
+    .tt-header { background:var(--surface); color:var(--text-muted); font-weight:600; padding:8px 6px; text-align:center; border-bottom:1px solid var(--border); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+    .tt-period-label { background:var(--surface); color:var(--text-muted); padding:6px 8px; font-size:11px; font-weight:600; border-bottom:1px solid var(--border); border-right:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; }
+    .tt-period-label small { font-size:10px; opacity:.7; }
+    .tt-cell { padding:5px 6px; border-bottom:1px solid var(--border); border-right:1px solid var(--border); min-height:64px; cursor:pointer; transition:background .15s; position:relative; }
+    .tt-cell:hover { background:rgba(74,154,191,.12); }
+    .tt-cell.empty { cursor:default; }
+    .tt-cell:last-child { border-right:none; }
+    .tt-activity { background:var(--card); border:1px solid var(--border); border-radius:5px; padding:4px 6px; font-size:12px; line-height:1.3; }
+    .tt-subject { font-weight:700; color:var(--text); }
+    .tt-class { color:var(--accent); font-size:11px; }
+    .tt-room { color:var(--text-muted); font-size:11px; }
+    .tt-teacher { color:var(--text-muted); font-size:11px; font-style:italic; }
+    .tt-cover { background:#fef3c7; border-color:#d97706; }
+    .week-toggle { display:flex; gap:2px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:2px; }
+    .week-btn { padding:6px 16px; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; font-weight:600; transition:all .15s; }
+    .week-btn.active { background:var(--accent); color:#fff; }
+    .filter-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
+    .print-only { display:none; }
+
+    @media print {
+      .print-only { display:block; }
+      #wren-sidebar, #wren-topbar, .filter-row, .week-toggle, .page-header .btn { display:none!important; }
+      .tt-grid { font-size:10px; }
+      .tt-cell { min-height:48px; }
+      body { background:#fff!important; color:#000!important; }
+    }
+
+    .import-zone { border:2px dashed var(--border); border-radius:10px; padding:32px; text-align:center; color:var(--text-muted); cursor:pointer; transition:border-color .2s; }
+    .import-zone:hover, .import-zone.drag-over { border-color:var(--accent); }
+    .import-steps { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
+    .import-step { flex:1; min-width:200px; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px; }
+    .step-num { width:28px; height:28px; background:var(--accent); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; margin-bottom:8px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Timetable</div>
+      <div class="page-subtitle">Week view • import • print</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="window.print()">Print</button>
+      <button class="btn btn-secondary" id="btn-import" onclick="openImport()">Import CSV</button>
+      <button class="btn btn-primary" id="btn-generate-tt" onclick="window.location='/timetable-generate.html'" style="display:none">Generate</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-row">
+    <div class="week-toggle">
+      <button class="week-btn active" id="wpA" onclick="setWeek(1)">Week A</button>
+      <button class="week-btn"        id="wpB" onclick="setWeek(2)">Week B</button>
+    </div>
+    <select class="form-control" id="filter-view" onchange="applyFilter()" style="width:130px">
+      <option value="">All staff</option>
+      <option value="teacher">By teacher</option>
+      <option value="class">By class</option>
+      <option value="year">By year</option>
+      <option value="room">By room</option>
+      <option value="subject">By subject</option>
+    </select>
+    <select class="form-control" id="filter-val" onchange="loadTimetable()" style="width:180px;display:none">
+      <option value="">Select…</option>
+    </select>
+    <button class="btn btn-secondary" onclick="clearFilter()">All</button>
+    <button class="btn btn-secondary" onclick="printTeacher()" id="btn-print-teacher" style="display:none">Print this teacher</button>
+  </div>
+
+  <!-- Grid -->
+  <div id="tt-container">
+    <div class="loading-state"><div class="spinner"></div><span>Loading timetable…</span></div>
+  </div>
+</div>
+
+<!-- Cell detail modal -->
+<div id="cell-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeModal()"></div>
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="cell-modal-title">Lesson details</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="cell-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" id="btn-cover-from-cell" style="display:none" onclick="goCover()">Manage cover</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import modal -->
+<div id="import-modal" class="modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeImport()"></div>
+  <div class="modal-content" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">Import timetable CSV</div>
+      <button class="modal-close" onclick="closeImport()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="import-steps">
+        <div class="import-step">
+          <div class="step-num">1</div>
+          <div style="font-weight:600;margin-bottom:4px">Choose source</div>
+          <select class="form-control" id="import-source" style="width:100%">
+            <option value="timetabler">TimeTabler</option>
+            <option value="edval">Edval</option>
+            <option value="asctimetables">ASC Timetables</option>
+            <option value="generic-csv">Generic CSV</option>
+          </select>
+        </div>
+        <div class="import-step">
+          <div class="step-num">2</div>
+          <div style="font-weight:600;margin-bottom:4px">Week pattern</div>
+          <select class="form-control" id="import-week" style="width:100%">
+            <option value="1">Week A (or single week)</option>
+            <option value="2">Week B</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="import-zone" id="import-zone"
+           onclick="document.getElementById('import-file').click()"
+           ondrop="handleDrop(event)" ondragover="event.preventDefault();this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')">
+        <div style="font-size:32px;margin-bottom:8px">📂</div>
+        <div style="font-weight:600">Drop CSV here or click to browse</div>
+        <div style="font-size:12px;margin-top:4px">Supports TimeTabler, Edval, ASC, and any structured CSV</div>
+      </div>
+      <input type="file" id="import-file" accept=".csv,.txt" style="display:none" onchange="handleFile(this.files[0])">
+
+      <div id="import-preview" style="margin-top:16px;display:none">
+        <div style="font-weight:600;margin-bottom:8px">Preview (first 5 rows)</div>
+        <div id="import-preview-table" style="font-size:12px;overflow-x:auto"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="import-clear"> Clear existing timetable for this week pattern first
+          </label>
+        </div>
+        <div id="import-status" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeImport()">Cancel</button>
+      <button class="btn btn-primary" id="btn-do-import" style="display:none" onclick="doImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAY_NAMES   = ['','Monday','Tuesday','Wednesday','Thursday','Friday'];
+const PERIOD_NUMS = [1,2,4,6,7]; // lesson period_num values (skip break=3, lunch=5, reg=0)
+
+let currentWeek = 1;
+let allActivities = [];
+let periods = [];
+let filterMode = '';
+let filterVal  = '';
+let selectedActivity = null;
+let importFile = null;
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  const isManager = Wren.user && ['manager','deputy_manager','headteacher','deputy_headteacher'].includes(Wren.user.role);
+  if (isManager) document.getElementById('btn-generate-tt').style.display = 'inline-flex';
+  await Promise.all([loadPeriods(), loadFilterOptions()]);
+  loadTimetable();
+}
+
+async function loadPeriods() {
+  try {
+    const data = await Wren.api('/api/secondary-timetable/periods');
+    periods = (data || []).filter(p => !p.is_break && !p.is_lunch && p.period_num > 0);
+  } catch(e) { periods = []; }
+}
+
+async function loadFilterOptions() {
+  try {
+    const [staff, classes, subjects, rooms] = await Promise.all([
+      Wren.api('/api/staff?active=true').catch(()=>[]),
+      Wren.api('/api/secondary-timetable/classes').catch(()=>[]),
+      Wren.api('/api/secondary-timetable/subjects').catch(()=>[]),
+      Wren.api('/api/secondary-timetable/rooms').catch(()=>[]),
+    ]);
+    window._staffList    = staff    || [];
+    window._classesList  = classes  || [];
+    window._subjectsList = subjects || [];
+    window._roomsList    = rooms    || [];
+  } catch(e) {}
+}
+
+function setWeek(wp) {
+  currentWeek = wp;
+  document.getElementById('wpA').classList.toggle('active', wp===1);
+  document.getElementById('wpB').classList.toggle('active', wp===2);
+  loadTimetable();
+}
+
+function applyFilter() {
+  filterMode = document.getElementById('filter-view').value;
+  filterVal  = '';
+  const sel  = document.getElementById('filter-val');
+  sel.style.display = filterMode ? 'block' : 'none';
+  document.getElementById('btn-print-teacher').style.display = filterMode==='teacher' ? 'block' : 'none';
+
+  sel.innerHTML = '<option value="">Select…</option>';
+  let list = [];
+  if (filterMode === 'teacher') list = (window._staffList||[]).map(s=>({ v:s.id, l:`${s.first_name} ${s.last_name}` }));
+  if (filterMode === 'class')   list = (window._classesList||[]).map(c=>({ v:c.id, l:c.name||c.code }));
+  if (filterMode === 'year')    list = [7,8,9,10,11,12,13].map(y=>({ v:y, l:`Year ${y}` }));
+  if (filterMode === 'room')    list = (window._roomsList||[]).map(r=>({ v:r.id, l:r.code||r.name }));
+  if (filterMode === 'subject') list = (window._subjectsList||[]).map(s=>({ v:s.id, l:s.name }));
+  list.forEach(({ v, l }) => sel.insertAdjacentHTML('beforeend', `<option value="${v}">${l}</option>`));
+  if (!filterMode) loadTimetable();
+}
+
+function clearFilter() {
+  document.getElementById('filter-view').value = '';
+  document.getElementById('filter-val').style.display = 'none';
+  document.getElementById('btn-print-teacher').style.display = 'none';
+  filterMode = ''; filterVal = '';
+  loadTimetable();
+}
+
+async function loadTimetable() {
+  filterVal = document.getElementById('filter-val')?.value || '';
+  const params = new URLSearchParams({ week_pattern: currentWeek });
+  if (filterMode && filterVal) params.set(filterMode + '_id', filterVal);
+  if (filterMode === 'year' && filterVal) { params.delete('year_id'); params.set('year_group', filterVal); }
+
+  const container = document.getElementById('tt-container');
+  container.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>';
+
+  try {
+    allActivities = await Wren.api('/api/secondary-timetable/activities?' + params);
+    renderGrid(allActivities);
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state">Failed to load timetable: ${e.message}</div>`;
+  }
+}
+
+function renderGrid(activities) {
+  const container = document.getElementById('tt-container');
+
+  // Unique period_nums that appear in this dataset
+  const periodNums = [...new Set(activities.map(a => a.period_num).filter(Boolean))].sort((a,b)=>a-b);
+  // Use lesson periods only
+  const lessonPeriods = (periodNums.length ? periodNums : [1,2,4,6,7]).filter(n => n !== 3 && n !== 5 && n !== 0);
+
+  // Group by day + period_num → array of activities
+  const grid = {};
+  for (const a of activities) {
+    const key = `${a.day_of_week}_${a.period_num}`;
+    if (!grid[key]) grid[key] = [];
+    grid[key].push(a);
+  }
+
+  const days = [1,2,3,4,5];
+
+  let html = `<div class="tt-grid">`;
+  // Header row
+  html += `<div class="tt-header">Period</div>`;
+  for (const d of days) html += `<div class="tt-header">${DAY_NAMES[d]}</div>`;
+
+  // Period rows
+  for (const pNum of lessonPeriods) {
+    const periodMeta = periods.find(p => p.period_num === pNum && p.week_pattern === currentWeek);
+    const timeStr = periodMeta ? `${periodMeta.start_time?.substring(0,5)}–${periodMeta.end_time?.substring(0,5)}` : '';
+    html += `<div class="tt-period-label">P${pNum}<small>${timeStr}</small></div>`;
+    for (const d of days) {
+      const key = `${d}_${pNum}`;
+      const cells = grid[key] || [];
+      html += `<div class="tt-cell ${cells.length?'':'empty'}" onclick="cellClick(${d},${pNum})">`;
+      for (const act of cells) {
+        html += `<div class="tt-activity" data-id="${act.id}">
+          <div class="tt-subject">${esc(act.subject_name || act.subject_name_ref || '—')}</div>
+          <div class="tt-class">${esc(act.class_name || (act.year_group?'Y'+act.year_group:'') || '')}</div>
+          <div class="tt-room">${esc(act.room_code || act.room_code_ref || '')}</div>
+          ${filterMode!=='teacher' ? `<div class="tt-teacher">${esc(act.teacher_name||'')}</div>` : ''}
+        </div>`;
+      }
+      html += `</div>`;
+    }
+  }
+  html += `</div>`;
+
+  if (!activities.length) {
+    html = `<div class="empty-state">No timetable data yet. Use <b>Import CSV</b> to load a timetable, or check your filter.</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function cellClick(day, periodNum) {
+  const key = `${day}_${periodNum}`;
+  const acts = allActivities.filter(a => a.day_of_week===day && a.period_num===periodNum);
+  if (!acts.length) return;
+  selectedActivity = acts[0];
+
+  const periodMeta = periods.find(p => p.period_num===periodNum && p.week_pattern===currentWeek);
+  const timeStr = periodMeta ? ` ${periodMeta.start_time?.substring(0,5)}–${periodMeta.end_time?.substring(0,5)}` : '';
+
+  document.getElementById('cell-modal-title').textContent = `${DAY_NAMES[day]} P${periodNum}${timeStr}`;
+
+  let body = '';
+  for (const act of acts) {
+    body += `<div style="margin-bottom:12px;padding:10px;background:var(--surface);border-radius:6px">
+      <div style="font-weight:700;font-size:15px">${esc(act.subject_name||act.subject_name_ref||'—')}</div>
+      <div style="color:var(--text-muted);font-size:13px;margin-top:4px">
+        ${act.class_name?'Class: '+esc(act.class_name)+'<br>':''}
+        ${act.teacher_name?'Teacher: '+esc(act.teacher_name)+'<br>':''}
+        ${(act.room_code||act.room_code_ref)?'Room: '+esc(act.room_code||act.room_code_ref)+'<br>':''}
+        ${act.pupil_count?'Pupils: '+act.pupil_count+'<br>':''}
+        ${act.room_capacity?'Capacity: '+act.room_capacity+'<br>':''}
+      </div>
+    </div>`;
+  }
+  document.getElementById('cell-modal-body').innerHTML = body;
+
+  const isManager = Wren.user && ['manager','deputy_manager','headteacher','deputy_headteacher'].includes(Wren.user.role);
+  document.getElementById('btn-cover-from-cell').style.display = isManager ? 'inline-flex' : 'none';
+  document.getElementById('cell-modal').style.display = 'flex';
+}
+
+function goCover() {
+  closeModal();
+  window.location.href = '/cover.html';
+}
+
+function closeModal() { document.getElementById('cell-modal').style.display = 'none'; }
+
+function printTeacher() {
+  window.print();
+}
+
+// ── Import ──────────────────────────────────────────────────────────────────
+
+function openImport() {
+  const isManager = Wren.user && ['manager','deputy_manager','headteacher','deputy_headteacher'].includes(Wren.user.role);
+  if (!isManager) return alert('Only managers can import timetables.');
+  importFile = null;
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('btn-do-import').style.display = 'none';
+  document.getElementById('import-modal').style.display = 'flex';
+}
+function closeImport() { document.getElementById('import-modal').style.display = 'none'; }
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('import-zone').classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+}
+
+function handleFile(f) {
+  if (!f) return;
+  importFile = f;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const lines = e.target.result.split('\n').slice(0,6);
+    const preview = lines.map(l => `<tr>${l.split(',').slice(0,8).map(c=>`<td style="padding:2px 6px;border:1px solid var(--border)">${esc(c.trim())}</td>`).join('')}</tr>`).join('');
+    document.getElementById('import-preview-table').innerHTML = `<table style="border-collapse:collapse">${preview}</table>`;
+    document.getElementById('import-preview').style.display = 'block';
+    document.getElementById('btn-do-import').style.display = 'inline-flex';
+    document.getElementById('import-status').textContent = `File: ${f.name} (${Math.round(f.size/1024)} KB)`;
+  };
+  reader.readAsText(f);
+}
+
+async function doImport() {
+  if (!importFile) return;
+  const btn = document.getElementById('btn-do-import');
+  btn.disabled = true; btn.textContent = 'Importing…';
+  document.getElementById('import-status').textContent = '';
+
+  const form = new FormData();
+  form.append('file',          importFile);
+  form.append('source_kind',   document.getElementById('import-source').value);
+  form.append('week_pattern',  document.getElementById('import-week').value);
+  form.append('clear_existing', document.getElementById('import-clear').checked ? 'true' : 'false');
+
+  try {
+    const res = await fetch('/api/secondary-timetable/import', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + (Wren.getToken?.() || localStorage.getItem('wren_token') || '') },
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Import failed');
+    document.getElementById('import-status').innerHTML =
+      `<span style="color:var(--success)">✓ Imported ${data.inserted} activities</span>`
+      + (data.skipped ? ` · ${data.skipped} skipped` : '')
+      + (data.errors?.length ? ` · ${data.errors.length} errors` : '');
+    if (data.errors?.length) {
+      document.getElementById('import-status').innerHTML += '<br><small>' +
+        data.errors.slice(0,5).map(e=>`Row ${e.row}: ${e.error}`).join('<br>') + '</small>';
+    }
+    btn.textContent = 'Done';
+    setTimeout(() => { closeImport(); loadTimetable(); }, 1500);
+  } catch(e) {
+    document.getElementById('import-status').innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+    btn.disabled = false; btn.textContent = 'Import';
+  }
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

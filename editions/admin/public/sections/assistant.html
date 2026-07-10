@@ -1,0 +1,361 @@
+<!-- Prompt 40 — Native AI assistant (Wren AI). Sovereign chat over local Ollama +
+     the wren-history RAG, with document upload and voice. Replaces dead OpenWebUI.
+     Manager-only (gated by SECTIONS.requiresRole + /api/assistant requireRole). -->
+<div class="v2-section" data-section="assistant">
+<style>
+  /* Fit-to-viewport chat: header + scrollable message list + pinned composer.
+     Height is a dvh fallback here (covers no-JS / first paint) and is then set
+     precisely by fitChat() to absorb the topbar + optional quickbar + padding so
+     the composer never runs off-screen. min-height:0 lets the message list shrink
+     and scroll instead of pushing the composer down. */
+  .asst-wrap{display:flex;flex-direction:column;height:calc(100dvh - var(--topbar-h, 56px) - 30px);min-height:0;max-width:1100px;margin:0 auto}
+  /* Neutralise the shell's full-height min-heights for THIS section only, so the
+     page itself never overflows — only .asst-msgs scrolls. */
+  .v2-section[data-section="assistant"]{min-height:0}
+  #section-content:has(> .v2-section[data-section="assistant"]){min-height:0}
+  .asst-head{display:flex;align-items:center;gap:10px;padding:6px 4px 10px;flex-wrap:wrap}
+  .asst-head h2{margin:0;font-size:1.15rem;color:#f1f5f9;font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif}
+  .asst-sub{color:#94a3b8;font-size:.78rem}
+  .asst-dot{width:9px;height:9px;border-radius:50%;background:#475569;display:inline-block;margin-right:5px;vertical-align:middle}
+  .asst-dot.ok{background:#22c55e}.asst-dot.bad{background:#ef4444}
+  .asst-status{font-size:.74rem;color:#94a3b8}
+  .asst-clear{margin-left:auto;background:#1e293b;border:1px solid #2d3748;color:#94a3b8;border-radius:9px;
+    padding:6px 12px;font-size:.76rem;cursor:pointer;transition:.15s}
+  .asst-clear:hover{border-color:#4a9abf;color:#cbd5e1}
+  /* messages */
+  .asst-msgs{flex:1;min-height:0;overflow-y:auto;padding:10px 4px;display:flex;flex-direction:column;gap:14px}
+  .asst-row{display:flex;gap:10px;align-items:flex-start;max-width:100%}
+  .asst-row.user{flex-direction:row-reverse}
+  .asst-av{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    font-size:1rem;font-weight:700}
+  .asst-av.ai{background:#4a9abf;color:#0f172a}
+  .asst-av.user{background:#e07820;color:#0f172a}
+  .asst-bubble{background:#1e293b;border:1px solid #2d3748;border-radius:14px;padding:11px 14px;font-size:.92rem;
+    line-height:1.55;color:#f1f5f9;max-width:min(78%,760px);word-wrap:break-word;overflow-wrap:anywhere}
+  .asst-row.user .asst-bubble{background:#28384f;border-color:#3a4d6b}
+  .asst-bubble p{margin:0 0 .55em}.asst-bubble p:last-child{margin-bottom:0}
+  .asst-bubble ul,.asst-bubble ol{margin:.3em 0 .6em;padding-left:1.3em}.asst-bubble li{margin:.18em 0}
+  .asst-bubble h3{font-size:.95rem;margin:.4em 0 .3em;color:#cbd5e1}
+  .asst-bubble strong{color:#fff}
+  .asst-bubble code{background:#0f172a;border:1px solid #2d3748;border-radius:5px;padding:1px 5px;font-size:.85em}
+  .asst-bubble a{color:#4a9abf}
+  .asst-srcs{margin-top:9px;padding-top:8px;border-top:1px dashed #2d3748;font-size:.72rem;color:#94a3b8}
+  .asst-srcs b{color:#cbd5e1;font-weight:600}
+  .asst-typing{display:inline-flex;gap:4px;padding:2px 0}
+  .asst-typing span{width:7px;height:7px;border-radius:50%;background:#4a9abf;animation:asstpulse 1.2s infinite ease-in-out}
+  .asst-typing span:nth-child(2){animation-delay:.2s}.asst-typing span:nth-child(3){animation-delay:.4s}
+  @keyframes asstpulse{0%,80%,100%{opacity:.25}40%{opacity:1}}
+  .asst-empty{margin:auto;text-align:center;color:#94a3b8;max-width:560px;padding:20px}
+  .asst-empty .big{font-size:2.6rem;margin-bottom:8px}
+  .asst-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+  .asst-chip{background:#1e293b;border:1px solid #2d3748;color:#cbd5e1;border-radius:99px;padding:8px 14px;
+    font-size:.8rem;cursor:pointer;transition:.15s;text-align:left}
+  .asst-chip:hover{border-color:#4a9abf;color:#fff}
+  /* uploaded docs */
+  .asst-docs{display:flex;flex-wrap:wrap;gap:7px;padding:4px;min-height:0}
+  .asst-doc{display:inline-flex;align-items:center;gap:7px;background:#13233b;border:1px solid #2d3748;
+    border-radius:8px;padding:5px 9px;font-size:.74rem;color:#cbd5e1}
+  .asst-doc .x{cursor:pointer;color:#94a3b8;font-weight:700}.asst-doc .x:hover{color:#ef4444}
+  /* composer */
+  .asst-composer{border:1px solid #2d3748;background:#1e293b;border-radius:14px;padding:8px;margin-top:8px}
+  .asst-composer.drag{border-color:#4a9abf;background:#1b2c44}
+  .asst-input{width:100%;background:transparent;border:none;color:#f1f5f9;font-size:.92rem;resize:none;
+    outline:none;font-family:inherit;line-height:1.5;max-height:160px;padding:6px 6px 2px}
+  .asst-tools{display:flex;align-items:center;gap:8px;padding:4px 4px 0}
+  .asst-iconbtn{width:38px;height:38px;border-radius:10px;border:1px solid #2d3748;background:#0f172a;color:#cbd5e1;
+    cursor:pointer;font-size:1.05rem;display:flex;align-items:center;justify-content:center;transition:.15s;flex-shrink:0}
+  .asst-iconbtn:hover{border-color:#4a9abf;color:#fff}
+  .asst-iconbtn:disabled{opacity:.45;cursor:default}
+  .asst-iconbtn.rec{background:#ef4444;border-color:#ef4444;color:#fff;animation:asstrec 1.1s infinite}
+  @keyframes asstrec{0%,100%{opacity:1}50%{opacity:.55}}
+  .asst-send{margin-left:auto;background:#e07820;border-color:#e07820;color:#0f172a;font-weight:700}
+  .asst-send:hover{background:#f08a30;border-color:#f08a30;color:#0f172a}
+  .asst-hint{font-size:.68rem;color:#64748b;padding:5px 4px 0}
+  @media(max-width:700px){.asst-wrap{height:calc(100dvh - var(--topbar-h, 56px) - 16px)}.asst-bubble{max-width:84%}}
+</style>
+
+<div class="asst-wrap">
+  <div class="asst-head">
+    <h2>🪺 Wren AI</h2>
+    <span class="asst-sub">Sovereign assistant · local Ollama + your nursery history</span>
+    <span class="asst-status" id="asst-status"><span class="asst-dot" id="asst-dot"></span><span id="asst-status-txt">checking…</span></span>
+    <button class="asst-clear" id="asst-clear" type="button">New chat</button>
+  </div>
+
+  <div class="asst-docs" id="asst-docs" hidden></div>
+
+  <div class="asst-msgs" id="asst-msgs">
+    <div class="asst-empty" id="asst-empty">
+      <div class="big">🪺</div>
+      <div style="font-size:1.05rem;color:#cbd5e1;font-weight:600">Ask me anything about the nursery</div>
+      <div style="font-size:.84rem;margin-top:6px">I answer from your own data (staffing, occupancy, funding, absence) and
+        anything you upload. Everything runs on your hardware — nothing leaves the premises.</div>
+      <div class="asst-chips" id="asst-chips"></div>
+    </div>
+  </div>
+
+  <div class="asst-composer" id="asst-composer">
+    <textarea class="asst-input" id="asst-input" rows="1" placeholder="Ask a question, or drop a document here…" aria-label="Message"></textarea>
+    <div class="asst-tools">
+      <button class="asst-iconbtn" id="asst-attach" type="button" title="Upload a document (PDF, Word, CSV, text)" aria-label="Upload document">📎</button>
+      <button class="asst-iconbtn" id="asst-mic" type="button" title="Voice — hold a thought, I'll transcribe it" aria-label="Voice input">🎤</button>
+      <input type="file" id="asst-file" accept=".pdf,.docx,.csv,.xlsx,.xls,.txt,.md,.tsv,.json" hidden>
+      <button class="asst-iconbtn asst-send" id="asst-send" type="button" title="Send" aria-label="Send">➤</button>
+    </div>
+    <div class="asst-hint">Enter to send · Shift+Enter for a new line · drag a file onto the box to add it</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ── session id (per browser session) ──
+  var SKEY='wren.assistant.session';
+  var sessionId = sessionStorage.getItem(SKEY);
+  if(!sessionId){ sessionId = 'asst-' + Math.random().toString(36).slice(2) + '-' + (window.performance?Math.round(performance.now()):Date.now()%100000); sessionStorage.setItem(SKEY, sessionId); }
+
+  var token = (window.Wren && Wren.getToken && Wren.getToken()) || sessionStorage.getItem('wrenToken') || '';
+  var history = [];          // {role, content}
+  var busy = false;
+  var mediaRecorder=null, recChunks=[], recStream=null;
+
+  var $msgs=document.getElementById('asst-msgs');
+  var $empty=document.getElementById('asst-empty');
+  var $input=document.getElementById('asst-input');
+  var $send=document.getElementById('asst-send');
+  var $mic=document.getElementById('asst-mic');
+  var $attach=document.getElementById('asst-attach');
+  var $file=document.getElementById('asst-file');
+  var $composer=document.getElementById('asst-composer');
+  var $docs=document.getElementById('asst-docs');
+  var $clear=document.getElementById('asst-clear');
+
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function toast(m,t){ if(window.Wren&&Wren.toast)Wren.toast(m,t||'info'); else if(t==='error')alert(m); }
+  function scrollDown(){ $msgs.scrollTop=$msgs.scrollHeight; }
+  function b64ToUtf8(b64){ try{ return decodeURIComponent(Array.prototype.map.call(atob(b64),function(c){return '%'+('00'+c.charCodeAt(0).toString(16)).slice(-2);}).join('')); }catch(e){ return ''; } }
+
+  // ── tiny, safe markdown → html (escape first) ──
+  function md(text){
+    var s=esc(text);
+    s=s.replace(/```([\s\S]*?)```/g,function(_,c){return '<pre style="white-space:pre-wrap;background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:8px;font-size:.82em;overflow:auto">'+c+'</pre>';});
+    s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+    s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+    s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+    s=s.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // block build: headings, lists, paragraphs
+    var lines=s.split('\n'), out=[], list=null;
+    function closeList(){ if(list){ out.push('</'+list+'>'); list=null; } }
+    for(var i=0;i<lines.length;i++){
+      var ln=lines[i];
+      var h=ln.match(/^\s*#{1,4}\s+(.*)$/);
+      var ul=ln.match(/^\s*[-*•]\s+(.*)$/);
+      var ol=ln.match(/^\s*\d+[.)]\s+(.*)$/);
+      if(h){ closeList(); out.push('<h3>'+h[1]+'</h3>'); }
+      else if(ul){ if(list!=='ul'){closeList();out.push('<ul>');list='ul';} out.push('<li>'+ul[1]+'</li>'); }
+      else if(ol){ if(list!=='ol'){closeList();out.push('<ol>');list='ol';} out.push('<li>'+ol[1]+'</li>'); }
+      else if(ln.trim()===''){ closeList(); }
+      else { closeList(); out.push('<p>'+ln+'</p>'); }
+    }
+    closeList();
+    return out.join('');
+  }
+
+  function addRow(role){
+    if($empty){ $empty.remove(); $empty=null; }
+    var row=document.createElement('div'); row.className='asst-row '+role;
+    var av=document.createElement('div'); av.className='asst-av '+(role==='user'?'user':'ai'); av.textContent=role==='user'?'T':'🪺';
+    var bub=document.createElement('div'); bub.className='asst-bubble';
+    row.appendChild(av); row.appendChild(bub); $msgs.appendChild(row); scrollDown();
+    return bub;
+  }
+
+  function renderSources(bub, sources){
+    if(!sources||!sources.length) return;
+    var d=document.createElement('div'); d.className='asst-srcs';
+    d.innerHTML='<b>Sources:</b> '+sources.map(esc).join(' · ');
+    bub.appendChild(d);
+  }
+
+  // ── send a message (streaming) ──
+  async function sendMessage(text){
+    text=(text==null?$input.value:text).trim();
+    if(!text||busy) return;
+    busy=true; $send.disabled=true;
+    addRow('user').textContent=text;
+    history.push({role:'user',content:text});
+    $input.value=''; autoGrow();
+
+    var bub=addRow('ai');
+    var typing=document.createElement('div'); typing.className='asst-typing';
+    typing.innerHTML='<span></span><span></span><span></span>'; bub.appendChild(typing);
+
+    var meta=null, full='';
+    try{
+      var resp=await fetch('/api/assistant/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body:JSON.stringify({message:text,history:history.slice(0,-1),session_id:sessionId,stream:true})
+      });
+      if(resp.status===401){ toast('Session expired — please sign in again','error'); if(window.Wren&&Wren.logout)Wren.logout(); return; }
+      var mb=resp.headers.get('X-Assistant-Meta-B64');
+      if(mb){ try{ meta=JSON.parse(b64ToUtf8(mb)); }catch(e){} }
+      if(!resp.ok || !resp.body){ var j=await resp.json().catch(function(){return{};}); throw new Error(j.error||('HTTP '+resp.status)); }
+      var reader=resp.body.getReader(), dec=new TextDecoder();
+      while(true){
+        var r=await reader.read(); if(r.done) break;
+        full+=dec.decode(r.value,{stream:true});
+        bub.innerHTML=md(full);
+        scrollDown();
+      }
+      if(!full.trim()){ bub.textContent='(no response)'; }
+      else { bub.innerHTML=md(full); renderSources(bub, meta&&meta.sources); }
+      history.push({role:'assistant',content:full});
+    }catch(e){
+      bub.innerHTML='<span style="color:#f87171">⚠ '+esc(e.message||'AI unavailable')+'</span>';
+    }finally{
+      busy=false; $send.disabled=false; $input.focus(); scrollDown();
+    }
+  }
+
+  // ── document upload ──
+  async function uploadFile(file){
+    if(!file) return;
+    if(file.size>15*1024*1024){ toast('File too large (max 15 MB)','error'); return; }
+    var pill=document.createElement('span'); pill.className='asst-doc';
+    pill.innerHTML='⏳ '+esc(file.name)+' …';
+    $docs.hidden=false; $docs.appendChild(pill);
+    try{
+      var fd=new FormData(); fd.append('session_id',sessionId); fd.append('file',file);
+      var r=await fetch('/api/assistant/upload',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+      var j=await r.json();
+      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+      pill.remove();
+      addDocPill(j.doc_id, j.filename, j.chunks);
+      toast('Added “'+j.filename+'” ('+j.chunks+' chunk'+(j.chunks===1?'':'s')+') — ask me about it','success');
+    }catch(e){ pill.remove(); toast('Upload failed: '+(e.message||'error'),'error'); }
+  }
+
+  function addDocPill(docId, name, chunks){
+    $docs.hidden=false;
+    var pill=document.createElement('span'); pill.className='asst-doc'; pill.dataset.doc=docId;
+    pill.innerHTML='📎 '+esc(name)+' <span class="x" title="remove">✕</span>';
+    pill.querySelector('.x').addEventListener('click',function(){ removeDoc(docId, pill); });
+    $docs.appendChild(pill);
+  }
+
+  async function removeDoc(docId, pill){
+    // Clearing one doc = clear the whole session collection then re-list (simple + safe).
+    pill.remove();
+    try{ await fetch('/api/assistant/docs/'+encodeURIComponent(sessionId),{method:'DELETE',headers:{'Authorization':'Bearer '+token}}); }catch(e){}
+    $docs.innerHTML=''; $docs.hidden=true;
+    await loadDocs();
+    toast('Cleared uploaded documents','info');
+  }
+
+  async function loadDocs(){
+    try{
+      var r=await fetch('/api/assistant/docs?session_id='+encodeURIComponent(sessionId),{headers:{'Authorization':'Bearer '+token}});
+      var j=await r.json();
+      $docs.innerHTML='';
+      if(j.docs&&j.docs.length){ j.docs.forEach(function(d){ addDocPill(d.doc_id,d.filename,d.chunks); }); $docs.hidden=false; }
+      else { $docs.hidden=true; }
+    }catch(e){}
+  }
+
+  // ── voice (MediaRecorder → /api/transcribe, the same path the EY mic uses) ──
+  async function toggleMic(){
+    if(mediaRecorder && mediaRecorder.state==='recording'){ mediaRecorder.stop(); return; }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ toast('Microphone not available in this browser','error'); return; }
+    try{
+      recStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    }catch(e){ toast('Microphone permission denied','error'); return; }
+    recChunks=[];
+    try{ mediaRecorder=new MediaRecorder(recStream); }
+    catch(e){ toast('Recording not supported here','error'); recStream.getTracks().forEach(function(t){t.stop();}); return; }
+    mediaRecorder.ondataavailable=function(e){ if(e.data&&e.data.size) recChunks.push(e.data); };
+    mediaRecorder.onstop=async function(){
+      $mic.classList.remove('rec'); $mic.textContent='🎤';
+      if(recStream){ recStream.getTracks().forEach(function(t){t.stop();}); recStream=null; }
+      if(!recChunks.length){ toast('No audio captured','error'); return; }
+      var blob=new Blob(recChunks,{type:'audio/webm'});
+      $mic.disabled=true; $mic.textContent='…';
+      try{
+        var fd=new FormData(); fd.append('audio',blob,'recording.webm'); fd.append('context','assistant');
+        var r=await fetch('/api/transcribe',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+        var j=await r.json();
+        if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+        if(j.text){ $input.value=($input.value?$input.value+' ':'')+j.text; autoGrow(); $input.focus(); }
+        else toast('Could not hear anything — try again','error');
+      }catch(e){ toast('Transcription failed: '+(e.message||'error'),'error'); }
+      finally{ $mic.disabled=false; $mic.textContent='🎤'; }
+    };
+    mediaRecorder.start();
+    $mic.classList.add('rec'); $mic.textContent='⏹';
+    toast('Recording… tap again to stop','info',2000);
+  }
+
+  // ── composer behaviour ──
+  function autoGrow(){ $input.style.height='auto'; $input.style.height=Math.min($input.scrollHeight,160)+'px'; }
+  $input.addEventListener('input',autoGrow);
+  $input.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } });
+  $send.addEventListener('click',function(){ sendMessage(); });
+  $mic.addEventListener('click',toggleMic);
+  $attach.addEventListener('click',function(){ $file.click(); });
+  $file.addEventListener('change',function(){ if($file.files&&$file.files[0]) uploadFile($file.files[0]); $file.value=''; });
+  $clear.addEventListener('click',function(){
+    history=[]; $msgs.innerHTML='';
+    var e=document.createElement('div'); e.className='asst-empty';
+    e.innerHTML='<div class="big">🪺</div><div style="font-size:1.05rem;color:#cbd5e1;font-weight:600">New conversation</div><div style="font-size:.84rem;margin-top:6px">Uploaded documents stay attached until you remove them.</div>';
+    $msgs.appendChild(e); $empty=e;
+  });
+
+  // drag & drop onto composer
+  ['dragenter','dragover'].forEach(function(ev){ $composer.addEventListener(ev,function(e){ e.preventDefault(); $composer.classList.add('drag'); }); });
+  ['dragleave','drop'].forEach(function(ev){ $composer.addEventListener(ev,function(e){ e.preventDefault(); if(ev==='dragleave'&&$composer.contains(e.relatedTarget))return; $composer.classList.remove('drag'); }); });
+  $composer.addEventListener('drop',function(e){ if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
+
+  // suggested prompt chips
+  var CHIPS=[
+    'How does our staffing compare to ratio across the week?',
+    'Which days are we most over-staffed?',
+    'Summarise our staff absence pattern this term.',
+    'What occupancy do we have room to grow into?'
+  ];
+  var $chips=document.getElementById('asst-chips');
+  if($chips){ CHIPS.forEach(function(c){ var b=document.createElement('button'); b.type='button'; b.className='asst-chip'; b.textContent=c; b.addEventListener('click',function(){ sendMessage(c); }); $chips.appendChild(b); }); }
+
+  // status dot
+  (async function(){
+    try{
+      var r=await fetch('/api/assistant/health',{headers:{'Authorization':'Bearer '+token}});
+      var j=await r.json();
+      var dot=document.getElementById('asst-dot'), txt=document.getElementById('asst-status-txt');
+      var ok=j.ollama&&j.qdrant;
+      dot.className='asst-dot '+(ok?'ok':(j.ollama?'':'bad'));
+      txt.textContent = ok ? (j.model||'ready') : (j.ollama?'history index offline':'AI offline');
+    }catch(e){ var d=document.getElementById('asst-dot'); if(d)d.className='asst-dot bad'; var t=document.getElementById('asst-status-txt'); if(t)t.textContent='offline'; }
+  })();
+
+  // ── fit the chat to the visible viewport ──────────────────────────────────
+  // Measures the wrap's real top (absorbs topbar + optional quickbar + padding,
+  // whatever the shell currently shows) and sizes it to reach the viewport bottom
+  // with a small gap — so the composer is always pinned on-screen and only the
+  // message list scrolls. Re-runs on resize and after late shell layout settles.
+  var $wrap=document.querySelector('.asst-wrap');
+  function fitChat(){
+    if(!$wrap||!$wrap.isConnected) return;
+    var top=$wrap.getBoundingClientRect().top; if(top<0) top=0;
+    var h=window.innerHeight - top - 14;          // 14px breathing room at the bottom
+    if(h>240) $wrap.style.height=h+'px';
+  }
+  fitChat();
+  requestAnimationFrame(fitChat);
+  setTimeout(fitChat,200);
+  window.addEventListener('resize',fitChat);
+  if(window.visualViewport) window.visualViewport.addEventListener('resize',fitChat);
+
+  loadDocs();
+  setTimeout(function(){ $input.focus(); },120);
+})();
+</script>
+</div>

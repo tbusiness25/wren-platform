@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Accidents &amp; Incidents — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .inc-tab-bar{display:flex;gap:4px;background:#1e293b;border-radius:10px;padding:4px;margin-bottom:14px;flex-wrap:wrap}
+    .inc-tab{flex:1;min-width:90px;padding:8px;border-radius:8px;border:none;background:transparent;color:#94a3b8;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500}
+    .inc-tab.active{background:#4a9abf;color:#fff;font-weight:700}
+    .inc-pane{display:none}.inc-pane.active{display:block}
+    .inc-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+    .inc-filters select{background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:6px 10px;font-size:13px;font-family:inherit}
+    .inc-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:14px;margin-bottom:10px}
+    .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase}
+    .pill-open{background:rgba(245,158,11,.15);color:#f59e0b}.pill-closed{background:rgba(34,197,94,.15);color:#22c55e}.pill-severe{background:rgba(239,68,68,.18);color:#ef4444}
+    .inc-empty{color:#64748b;font-size:13px;padding:20px;text-align:center}
+    .au-row{display:grid;grid-template-columns:120px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #1e293b;font-size:12px;color:#94a3b8}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header"><div><div class="page-title">Accidents &amp; Incidents</div><div class="page-subtitle">Review, sign-off & audit trail · reports are logged on the room tablets</div></div></div>
+
+  <div class="inc-tab-bar">
+    <button class="inc-tab active" id="t-list">Records</button>
+    <button class="inc-tab" id="t-audit">Audit log</button>
+  </div>
+
+  <div class="inc-pane active" id="p-list">
+    <div class="inc-filters">
+      <select id="f-status"><option value="">All statuses</option><option value="open">Open</option><option value="closed">Closed</option></select>
+      <select id="f-child"><option value="">All children</option></select>
+    </div>
+    <div id="inc-list"><div class="inc-empty">Loading…</div></div>
+  </div>
+
+  <div class="inc-pane" id="p-audit"><div class="inc-empty">Loading audit…</div></div>
+</div>
+
+<script>
+let children = [], canSignOff = false, allRecords = [];
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmt(d){return d?new Date(d).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';}
+
+function card(i){
+  const severe = (i.severity==='severe')||/head|hospital|severe/i.test((i.incident_type||'')+(i.injury_description||''));
+  const status = i.status==='closed' ? '<span class="pill pill-closed">Closed</span>' : '<span class="pill pill-open">Open</span>';
+  const signoff = (i.status!=='closed' && canSignOff) ? `<button class="btn btn-sm btn-secondary" data-signoff="${i.id}">Review & sign off</button>` : '';
+  return `<div class="inc-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:3px">
+        <strong style="color:#f1f5f9">${esc(i.child_name||('Child #'+i.child_id))}</strong>
+        ${severe?'<span class="pill pill-severe">Severe</span>':''} ${status}
+        ${i.parent_notified?'<span class="pill" style="background:#0f172a;color:#94a3b8">Parent notified</span>':''}
+      </div>
+      <div style="font-size:.82rem;color:#94a3b8"><b style="color:#cbd5e1">${esc(i.incident_type||'Incident')}</b> · ${fmt(i.incident_date||i.created_at)}${i.location?' · '+esc(i.location):''}</div>
+      ${i.description?`<div style="font-size:.8rem;color:#94a3b8;margin-top:4px">${esc(i.description).slice(0,240)}</div>`:''}
+      ${i.injury_description?`<div style="font-size:.78rem;color:#f59e0b;margin-top:2px">Injury: ${esc(i.injury_description)}</div>`:''}
+    </div>
+    <div>${signoff}</div></div></div>`;
+}
+
+function render(){
+  const status=document.getElementById('f-status').value, child=document.getElementById('f-child').value;
+  let rows=allRecords;
+  if(status)rows=rows.filter(r=>(r.status||'open')===status);
+  if(child)rows=rows.filter(r=>String(r.child_id)===child);
+  const el=document.getElementById('inc-list');
+  el.innerHTML=rows.length?rows.map(card).join(''):'<div class="inc-empty">No records match.</div>';
+}
+async function loadList(){
+  const el=document.getElementById('inc-list');
+  try{const data=await Wren.api('/api/incidents?limit=100');allRecords=Array.isArray(data)?data:(data.rows||[]);render();}
+  catch(e){el.innerHTML='<div class="inc-empty" style="color:#ef4444">Could not load</div>';}
+}
+async function loadAudit(){
+  const el=document.getElementById('p-audit');
+  try{const data=await Wren.api('/api/audit?entity_type=incident&limit=100');const rows=Array.isArray(data)?data:(data.rows||data.entries||[]);
+    el.innerHTML=rows.length?('<div class="card" style="padding:14px">'+rows.map(r=>`<div class="au-row"><span>${fmt(r.occurred_at)}</span><span><strong style="color:#f1f5f9">${esc(r.action)}</strong> incident #${esc(r.entity_id)} — ${esc(r.actor_email||r.actor_id||'')}</span></div>`).join('')+'</div>'):'<div class="inc-empty">No audit entries yet.</div>';
+  }catch(e){el.innerHTML='<div class="inc-empty" style="color:#ef4444">Could not load audit</div>';}
+}
+
+document.addEventListener('wren:ready', async ()=>{
+  canSignOff = !!(Wren.user && ['manager','deputy_manager','admin'].includes(Wren.user.role));
+  try{children=await Wren.api('/api/children');}catch(e){children=[];}
+  document.getElementById('f-child').innerHTML='<option value="">All children</option>'+(children||[]).map(c=>`<option value="${c.id}">${esc(c.first_name+' '+c.last_name)}</option>`).join('');
+  document.getElementById('t-list').addEventListener('click',()=>{document.getElementById('t-list').classList.add('active');document.getElementById('t-audit').classList.remove('active');document.getElementById('p-list').classList.add('active');document.getElementById('p-audit').classList.remove('active');});
+  document.getElementById('t-audit').addEventListener('click',()=>{document.getElementById('t-audit').classList.add('active');document.getElementById('t-list').classList.remove('active');document.getElementById('p-audit').classList.add('active');document.getElementById('p-list').classList.remove('active');loadAudit();});
+  document.getElementById('f-status').addEventListener('change',render);
+  document.getElementById('f-child').addEventListener('change',render);
+  document.getElementById('wren-content').addEventListener('click',async e=>{
+    const b=e.target.closest('[data-signoff]'); if(!b)return;
+    try{await Wren.api('/api/incidents/'+b.dataset.signoff+'/sign-off',{method:'POST'});Wren.toast('Reviewed & signed off','success');loadList();}
+    catch(x){Wren.toast(x.error||'Sign-off failed','error');}
+  });
+  loadList();
+});
+</script>
+</body>
+</html>

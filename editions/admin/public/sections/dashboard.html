@@ -1,0 +1,232 @@
+<div class="v2-section" data-section="dashboard">
+  <!-- Ofsted/inspection homepage banner + launcher row REMOVED (Prompt 34, 2026-06-30). Inspection
+       has its own dedicated section reachable from the Operations nav, so the homepage banner was
+       redundant. Root cause of the "stuck banner": the active-inspection bar relied on being
+       default-hidden and was only ever *un*-hidden by JS — an earlier deployed copy rendered it
+       permanently even though /api/inspection/active correctly returns null. Removing the static
+       markup + its script is the durable fix. -->
+
+  <!-- Roost identity banner — reminds the manager which portal this is (mirrors the Seed/HR banner) -->
+  <div style="background:#1e293b;border:1px solid #2d3748;border-left:4px solid #4a9abf;border-radius:10px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div>
+      <span style="font-size:.72rem;font-weight:700;color:#4a9abf;text-transform:uppercase;letter-spacing:.08em">Roost — Admin Portal</span>
+      <p style="margin:4px 0 0;font-size:.83rem;color:#94a3b8;line-height:1.4">Management home base — funding, invoices, admissions, compliance and the day's operations, pulled together.</p>
+    </div>
+  </div>
+
+  <nav class="wren-tab-bar" role="tablist" aria-label="Dashboard tabs">
+    <div class="tab-bar-track" id="dashboard-tab-track">
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="today"   id="tab-dashboard-today"   aria-controls="panel-dashboard-today">Today</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="alerts"  id="tab-dashboard-alerts"  aria-controls="panel-dashboard-alerts">Alerts</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="summary" id="tab-dashboard-summary" aria-controls="panel-dashboard-summary">Summary</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+  <div class="wren-tab-panels">
+
+    <!-- TODAY -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-dashboard-today" data-tab="today" aria-labelledby="tab-dashboard-today">
+
+      <div id="dash-today-content">
+        <div class="tab-skeleton">
+          <div class="tab-skeleton-grid">
+            <div class="tab-sk-card"></div>
+            <div class="tab-sk-card"></div>
+            <div class="tab-sk-card"></div>
+            <div class="tab-sk-card"></div>
+          </div>
+          <div style="margin-top:20px"><div class="tab-sk-row w80"></div></div>
+          <div class="tab-sk-row w60"></div>
+          <div class="tab-sk-row w40"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ALERTS -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-dashboard-alerts" data-tab="alerts" aria-labelledby="tab-dashboard-alerts" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 class="page-title" style="font-size:1.05rem;margin:0">Alerts</h2>
+        <button class="btn btn-sm btn-ghost" id="dash-alerts-refresh-btn">↺ Refresh</button>
+      </div>
+      <div id="dash-alerts-content">
+        <div class="tab-skeleton"><div class="tab-sk-row w80"></div><div class="tab-sk-row w60"></div></div>
+      </div>
+    </div>
+
+    <!-- SUMMARY -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-dashboard-summary" data-tab="summary" aria-labelledby="tab-dashboard-summary" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 class="page-title" style="font-size:1.05rem;margin:0">Period Summary</h2>
+        <select id="dash-summary-period" style="background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:6px 10px;font-size:.78rem">
+          <option value="today">Today</option>
+          <option value="week" selected>This week</option>
+          <option value="month">This month</option>
+          <option value="term">This term</option>
+        </select>
+      </div>
+      <div id="dash-summary-content">
+        <div class="tab-skeleton"><div class="tab-skeleton-grid"><div class="tab-sk-card"></div><div class="tab-sk-card"></div><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Button listeners ─────────────────────────────────────────────────────────
+// (Homepage Ofsted/inspection launchers + active-banner removed in Prompt 34 — inspection
+//  has its own section in the Operations nav.)
+document.addEventListener('wren:ready', function() {
+  document.getElementById('dash-alerts-refresh-btn')?.addEventListener('click', dashAlertsLoad);
+  document.getElementById('dash-summary-period')?.addEventListener('change', dashSummaryLoad);
+  // Delegation for alert link items
+  document.getElementById('dash-alerts-content')?.addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action="nav-alert"]');
+    if (el) Wren.navigate(el.dataset.sect, el.dataset.view);
+  });
+});
+
+// ── TODAY ────────────────────────────────────────────────────────────────────
+window.wrenLoadTab_dashboard_today = function(panel) {
+  Wren.api('/api/daily-briefing').then(data => {
+    if (!data) return;
+    const el = document.getElementById('dash-today-content');
+    if (!el) return;
+    const rooms = (data.rooms || []).map(r => `
+      <div class="stat-card ${r.ratio_ok ? 'green' : 'red'}">
+        <div class="stat-label">${r.name}</div>
+        <div class="stat-value">${r.present}<span style="font-size:1rem;color:var(--c-muted)">/${r.capacity}</span></div>
+        <div class="stat-label">children present · ratio ${r.ratio_label || 'OK'}</div>
+      </div>`).join('');
+    const birthdays=(data.birthdays||[]);
+    const tasks=(data.open_tasks||data.tasks||[]);
+    const visitors=(data.visitors||[]);
+    el.innerHTML = `
+      <div class="dash-section dash-3col" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:20px">
+        <div class="stat-card blue"><div class="stat-label">Children today</div><div class="stat-value">${data.children_present ?? '—'}</div></div>
+        <div class="stat-card orange"><div class="stat-label">Staff on duty</div><div class="stat-value">${data.staff_on_duty ?? '—'}</div></div>
+        <div class="stat-card green"><div class="stat-label">Rooms open</div><div class="stat-value">${data.rooms_open ?? '—'}</div></div>
+        ${rooms}
+      </div>
+      ${birthdays.length ? `<div class="card" style="margin-bottom:12px"><div class="card-title" style="margin-bottom:8px">🎂 Birthdays today</div><div style="font-size:.85rem;color:var(--c-text)">${birthdays.map(b=>'<span style="margin-right:12px">'+b+'</span>').join('')}</div></div>` : ''}
+      ${visitors.length ? `<div class="card" style="margin-bottom:12px"><div class="card-title" style="margin-bottom:8px">📋 Today's visitors</div><div style="font-size:.85rem;color:var(--c-text)">${visitors.map(v=>'<span style="margin-right:12px">'+v+'</span>').join('')}</div></div>` : ''}
+      ${tasks.length ? `<div class="card" style="margin-bottom:12px"><div class="card-title" style="margin-bottom:8px">📌 Open tasks</div><div style="display:flex;flex-direction:column;gap:4px">${tasks.slice(0,5).map(t=>`<div style="font-size:.82rem;color:var(--c-text)">${t.title||t}</div>`).join('')}</div></div>` : ''}
+      ${data.briefing ? `<div class="card"><div class="card-title" style="margin-bottom:8px">🤖 AI Briefing</div><p style="font-size:.875rem;line-height:1.6;color:var(--c-text)">${data.briefing}</p></div>` : ''}`;
+
+    // Append Bradford watchlist card if any staff score > threshold
+    Wren.api('/api/absence/bradford-watchlist').then(watchlist => {
+      if (!watchlist || !watchlist.length) return;
+      const flagged = watchlist.filter(s => s.score > 100);
+      if (!flagged.length) return;
+      const top3 = flagged.slice(0, 3);
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cssText = 'margin-top:12px;border-left:3px solid #f59e0b';
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="card-title" style="margin:0;font-size:.82rem">Staff sickness watchlist</div>
+          <a href="/admin/staff/absence-mgmt" style="font-size:.72rem;color:#4a9abf;text-decoration:none">View all →</a>
+        </div>
+        ${top3.map(s => {
+          const col = s.score > 200 ? '#ef4444' : '#f59e0b';
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-top:1px solid #2d3748;font-size:.8rem">
+            <span style="color:#f1f5f9">${s.first_name} ${s.last_name}</span>
+            <span style="color:${col};font-weight:700">BF ${s.score}</span>
+          </div>`;
+        }).join('')}
+        ${flagged.length > 3 ? `<div style="font-size:.72rem;color:#64748b;margin-top:4px">+${flagged.length - 3} more above threshold</div>` : ''}`;
+      const todayContent = document.getElementById('dash-today-content');
+      if (todayContent) todayContent.appendChild(card);
+    }).catch(() => {});
+  }).catch(() => {
+    const el = document.getElementById('dash-today-content');
+    if (el) el.innerHTML = `<div class="tab-coming-soon"><div class="coming-icon">🏠</div><h3>Dashboard</h3><p>Live ratios, attendance, and today's briefing load here when the portal is running.</p></div>`;
+  });
+};
+
+// ── ALERTS ───────────────────────────────────────────────────────────────────
+window.wrenLoadTab_dashboard_alerts = function() { dashAlertsLoad(); };
+
+async function dashAlertsLoad() {
+  const el=document.getElementById('dash-alerts-content');
+  if(!el) return;
+  el.innerHTML='<div class="tab-skeleton"><div class="tab-sk-row w80"></div><div class="tab-sk-row w60"></div></div>';
+  const alerts=[];
+  try {
+    // Compliance overdue/due soon
+    const comp=await Wren.api('/api/compliance-events/upcoming').catch(()=>[]);
+    const today=new Date();
+    (comp||[]).forEach(c=>{
+      const days=Math.ceil((new Date(c.next_due)-today)/86400000);
+      if(days<0) alerts.push({sev:'error',icon:'🚨',title:c.title+' — OVERDUE',body:'Was due '+new Date(c.next_due).toLocaleDateString('en-GB'),link:'/admin/operations/compliance'});
+      else if(days<=7) alerts.push({sev:'warning',icon:'⚠️',title:c.title+' due in '+days+'d',body:'Due '+new Date(c.next_due).toLocaleDateString('en-GB'),link:'/admin/operations/compliance'});
+    });
+    // Notifications
+    const notifs=await Wren.api('/api/notifications/unread').catch(()=>({items:[]}));
+    (notifs.items||[]).slice(0,5).forEach(n=>alerts.push({sev:'info',icon:{repair:'🔧',message:'💬',safeguarding:'🛡️',medicine:'💊',incident:'🚨'}[n.category]||'🔔',title:n.title,body:n.body,link:n.link}));
+    // Comms summary unread
+    const comms=await Wren.api('/api/comms/summary').catch(()=>({unread_count:0}));
+    if((comms.unread_count||0)>0) alerts.push({sev:'info',icon:'💬',title:comms.unread_count+' unread parent message'+(comms.unread_count!==1?'s':''),body:'',link:'/admin/communications/messaging'});
+    // Unreviewed calls
+    const calls=await Wren.api('/api/comms/calls?reviewed=no&page=1').catch(()=>({total:0}));
+    if((calls.total||0)>0) alerts.push({sev:'warning',icon:'📞',title:calls.total+' Aria call'+(calls.total!==1?'s':'')+' need review',body:'',link:'/admin/communications/aria'});
+  } catch(e) {}
+
+  if(!alerts.length) {
+    el.innerHTML='<div class="tab-coming-soon"><div class="coming-icon">✅</div><h3>All clear</h3><p>No active alerts right now.</p></div>';
+    return;
+  }
+  const sevOrder={error:0,warning:1,info:2};
+  alerts.sort((a,b)=>(sevOrder[a.sev]||2)-(sevOrder[b.sev]||2));
+  const sevStyle={
+    error:'background:rgba(239,68,68,.1);border-left:3px solid #ef4444',
+    warning:'background:rgba(245,158,11,.08);border-left:3px solid #f59e0b',
+    info:'background:rgba(74,154,191,.08);border-left:3px solid #4a9abf',
+  };
+  el.innerHTML=`<div style="display:flex;flex-direction:column;gap:8px">
+    ${alerts.map(a=>`
+      <div style="${sevStyle[a.sev]||sevStyle.info};border-radius:8px;padding:12px 14px;display:flex;align-items:flex-start;gap:10px;cursor:${a.link?'pointer':'default'}"
+           ${a.link?`data-action="nav-alert" data-sect="${a.link.replace('/admin/','').split('/')[0]}" data-view="${a.link.replace('/admin/','').split('/')[1]||''}"`:''}>
+        <span style="font-size:1.1rem">${a.icon}</span>
+        <div>
+          <div style="font-size:.85rem;font-weight:700;color:#f1f5f9">${a.title}</div>
+          ${a.body?`<div style="font-size:.75rem;color:#94a3b8;margin-top:2px">${a.body}</div>`:''}
+        </div>
+      </div>`).join('')}
+  </div>`;
+}
+
+// ── SUMMARY ──────────────────────────────────────────────────────────────────
+window.wrenLoadTab_dashboard_summary = function() { dashSummaryLoad(); };
+
+async function dashSummaryLoad() {
+  const el=document.getElementById('dash-summary-content');
+  if(!el) return;
+  el.innerHTML='<div class="tab-skeleton"><div class="tab-skeleton-grid"><div class="tab-sk-card"></div><div class="tab-sk-card"></div><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div></div>';
+  const period=document.getElementById('dash-summary-period')?.value||'week';
+  try {
+    const [overview, invoices] = await Promise.all([
+      Wren.api('/api/admin/overview').catch(()=>null),
+      Wren.api('/api/finance/invoices?limit=1&summary=1').catch(()=>null),
+    ]);
+    const kpis=[
+      {label:'Total children', value:overview?.total_children??'—', color:'blue'},
+      {label:'Enrolment capacity', value:overview?.capacity_pct!=null?overview.capacity_pct+'%':'—', color:'orange'},
+      {label:'Staff (active)', value:overview?.total_staff??'—', color:'green'},
+      {label:'Avg attendance', value:overview?.attendance_rate!=null?overview.attendance_rate+'%':'—', color:'blue'},
+      {label:'Open enquiries', value:overview?.open_enquiries??'—', color:'orange'},
+      {label:'Awaiting DBS renewal', value:overview?.dbs_expiring_soon??'—', color:overview?.dbs_expiring_soon>0?'red':'green'},
+      {label:'Overdue invoices', value:overview?.overdue_invoices??'—', color:overview?.overdue_invoices>0?'red':'green'},
+      {label:'Safeguarding open', value:overview?.open_safeguarding??'—', color:overview?.open_safeguarding>0?'red':'green'},
+    ];
+    el.innerHTML=`<div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:20px">
+      ${kpis.map(k=>`<div class="stat-card ${k.color}"><div class="stat-label">${k.label}</div><div class="stat-value">${k.value}</div></div>`).join('')}
+    </div>
+    ${overview?.notes?`<div class="card"><div class="card-title" style="margin-bottom:8px">📝 Notes</div><p style="font-size:.85rem;color:var(--c-text)">${overview.notes}</p></div>`:''}`;
+  } catch(e) {
+    el.innerHTML=`<div class="tab-coming-soon"><div class="coming-icon">📊</div><h3>Summary</h3><p>${e.message}</p></div>`;
+  }
+}
+</script>

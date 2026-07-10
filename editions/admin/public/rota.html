@@ -1,0 +1,1889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Rota Builder — Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Toolbar ── */
+    .rota-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .week-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 6px 10px;
+    }
+    .week-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f1f5f9;
+      min-width: 200px;
+      text-align: center;
+    }
+    .status-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .status-pill.draft     { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .status-pill.published { background: rgba(34,197,94,.15);  color: #22c55e; }
+    .status-pill.empty     { background: rgba(148,163,184,.1); color: #64748b; }
+
+    /* ── Two-room layout ── */
+    .rota-rooms {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 900px) {
+      .rota-rooms { grid-template-columns: 1fr; }
+    }
+
+    .room-card {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .room-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #0f172a;
+      border-bottom: 1px solid #2d3748;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .room-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+    .room-ratio-pill {
+      font-size: 11px;
+      color: #94a3b8;
+      background: rgba(255,255,255,.05);
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 2px 8px;
+    }
+
+    /* ── Rota grid ── */
+    .rota-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .rota-table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 420px;
+    }
+    .rota-table th,
+    .rota-table td {
+      border: 1px solid #1a2740;
+      padding: 0;
+    }
+    .rota-table thead th {
+      background: #111e30;
+      padding: 8px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      text-align: center;
+    }
+    .rota-table thead th.col-today { color: #4a9abf; background: rgba(74,154,191,.08); }
+    .rota-th-staff {
+      background: #111e30 !important;
+      text-align: left !important;
+      padding: 8px 12px !important;
+      min-width: 110px;
+      position: sticky;
+      left: 0;
+      z-index: 2;
+    }
+    .rota-td-name {
+      background: #1e293b;
+      padding: 6px 12px;
+      min-width: 110px;
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      white-space: nowrap;
+    }
+    .rota-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+    .rota-role {
+      font-size: 9px;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    /* ── Cells ── */
+    .rota-cell {
+      min-width: 78px;
+      height: 52px;
+      vertical-align: middle;
+      text-align: center;
+      padding: 3px;
+      background: #0f172a;
+      transition: background .1s;
+      user-select: none;
+    }
+    .rota-cell.col-today { background: rgba(74,154,191,.05); }
+    .rota-cell.has-shift { background: rgba(74,154,191,.1); }
+    .rota-cell.is-absent { background: rgba(239,68,68,.06); }
+    .rota-cell.drag-over { background: rgba(74,154,191,.25) !important; outline: 2px dashed #4a9abf; }
+    .rota-cell.conflict  { background: rgba(239,68,68,.12) !important; }
+
+    .shift-chip {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(74,154,191,.18);
+      border: 1px solid rgba(74,154,191,.3);
+      border-radius: 6px;
+      padding: 3px 6px;
+      cursor: grab;
+      min-width: 64px;
+      max-width: 100%;
+    }
+    .shift-chip.is-absent {
+      background: rgba(239,68,68,.15);
+      border-color: rgba(239,68,68,.3);
+      cursor: default;
+      opacity: .7;
+    }
+    .shift-chip:active { cursor: grabbing; }
+    .shift-times {
+      font-size: 11px;
+      font-weight: 700;
+      color: #4a9abf;
+      line-height: 1.3;
+    }
+    .shift-chip.is-absent .shift-times { color: #ef4444; }
+    .shift-room-label {
+      font-size: 9px;
+      color: #64748b;
+      line-height: 1;
+    }
+    .absent-label {
+      font-size: 9px;
+      color: #ef4444;
+      font-weight: 600;
+    }
+    .cell-add { font-size: 16px; color: #2d3748; line-height: 1; }
+    .rota-cell:not(.is-absent):hover .cell-add { color: #4a9abf; }
+
+    /* ── Cover rail (unassigned staff) ── */
+    .cover-rail {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    .cover-rail-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 10px;
+    }
+    .cover-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .cover-chip {
+      background: rgba(224,120,32,.12);
+      border: 1px solid rgba(224,120,32,.25);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #e07820;
+      cursor: grab;
+    }
+    .cover-chip:active { cursor: grabbing; }
+
+    /* ── Counter bar ── */
+    .ratio-bar {
+      padding: 10px 14px;
+      border-top: 1px solid #1a2740;
+    }
+    .ratio-day-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .ratio-pill {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .ratio-pill.ok     { background: rgba(34,197,94,.15); color: #22c55e; }
+    .ratio-pill.warn   { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .ratio-pill.breach { background: rgba(239,68,68,.2);  color: #ef4444; }
+    .ratio-flag {
+      font-size: 10px;
+      color: #ef4444;
+      margin-top: 3px;
+    }
+
+    /* ── Wage panel ── */
+    .wage-panel {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
+    }
+    .wage-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 10px;
+    }
+    .wage-total {
+      font-size: 24px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 2px;
+    }
+    .wage-hours-line {
+      font-size: 12px;
+      font-weight: 600;
+      color: #4a9abf;
+      margin-bottom: 8px;
+    }
+    .wage-days {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .wage-day-chip {
+      font-size: 11px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 3px 10px;
+      color: #94a3b8;
+    }
+    .wage-note {
+      font-size: 11px;
+      color: #475569;
+      margin-top: 8px;
+    }
+
+    /* ── Modal ── */
+    .shift-modal-bg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .shift-modal-bg.open { display: flex; }
+    .shift-modal {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 16px;
+      padding: 24px;
+      width: 340px;
+      max-width: calc(100vw - 32px);
+    }
+    .shift-modal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 16px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .form-label { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .form-input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      color: #f1f5f9;
+      font-size: 13px;
+      padding: 8px 10px;
+      box-sizing: border-box;
+    }
+    .form-input:focus { outline: none; border-color: #4a9abf; }
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Confirm overlay ── */
+    .confirm-modal-bg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .confirm-modal-bg.open { display: flex; }
+    .confirm-modal {
+      background: #1e293b;
+      border: 1px solid #f59e0b;
+      border-radius: 16px;
+      padding: 24px;
+      width: 360px;
+      max-width: calc(100vw - 32px);
+    }
+
+    /* ── Toast ── */
+    .rota-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 13px;
+      color: #f1f5f9;
+      z-index: 300;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+      max-width: 320px;
+    }
+    .rota-toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Prompt 30: BrightHR-parity additions ── */
+    /* Tab bar (Active / Old / Shifts / Settings) */
+    .rota-tabs {
+      display: flex; gap: 4px; flex-wrap: wrap;
+      border-bottom: 1px solid #2d3748; margin-bottom: 16px;
+    }
+    .rota-tab {
+      background: none; border: none; color: #94a3b8;
+      font-size: 13px; font-weight: 600; padding: 10px 16px;
+      cursor: pointer; border-bottom: 2px solid transparent; border-radius: 0;
+    }
+    .rota-tab:hover { color: #f1f5f9; }
+    .rota-tab.active { color: #4a9abf; border-bottom-color: #4a9abf; }
+
+    /* View toggle */
+    .view-toggle { display: inline-flex; background: #1e293b; border: 1px solid #2d3748; border-radius: 10px; overflow: hidden; }
+    .view-toggle button {
+      background: none; border: none; color: #94a3b8; font-size: 12px; font-weight: 600;
+      padding: 6px 12px; cursor: pointer;
+    }
+    .view-toggle button.active { background: rgba(74,154,191,.18); color: #4a9abf; }
+
+    /* Budget / cost-of-shifts header */
+    .cost-header {
+      display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+      background: #1e293b; border: 1px solid #2d3748; border-radius: 12px;
+      padding: 12px 18px; margin-bottom: 14px;
+    }
+    .cost-metric { display: flex; flex-direction: column; }
+    .cost-metric .label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
+    .cost-metric .value { font-size: 18px; font-weight: 700; color: #f1f5f9; }
+    .cost-metric .value.under { color: #22c55e; }
+    .cost-metric .value.over  { color: #ef4444; }
+
+    /* Live ratio strip */
+    .live-ratio-strip {
+      background: #1e293b; border: 1px solid #2d3748; border-radius: 12px;
+      padding: 10px 16px; margin-bottom: 14px;
+    }
+    .live-ratio-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; margin-bottom: 8px; }
+    .live-ratio-days { display: flex; gap: 8px; flex-wrap: wrap; }
+    .lr-day {
+      border: 1px solid #2d3748; border-radius: 8px; padding: 6px 10px; min-width: 92px;
+      background: rgba(34,197,94,.06);
+    }
+    .lr-day.under { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.4); }
+    .lr-day-name { font-size: 11px; font-weight: 700; color: #f1f5f9; }
+    .lr-room { font-size: 10px; color: #94a3b8; }
+    .lr-room.under { color: #ef4444; font-weight: 700; }
+
+    /* Acceptance / open badges on chips */
+    .shift-badge {
+      display: inline-block; font-size: 8px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .03em; padding: 1px 4px; border-radius: 4px; margin-top: 2px;
+    }
+    .shift-badge.pending  { background: rgba(245,158,11,.2); color: #f59e0b; }
+    .shift-badge.declined { background: rgba(239,68,68,.2);  color: #ef4444; }
+    .shift-badge.accepted { background: rgba(34,197,94,.2);  color: #22c55e; }
+    .shift-badge.open     { background: rgba(224,120,32,.2); color: #e07820; }
+
+    /* Timeline view */
+    .timeline-wrap { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    @media (max-width: 800px) { .timeline-wrap { grid-template-columns: 1fr; } }
+    .tl-col { background: #1e293b; border: 1px solid #2d3748; border-radius: 12px; padding: 10px; }
+    .tl-col.under-ratio { border-color: rgba(239,68,68,.5); }
+    .tl-col-head { font-size: 12px; font-weight: 700; color: #f1f5f9; margin-bottom: 8px; display:flex; justify-content:space-between; align-items:center; }
+    .tl-col-head .ratio-tag { font-size: 9px; padding: 1px 6px; border-radius: 5px; }
+    .tl-col-head .ratio-tag.ok { background: rgba(34,197,94,.15); color:#22c55e; }
+    .tl-col-head .ratio-tag.under { background: rgba(239,68,68,.2); color:#ef4444; }
+    .tl-block {
+      border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; font-size: 11px;
+      background: rgba(74,154,191,.15); border-left: 3px solid #4a9abf;
+    }
+    .tl-block.is-open { background: rgba(224,120,32,.12); border-left-color: #e07820; }
+    .tl-block.is-absent { opacity: .55; border-left-color: #ef4444; }
+    .tl-block .who { font-weight: 700; color: #f1f5f9; }
+    .tl-block .when { color: #4a9abf; }
+    .tl-block .where { color: #94a3b8; font-size: 10px; }
+
+    /* Settings form */
+    .settings-card { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:18px 20px; max-width:640px; }
+    .settings-row { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:12px 0; border-bottom:1px solid #2d3748; }
+    .settings-row:last-child { border-bottom:none; }
+    .settings-row .s-label { font-size:13px; color:#f1f5f9; font-weight:600; }
+    .settings-row .s-help  { font-size:11px; color:#64748b; margin-top:2px; }
+    .switch { position:relative; width:42px; height:24px; flex:0 0 auto; }
+    .switch input { opacity:0; width:0; height:0; }
+    .switch .slider { position:absolute; inset:0; background:#2d3748; border-radius:24px; transition:.2s; cursor:pointer; }
+    .switch .slider:before { content:''; position:absolute; height:18px; width:18px; left:3px; top:3px; background:#f1f5f9; border-radius:50%; transition:.2s; }
+    .switch input:checked + .slider { background:#4a9abf; }
+    .switch input:checked + .slider:before { transform:translateX(18px); }
+    .ad-staff-list { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .ad-staff-chip { font-size:12px; padding:5px 10px; border-radius:8px; border:1px solid #2d3748; background:#0f172a; color:#94a3b8; cursor:pointer; }
+    .ad-staff-chip.on { background:rgba(74,154,191,.18); border-color:#4a9abf; color:#4a9abf; }
+
+    /* Old / Shifts tables */
+    .rota-list-table { width:100%; border-collapse:collapse; }
+    .rota-list-table th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#64748b; padding:8px 10px; border-bottom:1px solid #2d3748; }
+    .rota-list-table td { font-size:13px; color:#f1f5f9; padding:10px; border-bottom:1px solid #1a2740; }
+    .rota-list-table tr:hover td { background:#1e293b; }
+    .filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .filter-bar select, .filter-bar input { background:#0f172a; border:1px solid #2d3748; border-radius:8px; color:#f1f5f9; font-size:13px; padding:7px 10px; }
+    .colour-swatches { display:flex; gap:6px; flex-wrap:wrap; }
+    .colour-swatch { width:26px; height:26px; border-radius:6px; cursor:pointer; border:2px solid transparent; }
+    .colour-swatch.sel { border-color:#f1f5f9; box-shadow:0 0 0 2px #4a9abf; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Rota Builder</div>
+      <div class="page-subtitle" style="color:#94a3b8">Auto-generate, drag-drop, live ratio + wage tracking</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap" id="rota-action-btns">
+      <button class="btn btn-primary btn-sm" id="btn-create-rota" title="Create a new rota or copy an existing one">➕ Create Rota</button>
+      <button class="btn btn-ghost btn-sm" id="btn-auto-gen" title="Auto-generate from staff work patterns">⚡ Auto-Generate</button>
+      <button class="btn btn-ghost btn-sm" id="btn-open-shift" title="Post an open shift for staff to claim" style="display:none;color:#e07820;border-color:#e0782040">📣 Open Shift</button>
+      <button class="btn btn-ghost btn-sm" id="btn-payroll-csv" title="Export this week's hours per staff as CSV for payroll" style="display:none">🧾 Payroll CSV</button>
+      <button class="btn btn-ghost btn-sm" id="btn-payroll-pdf" title="Export this week's hours per staff as PDF" style="display:none">📄 PDF</button>
+      <button class="btn btn-secondary btn-sm" id="btn-save-draft" style="display:none">Save Draft</button>
+      <button class="btn btn-primary btn-sm" id="btn-publish-week" style="display:none">Publish Week</button>
+      <button class="btn btn-ghost btn-sm" id="btn-unlock" style="display:none;color:#f59e0b;border-color:#f59e0b40">🔓 Unlock</button>
+    </div>
+  </div>
+
+  <!-- Tab bar (Active / Old / Shifts / Settings) -->
+  <div class="rota-tabs" id="rota-tabs">
+    <button class="rota-tab active" data-tab="active">Active</button>
+    <button class="rota-tab" data-tab="old">Old rotas</button>
+    <button class="rota-tab" data-tab="shifts">Shifts</button>
+    <button class="rota-tab" data-tab="settings">Settings</button>
+  </div>
+
+  <!-- ═══ TAB: ACTIVE (the builder) ═══ -->
+  <div id="tab-active">
+
+  <!-- Week nav + status -->
+  <div class="rota-toolbar">
+    <div class="week-nav">
+      <button class="btn btn-ghost btn-sm" id="btn-prev-week" style="padding:8px 13px;min-height:38px">&#8592;</button>
+      <div class="week-label" id="rota-week-label">—</div>
+      <button class="btn btn-ghost btn-sm" id="btn-next-week" style="padding:8px 13px;min-height:38px">&#8594;</button>
+      <button class="btn btn-ghost btn-sm" id="btn-today-week" style="padding:8px 13px;min-height:38px;font-size:12px">Today</button>
+    </div>
+    <span class="status-pill empty" id="rota-status-pill">No rota</span>
+    <span id="rota-published-info" style="font-size:12px;color:#64748b"></span>
+    <a id="ical-link" href="#" style="display:none;font-size:11px;color:#4a9abf;text-decoration:none" title="Subscribe to iCal feed">📅 iCal</a>
+    <div class="view-toggle" id="view-toggle" style="margin-left:auto">
+      <button data-view="table" class="active">▦ Table</button>
+      <button data-view="timeline">📊 Timeline</button>
+      <button data-view="dragdrop">✋ Drag &amp; Drop</button>
+    </div>
+  </div>
+
+  <!-- Cost of Shifts vs Budget -->
+  <div class="cost-header" id="cost-header" style="display:none">
+    <div class="cost-metric"><span class="label">Scheduled hours</span><span class="value" id="ch-hours">0h</span></div>
+    <div class="cost-metric"><span class="label">Scheduled cost</span><span class="value" id="ch-cost">£0</span></div>
+    <div class="cost-metric"><span class="label">Budget</span><span class="value" id="ch-budget">—</span></div>
+    <div class="cost-metric"><span class="label">Variance</span><span class="value" id="ch-variance">—</span></div>
+    <button class="btn btn-ghost btn-sm" id="btn-set-budget" style="margin-left:auto">Set budget</button>
+  </div>
+
+  <!-- Live ratio vs bookings (Wren's childcare edge) -->
+<div class="live-ratio-strip" id="live-ratio-strip" style="display:none">
+      <div class="live-ratio-title">⚖️ Live ratio vs booked children</div>
+      <div class="live-ratio-days" id="live-ratio-days"></div>
+    </div>
+    <!-- Staffing need strip -->
+    <div class="staffing-need-strip" id="staffing-need-strip" style="display:none">
+      <div class="staffing-need-title">Staffing Need</div>
+      <div class="staffing-need-days" id="staffing-need-days"></div>
+    </div>
+
+  <!-- Cover rail (unassigned staff) -->
+  <div class="cover-rail" id="cover-rail" style="display:none">
+    <div class="cover-rail-title">Unassigned / Cover available</div>
+    <div class="cover-chips" id="cover-chips"></div>
+  </div>
+
+  <!-- Two-room grid (Table / Drag-and-drop views) -->
+  <div class="rota-rooms" id="rota-rooms">
+    <div style="padding:40px;text-align:center;color:#64748b;grid-column:1/-1">Loading...</div>
+  </div>
+
+  <!-- Timeline view -->
+  <div id="timeline-view" style="display:none"></div>
+
+  <!-- Wage panel -->
+  <div class="wage-panel" id="wage-panel" style="display:none">
+    <div class="wage-title">Estimated Wage Cost — This Week</div>
+    <div class="wage-total" id="wage-total">£0.00</div>
+    <div class="wage-hours-line" id="wage-hours-line">0 staff-hours scheduled</div>
+    <div class="wage-days" id="wage-days"></div>
+    <div class="wage-note" id="wage-note"></div>
+  </div>
+  </div><!-- /#tab-active -->
+
+  <!-- ═══ TAB: OLD ROTAS ═══ -->
+  <div id="tab-old" style="display:none">
+    <div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Past rotas (week start before this week).</div>
+    <div id="old-rotas-body"><div style="color:#64748b;padding:20px 0">Loading…</div></div>
+  </div>
+
+  <!-- ═══ TAB: SHIFTS (flat list) ═══ -->
+  <div id="tab-shifts" style="display:none">
+    <div class="filter-bar">
+      <select id="shifts-filter-room"><option value="">All rooms</option></select>
+      <select id="shifts-filter-state">
+        <option value="">Any state</option>
+        <option value="open">Open (unclaimed)</option>
+        <option value="pending">Pending accept</option>
+        <option value="declined">Declined</option>
+        <option value="accepted">Accepted</option>
+      </select>
+      <input type="date" id="shifts-filter-from" title="From date">
+      <button class="btn btn-ghost btn-sm" id="shifts-refresh">Refresh</button>
+    </div>
+    <div id="shifts-body"><div style="color:#64748b;padding:20px 0">Loading…</div></div>
+  </div>
+
+  <!-- ═══ TAB: SETTINGS ═══ -->
+  <div id="tab-settings" style="display:none">
+    <div class="settings-card" id="settings-card">
+      <div class="settings-row">
+        <div><div class="s-label">Default rota view</div><div class="s-help">Which layout opens by default.</div></div>
+        <select class="form-input" id="set-default-view" style="width:150px">
+          <option value="table">Table</option>
+          <option value="timeline">Timeline</option>
+          <option value="dragdrop">Drag &amp; Drop</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <div><div class="s-label">Restricted permissions</div><div class="s-help">Only the rota author or an admin may edit rotas.</div></div>
+        <label class="switch"><input type="checkbox" id="set-restricted"><span class="slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <div><div class="s-label">Hide shift labels from employees</div><div class="s-help">Staff see times only — not shift labels/colours.</div></div>
+        <label class="switch"><input type="checkbox" id="set-hide-labels"><span class="slider"></span></label>
+      </div>
+      <div class="settings-row">
+        <div><div class="s-label">Activate open shifts</div><div class="s-help">Allow managers to post unassigned shifts staff can claim.</div></div>
+        <label class="switch"><input type="checkbox" id="set-open-shifts"><span class="slider"></span></label>
+      </div>
+      <div class="settings-row" style="flex-direction:column;align-items:stretch">
+        <div><div class="s-label">Accept / decline shifts</div><div class="s-help">Selected employees must accept or decline newly-published shifts.</div></div>
+        <div class="ad-staff-list" id="set-ad-staff"></div>
+      </div>
+      <div style="margin-top:16px"><button class="btn btn-primary" id="btn-save-settings">Save settings</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Shift edit modal -->
+<div class="shift-modal-bg" id="shift-modal-bg">
+  <div class="shift-modal">
+    <div class="shift-modal-title" id="modal-title">Edit Shift</div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Start time *</div>
+        <select class="form-input" id="modal-start"></select>
+      </div>
+      <div>
+        <div class="form-label">End time *</div>
+        <select class="form-input" id="modal-end"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Room</div>
+        <select class="form-input" id="modal-room">
+          <option value="">— Any —</option>
+        </select>
+      </div>
+      <div>
+        <div class="form-label">Break (mins)</div>
+        <input type="number" class="form-input" id="modal-break" value="30" min="0" max="120">
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div class="form-label">Notes</div>
+      <input type="text" class="form-input" id="modal-notes" placeholder="Optional">
+    </div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Shift label</div>
+        <input type="text" class="form-input" id="modal-label" placeholder="e.g. Early, Late, Cover">
+      </div>
+      <div>
+        <div class="form-label">Colour</div>
+        <div class="colour-swatches" id="modal-colour-swatches"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" id="modal-save-shift">Save Shift</button>
+      <button class="btn btn-ghost" id="modal-clear-shift" style="color:#ef4444;border-color:#ef444440">Clear</button>
+      <button class="btn btn-ghost" id="modal-cancel-shift">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Published-edit confirm modal -->
+<div class="confirm-modal-bg" id="confirm-modal-bg">
+  <div class="confirm-modal">
+    <div style="font-size:15px;font-weight:700;color:#f59e0b;margin-bottom:10px">⚠ Editing a Published Rota</div>
+    <div style="font-size:13px;color:#94a3b8;margin-bottom:18px">
+      This rota has been published. Making changes will require you to re-publish to notify staff.
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" id="confirm-proceed">Continue Editing</button>
+      <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create-rota wizard -->
+<div class="shift-modal-bg" id="wizard-bg">
+  <div class="shift-modal" style="width:420px">
+    <div class="shift-modal-title">Create Rota</div>
+    <div class="form-row" style="grid-template-columns:1fr">
+      <div>
+        <div class="form-label">Mode</div>
+        <select class="form-input" id="wiz-mode">
+          <option value="new">New bespoke rota (auto-fill from work patterns)</option>
+          <option value="blank">New blank rota</option>
+          <option value="copy">Copy an existing rota</option>
+        </select>
+      </div>
+    </div>
+    <div id="wiz-copy-row" class="form-row" style="grid-template-columns:1fr;display:none">
+      <div>
+        <div class="form-label">Copy from</div>
+        <select class="form-input" id="wiz-source"></select>
+      </div>
+    </div>
+    <div class="form-row" style="grid-template-columns:1fr">
+      <div>
+        <div class="form-label">Rota name (optional)</div>
+        <input type="text" class="form-input" id="wiz-name" placeholder="e.g. Week 1 — Summer">
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Start date (Monday)</div>
+        <input type="date" class="form-input" id="wiz-start">
+      </div>
+      <div>
+        <div class="form-label">Duration</div>
+        <select class="form-input" id="wiz-duration">
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="28">28 days</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Budget (£)</div>
+        <input type="number" class="form-input" id="wiz-budget" placeholder="optional" min="0" step="50">
+      </div>
+      <div>
+        <div class="form-label">Employees</div>
+        <select class="form-input" id="wiz-team">
+          <option value="">All staff</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" id="wiz-create">Create</button>
+      <button class="btn btn-ghost" id="wiz-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Open-shift modal -->
+<div class="shift-modal-bg" id="openshift-bg">
+  <div class="shift-modal">
+    <div class="shift-modal-title">Post an Open Shift</div>
+    <div class="form-row" style="grid-template-columns:1fr">
+      <div>
+        <div class="form-label">Date</div>
+        <input type="date" class="form-input" id="os-date">
+      </div>
+    </div>
+    <div class="form-row">
+      <div><div class="form-label">Start</div><select class="form-input" id="os-start"></select></div>
+      <div><div class="form-label">End</div><select class="form-input" id="os-end"></select></div>
+    </div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Room</div>
+        <select class="form-input" id="os-room"><option value="">— Any —</option></select>
+      </div>
+      <div><div class="form-label">Label</div><input type="text" class="form-input" id="os-label" placeholder="e.g. Cover"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" id="os-create">Post Open Shift</button>
+      <button class="btn btn-ghost" id="os-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="rota-toast" id="rota-toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Wren Rota Builder — v2 with drag-drop + ratio watching + wage panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const DAYS_SHORT = ['Mon','Tue','Wed','Thu','Fri'];
+const DAYS_LONG  = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+
+let weekOffset    = 0;
+let weekStart     = '';    // YYYY-MM-DD (Monday)
+let weekData      = null;  // { week, staff, shifts, rooms }
+let localShifts   = {};    // shift_id -> shift object (from server) OR temp key
+let isPublished   = false;
+let isManager     = false;
+let modalTarget   = null;  // { staff_id, shift_date, room_id }
+let dragPayload   = null;  // { shift_id?, staff_id, day_of_week, room_id } being dragged
+let pendingConfirmCallback = null;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function toWeekStartDate(d, offset) {
+  const dt = new Date(d);
+  const day = dt.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + diff + (offset||0) * 7);
+  dt.setHours(0,0,0,0);
+  return dt;
+}
+function isoDate(d) { return d.toISOString().split('T')[0]; }
+function fmtDate(d) { return d.toLocaleDateString('en-GB', { day:'numeric', month:'short' }); }
+function fmtTime(t) { if (!t) return '—'; return String(t).substring(0,5); }
+function fmtGBP(n)  { return '£' + (n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function fmtHrs(n)  { const h = Math.round((n||0) * 10) / 10; return (Number.isInteger(h) ? h : h.toFixed(1)) + 'h'; }
+
+function showToast(msg, isErr) {
+  const t = document.getElementById('rota-toast');
+  t.textContent = msg;
+  t.style.borderColor = isErr ? '#ef4444' : '#22c55e';
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+let currentView = 'table';        // table | timeline | dragdrop
+let rotaSettings = { default_view:'table', open_shifts_enabled:true, hide_labels_from_employees:false, restricted_permissions:false, accept_decline_staff:[] };
+let liveRatio   = null;           // last /ratio response
+const COLOUR_PALETTE = ['#4a9abf','#e07820','#22c55e','#f59e0b','#8b5cf6','#ec4899'];
+
+document.addEventListener('wren:ready', async () => {
+  isManager = Wren.user && ['manager','deputy_manager','admin'].includes(Wren.user.role);
+  wireListeners();
+  await loadRotaSettings();
+  initColourSwatches();
+  loadWeek();
+});
+
+function wireListeners() {
+  document.getElementById('btn-prev-week').addEventListener('click',  () => changeWeek(-1));
+  document.getElementById('btn-next-week').addEventListener('click',  () => changeWeek(1));
+  document.getElementById('btn-today-week').addEventListener('click', () => changeWeek(0));
+  document.getElementById('btn-auto-gen').addEventListener('click',   autoGenerate);
+  document.getElementById('btn-save-draft').addEventListener('click', saveDraft);
+  document.getElementById('btn-publish-week').addEventListener('click', publishWeek);
+  document.getElementById('btn-unlock').addEventListener('click', unlockRota);
+
+  document.getElementById('modal-save-shift').addEventListener('click',  saveShiftModal);
+  document.getElementById('modal-clear-shift').addEventListener('click', clearShiftModal);
+  document.getElementById('modal-cancel-shift').addEventListener('click', closeModal);
+  document.getElementById('shift-modal-bg').addEventListener('click', e => {
+    if (e.target === document.getElementById('shift-modal-bg')) closeModal();
+  });
+
+  document.getElementById('confirm-proceed').addEventListener('click', () => {
+    document.getElementById('confirm-modal-bg').classList.remove('open');
+    if (pendingConfirmCallback) { pendingConfirmCallback(); pendingConfirmCallback = null; }
+  });
+  document.getElementById('confirm-cancel').addEventListener('click', () => {
+    document.getElementById('confirm-modal-bg').classList.remove('open');
+    pendingConfirmCallback = null;
+  });
+
+  // ── Prompt 30 wiring ──
+  document.querySelectorAll('.rota-tab').forEach(t =>
+    t.addEventListener('click', () => switchTab(t.dataset.tab)));
+  document.querySelectorAll('#view-toggle button').forEach(b =>
+    b.addEventListener('click', () => setView(b.dataset.view)));
+  document.getElementById('btn-create-rota').addEventListener('click', openWizard);
+  document.getElementById('wiz-cancel').addEventListener('click', () => document.getElementById('wizard-bg').classList.remove('open'));
+  document.getElementById('wiz-mode').addEventListener('change', onWizModeChange);
+  document.getElementById('wiz-create').addEventListener('click', doCreateRota);
+  document.getElementById('btn-open-shift').addEventListener('click', openOpenShiftModal);
+  document.getElementById('btn-payroll-csv').addEventListener('click', () => downloadPayroll('csv'));
+  document.getElementById('btn-payroll-pdf').addEventListener('click', () => downloadPayroll('pdf'));
+  document.getElementById('os-cancel').addEventListener('click', () => document.getElementById('openshift-bg').classList.remove('open'));
+  document.getElementById('os-create').addEventListener('click', doCreateOpenShift);
+  document.getElementById('btn-save-settings').addEventListener('click', saveSettingsTab);
+  document.getElementById('btn-set-budget').addEventListener('click', setBudgetPrompt);
+  document.getElementById('shifts-refresh').addEventListener('click', renderShiftsTab);
+  document.getElementById('shifts-filter-room').addEventListener('change', renderShiftsTab);
+  document.getElementById('shifts-filter-state').addEventListener('change', renderShiftsTab);
+  document.getElementById('shifts-filter-from').addEventListener('change', renderShiftsTab);
+}
+
+// ── Week navigation ───────────────────────────────────────────────────────────
+async function changeWeek(delta) {
+  if (delta === 0) weekOffset = 0; else weekOffset += delta;
+  await loadWeek();
+}
+
+async function loadWeek() {
+  const ws = toWeekStartDate(new Date(), weekOffset);
+  weekStart = isoDate(ws);
+  const we = new Date(ws); we.setDate(we.getDate() + 4); // Friday
+  document.getElementById('rota-week-label').textContent = fmtDate(ws) + ' – ' + fmtDate(we);
+
+  document.getElementById('rota-rooms').innerHTML =
+    '<div style="padding:40px;text-align:center;color:#64748b;grid-column:1/-1">Loading...</div>';
+
+  try {
+    weekData = await Wren.api(`/api/rota/week/${weekStart}`);
+  } catch(e) {
+    document.getElementById('rota-rooms').innerHTML =
+      `<div style="padding:40px;text-align:center;color:#ef4444;grid-column:1/-1">Error: ${e.message}</div>`;
+    return;
+  }
+
+  // Index shifts
+  localShifts = {};
+  for (const s of (weekData.shifts || [])) {
+    localShifts[shiftKey(s)] = s;
+  }
+
+  isPublished = !!(weekData.week?.published_at);
+  updateStatusBar();
+  populateRoomSelect();
+  renderRooms();
+    loadWageSummary();
+    loadLiveRatio();
+    loadStaffingNeeds();
+    applyView();
+}
+
+function shiftKey(s) { return `${s.staff_id}_${isoStr(s.shift_date)}`; }
+function isoStr(d)   { return typeof d === 'string' ? d.substring(0,10) : isoDate(new Date(d)); }
+
+// ── Status bar ────────────────────────────────────────────────────────────────
+function updateStatusBar() {
+  const pill = document.getElementById('rota-status-pill');
+  const info = document.getElementById('rota-published-info');
+  const unlockBtn = document.getElementById('btn-unlock');
+  const pubBtn    = document.getElementById('btn-publish-week');
+  const draftBtn  = document.getElementById('btn-save-draft');
+  const icalLink  = document.getElementById('ical-link');
+
+  if (!weekData.week) {
+    pill.className = 'status-pill empty'; pill.textContent = 'No rota';
+    info.textContent = '';
+    unlockBtn.style.display = 'none';
+    pubBtn.style.display = isManager ? '' : 'none';
+    draftBtn.style.display = isManager ? '' : 'none';
+    pubBtn.textContent = 'Publish Week';
+    pubBtn.disabled = false;
+    icalLink.style.display = 'none';
+  } else if (isPublished) {
+    pill.className = 'status-pill published'; pill.textContent = 'Published';
+    const d = new Date(weekData.week.published_at);
+    info.textContent = `Published ${d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`;
+    unlockBtn.style.display = isManager ? '' : 'none';
+    pubBtn.style.display = 'none';
+    draftBtn.style.display = 'none';
+    if (weekData.week?.id) {
+      icalLink.href = `/api/rota/calendar.ics`;
+      icalLink.style.display = '';
+    }
+  } else {
+    pill.className = 'status-pill draft'; pill.textContent = 'Draft';
+    info.textContent = '';
+    unlockBtn.style.display = 'none';
+    pubBtn.style.display = isManager ? '' : 'none';
+    draftBtn.style.display = isManager ? '' : 'none';
+    pubBtn.textContent = 'Publish Week';
+    pubBtn.disabled = false;
+    icalLink.style.display = 'none';
+  }
+
+  // Prompt 30: open-shift button + cost header + live-ratio strip
+  const osBtn = document.getElementById('btn-open-shift');
+  if (osBtn) osBtn.style.display = (isManager && weekData.week && rotaSettings.open_shifts_enabled) ? '' : 'none';
+  const ch = document.getElementById('cost-header');
+  if (ch) ch.style.display = (isManager && weekData.week) ? 'flex' : 'none';
+  const lr = document.getElementById('live-ratio-strip');
+  if (lr) lr.style.display = weekData.week ? '' : 'none';
+  // Payroll export — manager only, once a rota week exists (server also gates on salary-view).
+  const showPayroll = isManager && weekData.week ? '' : 'none';
+  const pcsv = document.getElementById('btn-payroll-csv'); if (pcsv) pcsv.style.display = showPayroll;
+  const ppdf = document.getElementById('btn-payroll-pdf'); if (ppdf) ppdf.style.display = showPayroll;
+}
+
+// Authed file download for the payroll CSV/PDF export (Bearer token → blob → save).
+async function downloadPayroll(fmt) {
+  if (!weekStart) { (Wren.toast || alert)('Pick a rota week first'); return; }
+  const btn = document.getElementById(fmt === 'pdf' ? 'btn-payroll-pdf' : 'btn-payroll-csv');
+  const orig = btn ? btn.textContent : '';
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    const token = (Wren.getToken ? Wren.getToken() : sessionStorage.getItem('wrenToken'));
+    const resp = await fetch(`/api/rota/week/${weekStart}/payroll.${fmt}`, { headers: { Authorization: 'Bearer ' + token } });
+    if (!resp.ok) {
+      const msg = resp.status === 403 ? 'Payroll export needs salary-view permission.' : `Export failed (${resp.status}).`;
+      (Wren.toast || alert)(msg); console.error(await resp.text()); return;
+    }
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `payroll-${weekStart}.${fmt}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    if (Wren.toast) Wren.toast(`Payroll ${fmt.toUpperCase()} downloaded`, 'success');
+  } catch (e) { console.error('downloadPayroll', e); (Wren.toast || alert)('Export error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = orig; } }
+}
+
+function populateRoomSelect() {
+  const sel = document.getElementById('modal-room');
+  sel.innerHTML = '<option value="">— Any room —</option>';
+  for (const r of (weekData.rooms || [])) {
+    sel.innerHTML += `<option value="${r.id}">${r.name}</option>`;
+  }
+}
+
+// ── Render rooms ─────────────────────────────────────────────────────────────
+function renderRooms() {
+  const rooms = weekData.rooms || [];
+  const staff = weekData.staff || [];
+  if (!rooms.length) {
+    document.getElementById('rota-rooms').innerHTML =
+      '<div style="padding:40px;text-align:center;color:#64748b;grid-column:1/-1">No rooms configured.</div>';
+    return;
+  }
+
+  // Determine which staff appear in each room
+  const staffByRoom = {};
+  for (const r of rooms) staffByRoom[r.id] = [];
+
+  // Staff in room via shifts
+  const assignedInRoom = new Set();
+  for (const shift of Object.values(localShifts)) {
+    if (shift && shift.room_id) assignedInRoom.add(`${shift.staff_id}_${shift.room_id}`);
+  }
+
+  // Assign staff to room based on room_id on staff record OR via pattern room
+  for (const s of staff) {
+    // Find any shift this week in any room
+    let assignedRoom = null;
+    for (const shift of Object.values(localShifts)) {
+      if (shift && shift.staff_id === s.id && shift.room_id) {
+        assignedRoom = shift.room_id;
+        break;
+      }
+    }
+    if (assignedRoom && staffByRoom[assignedRoom]) {
+      if (!staffByRoom[assignedRoom].find(x => x.id === s.id)) {
+        staffByRoom[assignedRoom].push(s);
+      }
+    }
+  }
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const ws = new Date(weekStart + 'T00:00:00Z');
+  const weekDays = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(ws); d.setUTCDate(d.getUTCDate() + i);
+    const local = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    weekDays.push({ date: local, iso: isoDate(local), dow: i, isToday: local.getTime() === today.getTime() });
+  }
+
+  // Compute ratio data per day per room
+  const ratioData = computeRatioData(weekDays);
+
+  // Compute unassigned staff (no shifts at all this week)
+  const staffWithShifts = new Set(Object.values(localShifts).filter(Boolean).map(s => s.staff_id));
+  const unassigned = staff.filter(s => !staffWithShifts.has(s.id));
+
+  // Render cover rail
+  const coverRail = document.getElementById('cover-rail');
+  const coverChips = document.getElementById('cover-chips');
+  if (unassigned.length && weekData.week) {
+    coverRail.style.display = '';
+    coverChips.innerHTML = unassigned.map(s => `
+      <div class="cover-chip"
+           draggable="true"
+           data-cover-staff="${s.id}"
+           data-staff-name="${s.first_name} ${s.last_name}">
+        ${s.first_name} ${s.last_name}
+      </div>`).join('');
+    coverChips.querySelectorAll('[data-cover-staff]').forEach(el => {
+      el.addEventListener('dragstart', onCoverDragStart);
+    });
+  } else {
+    coverRail.style.display = 'none';
+  }
+
+  // Render room cards
+  const container = document.getElementById('rota-rooms');
+  container.innerHTML = rooms.map(room => renderRoomCard(room, staffByRoom[room.id] || [], weekDays, ratioData)).join('');
+
+  // Wire drag-drop on all cells
+  container.querySelectorAll('[data-cell]').forEach(el => {
+    el.addEventListener('dragover',  onCellDragOver);
+    el.addEventListener('dragleave', onCellDragLeave);
+    el.addEventListener('drop',      onCellDrop);
+    if (isManager && !isPublished) {
+      el.addEventListener('click', e => {
+        if (!dragPayload) onCellClick(e, el);
+      });
+    }
+  });
+
+  // Wire draggable chips
+  container.querySelectorAll('[data-shift-id]').forEach(el => {
+    if (!el.classList.contains('is-absent')) {
+      el.addEventListener('dragstart', onShiftDragStart);
+      el.addEventListener('dragend',   onShiftDragEnd);
+    }
+  });
+}
+
+function renderRoomCard(room, roomStaff, weekDays, ratioData) {
+  const ratio = room.ratio_children_per_staff || 4;
+  const required = Math.ceil((room.capacity || 0) / ratio);
+
+  const headerCols = weekDays.map(d => `
+    <th class="${d.isToday ? 'col-today' : ''}">
+      ${DAYS_SHORT[d.dow]}<br>
+      <span style="font-size:9px;font-weight:400">${fmtDate(d.date)}</span>
+    </th>`).join('');
+
+  const staffRows = roomStaff.map(s => {
+    const cells = weekDays.map(d => {
+      const key = `${s.id}_${d.iso}`;
+      const shift = localShifts[key];
+      if (!shift) {
+        return `<td class="rota-cell${d.isToday ? ' col-today':''}"
+                    data-cell data-staff="${s.id}" data-day="${d.dow}" data-room="${room.id}" data-date="${d.iso}">
+                  <div class="cell-add">+</div>
+                </td>`;
+      }
+      const absent = shift.is_absent;
+      return `<td class="rota-cell${d.isToday?' col-today':''} has-shift${absent?' is-absent':''}${isBreach(ratioData, d.iso, room.id) ? ' conflict':''}"
+                  data-cell data-staff="${s.id}" data-day="${d.dow}" data-room="${room.id}" data-date="${d.iso}">
+                <div class="shift-chip${absent?' is-absent':''}"
+                     draggable="${absent?'false':'true'}"
+                     data-shift-id="${shift.id||''}"
+                     data-staff="${s.id}" data-day="${d.dow}" data-room="${room.id}"
+                     style="${shift.colour?('border-left:3px solid '+shift.colour):''}">
+                  <span class="shift-times">${fmtTime(shift.planned_start)}–${fmtTime(shift.planned_end)}</span>
+                  ${absent ? '<span class="absent-label">ABSENT</span>' : `<span class="shift-room-label">${shift.label || room.name}</span>`}
+                  ${acceptanceBadge(shift)}
+                </div>
+              </td>`;
+    }).join('');
+
+    return `<tr>
+      <td class="rota-td-name">
+        <div class="rota-name">${s.first_name} ${s.last_name}</div>
+        <div class="rota-role">${(s.role||'').replace(/_/g,' ')}${s.is_dsl?' · DSL':''}${s.is_first_aider?' · FA':''}</div>
+      </td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  // Ratio bar HTML
+  const ratioBarCells = weekDays.map(d => {
+    const info = ratioData[d.iso] && ratioData[d.iso][room.id];
+    if (!info) return `<span class="ratio-pill warn">${DAYS_SHORT[d.dow]}: ?</span>`;
+    const cls = info.present >= required ? 'ok' : info.present > 0 ? 'warn' : 'breach';
+    const flags = info.flags || [];
+    return `<span class="ratio-pill ${cls}" title="${flags.join(', ')||'OK'}">${DAYS_SHORT[d.dow]}: ${info.present}/${required}${flags.length?' ⚠':''}</span>`;
+  }).join('');
+
+  const emptyMsg = roomStaff.length === 0
+    ? `<tr><td colspan="${weekDays.length + 1}" style="padding:20px;text-align:center;color:#475569;font-size:12px">
+        No staff assigned to this room this week.</td></tr>`
+    : '';
+
+  return `
+    <div class="room-card">
+      <div class="room-card-header">
+        <span class="room-title">${room.name}</span>
+        <span class="room-ratio-pill">1:${ratio} ratio · cap ${room.capacity}</span>
+      </div>
+      <div class="rota-wrap">
+        <table class="rota-table">
+          <thead>
+            <tr>
+              <th class="rota-th-staff">Staff</th>
+              ${headerCols}
+            </tr>
+          </thead>
+          <tbody>
+            ${emptyMsg}
+            ${staffRows}
+          </tbody>
+        </table>
+      </div>
+      <div class="ratio-bar">
+        <div class="ratio-day-row">${ratioBarCells}</div>
+      </div>
+    </div>`;
+}
+
+// ── Ratio computation ─────────────────────────────────────────────────────────
+function computeRatioData(weekDays) {
+  const rooms = weekData.rooms || [];
+  const staff = weekData.staff || [];
+  const staffById = {};
+  for (const s of staff) staffById[s.id] = s;
+
+  const result = {};
+  for (const d of weekDays) {
+    result[d.iso] = {};
+    for (const room of rooms) {
+      const dayShifts = Object.values(localShifts)
+        .filter(s => s && isoStr(s.shift_date) === d.iso && s.room_id === room.id);
+      const present = dayShifts.filter(s => !s.is_absent && !s.is_meeting);
+      const flags = [];
+      const required = Math.ceil((room.capacity || 0) / (room.ratio_children_per_staff || 4));
+      if (present.length < required) flags.push('ratio_breach');
+      const hasDsl = present.some(s => {
+        const st = staffById[s.staff_id]; return st && (st.is_dsl || st.is_deputy_dsl);
+      });
+      if (!hasDsl) flags.push('no_dsl');
+      const hasFa = present.some(s => { const st = staffById[s.staff_id]; return st && st.is_first_aider; });
+      if (!hasFa) flags.push('no_first_aider');
+      result[d.iso][room.id] = { present: present.length, required, flags };
+    }
+  }
+  return result;
+}
+
+function isBreach(ratioData, iso, roomId) {
+  return (ratioData[iso] && ratioData[iso][roomId] && ratioData[iso][roomId].flags.includes('ratio_breach'));
+}
+
+// ── Wage summary ──────────────────────────────────────────────────────────────
+async function loadWageSummary() {
+  if (!isManager || !weekData.week) {
+    document.getElementById('wage-panel').style.display = 'none';
+    return;
+  }
+  try {
+    const data = await Wren.api(`/api/rota/week/${weekStart}/wage-summary`);
+    document.getElementById('wage-panel').style.display = '';
+    document.getElementById('wage-total').textContent = fmtGBP(data.total);
+
+    // Scheduled hours (EyMan/BrightHR parity — Prompt 37)
+    const totHrs = (data.total_hours != null ? data.total_hours : 0);
+    document.getElementById('wage-hours-line').textContent = fmtHrs(totHrs) + ' staff-hours scheduled';
+    const chH = document.getElementById('ch-hours');
+    if (chH) chH.textContent = fmtHrs(totHrs);
+
+    // Cost of Shifts vs Budget header (Prompt 30)
+    document.getElementById('ch-cost').textContent = fmtGBP(data.total);
+    const chB = document.getElementById('ch-budget'), chV = document.getElementById('ch-variance');
+    if (data.budget != null) {
+      chB.textContent = fmtGBP(data.budget);
+      chV.textContent = (data.variance >= 0 ? '+' : '−') + fmtGBP(Math.abs(data.variance));
+      chV.className = 'value ' + (data.over_budget ? 'over' : 'under');
+    } else { chB.textContent = '—'; chV.textContent = '—'; chV.className = 'value'; }
+
+    const dayChips = document.getElementById('wage-days');
+    const hoursByDay = data.hours_by_day || {};
+    // Union of days that have either cost or hours, so a day with hours-but-no-rate still shows.
+    const allDays = Array.from(new Set([...Object.keys(data.by_day || {}), ...Object.keys(hoursByDay)])).sort((a,b) => a.localeCompare(b));
+    dayChips.innerHTML = allDays.map((date) => {
+      const cost = data.by_day && data.by_day[date] || 0;
+      const hrs  = hoursByDay[date] || 0;
+      const d = new Date(date + 'T00:00:00Z');
+      const dayName = DAYS_SHORT[d.getUTCDay() === 0 ? 6 : d.getUTCDay() - 1] || date;
+      return `<span class="wage-day-chip">${dayName}: <b>${fmtHrs(hrs)}</b> · ${fmtGBP(cost)}</span>`;
+    }).join('');
+
+    const missing = Object.values(weekData.staff || []).filter(s => !s.hourly_rate).length;
+    document.getElementById('wage-note').textContent =
+      missing ? `Note: ${missing} staff have no hourly rate set — cost estimate is partial.` : '';
+  } catch {
+    document.getElementById('wage-panel').style.display = 'none';
+  }
+}
+
+// ── Cell click → open modal ───────────────────────────────────────────────────
+function onCellClick(e, cell) {
+  if (!isManager) return;
+  if (e.target.closest('[data-shift-id]')) return;
+  const staffId = parseInt(cell.dataset.staff);
+  const date    = cell.dataset.date;
+  const roomId  = cell.dataset.room ? parseInt(cell.dataset.room) : null;
+
+  if (isPublished) {
+    pendingConfirmCallback = () => openModal(staffId, date, roomId);
+    document.getElementById('confirm-modal-bg').classList.add('open');
+  } else {
+    openModal(staffId, date, roomId);
+  }
+}
+
+function populateTimeSelects() {
+  if (window._rotaTimesFilled) return;
+  ['modal-start','modal-end'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel || sel.tagName !== 'SELECT') return;
+    let html = '';
+    for (let m = 0; m < 24*60; m += 5) {
+      const hh = String(Math.floor(m/60)).padStart(2,'0');
+      const mm = String(m%60).padStart(2,'0');
+      html += '<option value="'+hh+':'+mm+'">'+hh+':'+mm+'</option>';
+    }
+    sel.innerHTML = html;
+  });
+  window._rotaTimesFilled = true;
+}
+
+function openModal(staff_id, shift_date, room_id) {
+  populateTimeSelects();
+  modalTarget = { staff_id, shift_date, room_id };
+  const key = `${staff_id}_${shift_date}`;
+  const shift = localShifts[key];
+  const s = (weekData.staff||[]).find(x => x.id === staff_id);
+  const d = new Date(shift_date + 'T00:00:00');
+
+  document.getElementById('modal-title').textContent =
+    `${s ? s.first_name + ' ' + s.last_name : ''} — ${DAYS_LONG[d.getDay() - 1] || ''} ${fmtDate(d)}`;
+
+  document.getElementById('modal-start').value = shift?.planned_start?.substring(0,5) || '09:00';
+  document.getElementById('modal-end').value   = shift?.planned_end?.substring(0,5)   || '17:00';
+  document.getElementById('modal-room').value  = shift?.room_id || room_id || '';
+  document.getElementById('modal-break').value = shift?.break_mins ?? 30;
+  document.getElementById('modal-notes').value = shift?.notes || '';
+  document.getElementById('modal-label').value = shift?.label || '';
+  selectColour(shift?.colour || '');
+  document.getElementById('shift-modal-bg').classList.add('open');
+  document.getElementById('modal-start').focus();
+}
+
+function closeModal() {
+  document.getElementById('shift-modal-bg').classList.remove('open');
+  modalTarget = null;
+}
+
+function saveShiftModal() {
+  if (!modalTarget) return;
+  const start = document.getElementById('modal-start').value;
+  const end   = document.getElementById('modal-end').value;
+  if (!start || !end) { showToast('Start and end time required', true); return; }
+
+  const key = `${modalTarget.staff_id}_${modalTarget.shift_date}`;
+  const existing = localShifts[key] || {};
+  const roomId = parseInt(document.getElementById('modal-room').value) || null;
+  const roomName = roomId ? ((weekData.rooms||[]).find(r => r.id === roomId)||{}).name || '' : '';
+
+  localShifts[key] = {
+    ...existing,
+    staff_id: modalTarget.staff_id,
+    shift_date: modalTarget.shift_date,
+    planned_start: start,
+    planned_end: end,
+    room_id: roomId,
+    room_name: roomName,
+    break_mins: parseInt(document.getElementById('modal-break').value) || 30,
+    notes: document.getElementById('modal-notes').value || null,
+    label: document.getElementById('modal-label').value || null,
+    colour: window._selectedColour || null,
+    source: 'manual'
+  };
+  closeModal();
+  renderRooms();
+  applyView();
+}
+
+function clearShiftModal() {
+  if (!modalTarget) return;
+  delete localShifts[`${modalTarget.staff_id}_${modalTarget.shift_date}`];
+  closeModal();
+  renderRooms();
+}
+
+// ── HTML5 Drag-drop ──────────────────────────────────────────────────────────
+function onShiftDragStart(e) {
+  const chip = e.currentTarget;
+  dragPayload = {
+    shift_id:    chip.dataset.shiftId || null,
+    staff_id:    parseInt(chip.dataset.staff),
+    day_of_week: parseInt(chip.dataset.day),
+    room_id:     parseInt(chip.dataset.room)
+  };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', JSON.stringify(dragPayload));
+  chip.style.opacity = '0.4';
+}
+
+function onShiftDragEnd(e) {
+  e.currentTarget.style.opacity = '1';
+  dragPayload = null;
+}
+
+function onCoverDragStart(e) {
+  const chip = e.currentTarget;
+  dragPayload = {
+    shift_id:    null,
+    staff_id:    parseInt(chip.dataset.coverStaff),
+    day_of_week: null,
+    room_id:     null,
+    is_cover:    true
+  };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', JSON.stringify(dragPayload));
+  chip.style.opacity = '0.4';
+}
+
+function onCellDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onCellDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function onCellDrop(e) {
+  e.preventDefault();
+  const cell = e.currentTarget;
+  cell.classList.remove('drag-over');
+
+  let payload = dragPayload;
+  if (!payload) {
+    try { payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+  }
+  if (!payload) return;
+
+  const newDay    = parseInt(cell.dataset.day);
+  const newRoomId = parseInt(cell.dataset.room);
+  const newDate   = cell.dataset.date;
+  const targetStaffId = parseInt(cell.dataset.staff);
+
+  // If dropping onto a different staff cell — reassign staff
+  const staffId = targetStaffId || payload.staff_id;
+
+  if (payload.shift_id && weekData.week) {
+    // Server-side move (shift already exists in DB)
+    if (isPublished) {
+      pendingConfirmCallback = () => doServerMove(payload.shift_id, newDay, staffId, newRoomId, newDate);
+      document.getElementById('confirm-modal-bg').classList.add('open');
+    } else {
+      await doServerMove(payload.shift_id, newDay, staffId, newRoomId, newDate);
+    }
+  } else {
+    // Local-only move (pre-save or cover drag)
+    const oldKey = `${payload.staff_id}_${dayToDate(payload.day_of_week)}`;
+    const existing = localShifts[oldKey];
+    const newKey = `${staffId}_${newDate}`;
+
+    if (existing && oldKey !== newKey) {
+      localShifts[newKey] = { ...existing, staff_id: staffId, shift_date: newDate, room_id: newRoomId, day_of_week: newDay };
+      delete localShifts[oldKey];
+    } else if (!existing) {
+      // Cover staff — add default shift
+      const room = (weekData.rooms||[]).find(r => r.id === newRoomId);
+      localShifts[newKey] = {
+        staff_id: staffId, shift_date: newDate, day_of_week: newDay,
+        planned_start: '09:00', planned_end: '17:00',
+        room_id: newRoomId, room_name: room ? room.name : '',
+        break_mins: 30, notes: null, source: 'manual'
+      };
+    }
+    renderRooms();
+  }
+}
+
+async function doServerMove(shiftId, newDay, staffId, roomId, newDate) {
+  try {
+    showToast('Moving shift…');
+    const result = await Wren.api('/api/rota/shifts/move', {
+      method: 'POST',
+      body: JSON.stringify({ shift_id: parseInt(shiftId), new_day: newDay, new_staff_id: staffId, new_room_id: roomId })
+    });
+    // Rebuild localShifts from server response
+    localShifts = {};
+    for (const s of (result.shifts || [])) localShifts[shiftKey(s)] = s;
+    renderRooms();
+    loadWageSummary();
+    showToast('Shift moved');
+  } catch(err) {
+    showToast('Move failed: ' + err.message, true);
+  }
+}
+
+function dayToDate(dow) {
+  if (dow == null) return '';
+  const ws = new Date(weekStart + 'T00:00:00Z');
+  ws.setUTCDate(ws.getUTCDate() + dow);
+  return ws.toISOString().split('T')[0];
+}
+
+// ── Auto-generate ─────────────────────────────────────────────────────────────
+async function autoGenerate() {
+  if (!isManager) return;
+  const btn = document.getElementById('btn-auto-gen');
+  btn.disabled = true; btn.textContent = '⏳ Generating...';
+  try {
+    const result = await Wren.api('/api/rota/auto-generate', {
+      method: 'POST',
+      body: JSON.stringify({ week_start_date: weekStart })
+    });
+    showToast(`Generated ${result.shifts_created} shifts from work patterns`);
+    await loadWeek();
+  } catch(err) {
+    if (err.message && err.message.includes('rota_exists')) {
+      showToast('A rota already exists for this week. Unlock/delete it first.', true);
+    } else {
+      showToast('Auto-generate failed: ' + err.message, true);
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '⚡ Auto-Generate';
+  }
+}
+
+// ── Save draft ────────────────────────────────────────────────────────────────
+async function saveDraft() {
+  const btn = document.getElementById('btn-save-draft');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const shifts = Object.values(localShifts).filter(Boolean);
+    const result = await Wren.api(`/api/rota/week/${weekStart}/draft`, {
+      method: 'POST',
+      body: JSON.stringify({ shifts })
+    });
+    showToast(`Draft saved — ${result.saved} shifts`);
+    await loadWeek();
+  } catch(err) {
+    showToast('Save failed: ' + err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Draft';
+  }
+}
+
+// ── Publish ───────────────────────────────────────────────────────────────────
+async function publishWeek() {
+  if (!weekData.week) {
+    // Save draft first, then publish
+    await saveDraft();
+  }
+  if (!weekData.week) {
+    showToast('Save draft first before publishing', true);
+    return;
+  }
+
+  const shiftCount = Object.values(localShifts).filter(Boolean).length;
+  if (!confirm(`Publish rota for w/c ${weekStart}?\n${shiftCount} shifts. Staff will be notified by email.`)) return;
+
+  const btn = document.getElementById('btn-publish-week');
+  btn.disabled = true; btn.textContent = 'Publishing...';
+  try {
+    const result = await Wren.api(`/api/rota/weeks/${weekData.week.id}/publish`, { method: 'PUT', body: '{}' });
+    const smtpNote = result.smtp ? '' : ' (no SMTP — logged)';
+    showToast(`Published! ${result.sent} email${result.sent!==1?'s':''} sent${smtpNote}`);
+    await loadWeek();
+  } catch(err) {
+    showToast('Publish failed: ' + err.message, true);
+    btn.disabled = false; btn.textContent = 'Publish Week';
+  }
+}
+
+// ── Unlock ────────────────────────────────────────────────────────────────────
+async function unlockRota() {
+  if (!confirm('Unlock this rota for editing? Staff will see the last published version until you re-publish.')) return;
+  try {
+    await Wren.api(`/api/rota/week/${weekStart}/unlock`, { method: 'POST', body: '{}' });
+    showToast('Rota unlocked');
+    await loadWeek();
+  } catch(err) {
+    showToast('Unlock failed: ' + err.message, true);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Prompt 30 — BrightHR-parity client logic (tabs, views, wizard, settings,
+   open shifts, live ratio). All additive; reuses existing builder functions.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+async function loadRotaSettings() {
+  try { rotaSettings = await Wren.api('/api/rota/settings'); } catch { /* defaults */ }
+  currentView = ['table','timeline','dragdrop'].includes(rotaSettings.default_view) ? rotaSettings.default_view : 'table';
+  document.querySelectorAll('#view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+}
+
+// ── View toggle ──
+function setView(view) {
+  currentView = view;
+  document.querySelectorAll('#view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  applyView();
+  if (isManager) Wren.api('/api/rota/settings', { method:'POST', body: JSON.stringify({ default_view: view }) }).catch(()=>{});
+}
+function applyView() {
+  const rooms = document.getElementById('rota-rooms');
+  const tl = document.getElementById('timeline-view');
+  if (currentView === 'timeline') { rooms.style.display = 'none'; tl.style.display = ''; renderTimeline(); }
+  else { rooms.style.display = 'grid'; tl.style.display = 'none'; }
+}
+
+// ── Timeline view ──
+function renderTimeline() {
+  const tl = document.getElementById('timeline-view');
+  if (!weekData) { tl.innerHTML = ''; return; }
+  const staffById = {}; for (const s of (weekData.staff||[])) staffById[s.id] = s;
+  const ws = new Date(weekStart + 'T00:00:00Z');
+  let cols = '';
+  for (let i=0;i<5;i++){
+    const d = new Date(ws); d.setUTCDate(d.getUTCDate()+i);
+    const iso = d.toISOString().split('T')[0];
+    const dayShifts = Object.values(localShifts).filter(s => s && isoStr(s.shift_date)===iso);
+    const openShifts = (weekData.shifts||[]).filter(s => s.is_open && isoStr(s.shift_date)===iso);
+    const lr = liveRatio && liveRatio.days ? liveRatio.days[iso] : null;
+    const under = lr && lr.under_ratio;
+    const blocks = dayShifts.sort((a,b)=>String(a.planned_start||'').localeCompare(String(b.planned_start||'')))
+      .map(s => {
+        const st = staffById[s.staff_id];
+        const name = st ? (st.first_name+' '+st.last_name) : 'Staff';
+        const room = (weekData.rooms||[]).find(r=>r.id===s.room_id);
+        return `<div class="tl-block${s.is_absent?' is-absent':''}" style="${s.colour?('border-left-color:'+s.colour):''}">
+          <div class="who">${name}${acceptanceBadge(s)}</div>
+          <div class="when">${fmtTime(s.planned_start)}–${fmtTime(s.planned_end)}</div>
+          <div class="where">${s.label?s.label+' · ':''}${room?room.name:'Any'}</div></div>`;
+      }).join('');
+    const openBlocks = openShifts.map(s => {
+        const room = (weekData.rooms||[]).find(r=>r.id===s.room_id);
+        return `<div class="tl-block is-open">
+          <div class="who">Open shift <span class="shift-badge open">OPEN</span></div>
+          <div class="when">${fmtTime(s.planned_start)}–${fmtTime(s.planned_end)}</div>
+          <div class="where">${s.label?s.label+' · ':''}${room?room.name:'Any'}</div></div>`;
+      }).join('');
+    const ratioTag = lr ? `<span class="ratio-tag ${under?'under':'ok'}">${under?'UNDER':'OK'}</span>` : '';
+    const localD = new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
+    cols += `<div class="tl-col${under?' under-ratio':''}">
+      <div class="tl-col-head"><span>${DAYS_SHORT[i]} ${fmtDate(localD)}</span>${ratioTag}</div>
+      ${blocks||'<div style="color:#475569;font-size:11px;padding:6px 0">No shifts</div>'}
+      ${openBlocks}</div>`;
+  }
+  tl.innerHTML = `<div class="timeline-wrap">${cols}</div>`;
+}
+
+function acceptanceBadge(s){
+  if (!s) return '';
+  if (s.is_open) return '<span class="shift-badge open">OPEN</span>';
+  if (s.acceptance === 'pending')  return '<span class="shift-badge pending">PENDING</span>';
+  if (s.acceptance === 'declined') return '<span class="shift-badge declined">DECLINED</span>';
+  if (s.acceptance === 'accepted') return '<span class="shift-badge accepted">✓</span>';
+  return '';
+}
+
+// ── Colour swatches ──
+function initColourSwatches(){
+  const wrap = document.getElementById('modal-colour-swatches');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="colour-swatch sel" data-colour="" style="background:#334155" title="None"></div>` +
+    COLOUR_PALETTE.map(c=>`<div class="colour-swatch" data-colour="${c}" style="background:${c}"></div>`).join('');
+  wrap.querySelectorAll('.colour-swatch').forEach(el=>el.addEventListener('click',()=>selectColour(el.dataset.colour)));
+}
+function selectColour(c){
+  window._selectedColour = c || null;
+  document.querySelectorAll('#modal-colour-swatches .colour-swatch').forEach(el=>
+    el.classList.toggle('sel', (el.dataset.colour||'')===(c||'')));
+}
+
+// ── Live ratio vs booked children ──
+async function loadLiveRatio(){
+  if (!weekData) return;
+  try { liveRatio = await Wren.api(`/api/rota/week/${weekStart}/ratio`); } catch { liveRatio = null; }
+  renderLiveRatio();
+  if (currentView==='timeline') renderTimeline();
+}
+function renderLiveRatio(){
+  const wrap = document.getElementById('live-ratio-days');
+  if (!wrap || !liveRatio || !liveRatio.days){ if(wrap) wrap.innerHTML=''; return; }
+  const ws = new Date(weekStart + 'T00:00:00Z');
+  let html='';
+  for (let i=0;i<5;i++){
+    const d=new Date(ws); d.setUTCDate(d.getUTCDate()+i);
+    const iso=d.toISOString().split('T')[0];
+    const day=liveRatio.days[iso];
+    if(!day) continue;
+    const roomsHtml=Object.values(day.rooms||{}).map(r=>
+      `<div class="lr-room${r.under_ratio?' under':''}">${r.room_name}: ${r.present}/${r.required}${r.under_ratio?' ⚠':''}</div>`).join('');
+    html+=`<div class="lr-day${day.under_ratio?' under':''}"><div class="lr-day-name">${DAYS_SHORT[i]}</div>${roomsHtml}</div>`;
+  }
+  wrap.innerHTML = html || '<div style="color:#64748b;font-size:12px">No booking data for this week.</div>';
+}
+
+// ── Tabs ──
+function switchTab(name){
+  document.querySelectorAll('.rota-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  ['active','old','shifts','settings'].forEach(n=>{
+    const el=document.getElementById('tab-'+n); if (el) el.style.display = (n===name)?'':'none';
+  });
+  document.getElementById('rota-action-btns').style.display = (name==='active')?'flex':'none';
+  if (name==='old') loadOldRotas();
+  if (name==='shifts') renderShiftsTab();
+  if (name==='settings') renderSettingsTab();
+}
+
+// ── Old rotas ──
+async function loadOldRotas(){
+  const body=document.getElementById('old-rotas-body');
+  try{
+    const weeks=await Wren.api('/api/rota/weeks');
+    const thisMon = isoDate(toWeekStartDate(new Date(),0));
+    const past=weeks.filter(w=>isoStr(w.week_start) < thisMon);
+    if(!past.length){ body.innerHTML='<div style="color:#64748b;padding:20px 0">No past rotas.</div>'; return; }
+    body.innerHTML=`<table class="rota-list-table"><thead><tr>
+      <th>Week</th><th>Name</th><th>Status</th><th>Shifts</th><th>Budget</th><th></th></tr></thead><tbody>
+      ${past.map(w=>{ const ws=isoStr(w.week_start);
+        return `<tr><td>${fmtWeekRange(ws)}</td><td>${w.name||'—'}</td>
+          <td><span class="status-pill ${w.status||'draft'}">${w.status||'draft'}</span></td>
+          <td>${w.shift_count||0}</td><td>${w.budget!=null?fmtGBP(parseFloat(w.budget)):'—'}</td>
+          <td><button class="btn btn-ghost btn-sm" data-goto="${ws}">View</button></td></tr>`;
+      }).join('')}</tbody></table>`;
+    body.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>gotoWeek(b.dataset.goto)));
+  }catch(e){ body.innerHTML=`<div style="color:#ef4444;padding:20px 0">${e.message}</div>`; }
+}
+
+// ── Shifts flat list (selected week) ──
+function renderShiftsTab(){
+  const body=document.getElementById('shifts-body');
+  const rf=document.getElementById('shifts-filter-room');
+  if(rf && rf.options.length<=1 && weekData){
+    for(const r of (weekData.rooms||[])) rf.innerHTML+=`<option value="${r.id}">${r.name}</option>`;
+  }
+  if(!weekData){ body.innerHTML='<div style="color:#64748b;padding:20px 0">Open a week first.</div>'; return; }
+  let shifts=(weekData.shifts||[]).slice();
+  const room=rf.value, state=document.getElementById('shifts-filter-state').value, from=document.getElementById('shifts-filter-from').value;
+  if(room) shifts=shifts.filter(s=>String(s.room_id)===room);
+  if(from) shifts=shifts.filter(s=>isoStr(s.shift_date)>=from);
+  if(state==='open') shifts=shifts.filter(s=>s.is_open);
+  else if(state) shifts=shifts.filter(s=>s.acceptance===state && !s.is_open);
+  const staffById={}; for(const s of (weekData.staff||[])) staffById[s.id]=s;
+  if(!shifts.length){ body.innerHTML='<div style="color:#64748b;padding:20px 0">No shifts match.</div>'; return; }
+  body.innerHTML=`<div style="color:#64748b;font-size:12px;margin-bottom:8px">Showing shifts for week ${fmtWeekRange(weekStart)}.</div>
+    <table class="rota-list-table"><thead><tr><th>Date</th><th>Staff</th><th>Time</th><th>Room</th><th>Label</th><th>State</th></tr></thead><tbody>
+    ${shifts.sort((a,b)=>isoStr(a.shift_date).localeCompare(isoStr(b.shift_date))).map(s=>{
+      const st=staffById[s.staff_id];
+      const name=s.is_open?'<span style="color:#e07820">Open shift</span>':(st?st.first_name+' '+st.last_name:'—');
+      const stt=s.is_open?'open':(s.acceptance||'—');
+      return `<tr><td>${fmtDate(new Date(isoStr(s.shift_date)+'T00:00:00'))}</td><td>${name}</td>
+        <td>${fmtTime(s.planned_start)}–${fmtTime(s.planned_end)}</td><td>${s.room_name||'—'}</td>
+        <td>${s.label||'—'}</td><td>${stt}</td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+// ── Settings tab ──
+function renderSettingsTab(){
+  document.getElementById('set-default-view').value = rotaSettings.default_view||'table';
+  document.getElementById('set-restricted').checked = !!rotaSettings.restricted_permissions;
+  document.getElementById('set-hide-labels').checked = !!rotaSettings.hide_labels_from_employees;
+  document.getElementById('set-open-shifts').checked = !!rotaSettings.open_shifts_enabled;
+  const wrap=document.getElementById('set-ad-staff');
+  const sel=new Set((rotaSettings.accept_decline_staff||[]).map(Number));
+  wrap.innerHTML=(weekData&&weekData.staff?weekData.staff:[]).map(s=>
+    `<div class="ad-staff-chip${sel.has(s.id)?' on':''}" data-staff="${s.id}">${s.first_name} ${s.last_name}</div>`).join('')
+    || '<div style="color:#64748b;font-size:12px">Open a week to list staff.</div>';
+  wrap.querySelectorAll('.ad-staff-chip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('on')));
+}
+async function saveSettingsTab(){
+  const ad=[...document.querySelectorAll('#set-ad-staff .ad-staff-chip.on')].map(c=>parseInt(c.dataset.staff));
+  const payload={
+    default_view:document.getElementById('set-default-view').value,
+    restricted_permissions:document.getElementById('set-restricted').checked,
+    hide_labels_from_employees:document.getElementById('set-hide-labels').checked,
+    open_shifts_enabled:document.getElementById('set-open-shifts').checked,
+    accept_decline_staff:ad
+  };
+  try{
+    const r=await Wren.api('/api/rota/settings',{method:'POST',body:JSON.stringify(payload)});
+    rotaSettings=r.settings; showToast('Settings saved'); updateStatusBar();
+  }catch(e){ showToast('Save failed: '+e.message,true); }
+}
+
+// ── Create-rota wizard ──
+async function openWizard(){
+  const sel=document.getElementById('wiz-source');
+  try{
+    const weeks=await Wren.api('/api/rota/weeks');
+    sel.innerHTML=weeks.map(w=>`<option value="${w.id}">${fmtWeekRange(isoStr(w.week_start))}${w.name?(' — '+w.name):''} (${w.shift_count||0} shifts)</option>`).join('')
+      || '<option value="">No existing rotas</option>';
+  }catch{ sel.innerHTML='<option value="">—</option>'; }
+  const team=document.getElementById('wiz-team');
+  team.innerHTML='<option value="">All staff</option>';
+  for(const r of (weekData&&weekData.rooms?weekData.rooms:[])) team.innerHTML+=`<option value="${r.id}">${r.name}</option>`;
+  document.getElementById('wiz-start').value=isoDate(toWeekStartDate(new Date(),1));
+  document.getElementById('wiz-name').value=''; document.getElementById('wiz-budget').value='';
+  onWizModeChange();
+  document.getElementById('wizard-bg').classList.add('open');
+}
+function onWizModeChange(){
+  document.getElementById('wiz-copy-row').style.display=(document.getElementById('wiz-mode').value==='copy')?'':'none';
+}
+async function doCreateRota(){
+  const mode=document.getElementById('wiz-mode').value;
+  const start=document.getElementById('wiz-start').value;
+  if(!start){ showToast('Pick a start date',true); return; }
+  const mon=isoDate(toWeekStartDate(new Date(start+'T00:00:00'),0));
+  const name=document.getElementById('wiz-name').value||null;
+  const duration=parseInt(document.getElementById('wiz-duration').value)||7;
+  const budget=document.getElementById('wiz-budget').value!==''?parseFloat(document.getElementById('wiz-budget').value):null;
+  const team=document.getElementById('wiz-team').value||null;
+  const btn=document.getElementById('wiz-create'); btn.disabled=true; btn.textContent='Creating…';
+  try{
+    if(mode==='copy'){
+      const src=document.getElementById('wiz-source').value;
+      if(!src){ showToast('Choose a source rota',true); btn.disabled=false; btn.textContent='Create'; return; }
+      await Wren.api(`/api/rota/week/${mon}/copy-from/${src}`,{method:'POST',body:JSON.stringify({name,duration_days:duration,budget,team_room_id:team?parseInt(team):null})});
+    } else if(mode==='new'){
+      try{ await Wren.api('/api/rota/auto-generate',{method:'POST',body:JSON.stringify({week_start_date:mon})}); }
+      catch(e){ if(!String(e.message).includes('rota_exists')) throw e; }
+      await Wren.api(`/api/rota/week/${mon}/budget`,{method:'POST',body:JSON.stringify({budget,name,duration_days:duration})});
+    } else {
+      await Wren.api(`/api/rota/week/${mon}/budget`,{method:'POST',body:JSON.stringify({budget,name,duration_days:duration})});
+    }
+    document.getElementById('wizard-bg').classList.remove('open');
+    showToast('Rota created'); gotoWeek(mon);
+  }catch(e){ showToast('Create failed: '+e.message,true); }
+  finally{ btn.disabled=false; btn.textContent='Create'; }
+}
+
+// ── Open-shift modal ──
+function fillTimeSelect(id){
+  const sel=document.getElementById(id);
+  if(!sel||sel.options.length) return;
+  let html=''; for(let m=0;m<24*60;m+=5){const hh=String(Math.floor(m/60)).padStart(2,'0');const mm=String(m%60).padStart(2,'0');html+=`<option value="${hh}:${mm}">${hh}:${mm}</option>`;}
+  sel.innerHTML=html;
+}
+function openOpenShiftModal(){
+  if(!weekData||!weekData.week){ showToast('Save/create the rota first',true); return; }
+  fillTimeSelect('os-start'); fillTimeSelect('os-end');
+  const osRoom=document.getElementById('os-room'); osRoom.innerHTML='<option value="">— Any —</option>';
+  for(const r of (weekData.rooms||[])) osRoom.innerHTML+=`<option value="${r.id}">${r.name}</option>`;
+  document.getElementById('os-date').value=weekStart;
+  document.getElementById('os-start').value='09:00'; document.getElementById('os-end').value='17:00';
+  document.getElementById('os-label').value='';
+  document.getElementById('openshift-bg').classList.add('open');
+}
+async function doCreateOpenShift(){
+  const date=document.getElementById('os-date').value;
+  if(!date){ showToast('Pick a date',true); return; }
+  const body={ shift_date:date, planned_start:document.getElementById('os-start').value, planned_end:document.getElementById('os-end').value,
+    room_id:document.getElementById('os-room').value||null, label:document.getElementById('os-label').value||null };
+  try{
+    await Wren.api(`/api/rota/week/${weekStart}/open-shift`,{method:'POST',body:JSON.stringify(body)});
+    document.getElementById('openshift-bg').classList.remove('open');
+    showToast('Open shift posted — eligible staff notified'); await loadWeek();
+  }catch(e){ showToast('Failed: '+e.message,true); }
+}
+
+// ── Set budget ──
+async function setBudgetPrompt(){
+  const cur=weekData&&weekData.week&&weekData.week.budget!=null?weekData.week.budget:'';
+  const v=prompt('Weekly rota budget (£):', cur);
+  if(v===null) return;
+  const budget=v===''?null:parseFloat(v);
+  try{
+    await Wren.api(`/api/rota/week/${weekStart}/budget`,{method:'POST',body:JSON.stringify({budget})});
+    showToast('Budget updated'); await loadWeek();
+  }catch(e){ showToast('Failed: '+e.message,true); }
+}
+
+// ── Helpers ──
+function fmtWeekRange(ws){
+  const a=new Date(ws+'T00:00:00'); const b=new Date(a); b.setDate(b.getDate()+6);
+  return a.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' – '+b.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+function gotoWeek(mon){
+  const thisMon=toWeekStartDate(new Date(),0);
+  const target=new Date(mon+'T00:00:00');
+  weekOffset=Math.round((target-thisMon)/(7*86400000));
+  switchTab('active'); loadWeek();
+}
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

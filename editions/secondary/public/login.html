@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Sign In — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <style>
+    body { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+    /* D: wider box + no inner scroll on staff grid */
+    .login-box { max-width: min(90vw, 860px); padding: 28px 24px; }
+    .staff-grid { max-height: none; overflow-y: visible; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    .staff-select-card { padding: 12px 8px; }
+    .staff-select-role { font-size: .68rem; color: #64748b; margin-top: 2px; }
+  </style>
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="wren-logo">
+        <span class="logo-w">w</span><span class="logo-ren">ren</span>
+        <span class="logo-edition">SECONDARY</span>
+      </div>
+      <p id="org-name">Secondary School</p>
+    </div>
+
+    <!-- Step 1: Select staff -->
+    <div id="step-select">
+      <p style="font-size:.875rem;color:#64748b;text-align:center;margin-bottom:14px">Who are you?</p>
+      <div class="staff-grid" id="staff-grid">
+        <div class="loading-state"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- Step 2: Enter PIN -->
+    <div id="step-pin" style="display:none">
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--c-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:800;margin:0 auto 10px" id="pin-avatar">?</div>
+        <p style="font-weight:700;font-size:1.1rem;color:var(--c-navy)" id="pin-name">Enter your PIN</p>
+      </div>
+
+      <div class="pin-dots" id="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+
+      <div class="pin-pad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key" data-val="back" style="font-size:1rem">⌫</button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key" data-val="cancel" style="font-size:.75rem;color:#64748b">Cancel</button>
+      </div>
+
+      <p id="pin-error" style="color:var(--c-red);text-align:center;font-size:.875rem;margin-top:12px;display:none">Incorrect PIN</p>
+    </div>
+  </div>
+</div>
+
+<script>
+let selectedStaff = null;
+let pin = '';
+const MAX_PIN = 4;
+
+async function loadStaff() {
+  try {
+    const res = await fetch('/api/auth/staff-list');
+    const staff = await res.json();
+    const grid = document.getElementById('staff-grid');
+    if (!staff.length) {
+      grid.innerHTML = '<p style="color:#64748b;font-size:.875rem;text-align:center">No staff found</p>';
+      return;
+    }
+    grid.innerHTML = staff.map(s => {
+      const roleLabel = {'teacher':'Class Teacher','ta':'Teaching Assistant','headteacher':'Headteacher',
+        'deputy_headteacher':'Deputy Head','senco':'SENCO','business_manager':'Business Mgr',
+        'admin':'Admin','practitioner':'Practitioner'}[s.role] || s.role.replace(/_/g,' ');
+      const caption = s.scope_value ? `${roleLabel} · ${s.scope_value}` : roleLabel;
+      return `<div class="staff-select-card" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}">
+        <div class="staff-select-initial">${s.first_name.charAt(0)}${s.last_name.charAt(0)}</div>
+        <div class="staff-select-name">${s.preferred_name || s.first_name} ${s.last_name.charAt(0)}.</div>
+        <div class="staff-select-role">${caption}</div>
+      </div>`;
+    }).join('');
+    grid.querySelectorAll('.staff-select-card').forEach(card => {
+      card.onclick = () => selectStaff(card.dataset.id, card.dataset.name);
+    });
+  } catch(e) {
+    document.getElementById('staff-grid').innerHTML = '<p style="color:var(--c-red)">Failed to load staff</p>';
+  }
+}
+
+function selectStaff(id, name) {
+  selectedStaff = id;
+  document.getElementById('step-select').style.display = 'none';
+  document.getElementById('step-pin').style.display = 'block';
+  const initials = name.split(' ').map(w => w[0]).join('').toUpperCase();
+  document.getElementById('pin-avatar').textContent = initials;
+  document.getElementById('pin-name').textContent = name;
+  pin = '';
+  updateDots();
+}
+
+function updateDots() {
+  document.querySelectorAll('.pin-dot').forEach((dot, i) => {
+    dot.classList.toggle('filled', i < pin.length);
+  });
+}
+
+async function submitPin() {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staff_id: parseInt(selectedStaff), pin })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('pin-error').style.display = 'block';
+      pin = '';
+      updateDots();
+      return;
+    }
+    sessionStorage.setItem('wrenToken', data.token);
+    const adminRoles = ['manager','deputy_manager','headteacher','admin','business_manager'];
+    window.location.href = adminRoles.includes(data.staff?.role) ? '/app/dashboard/today' : '/learning.html';
+  } catch(e) {
+    document.getElementById('pin-error').style.display = 'block';
+    pin = '';
+    updateDots();
+  }
+}
+
+document.querySelectorAll('.pin-key').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const val = btn.dataset.val;
+    document.getElementById('pin-error').style.display = 'none';
+    if (val === 'back') {
+      pin = pin.slice(0, -1);
+      updateDots();
+    } else if (val === 'cancel') {
+      selectedStaff = null;
+      pin = '';
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-select').style.display = 'block';
+    } else if (pin.length < MAX_PIN) {
+      pin += val;
+      updateDots();
+      if (pin.length === MAX_PIN) submitPin();
+    }
+  });
+});
+
+// Keyboard support
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('step-pin').style.display === 'none') return;
+  if (e.key >= '0' && e.key <= '9') {
+    const btn = document.querySelector(`.pin-key[data-val="${e.key}"]`);
+    if (btn) btn.click();
+  } else if (e.key === 'Backspace') {
+    document.querySelector('.pin-key[data-val="back"]').click();
+  } else if (e.key === 'Escape') {
+    document.querySelector('.pin-key[data-val="cancel"]').click();
+  }
+});
+
+// Auto-login via ?autoRole= (from landing page role tiles)
+(async function tryAutoRole() {
+  const autoRole = new URLSearchParams(location.search).get('autoRole');
+  if (!autoRole) return;
+  try {
+    const res = await fetch('/api/auth/demo-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: autoRole })
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    sessionStorage.setItem('wrenToken', data.token);
+    sessionStorage.setItem('wren_token', data.token);
+    window.location.replace(data.redirect || '/learning.html');
+  } catch(e) { /* fall through to normal login */ }
+})();
+
+// Check if already logged in
+if (sessionStorage.getItem('wrenToken')) {
+  window.location.href = '/learning.html';
+} else {
+  loadStaff();
+
+  // Load edition name
+  fetch('/api/edition').then(r => r.json()).then(d => {
+    if (d.demo) {
+      const demoEl = document.createElement('div');
+      demoEl.style.cssText = 'text-align:center;margin-top:12px';
+      demoEl.innerHTML = '<span class="badge badge-orange">Demo Mode — PIN: 1234</span>';
+      document.querySelector('.login-box').appendChild(demoEl);
+    }
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Direct Debit Setup — Your Nursery</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@600;700&family=Nunito:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#2d5a4a;--green-d:#1e3d31;--cream:#fefcf8;--cream-d:#f5f0e8;
+  --text:#2a2a2a;--text-m:#5a5a5a;--border:#e8e0d0;--orange:#f0a050;
+}
+body{font-family:'Nunito',system-ui,Arial,sans-serif;background:var(--cream);color:var(--text);line-height:1.6}
+h1,h2,h3{font-family:'Crimson Pro',Georgia,serif}
+.nav{background:var(--green);position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:0 20px;height:60px}
+.nav-logo img{height:40px;display:block}
+.nav-link{color:rgba(255,255,255,.8);font-size:.9rem;font-weight:600;padding:6px 14px;border-radius:6px;transition:.15s}
+.nav-link:hover{background:rgba(255,255,255,.1);color:#fff}
+.container{max-width:640px;margin:48px auto;padding:0 20px 80px}
+.card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:36px;text-align:center}
+.icon{font-size:3.5rem;margin-bottom:16px}
+.card h2{font-size:2rem;color:var(--green);margin-bottom:10px}
+.card p{color:var(--text-m);font-size:.95rem;margin-bottom:20px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:12px 28px;border-radius:10px;font-size:.95rem;font-weight:700;border:none;cursor:pointer;transition:.15s;text-decoration:none}
+.btn-green{background:var(--green);color:#fff}
+.btn-green:hover{background:var(--green-d)}
+.btn-outline{background:transparent;color:var(--green);border:1.5px solid var(--green)}
+.btn-outline:hover{background:#f0f8f4}
+.spinner{width:32px;height:32px;border:3px solid #e8e0d0;border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:24px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.mandate-box{background:var(--cream-d);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:left;margin:20px 0}
+.mandate-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:.88rem}
+.mandate-row:last-child{border-bottom:none}
+.mandate-row span:first-child{color:var(--text-m)}
+.mandate-row span:last-child{font-weight:600}
+footer{background:var(--green-d);color:rgba(255,255,255,.7);text-align:center;padding:24px 20px;font-size:.82rem;position:fixed;bottom:0;width:100%}
+footer strong{color:#fff}
+</style>
+<script src="/pwa.js" defer></script>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/welcome" class="nav-logo">
+      <img src="/little-angels-logo.png" alt="Your Nursery">
+    </a>
+    <a href="/welcome/payments" class="nav-link">← Back to Payments</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="card" id="main-card">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<footer>
+  <strong>Your Nursery</strong> · 1A Example Lane, London W13 9LU
+</footer>
+
+<script>
+const params = new URLSearchParams(location.search);
+const redirectFlowId = params.get('redirect_flow_id');
+
+async function init() {
+  const card = document.getElementById('main-card');
+
+  if (!redirectFlowId) {
+    // Not a return from GC — show mandate management
+    await showMandates(card);
+    return;
+  }
+
+  // Completing a redirect flow returned from GoCardless
+  card.innerHTML = `<div class="icon">⏳</div><h2>Completing setup…</h2><p>Please wait while we confirm your Direct Debit.</p>`;
+
+  try {
+    const r = await fetch('/api/payments/gocardless/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ redirect_flow_id: redirectFlowId }),
+    });
+    const data = await r.json();
+
+    if (!r.ok) throw new Error(data.error || 'Failed to complete setup');
+
+    history.replaceState({}, '', '/welcome/dd-setup');
+    card.innerHTML = `
+      <div class="icon">✅</div>
+      <h2>Direct Debit set up!</h2>
+      <p>Your Direct Debit mandate is now active. Monthly nursery fees will be collected automatically on the due date.</p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:8px">
+        <a href="/welcome/payments" class="btn btn-green">Back to payments</a>
+      </div>`;
+  } catch(e) {
+    card.innerHTML = `
+      <div class="icon">❌</div>
+      <h2>Setup incomplete</h2>
+      <p>There was a problem: ${e.message}</p>
+      <a href="/welcome/payments" class="btn btn-outline" style="margin-top:8px">Try again</a>`;
+  }
+}
+
+async function showMandates(card) {
+  try {
+    const r = await fetch('/api/payments/mandates');
+    const { mandates } = await r.json();
+    const active = mandates.filter(m => m.status === 'active');
+
+    if (!active.length) {
+      card.innerHTML = `
+        <div class="icon">🏦</div>
+        <h2>No active Direct Debit</h2>
+        <p>You don't have an active Direct Debit mandate. Set one up to pay monthly fees automatically.</p>
+        <button class="btn btn-green" data-action="start-dd">Set up Direct Debit</button>`;
+      return;
+    }
+
+    const m = active[0];
+    card.innerHTML = `
+      <div class="icon">✅</div>
+      <h2>Direct Debit active</h2>
+      <div class="mandate-box">
+        ${m.gc_bank_name ? `<div class="mandate-row"><span>Bank</span><span>${esc(m.gc_bank_name)}</span></div>` : ''}
+        ${m.gc_account_number_end ? `<div class="mandate-row"><span>Account ending</span><span>${esc(m.gc_account_number_end)}</span></div>` : ''}
+        ${m.gc_account_holder ? `<div class="mandate-row"><span>Account holder</span><span>${esc(m.gc_account_holder)}</span></div>` : ''}
+        <div class="mandate-row"><span>Status</span><span>Active</span></div>
+        <div class="mandate-row"><span>Set up</span><span>${fmtDate(m.created_at)}</span></div>
+      </div>
+      <p style="font-size:.85rem">To cancel your Direct Debit, contact Your Nursery directly.</p>
+      <a href="/welcome/payments" class="btn btn-outline" style="margin-top:8px">Back to payments</a>`;
+  } catch(e) {
+    card.innerHTML = `
+      <div class="icon">⚠️</div>
+      <h2>Could not load</h2>
+      <p>${e.message}</p>
+      <a href="/welcome/payments" class="btn btn-outline" style="margin-top:8px">Back to payments</a>`;
+  }
+}
+
+async function startNew(btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch('/api/payments/gocardless/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed');
+    window.location.href = data.redirect_url;
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Set up Direct Debit';
+    alert('Could not start: ' + e.message);
+  }
+}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtDate(d){if(!d)return'—';return new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});}
+
+document.getElementById('main-card').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="start-dd"]');
+  if (btn) startNew(btn);
+});
+init();
+</script>
+</body>
+</html>

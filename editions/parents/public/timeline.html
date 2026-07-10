@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Your Nursery — Timeline</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#0f172a;--surface:#1e293b;--border:#2d3748;
+  --blue:#4a9abf;--orange:#e07820;--text:#f1f5f9;--muted:#94a3b8;
+  --green:#22c55e;--danger:#ef4444;
+}
+body{background:var(--navy);color:var(--text);font-family:system-ui,Arial,sans-serif;padding-bottom:72px}
+.topbar{position:sticky;top:0;z-index:200;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
+.topbar .ttl{font-weight:700;font-size:1.05rem}
+.topbar .ttl b{color:var(--blue)} .topbar .ttl i{color:var(--orange);font-style:normal}
+.wrap{max-width:680px;margin:0 auto;padding:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:14px;position:relative}
+.card.obs{border-left:3px solid var(--green)}
+.card.diary{border-left:3px solid var(--blue)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.date{font-size:.82rem;color:var(--muted);font-weight:600}
+.kind{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;font-weight:700;padding:2px 8px;border-radius:5px}
+.kind.diary{background:rgba(74,154,191,.16);color:var(--blue)}
+.kind.obs{background:rgba(34,197,94,.16);color:var(--green)}
+.badge-live{background:rgba(224,120,32,.16);color:var(--orange);font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:5px}
+.ttl2{font-weight:700;font-size:1rem;margin:2px 0 6px}
+.label{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:8px}
+.content{font-size:.88rem;line-height:1.6;margin-top:3px;white-space:pre-wrap}
+.mood{font-size:1.4rem}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font-size:.72rem;background:rgba(74,154,191,.12);color:var(--blue);border:1px solid rgba(74,154,191,.3);border-radius:20px;padding:3px 10px}
+.by{font-size:.76rem;color:var(--muted);margin-top:8px}
+.photo-strip{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.photo-thumb{width:84px;height:84px;object-fit:cover;border-radius:10px;cursor:pointer;background:#0b1220}
+.more-photos-badge{width:84px;height:84px;border-radius:10px;background:#0b1220;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.8rem;color:var(--muted);cursor:pointer}
+.empty{text-align:center;padding:50px 20px;color:var(--muted)}
+.empty .icon{font-size:2.2rem;display:block;margin-bottom:10px}
+.load-more-btn{display:block;width:100%;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:.9rem;cursor:pointer;margin-bottom:14px}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:200}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 0;color:var(--muted);text-decoration:none;font-size:.68rem}
+.nav-btn span:first-child{font-size:1.15rem}
+.nav-btn.active{color:var(--blue)}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:500;flex-direction:column;gap:14px;padding:20px}
+.lightbox.open{display:flex}
+.lightbox img{max-width:100%;max-height:80vh;border-radius:10px}
+.lightbox a{color:var(--blue);font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="ttl"><b>Your Nursery</b> <i>Timeline</i></div>
+  <a href="/messages.html" style="color:#94a3b8;font-size:20px;text-decoration:none">💬</a>
+</div>
+
+<div class="wrap"><div id="content"><div class="empty"><span class="icon">⏳</span>Loading your child's timeline…</div></div></div>
+
+<div class="lightbox" id="lightbox">
+  <img id="lbImg" src="" alt="">
+  <a id="lbDownload" href="" download>Download photo</a>
+</div>
+
+<nav class="bottom-nav">
+  <a href="/timeline.html" class="nav-btn active"><span>📰</span><span>Timeline</span></a>
+  <a href="/diary.html" class="nav-btn"><span>📖</span><span>Diary</span></a>
+  <a href="/learning.html" class="nav-btn"><span>🌱</span><span>Learning</span></a>
+  <a href="/menu.html" class="nav-btn"><span>🍽️</span><span>Menu</span></a>
+  <a href="/reports.html" class="nav-btn"><span>📊</span><span>Reports</span></a>
+</nav>
+
+<script>
+const PAGE_SIZE = 10;
+let items = [], shown = 0, TOKEN, childId;
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function api(url, opts={}){
+  opts.headers = {...(opts.headers||{}),'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'};
+  return fetch(url, opts).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
+}
+const MOOD = {happy:'😊',brilliant:'⭐',okay:'😐',unsettled:'😟',tired:'😴',excited:'🤩',calm:'😌',sad:'😢'};
+function fmtDate(d){ const dt=new Date(d); if(isNaN(dt)) return String(d||''); return dt.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}); }
+function arr(v){ return Array.isArray(v)?v:[]; }
+
+function photoStrip(photos){
+  photos = arr(photos); if(!photos.length) return '';
+  let h = '<div class="label">Photos</div><div class="photo-strip">';
+  photos.slice(0,3).forEach(u => h += `<img class="photo-thumb" src="${esc(u)}" loading="lazy" alt="" data-url="${esc(u)}">`);
+  if(photos.length>3) h += `<div class="more-photos-badge" data-url="${esc(photos[3])}">+${photos.length-3}</div>`;
+  return h + '</div>';
+}
+
+function renderDiary(it){
+  let h = `<div class="card diary"><div class="row"><span class="date">${esc(fmtDate(it.at))}</span><span>`;
+  h += `<span class="kind diary">Daily diary</span>${it.finalised ? '' : ' <span class="badge-live">● Live — updating</span>'}</span></div>`;
+  if(it.mood) h += `<div class="row" style="justify-content:flex-start;gap:8px"><span class="mood">${MOOD[String(it.mood).toLowerCase()]||'😊'}</span><span style="font-size:.9rem;text-transform:capitalize">${esc(it.mood)}</span></div>`;
+  const meals = it.meals || it.lunch;
+  if(meals) h += `<div class="label">Meals</div><div class="content">${esc(typeof meals==='string'?meals:JSON.stringify(meals))}</div>`;
+  const sleep = it.naps || (it.sleep_from ? `${esc(it.sleep_from)}–${esc(it.sleep_to||'')}` : '');
+  if(sleep) h += `<div class="label">Rest &amp; naps</div><div class="content">${esc(sleep)}</div>`;
+  if(it.nappy) h += `<div class="label">Nappies</div><div class="content">${esc(it.nappy)}${it.nappy_time?(' · '+esc(it.nappy_time)):''}</div>`;
+  if(it.milk_amount_ml) h += `<div class="label">Milk</div><div class="content">${esc(it.milk_amount_ml)} ml${it.milk_time?(' · '+esc(it.milk_time)):''}</div>`;
+  if(it.activities) h += `<div class="label">Activities</div><div class="content">${esc(it.activities)}</div>`;
+  if(it.notes) h += `<div class="label">Notes from your key person</div><div class="content">${esc(it.notes)}</div>`;
+  h += photoStrip(it.photo_urls);
+  return h + '</div>';
+}
+
+function renderObs(it){
+  let h = `<div class="card obs"><div class="row"><span class="date">${esc(fmtDate(it.at))}</span><span class="kind obs">Observation</span></div>`;
+  if(it.title) h += `<div class="ttl2">${esc(it.title)}</div>`;
+  if(it.text) h += `<div class="content">${esc(it.text)}</div>`;
+  const areas = arr(it.eyfs_areas);
+  if(areas.length) h += `<div class="chips">${areas.map(a=>`<span class="chip">${esc(a)}</span>`).join('')}</div>`;
+  h += photoStrip(it.photo_urls);
+  if(it.staff) h += `<div class="by">— ${esc(it.staff)}</div>`;
+  return h + '</div>';
+}
+
+function render(){
+  const c = document.getElementById('content');
+  if(!items.length){ c.innerHTML = `<div class="empty"><span class="icon">📰</span>No updates shared yet.<br><span style="font-size:.85rem">Your key person will post your child's diary and observations here.</span></div>`; return; }
+  let h = items.slice(0,shown).map(it => it.kind==='diary' ? renderDiary(it) : renderObs(it)).join('');
+  if(shown < items.length) h += `<button class="load-more-btn" data-more="1">Load more</button>`;
+  c.innerHTML = h;
+}
+
+document.addEventListener('click', e => {
+  const ph = e.target.closest('[data-url]');
+  if(ph){ document.getElementById('lbImg').src = ph.dataset.url; document.getElementById('lbDownload').href = ph.dataset.url; document.getElementById('lightbox').classList.add('open'); return; }
+  if(e.target.closest('[data-more]')){ shown = Math.min(shown+PAGE_SIZE, items.length); render(); return; }
+  if(e.target.id === 'lightbox'){ e.target.classList.remove('open'); }
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+  TOKEN = localStorage.getItem('wren_parent_token');
+  if(!TOKEN){ location.replace('/login.html'); return; }
+  try {
+    const p = JSON.parse(atob(TOKEN.split('.')[1]));
+    childId = p.child_id;
+    if(p.exp*1000 < Date.now()){ location.replace('/login.html'); return; }
+  } catch(e){ location.replace('/login.html'); return; }
+  try {
+    items = await api('/api/parents/child/' + childId + '/timeline');
+    shown = Math.min(PAGE_SIZE, items.length);
+    render();
+  } catch(e){
+    document.getElementById('content').innerHTML = `<div class="empty"><span class="icon">⚠️</span>Couldn't load the timeline. Pull down to refresh.</div>`;
+  }
+});
+</script>
+</body>
+</html>

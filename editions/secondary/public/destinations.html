@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="secondary">
+<title>Y11 Destinations — Wren Secondary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.dest-hero{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-bottom:26px}
+.dest-tile{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:18px;text-align:center}
+.dest-tile .dt-label{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin-bottom:8px}
+.dest-tile .dt-val{font-size:2.1rem;font-weight:900;line-height:1}
+.dest-tile .dt-sub{font-size:.72rem;color:var(--c-muted);margin-top:4px}
+.dest-table{width:100%;border-collapse:collapse}
+.dest-table th{font-size:.66rem;font-weight:700;text-transform:uppercase;color:var(--c-muted);padding:9px 10px;border-bottom:2px solid var(--c-border);text-align:left}
+.dest-table td{font-size:.84rem;color:var(--c-text);padding:10px;border-bottom:1px solid rgba(45,55,72,.4)}
+.dest-table tr:hover td{background:rgba(255,255,255,.02)}
+.dest-table tr:last-child td{border-bottom:none}
+.dchip{display:inline-block;padding:3px 10px;border-radius:8px;font-size:.74rem;font-weight:700;white-space:nowrap}
+.d-sixth_form{background:rgba(34,197,94,.15);color:#22c55e}
+.d-fe_college{background:rgba(74,154,191,.15);color:#4a9abf}
+.d-apprenticeship{background:rgba(224,120,32,.16);color:#e07820}
+.d-employment{background:rgba(245,158,11,.15);color:#f59e0b}
+.d-neet,.d-unknown{background:rgba(239,68,68,.15);color:#ef4444}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
+.filter-row select,.filter-row input{padding:8px 12px;border-radius:10px;border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text);font-family:inherit;font-size:.85rem}
+.card-panel{background:var(--c-surface);border:1px solid var(--c-border);border-radius:16px;padding:20px;margin-bottom:24px}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-head h2{font-size:1rem;font-weight:700;margin:0}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Y11 Destinations</div>
+      <div class="page-subtitle">Post-16 destination tracking · 2025–26</div>
+    </div>
+  </div>
+
+  <div id="dest-summary" class="dest-hero"></div>
+
+  <div class="card-panel">
+    <div class="section-head"><h2>Leavers</h2></div>
+    <div class="filter-row">
+      <input id="dest-search" type="text" placeholder="Search name…" oninput="renderRows()">
+      <select id="dest-filter" onchange="renderRows()">
+        <option value="">All destinations</option>
+        <option value="sixth_form">Sixth form</option>
+        <option value="fe_college">FE college</option>
+        <option value="apprenticeship">Apprenticeship</option>
+        <option value="employment">Employment</option>
+        <option value="neet">NEET</option>
+        <option value="unknown">Unknown</option>
+      </select>
+    </div>
+    <div id="dest-table-wrap"><div class="empty-state">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+const DEST_LABELS = {
+  sixth_form: 'Sixth form', fe_college: 'FE college', apprenticeship: 'Apprenticeship',
+  employment: 'Employment', neet: 'NEET', unknown: 'Unknown'
+};
+let DEST_ROWS = [];
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function destChip(d){
+  const key = (d||'unknown').toLowerCase();
+  const label = DEST_LABELS[key] || (d||'Unknown');
+  return `<span class="dchip d-${esc(key)}">${esc(label)}</span>`;
+}
+
+document.addEventListener('wren:ready', loadDestinations);
+
+async function loadDestinations(){
+  try {
+    DEST_ROWS = await Wren.api('/api/secondary-student/destinations');
+    if (!Array.isArray(DEST_ROWS)) DEST_ROWS = [];
+    renderSummary();
+    renderRows();
+  } catch(e) {
+    document.getElementById('dest-table-wrap').innerHTML =
+      `<div class="empty-state">Could not load destinations: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderSummary(){
+  const total = DEST_ROWS.length;
+  const counts = {};
+  DEST_ROWS.forEach(r => { const k=(r.destination||'unknown').toLowerCase(); counts[k]=(counts[k]||0)+1; });
+  const sustained = total ? Math.round(((total - (counts.neet||0) - (counts.unknown||0)) / total) * 100) : 0;
+  const tiles = [
+    { label: 'Leavers tracked', val: total, sub: 'Year 11' },
+    { label: 'Sustained', val: sustained + '%', sub: 'in education/employment' },
+    { label: 'Sixth form', val: counts.sixth_form||0, sub: 'continuing A-levels' },
+    { label: 'FE college', val: counts.fe_college||0, sub: 'vocational/BTEC' },
+    { label: 'Apprenticeship', val: counts.apprenticeship||0, sub: '' },
+    { label: 'NEET / unknown', val: (counts.neet||0)+(counts.unknown||0), sub: 'needs follow-up' },
+  ];
+  document.getElementById('dest-summary').innerHTML = tiles.map(t => `
+    <div class="dest-tile">
+      <div class="dt-label">${esc(t.label)}</div>
+      <div class="dt-val">${esc(t.val)}</div>
+      <div class="dt-sub">${esc(t.sub)}</div>
+    </div>`).join('');
+}
+
+function renderRows(){
+  const q = (document.getElementById('dest-search').value||'').toLowerCase().trim();
+  const f = document.getElementById('dest-filter').value;
+  let rows = DEST_ROWS.slice();
+  if (f) rows = rows.filter(r => (r.destination||'').toLowerCase() === f);
+  if (q) rows = rows.filter(r => `${r.first_name||''} ${r.last_name||''}`.toLowerCase().includes(q));
+  rows.sort((a,b) => (a.last_name||'').localeCompare(b.last_name||''));
+
+  const wrap = document.getElementById('dest-table-wrap');
+  if (!rows.length){ wrap.innerHTML = '<div class="empty-state">No matching leavers.</div>'; return; }
+  wrap.innerHTML = `
+    <table class="dest-table">
+      <thead><tr>
+        <th>Student</th><th>Form</th><th>Destination</th><th>Institution</th><th>Notes</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td><strong>${esc(r.first_name)} ${esc(r.last_name)}</strong></td>
+            <td>${esc(r.form_group||'—')}</td>
+            <td>${destChip(r.destination)}</td>
+            <td>${esc(r.institution||'—')}</td>
+            <td style="color:var(--c-muted)">${esc(r.notes||'')}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+</script>
+</body>
+</html>

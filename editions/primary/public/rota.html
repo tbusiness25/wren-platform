@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="primary">
+<title>Rota — Wren Primary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.rota-page { display:flex; flex-direction:column; gap:16px; }
+
+.rota-toolbar {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+.week-nav {
+  display:flex; align-items:center; gap:6px;
+  background:var(--c-surface); border:1px solid var(--c-border);
+  border-radius:10px; padding:6px 12px; }
+.week-label {
+  font-size:.9rem; font-weight:700; color:var(--c-text);
+  min-width:200px; text-align:center; }
+.nav-btn {
+  background:none; border:1px solid var(--c-border); color:var(--c-muted);
+  border-radius:7px; padding:4px 10px; cursor:pointer; font-size:1rem;
+  transition:all .15s; }
+.nav-btn:hover { border-color:var(--c-blue); color:var(--c-blue); }
+
+.status-pill {
+  font-size:.7rem; font-weight:700; padding:3px 10px; border-radius:6px;
+  text-transform:uppercase; letter-spacing:.05em; }
+.status-pill.draft     { background:rgba(245,158,11,.15); color:#f59e0b; }
+.status-pill.published { background:rgba(34,197,94,.15);  color:#22c55e; }
+.status-pill.empty     { background:rgba(100,116,139,.1); color:#64748b; }
+
+/* ── Warnings ─────────────────────────────────────────────────────────────── */
+.warn-box {
+  border-radius:10px; padding:10px 16px; font-size:.82rem; display:none; }
+.warn-box.hard { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.35); }
+.warn-box.soft { background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.3); }
+.warn-box ul { margin:6px 0 0 18px; padding:0; }
+.warn-box li { margin-bottom:3px; }
+
+/* ── Grid wrapper ─────────────────────────────────────────────────────────── */
+.grid-wrap {
+  overflow-x:auto; -webkit-overflow-scrolling:touch;
+  border:1px solid var(--c-border); border-radius:12px; }
+
+.rota-table {
+  border-collapse:collapse; min-width:900px; width:100%; }
+
+.rota-table th, .rota-table td {
+  border:1px solid var(--c-border); }
+
+/* Day header row */
+.th-day {
+  background:var(--c-bg); color:var(--c-muted);
+  font-size:.7rem; font-weight:700; text-transform:uppercase;
+  letter-spacing:.07em; text-align:center; padding:6px 4px;
+  border-bottom:2px solid var(--c-border); }
+.th-day.today { color:var(--c-blue); background:rgba(74,154,191,.05); }
+
+/* Period sub-header */
+.th-period {
+  background:var(--c-surface); color:var(--c-muted);
+  font-size:.65rem; font-weight:600; text-align:center;
+  padding:4px 2px; min-width:76px; white-space:nowrap; }
+
+/* Class label column */
+.td-class {
+  background:var(--c-surface); padding:6px 10px;
+  font-size:.78rem; font-weight:600; white-space:nowrap;
+  position:sticky; left:0; z-index:2; min-width:110px; }
+.td-class .yr { font-size:.65rem; color:var(--c-muted); margin-top:1px; }
+
+/* Rota cell */
+.rc {
+  padding:4px; min-width:76px; min-height:44px; vertical-align:top;
+  cursor:default; transition:background .15s; position:relative; }
+.rc.droppable { cursor:pointer; }
+.rc.droppable:hover { background:rgba(74,154,191,.06); }
+.rc.drag-over { background:rgba(74,154,191,.15) !important;
+  outline:2px dashed var(--c-blue); }
+.rc.conflict-hard { background:rgba(239,68,68,.1); }
+.rc.conflict-soft { background:rgba(245,158,11,.07); }
+
+/* Teacher chip inside a cell */
+.chip {
+  display:flex; align-items:center; gap:4px;
+  border-radius:6px; padding:3px 6px; font-size:.72rem; font-weight:600;
+  cursor:grab; user-select:none; transition:opacity .15s;
+  position:relative; }
+.chip:active { opacity:.6; cursor:grabbing; }
+.chip.lesson    { background:rgba(74,154,191,.18); color:#4a9abf; }
+.chip.specialist{ background:rgba(168,85,247,.18); color:#a855f7; }
+.chip.ppa       { background:rgba(245,158,11,.18); color:#f59e0b; }
+.chip.free      { background:rgba(100,116,139,.12); color:#94a3b8; }
+.chip.cover     { background:rgba(34,197,94,.18); color:#22c55e; }
+.chip.conflict  { outline:2px solid #ef4444; }
+
+.chip-del {
+  display:none; position:absolute; top:-5px; right:-5px;
+  background:#ef4444; color:#fff; border-radius:50%;
+  width:14px; height:14px; font-size:.6rem; font-weight:700;
+  align-items:center; justify-content:center; cursor:pointer;
+  border:none; padding:0; line-height:1; }
+.chip:hover .chip-del { display:flex; }
+
+/* ── Staff palette ────────────────────────────────────────────────────────── */
+.palette {
+  background:var(--c-surface); border:1px solid var(--c-border);
+  border-radius:12px; padding:12px 16px; }
+.palette-title {
+  font-size:.75rem; font-weight:700; color:var(--c-muted);
+  text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
+.palette-chips {
+  display:flex; flex-wrap:wrap; gap:6px; }
+
+.palette-chip {
+  background:var(--c-bg); border:1px solid var(--c-border);
+  border-radius:8px; padding:4px 10px; font-size:.78rem; font-weight:600;
+  cursor:grab; user-select:none; transition:all .15s; white-space:nowrap; }
+.palette-chip:hover { border-color:var(--c-blue); color:var(--c-blue); }
+.palette-chip:active { opacity:.7; cursor:grabbing; }
+.palette-chip.spec { border-color:rgba(168,85,247,.4); color:#a855f7; }
+
+/* Role badges */
+.role-badge {
+  font-size:.6rem; padding:1px 5px; border-radius:4px; margin-left:4px;
+  font-weight:700; text-transform:uppercase; }
+.role-badge.ta { background:rgba(34,197,94,.15); color:#22c55e; }
+.role-badge.cover { background:rgba(245,158,11,.15); color:#f59e0b; }
+
+/* ── Action bar ───────────────────────────────────────────────────────────── */
+.action-bar {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+/* ── Context menu ─────────────────────────────────────────────────────────── */
+.ctx-menu {
+  position:fixed; z-index:9999; background:var(--c-surface);
+  border:1px solid var(--c-border); border-radius:10px;
+  padding:6px 0; min-width:160px; box-shadow:0 8px 24px rgba(0,0,0,.3);
+  display:none; }
+.ctx-item {
+  padding:8px 16px; font-size:.82rem; cursor:pointer; color:var(--c-text);
+  transition:background .1s; }
+.ctx-item:hover { background:var(--c-hover); }
+.ctx-item.danger { color:#ef4444; }
+.ctx-item.sep { border-top:1px solid var(--c-border); margin-top:4px; padding-top:10px; }
+
+/* ── Cover modal ──────────────────────────────────────────────────────────── */
+.modal-bg {
+  position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.55);
+  backdrop-filter:blur(3px); display:none;
+  align-items:center; justify-content:center; padding:16px; }
+.modal-bg.open { display:flex; }
+.modal-box {
+  background:var(--c-bg); border:1px solid var(--c-border); border-radius:16px;
+  width:100%; max-width:560px; max-height:88vh; display:flex;
+  flex-direction:column; overflow:hidden; }
+.modal-head {
+  padding:16px 20px; border-bottom:1px solid var(--c-border);
+  display:flex; align-items:center; justify-content:space-between; }
+.modal-title { font-size:1rem; font-weight:700; }
+.modal-body  { padding:20px; overflow-y:auto; flex:1; }
+.modal-foot  { padding:14px 20px; border-top:1px solid var(--c-border);
+  display:flex; gap:8px; justify-content:flex-end; }
+
+.cover-slot  { margin-bottom:20px; }
+.cover-slot-hd {
+  font-size:.78rem; font-weight:700; color:var(--c-blue);
+  margin-bottom:8px; }
+.cover-candidate {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 12px; background:var(--c-surface); border:1px solid var(--c-border);
+  border-radius:8px; margin-bottom:6px; }
+.cover-name { font-size:.85rem; font-weight:600; }
+.cover-meta { font-size:.72rem; color:var(--c-muted); margin-top:2px; }
+.cover-badge { font-size:.65rem; padding:2px 7px; border-radius:5px;
+  font-weight:700; }
+.cover-badge.match { background:rgba(34,197,94,.15); color:#22c55e; }
+.cover-badge.cover-count { background:rgba(74,154,191,.1); color:#4a9abf; }
+
+/* ── Read-only overlay ────────────────────────────────────────────────────── */
+.read-only-notice {
+  background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.3);
+  border-radius:8px; padding:8px 14px; font-size:.8rem; color:#f59e0b;
+  display:none; }
+.read-only-notice.show { display:block; }
+</style>
+</head>
+<body>
+<div id="wren-content" style="padding:20px">
+<div class="rota-page">
+
+<!-- ── Toolbar ──────────────────────────────────────────────────────────── -->
+<div class="rota-toolbar">
+  <div class="week-nav">
+    <button class="nav-btn" onclick="shiftWeek(-7)" title="Previous week">‹</button>
+    <span class="week-label" id="week-label">Loading...</span>
+    <button class="nav-btn" onclick="shiftWeek(7)" title="Next week">›</button>
+  </div>
+  <button class="btn btn-secondary" onclick="goToday()">Today</button>
+  <span id="status-pill" class="status-pill empty">Empty</span>
+  <div style="flex:1"></div>
+  <button class="btn btn-secondary" id="btn-cover" onclick="openCoverModal()" style="display:none">
+    👤 Cover
+  </button>
+  <button class="btn btn-secondary" id="btn-unlock" onclick="unlockWeek()" style="display:none">
+    🔓 Unlock
+  </button>
+  <button class="btn btn-secondary" id="btn-save" onclick="saveDraft()" style="display:none">
+    💾 Save draft
+  </button>
+  <button class="btn btn-primary"  id="btn-pub"  onclick="publishWeek()" style="display:none">
+    📤 Publish
+  </button>
+</div>
+
+<!-- ── Read-only notice ──────────────────────────────────────────────────── -->
+<div class="read-only-notice" id="ro-notice">
+  Viewing published rota — read only. You can see your own assignments highlighted in blue.
+</div>
+
+<!-- ── Warning panels ───────────────────────────────────────────────────── -->
+<div class="warn-box hard" id="warn-hard">
+  <strong>⛔ Publish blocked</strong> — resolve these conflicts first:
+  <ul id="warn-hard-list"></ul>
+</div>
+<div class="warn-box soft" id="warn-soft">
+  <strong>⚠️ Warnings</strong> — these won't block publishing but should be reviewed:
+  <ul id="warn-soft-list"></ul>
+</div>
+
+<!-- ── Timetable grid ───────────────────────────────────────────────────── -->
+<div class="grid-wrap">
+  <table class="rota-table" id="rota-table">
+    <thead id="rota-head"></thead>
+    <tbody id="rota-body"></tbody>
+  </table>
+</div>
+
+<!-- ── Staff palette ─────────────────────────────────────────────────────── -->
+<div class="palette" id="palette" style="display:none">
+  <div class="palette-title">
+    Staff — drag onto grid  &nbsp;|&nbsp;
+    <span style="color:#4a9abf">■ lesson</span> &nbsp;
+    <span style="color:#f59e0b">■ PPA</span> &nbsp;
+    <span style="color:#a855f7">■ specialist</span> &nbsp;
+    <span style="color:#94a3b8">■ free</span>
+  </div>
+  <div class="palette-chips" id="palette-chips"></div>
+</div>
+
+<!-- ── Action bar ─────────────────────────────────────────────────────────── -->
+<div class="action-bar" id="action-bar" style="display:none">
+  <label style="font-size:.8rem;color:var(--c-muted)">
+    Slot type for next drop:
+  </label>
+  <select id="slot-type-sel" class="fi" style="max-width:160px">
+    <option value="lesson">Lesson</option>
+    <option value="specialist">Specialist</option>
+    <option value="ppa">PPA</option>
+    <option value="free">Free / Admin</option>
+    <option value="cover">Cover</option>
+  </select>
+  <select id="spec-sel" class="fi" style="max-width:180px;display:none">
+    <option value="">— Specialist subject —</option>
+  </select>
+</div>
+
+</div><!-- .rota-page -->
+</div><!-- #wren-content -->
+
+<!-- ── Context menu ───────────────────────────────────────────────────────── -->
+<div class="ctx-menu" id="ctx-menu">
+  <div class="ctx-item" onclick="ctxSetType('lesson')">📖 Lesson</div>
+  <div class="ctx-item" onclick="ctxSetType('specialist')">🎸 Specialist</div>
+  <div class="ctx-item" onclick="ctxSetType('ppa')">📝 PPA</div>
+  <div class="ctx-item" onclick="ctxSetType('free')">☕ Free</div>
+  <div class="ctx-item" onclick="ctxSetType('cover')">🔄 Cover</div>
+  <div class="ctx-item sep danger" onclick="ctxRemove()">✕ Remove</div>
+</div>
+
+<!-- ── Cover modal ───────────────────────────────────────────────────────── -->
+<div class="modal-bg" id="cover-modal" onclick="if(event.target===this)closeCover()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title">👤 Cover Management</div>
+      <button onclick="closeCover()" style="background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--c-muted)">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">
+        <label class="form-label">Absent teacher</label>
+        <select id="cover-staff-sel" class="fi" onchange="loadCoverSuggestions()">
+          <option value="">— Select absent teacher —</option>
+        </select>
+      </div>
+      <div style="margin-bottom:14px">
+        <label class="form-label">Date</label>
+        <input type="date" id="cover-date-in" class="fi" onchange="loadCoverSuggestions()">
+      </div>
+      <div id="cover-results"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeCover()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let currentWeekStart = null;
+let weekData = null;       // full response from /api/primary-rota/week/:date
+let assignments = {};      // key: `${classId}_${slotId}` → assignment obj
+let isManager = false;
+let isPublished = false;
+let myStaffId = null;
+let dragStaffId = null;
+let dragFromCell = null;   // { classId, slotId } if dragging from grid
+let ctxTarget = null;      // { classId, slotId }
+
+const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri'];
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', () => {
+  const u = window.Wren && Wren.user;
+  if (u) {
+    myStaffId = u.id;
+    isManager = ['manager','deputy_manager','headteacher','deputy_headteacher',
+                 'business_manager','admin'].includes(u.role);
+  }
+  currentWeekStart = getMondayOf(new Date());
+  loadWeek();
+
+  // Hide context menu on outside click
+  document.addEventListener('click', () => hideCtx());
+});
+
+function getMondayOf(d) {
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const m = new Date(d);
+  m.setDate(m.getDate() + diff);
+  return m.toISOString().split('T')[0];
+}
+
+function shiftWeek(days) {
+  const d = new Date(currentWeekStart + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  currentWeekStart = d.toISOString().split('T')[0];
+  loadWeek();
+}
+
+function goToday() {
+  currentWeekStart = getMondayOf(new Date());
+  loadWeek();
+}
+
+// ── Load week data ─────────────────────────────────────────────────────────
+async function loadWeek() {
+  document.getElementById('week-label').textContent = formatWeekLabel(currentWeekStart);
+  document.getElementById('rota-body').innerHTML =
+    '<tr><td colspan="99" style="padding:40px;text-align:center;color:var(--c-muted)"><div class="spinner" style="margin:0 auto 10px"></div>Loading...</td></tr>';
+
+  try {
+    weekData = await Wren.api(`/api/primary-rota/week/${currentWeekStart}`);
+    assignments = {};
+
+    // Build assignments map from shifts
+    for (const s of (weekData.shifts || [])) {
+      if (s.class_id) {
+        const key = `${s.class_id}_${s.lesson_slot_id}`;
+        assignments[key] = {
+          staff_id: s.staff_id,
+          staff_name: s.staff_name,
+          slot_type: s.slot_type,
+          specialist_session_id: s.specialist_session_id,
+          specialist_name: s.specialist_name,
+          specialist_colour: s.specialist_colour,
+          room_id: s.room_id
+        };
+      }
+    }
+
+    isPublished = !!(weekData.week && weekData.week.published_at);
+    renderGrid();
+    renderPalette();
+    updateStatusUI();
+    refreshWarnings();
+    populateCoverModal();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('rota-body').innerHTML =
+      `<tr><td colspan="99" style="padding:24px;text-align:center;color:#ef4444">Error loading: ${err.message}</td></tr>`;
+  }
+}
+
+// ── Format helpers ─────────────────────────────────────────────────────────
+function formatWeekLabel(ws) {
+  const d = new Date(ws + 'T00:00:00Z');
+  const end = new Date(ws + 'T00:00:00Z');
+  end.setUTCDate(end.getUTCDate() + 4);
+  const fmt = { day:'numeric', month:'short', timeZone:'UTC' };
+  return `w/c ${d.toLocaleDateString('en-GB', fmt)} – ${end.toLocaleDateString('en-GB', fmt)}`;
+}
+
+function slotDateOf(dayOfWeek) {
+  const d = new Date(currentWeekStart + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + dayOfWeek - 1);
+  return d.toISOString().split('T')[0];
+}
+
+// ── Render grid ────────────────────────────────────────────────────────────
+function renderGrid() {
+  if (!weekData) return;
+  const { classes, lesson_slots } = weekData;
+  if (!classes.length || !lesson_slots.length) {
+    document.getElementById('rota-body').innerHTML =
+      '<tr><td colspan="99" style="padding:32px;text-align:center;color:var(--c-muted)">No classes or lesson slots configured.</td></tr>';
+    return;
+  }
+
+  // Group slots by day
+  const byDay = {};
+  for (const s of lesson_slots) {
+    if (!byDay[s.day_of_week]) byDay[s.day_of_week] = [];
+    byDay[s.day_of_week].push(s);
+  }
+  const days = Object.keys(byDay).map(Number).sort();
+
+  // Today's date for highlighting
+  const today = new Date().toISOString().split('T')[0];
+
+  // ── Header rows ──────────────────────────────────────────────────────────
+  let headHtml = '';
+
+  // Day header
+  headHtml += '<tr>';
+  headHtml += '<th class="th-day" style="text-align:left;padding-left:10px">Class</th>';
+  for (const d of days) {
+    const dateStr = slotDateOf(d);
+    const isToday = dateStr === today;
+    headHtml += `<th class="th-day${isToday ? ' today' : ''}" colspan="${byDay[d].length}">${DAY_NAMES[d-1]}<br><span style="font-weight:400;font-size:.65rem">${fmtDate(dateStr)}</span></th>`;
+  }
+  headHtml += '</tr>';
+
+  // Period sub-header
+  headHtml += '<tr>';
+  headHtml += '<th class="th-period" style="text-align:left;padding-left:10px">—</th>';
+  for (const d of days) {
+    for (const slot of byDay[d]) {
+      const t = String(slot.start_time).substring(0,5);
+      headHtml += `<th class="th-period" data-slot-id="${slot.id}" title="${slot.name} ${t}">${slot.name.replace('Period ','P')}<br><span style="font-size:.6rem;color:var(--c-muted)">${t}</span></th>`;
+    }
+  }
+  headHtml += '</tr>';
+  document.getElementById('rota-head').innerHTML = headHtml;
+
+  // ── Class rows ────────────────────────────────────────────────────────────
+  const yrLabel = yg => yg === 0 ? 'Reception' : `Year ${yg}`;
+  let bodyHtml = '';
+
+  for (const cls of classes) {
+    const isMyClass = myStaffId && cls.teacher_id === myStaffId;
+    bodyHtml += `<tr data-class-id="${cls.id}">`;
+    bodyHtml += `<td class="td-class${isMyClass ? '" style="border-left:3px solid var(--c-blue)' : ''}">
+      <div>${cls.name}</div>
+      <div class="yr">${yrLabel(cls.year_group)}${cls.teacher_name ? ' · ' + cls.teacher_name.split(' ')[1] : ''}</div>
+    </td>`;
+
+    for (const d of days) {
+      for (const slot of byDay[d]) {
+        const key = `${cls.id}_${slot.id}`;
+        const a = assignments[key];
+        const isConflict = false; // populated by refreshWarnings
+        bodyHtml += renderCell(cls.id, slot.id, a, isConflict);
+      }
+    }
+    bodyHtml += '</tr>';
+  }
+
+  document.getElementById('rota-body').innerHTML = bodyHtml;
+}
+
+function renderCell(classId, slotId, a, conflict) {
+  const canEdit = isManager && !isPublished;
+  const key = `${classId}_${slotId}`;
+  const dropAttr = canEdit
+    ? `ondragover="allowDrop(event)" ondrop="dropOnCell(event,${classId},${slotId})" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"`
+    : '';
+  const ctxAttr = canEdit
+    ? `oncontextmenu="showCtx(event,${classId},${slotId})"`
+    : '';
+  const conflictClass = conflict ? ' conflict-hard' : '';
+
+  let chipHtml = '';
+  if (a) {
+    const typeClass = a.slot_type || 'lesson';
+    const label = a.slot_type === 'specialist'
+      ? (a.specialist_name || a.staff_name.split(' ').pop())
+      : a.staff_name ? initials(a.staff_name) : '?';
+    const fullLabel = a.staff_name || '?';
+    const isMyChip = myStaffId && a.staff_id === myStaffId;
+    const conflictChipClass = conflict ? ' conflict' : '';
+    chipHtml = `
+      <div class="chip ${typeClass}${conflictChipClass}${isMyChip ? ' ring' : ''}"
+           draggable="${canEdit}"
+           title="${fullLabel} — ${a.slot_type}"
+           ondragstart="dragFromGrid(event,${classId},${slotId},${a.staff_id})"
+           style="${a.specialist_colour ? 'background:' + a.specialist_colour + '22;color:' + a.specialist_colour : ''}">
+        ${label}
+        ${canEdit ? `<button class="chip-del" onclick="removeAssignment(${classId},${slotId},event)" title="Remove">×</button>` : ''}
+      </div>`;
+  }
+
+  return `<td class="rc${canEdit ? ' droppable' : ''}${conflictClass}"
+             data-key="${key}"
+             ${dropAttr} ${ctxAttr}>
+    ${chipHtml}
+  </td>`;
+}
+
+function initials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(' ');
+  if (parts.length >= 2) return parts[0][0] + '.' + parts[parts.length-1].substring(0,6);
+  return name.substring(0,6);
+}
+
+function fmtDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', timeZone:'UTC' });
+}
+
+// ── Staff palette ──────────────────────────────────────────────────────────
+function renderPalette() {
+  const pal = document.getElementById('palette');
+  const bar = document.getElementById('action-bar');
+  if (!isManager || isPublished) {
+    pal.style.display = 'none';
+    bar.style.display = 'none';
+    return;
+  }
+  pal.style.display = '';
+  bar.style.display = 'flex';
+
+  if (!weekData) return;
+  const { staff, specialist_sessions } = weekData;
+
+  // Populate specialist select
+  const specSel = document.getElementById('spec-sel');
+  specSel.innerHTML = '<option value="">— Specialist subject —</option>';
+  for (const ss of (specialist_sessions || [])) {
+    specSel.innerHTML += `<option value="${ss.id}">${ss.name}</option>`;
+  }
+
+  document.getElementById('slot-type-sel').addEventListener('change', function() {
+    specSel.style.display = this.value === 'specialist' ? '' : 'none';
+  });
+
+  // Build chips
+  const teachers = staff.filter(s => ['teacher','headteacher','deputy_headteacher'].includes(s.role));
+  const specStaff = staff.filter(s => !['teacher','headteacher','deputy_headteacher'].includes(s.role)
+    && ['ta','cover_supervisor'].includes(s.role) === false
+    && s.role !== 'admin');
+  const tas = staff.filter(s => ['ta','cover_supervisor'].includes(s.role));
+
+  let html = '';
+  for (const s of teachers) {
+    html += `<div class="palette-chip" draggable="true"
+               ondragstart="dragFromPalette(event,${s.id},'${escapeAttr(s.first_name+' '+s.last_name)}')"
+               title="${s.first_name} ${s.last_name} (${s.role})">
+      ${s.first_name[0]}. ${s.last_name}
+    </div>`;
+  }
+  for (const s of tas) {
+    const badge = s.role === 'cover_supervisor' ? 'cover' : 'ta';
+    html += `<div class="palette-chip" draggable="true"
+               ondragstart="dragFromPalette(event,${s.id},'${escapeAttr(s.first_name+' '+s.last_name)}')"
+               title="${s.first_name} ${s.last_name} (${s.role})">
+      ${s.first_name[0]}. ${s.last_name}
+      <span class="role-badge ${badge}">${badge}</span>
+    </div>`;
+  }
+
+  document.getElementById('palette-chips').innerHTML = html;
+}
+
+function escapeAttr(str) {
+  return str.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+}
+
+// ── Drag & drop ────────────────────────────────────────────────────────────
+function dragFromPalette(event, staffId, staffName) {
+  dragStaffId = staffId;
+  dragFromCell = null;
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData('text/plain', String(staffId));
+}
+
+function dragFromGrid(event, classId, slotId, staffId) {
+  dragStaffId = staffId;
+  dragFromCell = { classId, slotId };
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', String(staffId));
+}
+
+function allowDrop(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = dragFromCell ? 'move' : 'copy';
+}
+
+function dropOnCell(event, classId, slotId) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over');
+  if (!dragStaffId) return;
+
+  const slotType = document.getElementById('slot-type-sel').value || 'lesson';
+  const specId = slotType === 'specialist'
+    ? (parseInt(document.getElementById('spec-sel').value) || null)
+    : null;
+
+  const staff = weekData.staff.find(s => s.id === dragStaffId);
+  const specSession = specId
+    ? (weekData.specialist_sessions || []).find(ss => ss.id === specId)
+    : null;
+
+  // Remove from source cell if moving
+  if (dragFromCell) {
+    delete assignments[`${dragFromCell.classId}_${dragFromCell.slotId}`];
+  }
+
+  assignments[`${classId}_${slotId}`] = {
+    staff_id: dragStaffId,
+    staff_name: staff ? `${staff.first_name} ${staff.last_name}` : String(dragStaffId),
+    slot_type: slotType,
+    specialist_session_id: specId,
+    specialist_name: specSession ? specSession.name : null,
+    specialist_colour: specSession ? specSession.colour : null,
+    room_id: null
+  };
+
+  dragStaffId = null;
+  dragFromCell = null;
+  rerenderCell(classId, slotId);
+  refreshWarnings();
+}
+
+function rerenderCell(classId, slotId) {
+  const key = `${classId}_${slotId}`;
+  const td = document.querySelector(`td[data-key="${key}"]`);
+  if (!td) return;
+  const a = assignments[key];
+  const conflict = td.classList.contains('conflict-hard');
+  const newTd = document.createElement('td');
+  newTd.outerHTML; // not used
+  td.innerHTML = '';
+  if (a) {
+    const canEdit = isManager && !isPublished;
+    const typeClass = a.slot_type || 'lesson';
+    const label = a.slot_type === 'specialist'
+      ? (a.specialist_name || a.staff_name.split(' ').pop())
+      : initials(a.staff_name);
+    const isMyChip = myStaffId && a.staff_id === myStaffId;
+    td.innerHTML = `
+      <div class="chip ${typeClass}${conflict ? ' conflict' : ''}${isMyChip ? ' ring' : ''}"
+           draggable="${canEdit}"
+           title="${a.staff_name} — ${a.slot_type}"
+           ondragstart="dragFromGrid(event,${classId},${slotId},${a.staff_id})"
+           style="${a.specialist_colour ? 'background:' + a.specialist_colour + '22;color:' + a.specialist_colour : ''}">
+        ${label}
+        ${canEdit ? `<button class="chip-del" onclick="removeAssignment(${classId},${slotId},event)" title="Remove">×</button>` : ''}
+      </div>`;
+  }
+}
+
+function removeAssignment(classId, slotId, event) {
+  event.stopPropagation();
+  event.preventDefault();
+  delete assignments[`${classId}_${slotId}`];
+  rerenderCell(classId, slotId);
+  refreshWarnings();
+}
+
+// ── Context menu ───────────────────────────────────────────────────────────
+function showCtx(event, classId, slotId) {
+  event.preventDefault();
+  ctxTarget = { classId, slotId };
+  const menu = document.getElementById('ctx-menu');
+  menu.style.left = event.clientX + 'px';
+  menu.style.top  = event.clientY + 'px';
+  menu.style.display = 'block';
+}
+
+function hideCtx() {
+  document.getElementById('ctx-menu').style.display = 'none';
+}
+
+function ctxSetType(type) {
+  if (!ctxTarget) return;
+  const { classId, slotId } = ctxTarget;
+  const a = assignments[`${classId}_${slotId}`];
+  if (!a) return hideCtx();
+  a.slot_type = type;
+  if (type !== 'specialist') {
+    a.specialist_session_id = null;
+    a.specialist_name = null;
+    a.specialist_colour = null;
+  }
+  rerenderCell(classId, slotId);
+  refreshWarnings();
+  hideCtx();
+}
+
+function ctxRemove() {
+  if (!ctxTarget) return;
+  removeAssignment(ctxTarget.classId, ctxTarget.slotId, { stopPropagation(){}, preventDefault(){} });
+  hideCtx();
+}
+
+// ── Status UI ──────────────────────────────────────────────────────────────
+function updateStatusUI() {
+  const pill   = document.getElementById('status-pill');
+  const btnSave  = document.getElementById('btn-save');
+  const btnPub   = document.getElementById('btn-pub');
+  const btnUnlock= document.getElementById('btn-unlock');
+  const btnCover = document.getElementById('btn-cover');
+  const roNotice = document.getElementById('ro-notice');
+
+  if (!weekData || !weekData.week) {
+    pill.className = 'status-pill empty';
+    pill.textContent = 'Empty';
+    btnSave.style.display  = isManager ? '' : 'none';
+    btnPub.style.display   = isManager ? '' : 'none';
+    btnUnlock.style.display = 'none';
+    btnCover.style.display = 'none';
+    roNotice.classList.remove('show');
+  } else if (isPublished) {
+    pill.className = 'status-pill published';
+    pill.textContent = 'Published';
+    btnSave.style.display  = 'none';
+    btnPub.style.display   = 'none';
+    btnUnlock.style.display = isManager ? '' : 'none';
+    btnCover.style.display = isManager ? '' : 'none';
+    roNotice.classList.toggle('show', !isManager);
+  } else {
+    pill.className = 'status-pill draft';
+    pill.textContent = 'Draft';
+    btnSave.style.display  = isManager ? '' : 'none';
+    btnPub.style.display   = isManager ? '' : 'none';
+    btnUnlock.style.display = 'none';
+    btnCover.style.display = isManager ? '' : 'none';
+    roNotice.classList.remove('show');
+  }
+}
+
+// ── Conflict display ───────────────────────────────────────────────────────
+function refreshWarnings() {
+  // Build conflicts from in-memory assignments
+  const hard = [];
+  const soft = [];
+
+  if (!weekData) return;
+  const { lesson_slots, classes } = weekData;
+
+  // Check teacher double-booking across all cells
+  const staffPerSlot = {};
+  for (const [key, a] of Object.entries(assignments)) {
+    const [classId, slotId] = key.split('_').map(Number);
+    if (!staffPerSlot[slotId]) staffPerSlot[slotId] = {};
+    if (a.staff_id) {
+      if (staffPerSlot[slotId][a.staff_id]) {
+        const slot = lesson_slots.find(s => s.id === slotId);
+        hard.push(`Teacher double-booked: day ${slot ? slot.day_of_week : '?'} ${slot ? slot.name : slotId}`);
+        // Mark both cells
+        document.querySelectorAll(`td[data-key$="_${slotId}"]`).forEach(td => {
+          td.classList.add('conflict-hard');
+          const chip = td.querySelector('.chip');
+          if (chip && chip.dataset && parseInt(chip.parentElement.parentElement.dataset.classId)) {
+            // find the staff chip
+          }
+        });
+      }
+      staffPerSlot[slotId][a.staff_id] = (staffPerSlot[slotId][a.staff_id] || 0) + 1;
+    }
+  }
+
+  // PPA per teacher (class teachers only)
+  if (weekData.staff) {
+    const teachers = weekData.staff.filter(s => s.role === 'teacher');
+    const ppaCounts = {};
+    const lessonCounts = {};
+    for (const [key, a] of Object.entries(assignments)) {
+      if (!ppaCounts[a.staff_id]) ppaCounts[a.staff_id] = 0;
+      if (!lessonCounts[a.staff_id]) lessonCounts[a.staff_id] = 0;
+      if (a.slot_type === 'ppa') ppaCounts[a.staff_id]++;
+      if (a.slot_type === 'lesson') lessonCounts[a.staff_id]++;
+    }
+    for (const t of teachers) {
+      const ppa = ppaCounts[t.id] || 0;
+      const lessons = lessonCounts[t.id] || 0;
+      if (lessons > 0 && ppa < 2) {
+        soft.push(`${t.first_name} ${t.last_name} has only ${ppa} PPA period${ppa===1?'':'s'} (minimum 2)`);
+      }
+    }
+  }
+
+  const hardBox = document.getElementById('warn-hard');
+  const softBox = document.getElementById('warn-soft');
+  const hardList = document.getElementById('warn-hard-list');
+  const softList = document.getElementById('warn-soft-list');
+
+  if (hard.length) {
+    hardList.innerHTML = hard.map(m => `<li>${m}</li>`).join('');
+    hardBox.style.display = '';
+  } else {
+    hardBox.style.display = 'none';
+  }
+
+  if (soft.length) {
+    softList.innerHTML = soft.map(m => `<li>${m}</li>`).join('');
+    softBox.style.display = '';
+  } else {
+    softBox.style.display = 'none';
+  }
+}
+
+// ── Save draft ─────────────────────────────────────────────────────────────
+async function saveDraft() {
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  btn.textContent = '💾 Saving...';
+
+  const shifts = [];
+  for (const [key, a] of Object.entries(assignments)) {
+    const [classId, slotId] = key.split('_').map(Number);
+    shifts.push({
+      staff_id: a.staff_id,
+      lesson_slot_id: slotId,
+      class_id: classId,
+      slot_type: a.slot_type || 'lesson',
+      specialist_session_id: a.specialist_session_id || null,
+      room_id: a.room_id || null
+    });
+  }
+
+  try {
+    const data = await Wren.api(`/api/primary-rota/week/${currentWeekStart}/draft`, {
+      method: 'POST',
+      body: { shifts }
+    });
+    showToast(`Draft saved — ${data.saved} slots`, 'success');
+    await loadWeek();
+  } catch (err) {
+    showToast((err && (err.error || err.message)) || 'Save failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Save draft';
+  }
+}
+
+// ── Publish ────────────────────────────────────────────────────────────────
+async function publishWeek(confirm = false) {
+  const btn = document.getElementById('btn-pub');
+  btn.disabled = true;
+  btn.textContent = '📤 Publishing...';
+
+  try {
+    await Wren.api(`/api/primary-rota/week/${currentWeekStart}/publish`, {
+      method: 'POST',
+      body: { confirm }
+    });
+    showToast('Rota published!', 'success');
+    await loadWeek();
+  } catch (err) {
+    // Wren.api rejects with the parsed JSON body on non-2xx (e.g. 409 conflicts)
+    const data = err || {};
+    if (data.hard && data.hard.length) {
+      showToast('Publish blocked: ' + data.hard[0].message, 'error');
+      displayServerConflicts(data.hard, data.soft);
+      return;
+    }
+    if (data.requires_confirm) {
+      const ok = window.confirm(
+        `Warnings:\n${(data.soft || []).map(w => '• ' + w.message).join('\n')}\n\nPublish anyway?`
+      );
+      if (ok) { btn.disabled = false; btn.textContent = '📤 Publish'; publishWeek(true); }
+      return;
+    }
+    showToast(data.error || data.message || 'Publish failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📤 Publish';
+  }
+}
+
+function displayServerConflicts(hard, soft) {
+  const hardList = document.getElementById('warn-hard-list');
+  const hardBox  = document.getElementById('warn-hard');
+  if (hard.length) {
+    hardList.innerHTML = hard.map(h => `<li>${h.message}</li>`).join('');
+    hardBox.style.display = '';
+  }
+}
+
+// ── Unlock ─────────────────────────────────────────────────────────────────
+async function unlockWeek() {
+  if (!confirm('Unlock this published rota for editing?')) return;
+  try {
+    await Wren.api(`/api/primary-rota/week/${currentWeekStart}/unlock`, { method: 'POST' });
+    showToast('Rota unlocked', 'success');
+    await loadWeek();
+  } catch (err) {
+    showToast((err && (err.error || err.message)) || 'Unlock failed', 'error');
+  }
+}
+
+// ── Cover modal ────────────────────────────────────────────────────────────
+function populateCoverModal() {
+  const sel = document.getElementById('cover-staff-sel');
+  sel.innerHTML = '<option value="">— Select absent teacher —</option>';
+  if (!weekData) return;
+  const teachers = (weekData.staff || []).filter(s => s.role === 'teacher');
+  for (const t of teachers) {
+    sel.innerHTML += `<option value="${t.id}">${t.first_name} ${t.last_name}</option>`;
+  }
+  // Default date = Monday of this week
+  document.getElementById('cover-date-in').value = currentWeekStart;
+}
+
+function openCoverModal() {
+  document.getElementById('cover-modal').classList.add('open');
+  populateCoverModal();
+}
+
+function closeCover() {
+  document.getElementById('cover-modal').classList.remove('open');
+}
+
+async function loadCoverSuggestions() {
+  const staffId = document.getElementById('cover-staff-sel').value;
+  const date    = document.getElementById('cover-date-in').value;
+  const el = document.getElementById('cover-results');
+  if (!staffId || !date) { el.innerHTML = ''; return; }
+
+  el.innerHTML = '<div class="spinner" style="margin:20px auto"></div>';
+  try {
+    const data = await Wren.api(`/api/primary-rota/cover/${date}/${staffId}`);
+
+    if (!data.suggestions.length) {
+      el.innerHTML = '<p style="color:var(--c-muted);font-size:.85rem">No lessons found for this teacher on this date, or no rota draft exists.</p>';
+      return;
+    }
+
+    let html = '';
+    for (const slot of data.suggestions) {
+      html += `<div class="cover-slot">
+        <div class="cover-slot-hd">${slot.slot.name} (${String(slot.slot.start_time).substring(0,5)}) — ${slot.slot.class_name || 'No class'}</div>`;
+      if (!slot.candidates.length) {
+        html += '<p style="color:var(--c-muted);font-size:.82rem">No available cover teachers found for this slot.</p>';
+      }
+      for (const c of slot.candidates) {
+        html += `<div class="cover-candidate">
+          <div>
+            <div class="cover-name">${c.name}</div>
+            <div class="cover-meta">${c.role} · ${c.term_cover_count} cover${c.term_cover_count===1?'':'s'} this term</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${c.year_group_match ? '<span class="cover-badge match">Yr match</span>' : ''}
+            <span class="cover-badge cover-count">${c.term_cover_count} covers</span>
+          </div>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = `<p style="color:#ef4444">${(err && (err.error || err.message)) || 'Failed to load cover suggestions'}</p>`;
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  if (window.Wren && Wren.toast) { Wren.toast(msg, type); return; }
+  // Fallback
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:20px;right:20px;z-index:9999;padding:12px 20px;
+    border-radius:10px;font-size:.88rem;font-weight:600;max-width:340px;
+    background:${type==='error'?'#ef4444':'#22c55e'};color:#fff;`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+</script>
+</body>
+</html>

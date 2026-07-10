@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Children — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">👶 Children Register</div>
+    <button class="btn btn-primary" id="new-child-btn">+ New Child</button>
+  </div>
+
+  <div class="filter-bar">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search" placeholder="Search name, allergies...">
+    </div>
+    <select class="form-control" id="room-filter" style="flex:0 0 160px">
+      <option value="">All Rooms</option>
+    </select>
+  </div>
+
+  <div id="children-area"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<script>
+let allChildren = [];
+let rooms = [];
+
+async function loadData() {
+  try {
+    [allChildren, rooms] = await Promise.all([
+      Wren.api('/api/admin/children'),
+      Wren.api('/api/staff/rooms')
+    ]);
+    const sel = document.getElementById('room-filter');
+    sel.innerHTML = '<option value="">All Rooms</option>';
+    rooms.forEach(r => { const o = document.createElement('option'); o.value=r.id; o.textContent=r.name; sel.appendChild(o); });
+    renderChildren(allChildren);
+  } catch(e) {
+    document.getElementById('children-area').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderChildren(children) {
+  const area = document.getElementById('children-area');
+  if (!children.length) {
+    area.innerHTML = '<div class="empty-state"><div class="empty-icon">👶</div><div class="empty-title">No children found</div></div>';
+    return;
+  }
+  area.innerHTML = `<div class="table-wrapper"><table>
+    <thead><tr>
+      <th>Name</th><th>DOB</th><th>Age</th><th>Room</th><th>Key Person</th>
+      <th>Allergies</th><th>SEN</th><th>Funded Hrs</th><th>Parent Contact</th><th></th>
+    </tr></thead>
+    <tbody>
+      ${children.map(c => {
+        const ageMs = new Date() - new Date(c.date_of_birth);
+        const ageMonths = Math.floor(ageMs / (1000 * 60 * 60 * 24 * 30.44));
+        const ageYears = Math.floor(ageMonths / 12);
+        const ageMo = ageMonths % 12;
+        const ageStr = c.date_of_birth ? (ageYears > 0 ? `${ageYears}y ${ageMo}m` : `${ageMo}m`) : '—';
+        return `<tr>
+          <td><strong>${c.first_name} ${c.last_name}</strong>
+            ${c.allergies ? `<br><span class="badge badge-red" style="font-size:.65rem">⚠ ${c.allergies}</span>` : ''}
+          </td>
+          <td>${c.date_of_birth ? new Date(c.date_of_birth).toLocaleDateString('en-GB') : '—'}</td>
+          <td>${ageStr}</td>
+          <td>${c.room_name || '—'}</td>
+          <td>${c.key_person_name || '—'}</td>
+          <td>${c.allergies || '—'}</td>
+          <td>${c.is_on_sen_register ? `<span style="background:#8b5cf622;color:#8b5cf6;font-size:.65rem;font-weight:700;padding:2px 6px;border-radius:4px">${c.sen_type==='ehcp'?'EHCP':c.sen_type==='send_support'?'K':'Mon.'}</span>` : '—'}</td>
+          <td>${c.funded_hours ? c.funded_hours+'h' : '—'}</td>
+          <td style="font-size:.78rem">${c.parent_1_name || '—'}<br>${c.parent_1_phone || ''}</td>
+          <td><button class="btn btn-sm btn-ghost" data-action="edit-child" data-id="${c.id}">Edit</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+function filterChildren() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const room = document.getElementById('room-filter').value;
+  renderChildren(allChildren.filter(c => {
+    const nameMatch = `${c.first_name} ${c.last_name} ${c.allergies || ''}`.toLowerCase().includes(search);
+    const roomMatch = !room || String(c.room_id) === room;
+    return nameMatch && roomMatch;
+  }));
+}
+
+function newChild() {
+  showChildForm(null);
+}
+
+function editChild(id) {
+  const child = allChildren.find(c => c.id === id);
+  showChildForm(child);
+}
+
+function showChildForm(child) {
+  const isNew = !child;
+  Wren.modal(isNew ? 'New Child' : `Edit — ${child?.first_name} ${child?.last_name}`, `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">First Name *</label>
+        <input class="form-control" id="f-first" value="${child?.first_name||''}"></div>
+      <div class="form-group"><label class="form-label">Last Name *</label>
+        <input class="form-control" id="f-last" value="${child?.last_name||''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date of Birth</label>
+        <input type="date" class="form-control" id="f-dob" value="${child?.date_of_birth?.split('T')[0]||''}"></div>
+      <div class="form-group"><label class="form-label">Room</label>
+        <select class="form-control" id="f-room">
+          <option value="">Select...</option>
+          ${rooms.map(r => `<option value="${r.id}" ${child?.room_id==r.id?'selected':''}>${r.name}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Parent 1 Name</label>
+        <input class="form-control" id="f-p1name" value="${child?.parent_1_name||''}"></div>
+      <div class="form-group"><label class="form-label">Parent 1 Phone</label>
+        <input class="form-control" id="f-p1phone" value="${child?.parent_1_phone||''}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Parent 1 Email</label>
+      <input type="email" class="form-control" id="f-p1email" value="${child?.parent_1_email||''}"></div>
+    <div class="form-group"><label class="form-label">Allergies</label>
+      <input class="form-control" id="f-allergies" value="${child?.allergies||''}" placeholder="None"></div>
+    <div class="form-group"><label class="form-label">Medical Notes</label>
+      <textarea class="form-control" id="f-medical" rows="2">${child?.medical_notes||''}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Funded Hours</label>
+        <input type="number" class="form-control" id="f-funded" value="${child?.funded_hours||0}"></div>
+      <div class="form-group"><label style="display:flex;align-items:center;gap:8px;margin-top:28px">
+        <input type="checkbox" id="f-photo" ${child?.photo_consent?'checked':''}>
+        <span>Photo consent</span></label></div>
+    </div>
+  `, [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      const first_name = document.getElementById('f-first').value.trim();
+      const last_name = document.getElementById('f-last').value.trim();
+      if (!first_name || !last_name) { Wren.toast('Name required', 'warning'); return; }
+      const body = { first_name, last_name,
+        date_of_birth: document.getElementById('f-dob').value || null,
+        room_id: document.getElementById('f-room').value || null,
+        parent_1_name: document.getElementById('f-p1name').value,
+        parent_1_phone: document.getElementById('f-p1phone').value,
+        parent_1_email: document.getElementById('f-p1email').value,
+        allergies: document.getElementById('f-allergies').value,
+        medical_notes: document.getElementById('f-medical').value,
+        funded_hours: document.getElementById('f-funded').value,
+        photo_consent: document.getElementById('f-photo').checked
+      };
+      try {
+        if (isNew) {
+          await Wren.api('/api/children', { method: 'POST', body });
+        } else {
+          await Wren.api(`/api/children/${child.id}`, { method: 'PUT', body });
+        }
+        Wren.toast('Saved ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed to save', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadData();
+  document.getElementById('new-child-btn').addEventListener('click', newChild);
+  document.getElementById('search').addEventListener('input', filterChildren);
+  document.getElementById('room-filter').addEventListener('change', filterChildren);
+  document.getElementById('children-area').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="edit-child"]');
+    if (!btn) return;
+    editChild(parseInt(btn.dataset.id));
+  });
+});
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

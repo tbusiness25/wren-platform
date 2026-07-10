@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="secondary">
+  <title>Incidents — Wren Secondary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🩹 Incidents</div>
+    <button class="btn btn-primary" id="btn-new-incident">+ New Incident</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="open">Open</button>
+    <button class="tab-btn" data-tab="closed">Closed</button>
+    <button class="tab-btn" data-tab="all">All</button>
+  </div>
+
+  <div id="incidents-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+let incidents = [];
+let currentTab = 'open';
+let children = [];
+
+async function loadData() {
+  try {
+    [incidents, children] = await Promise.all([
+      Wren.api('/api/incidents'),
+      Wren.api('/api/children')
+    ]);
+    renderIncidents();
+  } catch(e) {
+    document.getElementById('incidents-area').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  renderIncidents();
+}
+
+function renderIncidents() {
+  const area = document.getElementById('incidents-area');
+  let filtered = incidents;
+  if (currentTab === 'open') filtered = incidents.filter(i => i.status === 'open');
+  else if (currentTab === 'closed') filtered = incidents.filter(i => i.status === 'closed');
+
+  if (!filtered.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🩹</div>
+      <div class="empty-title">No ${currentTab === 'all' ? '' : currentTab} incidents</div>
+    </div>`;
+    return;
+  }
+
+  area.innerHTML = filtered.map(i => `
+    <div class="card" style="margin-bottom:12px;border-left:4px solid ${i.status==='open'?'var(--c-orange)':'var(--c-green)'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700;font-size:1rem;color:var(--c-navy)">${i.child_name}</div>
+          <div style="font-size:.78rem;color:#64748b">
+            ${i.incident_date ? new Date(i.incident_date).toLocaleDateString('en-GB') : ''}
+            ${i.incident_time || ''} · ${i.room_name || ''} · ${i.incident_type || 'Incident'}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge ${i.status==='open'?'badge-amber':'badge-green'}">${i.status}</span>
+          ${i.parent_notified ? '<span class="badge badge-blue">Parent Notified</span>' : ''}
+          <button class="btn btn-sm btn-ghost" data-action="open-detail" data-id="${i.id}">View →</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:.875rem;color:#374151">${i.description || ''}</div>
+      ${i.injury_description ? `<div style="margin-top:6px;font-size:.875rem"><strong>Injury:</strong> ${i.injury_description}</div>` : ''}
+      ${i.first_aid_given ? `<div style="margin-top:4px;font-size:.875rem"><strong>First aid:</strong> ${i.first_aid_given}</div>` : ''}
+      <div style="margin-top:10px;font-size:.78rem;color:#64748b">Reported by: ${i.reporter_name || '—'}</div>
+    </div>
+  `).join('');
+}
+
+function openDetail(id) {
+  const i = incidents.find(x => x.id === id);
+  if (!i) return;
+  Wren.modal(`Incident — ${i.child_name}`, `
+    <div style="display:grid;gap:10px;font-size:.875rem">
+      <div><strong>Date/Time:</strong> ${i.incident_date ? new Date(i.incident_date).toLocaleDateString('en-GB') : ''} ${i.incident_time || ''}</div>
+      <div><strong>Location:</strong> ${i.location || '—'}</div>
+      <div><strong>Type:</strong> ${i.incident_type || '—'}</div>
+      <div><strong>Description:</strong> ${i.description}</div>
+      ${i.injury_description ? `<div><strong>Injury:</strong> ${i.injury_description}</div>` : ''}
+      ${i.first_aid_given ? `<div><strong>First Aid:</strong> ${i.first_aid_given}</div>` : ''}
+      <hr class="divider">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="notified" ${i.parent_notified ? 'checked' : ''}>
+        Parent notified
+      </label>
+      <div style="display:flex;gap:8px">
+        <span class="badge ${i.manager_reviewed ? 'badge-green' : 'badge-grey'}">
+          Manager review: ${i.manager_reviewed ? '✓' : 'Pending'}
+        </span>
+        <span class="badge ${i.status==='open' ? 'badge-amber' : 'badge-green'}">${i.status}</span>
+      </div>
+    </div>
+  `, [
+    { label: 'Mark Reviewed & Close', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/incidents/${id}`, { method: 'PUT', body: {
+          parent_notified: document.getElementById('notified').checked,
+          manager_reviewed: true,
+          status: 'closed'
+        }});
+        Wren.toast('Incident closed ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Save', class: 'btn-ghost', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/incidents/${id}`, { method: 'PUT', body: {
+          parent_notified: document.getElementById('notified').checked
+        }});
+        Wren.toast('Saved ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) {}
+    }},
+    { label: 'Close', class: 'btn-ghost' }
+  ]);
+}
+
+function newIncident() {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Child <span style="color:var(--c-red)">*</span></label>
+      <select class="form-control" id="inc-child">
+        <option value="">Select...</option>
+        ${children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input type="date" class="form-control" id="inc-date" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Time</label>
+        <input type="time" class="form-control" id="inc-time" value="${new Date().toTimeString().slice(0,5)}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-control" id="inc-type">
+          <option value="Fall">Fall / Trip</option>
+          <option value="Bite">Bite (child-on-child)</option>
+          <option value="Allergic Reaction">Allergic Reaction</option>
+          <option value="Illness">Illness</option>
+          <option value="Bump">Bump / Head injury</option>
+          <option value="Scratch">Scratch / Graze</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input class="form-control" id="inc-location" placeholder="e.g. Garden, Hall">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">What happened <span style="color:var(--c-red)">*</span></label>
+      <textarea class="form-control" id="inc-desc" rows="3" placeholder="Describe the incident..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Injury / physical description</label>
+      <textarea class="form-control" id="inc-injury" rows="2" placeholder="e.g. Grazed right knee..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">First aid given</label>
+      <textarea class="form-control" id="inc-aid" rows="2" placeholder="e.g. Cleaned wound, applied plaster..."></textarea>
+    </div>
+  `;
+  Wren.modal('New Incident Report', form, [
+    { label: 'Save Report', class: 'btn-primary', close: false, action: async () => {
+      const child_id = document.getElementById('inc-child').value;
+      const description = document.getElementById('inc-desc').value.trim();
+      if (!child_id || !description) { Wren.toast('Child and description required', 'warning'); return; }
+      try {
+        await Wren.api('/api/incidents', { method: 'POST', body: {
+          child_id: parseInt(child_id),
+          incident_date: document.getElementById('inc-date').value,
+          incident_time: document.getElementById('inc-time').value,
+          incident_type: document.getElementById('inc-type').value,
+          location: document.getElementById('inc-location').value,
+          description,
+          injury_description: document.getElementById('inc-injury').value,
+          first_aid_given: document.getElementById('inc-aid').value
+        }});
+        Wren.toast('Incident recorded ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed to save', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+document.getElementById('btn-new-incident').addEventListener('click', newIncident);
+document.querySelector('.tabs').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-tab]');
+  if (btn) showTab(btn.dataset.tab);
+});
+document.getElementById('incidents-area').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="open-detail"]');
+  if (btn) openDetail(parseInt(btn.dataset.id));
+});
+document.addEventListener('wren:ready', () => { loadData(); });
+</script>
+</body>
+</html>

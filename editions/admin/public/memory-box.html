@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Memory Box — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .child-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;max-height:220px;overflow-y:auto;margin-bottom:12px}
+    .child-btn{padding:10px 12px;background:var(--c-bg);border:2px solid var(--c-border);border-radius:10px;
+               color:var(--c-muted);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+               text-align:left;transition:all .15s;line-height:1.3}
+    .child-btn:hover{border-color:var(--c-blue);color:var(--c-blue)}
+    .child-btn.active{background:rgba(74,154,191,.12);border-color:var(--c-blue);color:var(--c-blue)}
+    .entry-grid{display:grid;gap:12px}
+    .entry-card{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:14px 16px}
+    .entry-card-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+    .milestone-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+    .entry-title{font-weight:700;font-size:14px;margin-bottom:4px}
+    .entry-desc{font-size:13px;color:var(--c-muted);line-height:1.5}
+    .entry-meta{font-size:11px;color:var(--c-muted);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+    .type-first_word{background:rgba(74,154,191,.15);color:var(--c-blue)}
+    .type-first_steps{background:rgba(34,197,94,.12);color:var(--c-green)}
+    .type-favourite{background:rgba(224,120,32,.12);color:var(--c-orange)}
+    .type-drawing{background:rgba(168,85,247,.12);color:#c084fc}
+    .type-milestone{background:rgba(245,158,11,.12);color:var(--c-amber)}
+    .type-everyday_joy{background:rgba(34,197,94,.1);color:#6ee7b7}
+    .type-general{background:rgba(148,163,184,.1);color:var(--c-muted)}
+    .modal-field{margin-bottom:14px}
+    .modal-field label{display:block;font-size:12px;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+    .modal-field input,.modal-field select,.modal-field textarea{
+      width:100%;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;
+      color:var(--c-text);padding:9px 12px;font-size:13px;font-family:inherit;transition:border-color .15s}
+    .modal-field input:focus,.modal-field select:focus,.modal-field textarea:focus{outline:none;border-color:var(--c-blue)}
+    .modal-field textarea{resize:vertical;min-height:80px}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">💝 Memory Box</div>
+      <div class="page-subtitle">Special moments, first words, and milestones</div>
+    </div>
+    <button class="btn btn-primary" id="add-memory-btn">+ Add Memory</button>
+  </div>
+
+  <!-- Child filter -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-label">Filter by Child</div>
+    <input type="text" id="childSearch" class="form-control" placeholder="Search children…" style="margin-bottom:10px">
+    <div class="child-grid" id="childGrid"><div class="spinner"></div></div>
+    <div style="margin-top:8px">
+      <button class="btn btn-ghost btn-sm" id="clear-child-filter-btn">Show all entries</button>
+    </div>
+  </div>
+
+  <!-- Recent entries overview -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="card-label" style="margin:0" id="entriesHeading">Recent Entries</div>
+      <span id="entryCount" style="font-size:12px;color:var(--c-muted)"></span>
+    </div>
+    <div id="entriesList"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+let allChildren = [], selectedChildId = null, allEntries = [];
+
+const $ = id => document.getElementById(id);
+
+function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function fmtDate(d){
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+
+const TYPE_LABELS = {
+  first_word:'First Word',first_steps:'First Steps',favourite:'Favourite Thing',
+  drawing:'Drawing',milestone:'Milestone',everyday_joy:'Everyday Joy',general:'Memory'
+};
+
+async function init() {
+  try {
+    const d = await Wren.api('/api/children');
+    allChildren = d || [];
+    renderChildGrid(allChildren);
+    loadEntries();
+  } catch(e) {
+    $('childGrid').innerHTML = `<div class="alert alert-danger">Failed: ${escH(e.message)}</div>`;
+  }
+}
+
+function renderChildGrid(list) {
+  $('childGrid').innerHTML = list.map(c => {
+    const nm = (c.preferred_name||c.first_name)+' '+c.last_name;
+    return `<button class="child-btn${selectedChildId===c.id?' active':''}" data-action="select-child" data-id="${c.id}">${escH(nm)}</button>`;
+  }).join('') || '<div style="color:var(--c-muted);font-size:13px">No children</div>';
+}
+
+function filterChildren(){
+  const q = $('childSearch').value.toLowerCase();
+  renderChildGrid(allChildren.filter(c=>{
+    const nm=(c.preferred_name||c.first_name)+' '+c.last_name;
+    return nm.toLowerCase().includes(q);
+  }));
+}
+
+function selectChild(id) {
+  selectedChildId = selectedChildId===id ? null : id;
+  renderChildGrid(allChildren.filter(c=>{
+    const q = $('childSearch').value.toLowerCase();
+    const nm=(c.preferred_name||c.first_name)+' '+c.last_name;
+    return !q || nm.toLowerCase().includes(q);
+  }));
+  loadEntries();
+}
+
+function clearChildFilter() {
+  selectedChildId = null;
+  $('childSearch').value = '';
+  renderChildGrid(allChildren);
+  loadEntries();
+}
+
+async function loadEntries() {
+  const url = selectedChildId
+    ? `/api/memory-box?child_id=${selectedChildId}`
+    : '/api/memory-box/recent';
+  try {
+    const d = await Wren.api(url);
+    allEntries = d.entries||[];
+    $('entryCount').textContent = allEntries.length+' entries';
+    const heading = selectedChildId
+      ? (allChildren.find(c=>c.id===selectedChildId)?.first_name||'Child')+"'s Memory Box"
+      : 'Recent Entries';
+    $('entriesHeading').textContent = heading;
+    renderEntries(allEntries);
+  } catch(e) {
+    $('entriesList').innerHTML = `<div class="alert alert-danger">Failed: ${escH(e.message)}</div>`;
+  }
+}
+
+function renderEntries(list) {
+  if (!list.length) {
+    $('entriesList').innerHTML = '<div class="empty-state"><div class="empty-icon">💝</div><div class="empty-title">No memories yet</div><div class="empty-body">Add the first memory entry for this child.</div></div>';
+    return;
+  }
+  $('entriesList').innerHTML = list.map(e => {
+    const typeLabel = TYPE_LABELS[e.milestone_type]||e.milestone_type||'Memory';
+    const typeClass = 'type-'+(e.milestone_type||'general');
+    const shared = e.is_shared_with_parent
+      ? `<span style="color:var(--c-green);font-size:11px">👁 Visible to parents</span>`
+      : `<span style="color:var(--c-muted);font-size:11px">🔒 Staff only</span>`;
+    return `<div class="entry-card">
+      <div class="entry-card-top">
+        <span class="milestone-badge ${typeClass}">${escH(typeLabel)}</span>
+        <span style="font-size:12px;color:var(--c-muted)">${fmtDate(e.happened_on)}</span>
+        ${e.child_name ? `<span class="badge badge-grey" style="font-size:11px">${escH(e.child_name)}</span>` : ''}
+      </div>
+      <div class="entry-title">${escH(e.title)}</div>
+      ${e.description ? `<div class="entry-desc">${escH(e.description)}</div>` : ''}
+      <div class="entry-meta">
+        ${e.added_by_name ? `<span>Added by ${escH(e.added_by_name)}</span>` : ''}
+        ${shared}
+        <button class="btn btn-ghost btn-sm" data-action="delete-entry" data-id="${e.id}" style="padding:2px 8px;font-size:11px;margin-left:auto">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteEntry(id) {
+  if (!confirm('Delete this memory? This cannot be undone.')) return;
+  try {
+    await Wren.api(`/api/memory-box/${id}`,{method:'DELETE'});
+    Wren.toast('Memory deleted','info');
+    loadEntries();
+  } catch(e) {
+    Wren.toast('Delete failed: '+e.message,'error');
+  }
+}
+
+function openAddModal() {
+  const childOpts = allChildren.map(c=>{
+    const nm=(c.preferred_name||c.first_name)+' '+c.last_name;
+    return `<option value="${c.id}"${selectedChildId===c.id?' selected':''}>${escH(nm)}</option>`;
+  }).join('');
+  const today = new Date().toISOString().split('T')[0];
+  Wren.modal('Add Memory', `
+    <div class="modal-field">
+      <label>Child *</label>
+      <select id="mb-child">${childOpts}</select>
+    </div>
+    <div class="modal-field">
+      <label>Title *</label>
+      <input id="mb-title" placeholder="e.g. First word, Favourite teddy…">
+    </div>
+    <div class="modal-field">
+      <label>When did it happen?</label>
+      <input id="mb-date" type="date" value="${today}">
+    </div>
+    <div class="modal-field">
+      <label>Type</label>
+      <select id="mb-type">
+        <option value="milestone">Milestone</option>
+        <option value="first_word">First Word</option>
+        <option value="first_steps">First Steps</option>
+        <option value="favourite">Favourite Thing</option>
+        <option value="drawing">Drawing / Artwork</option>
+        <option value="everyday_joy">Everyday Joy</option>
+        <option value="general">General Memory</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>Description</label>
+      <textarea id="mb-desc" placeholder="Describe the moment…"></textarea>
+    </div>
+    <div class="modal-field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="mb-shared" checked style="width:auto">
+        Share with parents
+      </label>
+    </div>
+  `, [
+    { label: 'Save Memory', class: 'btn-primary', close: true, action: saveEntry },
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+async function saveEntry() {
+  const child_id = parseInt(document.getElementById('mb-child').value);
+  const title = document.getElementById('mb-title').value.trim();
+  const happened_on = document.getElementById('mb-date').value;
+  if (!title || !happened_on) { Wren.toast('Title and date required','warning'); return; }
+  try {
+    await Wren.api('/api/memory-box',{
+      method:'POST',
+      body:{
+        child_id,title,happened_on,
+        description: document.getElementById('mb-desc').value.trim()||null,
+        milestone_type: document.getElementById('mb-type').value||null,
+        is_shared_with_parent: document.getElementById('mb-shared').checked,
+      }
+    });
+    Wren.toast('Memory saved! 💝','success');
+    loadEntries();
+  } catch(e) {
+    Wren.toast('Save failed: '+e.message,'error');
+  }
+}
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('add-memory-btn').addEventListener('click', openAddModal);
+  document.getElementById('clear-child-filter-btn').addEventListener('click', clearChildFilter);
+  document.getElementById('childSearch').addEventListener('input', filterChildren);
+  document.getElementById('childGrid').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="select-child"]');
+    if (btn) selectChild(parseInt(btn.dataset.id));
+  });
+  document.getElementById('entriesList').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="delete-entry"]');
+    if (btn) deleteEntry(parseInt(btn.dataset.id));
+  });
+  init();
+});
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

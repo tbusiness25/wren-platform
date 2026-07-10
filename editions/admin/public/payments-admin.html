@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Payments — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.tab-bar{display:flex;gap:4px;margin-bottom:22px;border-bottom:1px solid #2d3748;padding-bottom:0}
+.tab{padding:8px 18px;border-radius:6px 6px 0 0;font-size:.85rem;font-weight:600;cursor:pointer;color:#94a3b8;border:1px solid transparent;border-bottom:none;position:relative;top:1px}
+.tab.active{background:#0f172a;color:#f1f5f9;border-color:#2d3748;border-bottom-color:#0f172a}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px}
+.stat-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:16px}
+.stat-label{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:4px}
+.stat-value{font-size:1.6rem;font-weight:800;color:#f1f5f9}
+.stat-sub{font-size:.75rem;color:#94a3b8;margin-top:2px}
+.key-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #1e293b}
+.key-row:last-child{border-bottom:none}
+.key-label{flex:1;min-width:0}
+.key-label strong{display:block;font-size:.88rem;color:#f1f5f9}
+.key-label span{font-size:.75rem;color:#94a3b8}
+.key-status{font-size:.75rem;font-weight:700;padding:2px 8px;border-radius:4px}
+.ks-ok{background:#22c55e22;color:#22c55e}
+.ks-missing{background:#ef444422;color:#ef4444}
+.key-input{background:#0f172a;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:7px 10px;font-size:.82rem;font-family:monospace;width:220px}
+.key-input:focus{outline:none;border-color:#4a9abf}
+.payment-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1e293b;border:1px solid #2d3748;border-radius:8px;margin-bottom:6px}
+.method-badge{font-size:.72rem;font-weight:700;padding:2px 7px;border-radius:4px}
+.m-stripe{background:#635bff22;color:#a29cff}
+.m-gocardless{background:#f48c2922;color:#f4a529}
+.m-manual{background:#2d374822;color:#94a3b8}
+.status-badge{font-size:.72rem;font-weight:700;padding:2px 7px;border-radius:4px}
+.s-succeeded{background:#22c55e22;color:#22c55e}
+.s-pending{background:#f59e0b22;color:#f59e0b}
+.s-failed{background:#ef444422;color:#ef4444}
+.s-refunded{background:#8b5cf622;color:#8b5cf6}
+.flag-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1e293b;border:1px solid #f59e0b44;border-radius:8px;margin-bottom:6px}
+.mandate-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1e293b;border:1px solid #2d3748;border-radius:8px;margin-bottom:6px}
+.test-banner{background:#f59e0b22;border:1px solid #f59e0b44;border-radius:8px;padding:10px 16px;font-size:.82rem;color:#f59e0b;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+select.filter{background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:6px 10px;font-size:.82rem}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">Payments</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" id="btn-reconcile-now">Reconcile now</button>
+      <button class="btn btn-primary" id="btn-save-settings">Save settings</button>
+    </div>
+  </div>
+
+  <div id="test-banners"></div>
+
+  <div class="tab-bar">
+    <div class="tab active" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="payments">Payments</div>
+    <div class="tab" data-tab="mandates">Direct Debits</div>
+    <div class="tab" data-tab="settings">Settings</div>
+    <div class="tab" data-tab="reconciliation">Reconciliation</div>
+  </div>
+
+  <!-- Overview -->
+  <div class="tab-panel active" id="tab-overview">
+    <div class="stat-grid" id="stat-grid"><div class="loading-state"><div class="spinner"></div></div></div>
+    <div style="font-size:.75rem;color:#64748b;margin-bottom:16px">Stats for last 30 days</div>
+    <div id="flag-list-brief"></div>
+  </div>
+
+  <!-- Payments list -->
+  <div class="tab-panel" id="tab-payments">
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <select class="filter" id="filter-method">
+        <option value="">All methods</option>
+        <option value="stripe">Stripe (card)</option>
+        <option value="gocardless">GoCardless (DD)</option>
+        <option value="manual">Manual</option>
+      </select>
+      <select class="filter" id="filter-status">
+        <option value="">All statuses</option>
+        <option value="succeeded">Succeeded</option>
+        <option value="pending">Pending</option>
+        <option value="failed">Failed</option>
+      </select>
+    </div>
+    <div id="payment-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- Direct Debits / mandates -->
+  <div class="tab-panel" id="tab-mandates">
+    <div id="mandate-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- Settings -->
+  <div class="tab-panel" id="tab-settings">
+    <div class="card" style="max-width:720px">
+      <div style="font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4a9abf;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #2d3748">Stripe (card payments)</div>
+      <div id="stripe-keys"></div>
+
+      <div style="font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4a9abf;margin-bottom:16px;margin-top:24px;padding-bottom:8px;border-bottom:1px solid #2d3748">GoCardless (Direct Debit)</div>
+      <div id="gc-keys"></div>
+
+      <div style="font-size:.72rem;color:#64748b;margin-top:20px;line-height:1.6">
+        <strong style="color:#94a3b8">Webhook URLs to configure:</strong><br>
+        Stripe: <code>https://ey.example-nursery.co.uk/api/stripe/webhook</code><br>
+        GoCardless: <code>https://ey.example-nursery.co.uk/api/gocardless/webhook</code><br>
+        <em>Ensure Cloudflare Access bypasses these paths for external access.</em>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reconciliation -->
+  <div class="tab-panel" id="tab-reconciliation">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <span style="font-size:.85rem;color:#94a3b8">Unresolved discrepancies found by nightly reconciliation</span>
+      <button class="btn btn-secondary" id="btn-run-reconcile">Run now</button>
+    </div>
+    <div id="flag-list"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmt(p){return'£'+((p||0)/100).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtDate(d){return d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';}
+
+let settings = {};
+let pendingChanges = {};
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const tabs=['overview','payments','mandates','settings','reconciliation'];
+    t.classList.toggle('active', tabs[i]===name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id==='tab-'+name);
+  });
+  if (name==='payments') loadPayments();
+  if (name==='mandates') loadMandates();
+  if (name==='reconciliation') loadFlags();
+}
+
+// ── Load overview ─────────────────────────────────────────────────────────────
+async function loadOverview() {
+  try {
+    const data = await Wren.api('/api/payments-admin/stats');
+    const s = data.stats;
+    const m = data.mandate_stats;
+    document.getElementById('stat-grid').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Total collected (30d)</div>
+        <div class="stat-value">${fmt(s.total_pence)}</div>
+        <div class="stat-sub">${s.total_count} payments</div></div>
+      <div class="stat-card"><div class="stat-label">Stripe (card)</div>
+        <div class="stat-value">${fmt(s.stripe_pence)}</div>
+        <div class="stat-sub">${s.stripe_count} payments</div></div>
+      <div class="stat-card"><div class="stat-label">GoCardless (DD)</div>
+        <div class="stat-value">${fmt(s.gc_pence)}</div>
+        <div class="stat-sub">${s.gc_count} payments</div></div>
+      <div class="stat-card"><div class="stat-label">Pending</div>
+        <div class="stat-value">${s.pending_count}</div>
+        <div class="stat-sub">payments pending</div></div>
+      <div class="stat-card"><div class="stat-label">Failed (30d)</div>
+        <div class="stat-value" style="${+s.failed_count>0?'color:#ef4444':''}">${s.failed_count}</div>
+        <div class="stat-sub">need attention</div></div>
+      <div class="stat-card"><div class="stat-label">Active mandates</div>
+        <div class="stat-value">${m.active_mandates}</div>
+        <div class="stat-sub">${m.pending_mandates} pending</div></div>
+    `;
+    // Brief flags
+    if (data.unresolved_flags.length) {
+      document.getElementById('flag-list-brief').innerHTML = `
+        <div style="font-size:.75rem;font-weight:700;color:#f59e0b;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">
+          ⚠️ ${data.unresolved_flags.length} reconciliation issue(s)
+        </div>
+        ${data.unresolved_flags.slice(0,3).map(f=>`
+          <div class="flag-row">
+            <div style="flex:1;font-size:.82rem">
+              <strong>${esc(f.flag_type.replace(/_/g,' '))}</strong>
+              <span style="color:#94a3b8"> · ${esc(f.provider)}</span>
+            </div>
+            <span style="font-size:.75rem;color:#94a3b8">${fmtDate(f.created_at)}</span>
+          </div>`).join('')}
+        <a data-action="show-reconciliation" style="color:#4a9abf;font-size:.8rem;cursor:pointer">View all →</a>`;
+    }
+  } catch(e) {
+    document.getElementById('stat-grid').innerHTML = `<div class="empty-state">Could not load stats</div>`;
+  }
+}
+
+// ── Load settings ─────────────────────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const data = await Wren.api('/api/payments-admin/settings');
+    settings = data.settings;
+
+    const banners = document.getElementById('test-banners');
+    banners.innerHTML = '';
+    if (data.stripe_test_mode && data.settings.stripe_secret_key?.configured) {
+      banners.innerHTML += '<div class="test-banner">⚠️ <strong>Stripe test mode</strong> — using sk_test_ key. Switch to live key to take real payments.</div>';
+    }
+    if (data.gocardless_test_mode && data.settings.gocardless_access_token?.configured) {
+      banners.innerHTML += '<div class="test-banner">⚠️ <strong>GoCardless sandbox</strong> — set gocardless_env to "live" to take real payments.</div>';
+    }
+
+    document.getElementById('stripe-keys').innerHTML = renderKeyFields([
+      { key: 'stripe_publishable_key',  label: 'Publishable key',   hint: 'Starts with pk_test_ or pk_live_' },
+      { key: 'stripe_secret_key',       label: 'Secret key',        hint: 'Starts with sk_test_ or sk_live_' },
+      { key: 'stripe_webhook_secret',   label: 'Webhook secret',    hint: 'Starts with whsec_' },
+    ]);
+    document.getElementById('gc-keys').innerHTML = renderKeyFields([
+      { key: 'gocardless_access_token',    label: 'Access token',      hint: 'From GoCardless dashboard' },
+      { key: 'gocardless_webhook_secret',  label: 'Webhook secret',    hint: 'From GoCardless webhook settings' },
+      { key: 'gocardless_env',             label: 'Environment',       hint: '"sandbox" or "live"', plain: true },
+    ]);
+  } catch(e) {
+    Wren.toast('Could not load payment settings: ' + e.message, 'error');
+  }
+}
+
+function renderKeyFields(fields) {
+  return fields.map(f => {
+    const s = settings[f.key] || {};
+    const configured = s.configured;
+    return `<div class="key-row">
+      <div class="key-label">
+        <strong>${esc(f.label)}</strong>
+        <span>${esc(f.hint)}</span>
+        ${s.updated_at ? `<span style="font-size:.7rem;color:#475569"> · Updated ${fmtDate(s.updated_at)}</span>` : ''}
+      </div>
+      <span class="key-status ${configured?'ks-ok':'ks-missing'}">${configured?'Set':'Not set'}</span>
+      ${configured ? `<span style="font-family:monospace;font-size:.78rem;color:#94a3b8">${esc(s.masked||'••••')}</span>` : ''}
+      <input class="key-input" type="${f.plain?'text':'password'}" placeholder="${configured?'(leave blank to keep)':'Enter value'}"
+        data-key="${f.key}" >
+    </div>`;
+  }).join('');
+}
+
+async function saveSettings() {
+  if (!Object.keys(pendingChanges).length) {
+    Wren.toast('No changes to save');
+    return;
+  }
+  try {
+    // Remove blank entries (means "keep existing")
+    const payload = {};
+    for (const [k,v] of Object.entries(pendingChanges)) {
+      if (v !== '') payload[k] = v;
+    }
+    if (!Object.keys(payload).length) {
+      Wren.toast('No non-empty changes');
+      return;
+    }
+    await Wren.api('/api/payments-admin/settings', { method:'POST', body: JSON.stringify(payload) });
+    pendingChanges = {};
+    Wren.toast('Settings saved');
+    loadSettings();
+  } catch(e) {
+    Wren.toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+// ── Load payments ─────────────────────────────────────────────────────────────
+async function loadPayments() {
+  const method = document.getElementById('filter-method').value;
+  const status = document.getElementById('filter-status').value;
+  const list = document.getElementById('payment-list');
+  list.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    let url = '/api/payments-admin/list?limit=100';
+    if (method) url += '&method=' + method;
+    if (status) url += '&status=' + status;
+    const { payments } = await Wren.api(url);
+    if (!payments.length) { list.innerHTML='<div class="empty-state">No payments found</div>'; return; }
+    list.innerHTML = payments.map(p => `
+      <div class="payment-row">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600;color:#f1f5f9">${esc(p.child_name||p.bill_payer_email||'—')}</div>
+          <div style="font-size:.73rem;color:#94a3b8">${fmtDate(p.created_at)} · ${esc(p.description||'—')}${p.invoice_ref?' · ref '+esc(p.invoice_ref):''}</div>
+        </div>
+        <div style="font-weight:800;font-size:.95rem">${fmt(p.amount_pence)}</div>
+        <span class="method-badge m-${p.payment_method}">${p.payment_method==='gocardless'?'DD':p.payment_method}</span>
+        <span class="status-badge s-${p.status}">${p.status}</span>
+        ${p.status!=='succeeded'?`<button class="btn btn-secondary" style="font-size:.72rem;padding:4px 9px" data-action="mark-paid" data-id="${p.id}">Mark paid</button>`:''}
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`;
+  }
+}
+
+async function markPaid(id, btn) {
+  if (!confirm('Mark this payment as succeeded?')) return;
+  btn.disabled=true;btn.textContent='…';
+  try {
+    await Wren.api(`/api/payments-admin/payments/${id}/mark-paid`, { method:'POST', body:'{}' });
+    Wren.toast('Marked as paid');
+    loadPayments();
+  } catch(e) {
+    btn.disabled=false;btn.textContent='Mark paid';
+    Wren.toast('Failed: ' + e.message, 'error');
+  }
+}
+
+// ── Load mandates ─────────────────────────────────────────────────────────────
+async function loadMandates() {
+  const list = document.getElementById('mandate-list');
+  list.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const { mandates } = await Wren.api('/api/payments-admin/mandates');
+    if (!mandates.length) { list.innerHTML='<div class="empty-state">No Direct Debit mandates</div>'; return; }
+    list.innerHTML = mandates.map(m => `
+      <div class="mandate-row">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600;color:#f1f5f9">${esc(m.child_name||'—')} · ${esc(m.bill_payer_email)}</div>
+          <div style="font-size:.73rem;color:#94a3b8">
+            ${m.gc_bank_name?esc(m.gc_bank_name)+' ':''}${m.gc_account_number_end?'ending '+esc(m.gc_account_number_end):''}
+            · ${fmtDate(m.created_at)}
+            ${m.mandate_id?'· '+esc(m.mandate_id):''}
+          </div>
+        </div>
+        <span class="status-badge s-${m.status==='active'?'succeeded':m.status==='pending'?'pending':'failed'}">${m.status}</span>
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`;
+  }
+}
+
+// ── Load reconciliation flags ──────────────────────────────────────────────────
+async function loadFlags() {
+  const list = document.getElementById('flag-list');
+  list.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const data = await Wren.api('/api/payments-admin/stats');
+    const flags = data.unresolved_flags;
+    if (!flags.length) { list.innerHTML='<div class="empty-state">✅ No reconciliation issues</div>'; return; }
+    list.innerHTML = flags.map(f => `
+      <div class="flag-row">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600;color:#f1f5f9">${esc(f.flag_type.replace(/_/g,' '))} (${esc(f.provider)})</div>
+          <div style="font-size:.73rem;color:#94a3b8">${fmtDate(f.created_at)} · ${esc(JSON.stringify(f.detail||{}))}</div>
+        </div>
+        <button class="btn btn-secondary" style="font-size:.72rem;padding:4px 9px" data-action="resolve-flag" data-id="${f.id}">Resolve</button>
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="empty-state">${esc(e.message)}</div>`;
+  }
+}
+
+async function resolveFlag(id, btn) {
+  btn.disabled=true;btn.textContent='…';
+  try {
+    await Wren.api(`/api/payments-admin/reconciliation-flags/${id}/resolve`, { method:'POST', body:'{}' });
+    Wren.toast('Resolved');
+    loadFlags();
+  } catch(e) {
+    btn.disabled=false;btn.textContent='Resolve';
+    Wren.toast('Failed: ' + e.message, 'error');
+  }
+}
+
+async function triggerReconcile() {
+  try {
+    await Wren.api('/api/payments-admin/reconcile', { method:'POST', body:'{}' });
+    Wren.toast('Reconciliation started — check Reconciliation tab in ~60s');
+  } catch(e) {
+    Wren.toast('Failed: ' + e.message, 'error');
+  }
+}
+
+document.addEventListener('wren:ready', () => {
+  loadOverview();
+  loadSettings();
+  document.getElementById('btn-reconcile-now').addEventListener('click', triggerReconcile);
+  document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+  document.getElementById('btn-run-reconcile').addEventListener('click', triggerReconcile);
+  document.getElementById('filter-method').addEventListener('change', loadPayments);
+  document.getElementById('filter-status').addEventListener('change', loadPayments);
+  document.querySelector('.tab-bar').addEventListener('click', e => {
+    const tab = e.target.closest('.tab[data-tab]');
+    if (tab) showTab(tab.dataset.tab);
+  });
+  document.getElementById('tab-settings').addEventListener('input', e => {
+    const inp = e.target.closest('.key-input[data-key]');
+    if (inp) pendingChanges[inp.dataset.key] = inp.value;
+  });
+  document.getElementById('payment-list').addEventListener('click', e => {
+    const btn = e.target.closest('[data-action="mark-paid"]');
+    if (btn) markPaid(parseInt(btn.dataset.id), btn);
+  });
+  document.getElementById('flag-list').addEventListener('click', e => {
+    const btn = e.target.closest('[data-action="resolve-flag"]');
+    if (btn) resolveFlag(parseInt(btn.dataset.id), btn);
+  });
+  document.getElementById('flag-list-brief').addEventListener('click', e => {
+    if (e.target.closest('[data-action="show-reconciliation"]')) showTab('reconciliation');
+  });
+});
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

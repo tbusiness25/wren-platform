@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="wren-edition" content="secondary">
+<title>Wren Points — Wren Secondary</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<link rel="stylesheet" href="/css/design-tokens.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* ── Layout ─────────────────────────────────────────────────────────────────── */
+.wp-page { display:flex; flex-direction:column; height:100%; min-height:0; }
+
+.wp-topbar {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--c-surface); border-bottom:1px solid var(--c-border);
+  padding:10px 14px; position:sticky; top:0; z-index:50; flex-shrink:0;
+}
+.wp-topbar select {
+  padding:8px 12px; border-radius:8px; border:1px solid var(--c-border);
+  background:var(--c-bg); color:var(--c-text); font-size:14px; min-width:160px;
+}
+.wp-week-label { font-size:13px; color:var(--c-muted); white-space:nowrap; }
+.wp-total-pill {
+  background:var(--c-blue); color:#fff; border-radius:20px;
+  padding:4px 14px; font-weight:700; font-size:13px; white-space:nowrap;
+}
+.wp-btn {
+  background:none; border:1px solid var(--c-border); border-radius:8px;
+  color:var(--c-muted); cursor:pointer; padding:8px 12px; font-size:13px;
+  min-height:40px; transition:.15s; white-space:nowrap;
+}
+.wp-btn:hover { color:var(--c-text); border-color:var(--c-blue); }
+.wp-btn.primary { background:var(--c-blue); color:#fff; border-color:var(--c-blue); font-weight:600; }
+.wp-btn.primary:hover { background:#3a8aaf; }
+.spacer { flex:1; }
+
+/* ── Children grid ──────────────────────────────────────────────────────────── */
+.wp-grid {
+  display:grid; gap:10px; padding:14px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  overflow-y:auto; flex:1;
+}
+@media (min-width:900px)  { .wp-grid { grid-template-columns: repeat(6,1fr); } }
+@media (min-width:1200px) { .wp-grid { grid-template-columns: repeat(8,1fr); } }
+
+/* ── Child card ─────────────────────────────────────────────────────────────── */
+.child-card {
+  background:var(--c-surface); border:2px solid var(--c-border); border-radius:14px;
+  padding:12px 8px; display:flex; flex-direction:column; align-items:center; gap:6px;
+  cursor:pointer; transition:.15s; position:relative; user-select:none;
+  min-height:110px; -webkit-tap-highlight-color:transparent;
+}
+.child-card:hover  { border-color:var(--c-blue); background:rgba(74,154,191,.06); }
+.child-card.bump   { animation:bump .3s ease; }
+@keyframes bump    { 0%{transform:scale(1)} 45%{transform:scale(1.05)} 100%{transform:scale(1)} }
+
+.cc-avatar {
+  width:50px; height:50px; border-radius:50%;
+  background:var(--c-blue); display:flex; align-items:center; justify-content:center;
+  font-size:1.1rem; font-weight:700; color:#fff; overflow:hidden; flex-shrink:0;
+}
+.cc-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+.cc-name { font-size:11px; font-weight:700; text-align:center; line-height:1.3; color:var(--c-text); word-break:break-word; }
+.cc-total { font-size:24px; font-weight:800; color:var(--c-blue); line-height:1; }
+.cc-total.zero { color:var(--c-muted); font-size:18px; }
+
+/* ── Fly-up animation ────────────────────────────────────────────────────────── */
+.fly-pt {
+  position:fixed; pointer-events:none; z-index:9999; font-size:22px; font-weight:800;
+  color:var(--c-blue); animation:flyUp .75s ease-out forwards;
+}
+@keyframes flyUp {
+  0%   { opacity:1; transform:translateY(0) scale(1); }
+  50%  { opacity:1; transform:translateY(-50px) scale(1.3); }
+  100% { opacity:0; transform:translateY(-100px) scale(.9); }
+}
+
+/* ── Award modal ────────────────────────────────────────────────────────────── */
+.award-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200;
+  display:flex; align-items:flex-end; justify-content:center;
+  animation:fadeIn .15s ease;
+}
+.award-overlay.hidden { display:none; }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+.award-sheet {
+  background:var(--c-surface); border-radius:20px 20px 0 0; padding:20px 18px 28px;
+  width:100%; max-width:480px; max-height:85vh; overflow-y:auto;
+  animation:slideUp .2s ease;
+}
+@keyframes slideUp { from{transform:translateY(30px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+.award-child-header {
+  display:flex; align-items:center; gap:12px; margin-bottom:16px;
+}
+.award-child-avatar {
+  width:48px; height:48px; border-radius:50%; background:var(--c-blue);
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.1rem; font-weight:700; color:#fff; overflow:hidden;
+}
+.award-child-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+.award-child-name { font-size:1.1rem; font-weight:700; color:var(--c-text); }
+
+.category-grid {
+  display:grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap:8px;
+  margin-bottom:14px;
+}
+.cat-btn {
+  background:var(--c-bg); border:2px solid var(--c-border); border-radius:12px;
+  padding:10px 8px; display:flex; flex-direction:column; align-items:center; gap:4px;
+  cursor:pointer; transition:.15s; -webkit-tap-highlight-color:transparent;
+}
+.cat-btn:hover   { border-color:var(--c-blue); background:rgba(74,154,191,.06); }
+.cat-btn.selected { border-color:var(--c-blue); background:rgba(74,154,191,.15); }
+.cat-btn.negative { border-color:#ef4444; }
+.cat-btn.negative.selected { background:rgba(239,68,68,.15); }
+.cat-icon { font-size:1.6rem; }
+.cat-name { font-size:11px; font-weight:700; text-align:center; color:var(--c-text); }
+
+.reason-area {
+  width:100%; background:var(--c-bg); border:1px solid var(--c-border); border-radius:10px;
+  color:var(--c-text); font-size:14px; padding:10px 12px; resize:vertical;
+  min-height:70px; font-family:inherit; box-sizing:border-box;
+}
+.reason-area:focus { outline:none; border-color:var(--c-blue); }
+.reason-label { font-size:12px; color:var(--c-muted); margin-bottom:4px; display:block; }
+.submit-btn {
+  width:100%; padding:14px; border-radius:12px; border:none;
+  background:var(--c-blue); color:#fff; font-size:1rem; font-weight:700;
+  cursor:pointer; transition:.15s; margin-top:14px;
+}
+.submit-btn:hover:not(:disabled) { background:#3a8aaf; }
+.submit-btn:disabled { opacity:.5; cursor:default; }
+
+/* ── Whiteboard mode overlay ─────────────────────────────────────────────────── */
+.wb-overlay {
+  position:fixed; inset:0; background:#0a0f1a; z-index:500;
+  display:flex; flex-direction:column; align-items:center;
+  overflow:hidden;
+}
+.wb-overlay.hidden { display:none; }
+
+.wb-header {
+  display:flex; align-items:center; gap:14px;
+  padding:16px 24px; width:100%; box-sizing:border-box;
+  border-bottom:1px solid #1e293b;
+}
+.wb-school { font-size:1.1rem; font-weight:700; color:#94a3b8; }
+.wb-class  { font-size:1.4rem; font-weight:800; color:#f1f5f9; }
+.wb-week   { font-size:.9rem; color:#64748b; margin-left:auto; }
+.wb-exit   {
+  background:none; border:1px solid #334155; color:#64748b; border-radius:8px;
+  padding:6px 14px; cursor:pointer; font-size:.85rem; transition:.15s;
+}
+.wb-exit:hover { color:#f1f5f9; border-color:#94a3b8; }
+
+.wb-content { flex:1; display:flex; gap:0; width:100%; min-height:0; }
+
+/* Latest award spotlight */
+.wb-spotlight {
+  flex:0 0 340px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:24px; border-right:1px solid #1e293b;
+}
+.wb-award-anim { text-align:center; animation:wbPop .5s ease; }
+@keyframes wbPop { 0%{transform:scale(0.7);opacity:0} 60%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+.wb-award-icon { font-size:4rem; margin-bottom:8px; }
+.wb-award-cat  { font-size:1.1rem; font-weight:700; color:#4a9abf; margin-bottom:4px; }
+.wb-award-name { font-size:1.8rem; font-weight:800; color:#f1f5f9; margin-bottom:8px; }
+.wb-award-reason { font-size:.95rem; color:#94a3b8; max-width:280px; text-align:center; font-style:italic; }
+.wb-award-empty { color:#334155; font-size:1rem; }
+
+/* Leaderboard */
+.wb-leaderboard { flex:1; padding:20px; overflow-y:auto; }
+.wb-lb-title { font-size:.8rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.08em; margin-bottom:14px; }
+.wb-lb-grid {
+  display:grid; grid-template-columns: repeat(auto-fill, minmax(100px,1fr)); gap:10px;
+}
+.wb-pupil-card {
+  background:#1e293b; border-radius:12px; padding:12px 8px;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  transition:.3s; position:relative;
+}
+.wb-pupil-card.highlight { background:#1a3a50; border:2px solid #4a9abf; }
+.wb-pc-avatar {
+  width:44px; height:44px; border-radius:50%; background:#4a9abf;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1rem; font-weight:700; color:#fff; overflow:hidden; position:relative;
+}
+.wb-pc-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+.wb-pc-name  { font-size:10px; font-weight:700; text-align:center; color:#cbd5e1; word-break:break-word; }
+.wb-pc-total { font-size:1.4rem; font-weight:800; color:#4a9abf; }
+.wb-pc-total.zero { color:#334155; font-size:1.1rem; }
+
+/* ── Empty / loading states ─────────────────────────────────────────────────── */
+.wp-empty { text-align:center; color:var(--c-muted); padding:48px 24px; font-size:.95rem; }
+.wp-loading { text-align:center; color:var(--c-muted); padding:32px; }
+</style>
+</head>
+<body>
+<div id="wren-app">
+<!-- ── Teacher view ──────────────────────────────────────────────────────────── -->
+<div class="wp-page" id="teacher-view">
+
+  <div class="wp-topbar">
+    <select id="class-sel" onchange="loadClass()">
+      <option value="">Select class…</option>
+    </select>
+    <span class="wp-week-label" id="week-label"></span>
+    <span class="wp-total-pill" id="class-total" style="display:none"></span>
+    <div class="spacer"></div>
+    <button class="wp-btn" onclick="prevWeek()">← Prev</button>
+    <button class="wp-btn" onclick="nextWeek()">Next →</button>
+    <button class="wp-btn primary" onclick="openWhiteboard()" id="wb-btn" style="display:none">📺 Whiteboard</button>
+  </div>
+
+  <div id="grid-area" class="wp-grid">
+    <p class="wp-empty" style="grid-column:1/-1">Select a class to begin</p>
+  </div>
+
+</div><!-- teacher-view -->
+
+<!-- ── Award modal ────────────────────────────────────────────────────────────── -->
+<div class="award-overlay hidden" id="award-overlay" onclick="closeAwardModal(event)">
+  <div class="award-sheet" onclick="event.stopPropagation()">
+    <div class="award-child-header">
+      <div class="award-child-avatar" id="modal-avatar"></div>
+      <div class="award-child-name" id="modal-name"></div>
+    </div>
+    <div class="category-grid" id="cat-grid"></div>
+    <label class="reason-label">Reason (shown to parents) — optional</label>
+    <textarea class="reason-area" id="reason-input" placeholder="e.g. Helped a classmate without being asked…" maxlength="300"></textarea>
+    <button class="submit-btn" id="submit-btn" onclick="submitAward()" disabled>Award point</button>
+  </div>
+</div>
+
+<!-- ── Whiteboard overlay ──────────────────────────────────────────────────────── -->
+<div class="wb-overlay hidden" id="wb-overlay">
+  <div class="wb-header">
+    <div>
+      <div class="wb-school">Wren Points</div>
+      <div class="wb-class" id="wb-class-name">Class</div>
+    </div>
+    <div class="wb-week" id="wb-week-label"></div>
+    <button class="wb-exit" onclick="closeWhiteboard()">✕ Exit</button>
+  </div>
+  <div class="wb-content">
+    <div class="wb-spotlight">
+      <div id="wb-spotlight-content">
+        <p class="wb-award-empty">Waiting for awards…</p>
+      </div>
+    </div>
+    <div class="wb-leaderboard">
+      <div class="wb-lb-title">This week</div>
+      <div class="wb-lb-grid" id="wb-lb-grid"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- wren-app -->
+
+<script>
+let currentClassId = null;
+let currentClassName = '';
+let selectedChildId = null;
+let selectedChildName = '';
+let selectedChildPhoto = '';
+let selectedCatId = null;
+let categories = [];
+let weekStart = weekMonday();
+let sseSource = null;
+let wbLeaderboard = {};
+
+function weekMonday(d = new Date()) {
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const m = new Date(d);
+  m.setDate(diff);
+  return m.toISOString().slice(0, 10);
+}
+function weekLabel(ws) {
+  const d = new Date(ws + 'T12:00:00');
+  const e = new Date(d); e.setDate(d.getDate() + 4);
+  const fmt = dt => dt.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+  return `w/c ${fmt(d)} – ${fmt(e)}`;
+}
+function prevWeek() {
+  const d = new Date(weekStart + 'T12:00:00');
+  d.setDate(d.getDate() - 7);
+  weekStart = d.toISOString().slice(0, 10);
+  loadClass();
+}
+function nextWeek() {
+  const d = new Date(weekStart + 'T12:00:00');
+  d.setDate(d.getDate() + 7);
+  weekStart = d.toISOString().slice(0, 10);
+  loadClass();
+}
+
+async function init() {
+  // Load classes
+  const classes = await Wren.api('/api/classes').catch(() => []);
+  const sel = document.getElementById('class-sel');
+  classes.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name || `Year ${c.year_group}`;
+    sel.appendChild(opt);
+  });
+  // Load categories once
+  categories = await Wren.api('/api/points/categories').catch(() => []);
+  document.getElementById('week-label').textContent = weekLabel(weekStart);
+}
+
+async function loadClass() {
+  const sel = document.getElementById('class-sel');
+  currentClassId = sel.value || null;
+  currentClassName = sel.options[sel.selectedIndex]?.text || '';
+  document.getElementById('week-label').textContent = weekLabel(weekStart);
+
+  if (!currentClassId) {
+    document.getElementById('grid-area').innerHTML = '<p class="wp-empty" style="grid-column:1/-1">Select a class to begin</p>';
+    document.getElementById('class-total').style.display = 'none';
+    document.getElementById('wb-btn').style.display = 'none';
+    return;
+  }
+  document.getElementById('wb-btn').style.display = '';
+  document.getElementById('grid-area').innerHTML = '<p class="wp-loading" style="grid-column:1/-1">Loading…</p>';
+
+  const data = await Wren.api(`/api/points/class-grid?class_id=${currentClassId}&week=${weekStart}`).catch(() => null);
+  if (!data) {
+    document.getElementById('grid-area').innerHTML = '<p class="wp-empty" style="grid-column:1/-1">Failed to load</p>';
+    return;
+  }
+
+  renderGrid(data.children);
+  const total = data.children.reduce((s, c) => s + c.positive_total, 0);
+  const pill = document.getElementById('class-total');
+  pill.textContent = `${total} point${total !== 1 ? 's' : ''} this week`;
+  pill.style.display = '';
+}
+
+function initials(first, last) {
+  return ((first?.[0] || '') + (last?.[0] || '')).toUpperCase();
+}
+
+function renderGrid(children) {
+  const grid = document.getElementById('grid-area');
+  if (!children.length) {
+    grid.innerHTML = '<p class="wp-empty" style="grid-column:1/-1">No active pupils found</p>';
+    return;
+  }
+  grid.innerHTML = '';
+  children.forEach(ch => {
+    const card = document.createElement('div');
+    card.className = 'child-card';
+    card.id = `card-${ch.id}`;
+    const avatarContent = ch.photo_url
+      ? `<img src="${ch.photo_url}" alt="" loading="lazy">`
+      : initials(ch.first_name, ch.last_name);
+    const zeroClass = ch.week_total === 0 ? ' zero' : '';
+    card.innerHTML = `
+      <div class="cc-avatar">${avatarContent}</div>
+      <div class="cc-name">${ch.first_name}<br>${ch.last_name}</div>
+      <div class="cc-total${zeroClass}" id="total-${ch.id}">${ch.week_total === 0 ? '0' : ch.week_total}</div>
+    `;
+    card.onclick = () => openAwardModal(ch);
+    grid.appendChild(card);
+
+    // Store for whiteboard
+    wbLeaderboard[ch.id] = {
+      id: ch.id, first_name: ch.first_name, last_name: ch.last_name,
+      photo_url: ch.photo_url, week_total: ch.week_total,
+    };
+  });
+}
+
+function openAwardModal(child) {
+  selectedChildId = child.id;
+  selectedChildName = `${child.first_name} ${child.last_name}`;
+  selectedChildPhoto = child.photo_url;
+  selectedCatId = null;
+
+  const av = document.getElementById('modal-avatar');
+  av.innerHTML = child.photo_url
+    ? `<img src="${child.photo_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+    : initials(child.first_name, child.last_name);
+
+  document.getElementById('modal-name').textContent = selectedChildName;
+  document.getElementById('reason-input').value = '';
+  document.getElementById('submit-btn').disabled = true;
+
+  const catGrid = document.getElementById('cat-grid');
+  catGrid.innerHTML = '';
+  categories.forEach(cat => {
+    const btn = document.createElement('div');
+    btn.className = `cat-btn${cat.is_negative ? ' negative' : ''}`;
+    btn.dataset.id = cat.id;
+    btn.innerHTML = `<span class="cat-icon">${cat.icon}</span><span class="cat-name">${cat.name}</span>`;
+    btn.onclick = () => selectCat(cat.id);
+    catGrid.appendChild(btn);
+  });
+
+  document.getElementById('award-overlay').classList.remove('hidden');
+}
+
+function selectCat(id) {
+  selectedCatId = id;
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('selected', +b.dataset.id === id));
+  document.getElementById('submit-btn').disabled = false;
+}
+
+function closeAwardModal(e) {
+  if (!e || e.target === document.getElementById('award-overlay')) {
+    document.getElementById('award-overlay').classList.add('hidden');
+  }
+}
+
+async function submitAward() {
+  if (!selectedChildId || !selectedCatId) return;
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Awarding…';
+
+  const reason = document.getElementById('reason-input').value.trim();
+  const staffId = Wren.user?.id || 1;
+
+  try {
+    await Wren.api('/api/points/award', {
+      method: 'POST',
+      body: { child_id: selectedChildId, category_id: selectedCatId, awarded_by_staff_id: staffId,
+        reason_text: reason || null, class_id: currentClassId },
+    });
+
+    // Update local total
+    const totalEl = document.getElementById(`total-${selectedChildId}`);
+    if (totalEl) {
+      const cur = parseInt(totalEl.textContent) || 0;
+      const cat = categories.find(c => c.id === selectedCatId);
+      const delta = cat?.is_negative ? -1 : 1;
+      const newVal = cur + delta;
+      totalEl.textContent = newVal;
+      totalEl.className = `cc-total${newVal === 0 ? ' zero' : ''}`;
+      if (wbLeaderboard[selectedChildId]) wbLeaderboard[selectedChildId].week_total = newVal;
+    }
+
+    // Fly animation
+    const card = document.getElementById(`card-${selectedChildId}`);
+    if (card) {
+      card.classList.add('bump');
+      card.addEventListener('animationend', () => card.classList.remove('bump'), { once: true });
+      const rect = card.getBoundingClientRect();
+      const fly = document.createElement('div');
+      fly.className = 'fly-pt';
+      const cat = categories.find(c => c.id === selectedCatId);
+      fly.textContent = cat?.is_negative ? '-1' : `+1`;
+      fly.style.left = (rect.left + rect.width / 2 - 20) + 'px';
+      fly.style.top = (rect.top + 20) + 'px';
+      document.body.appendChild(fly);
+      fly.addEventListener('animationend', () => fly.remove());
+    }
+
+    // Update overall total pill
+    const pill = document.getElementById('class-total');
+    const cat = categories.find(c => c.id === selectedCatId);
+    if (pill && !cat?.is_negative) {
+      const m = pill.textContent.match(/^(\d+)/);
+      if (m) {
+        const n = parseInt(m[1]) + 1;
+        pill.textContent = `${n} point${n !== 1 ? 's' : ''} this week`;
+      }
+    }
+
+    closeAwardModal();
+    Wren.toast(`Awarded to ${selectedChildName}`, 'success');
+  } catch (err) {
+    Wren.toast(err?.error || 'Failed to award point', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Award point';
+  }
+}
+
+/* ── Whiteboard mode ──────────────────────────────────────────────────────────── */
+function openWhiteboard() {
+  if (!currentClassId) return;
+  document.getElementById('wb-class-name').textContent = currentClassName;
+  document.getElementById('wb-week-label').textContent = weekLabel(weekStart);
+  renderWbLeaderboard();
+  document.getElementById('wb-overlay').classList.remove('hidden');
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  startSSE();
+}
+function closeWhiteboard() {
+  document.getElementById('wb-overlay').classList.add('hidden');
+  document.exitFullscreen?.().catch(() => {});
+  stopSSE();
+}
+
+function renderWbLeaderboard() {
+  const grid = document.getElementById('wb-lb-grid');
+  const sorted = Object.values(wbLeaderboard).sort((a, b) => b.week_total - a.week_total);
+  grid.innerHTML = '';
+  sorted.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'wb-pupil-card';
+    card.id = `wb-card-${p.id}`;
+    const av = p.photo_url
+      ? `<img src="${p.photo_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
+      : initials(p.first_name, p.last_name);
+    const zeroClass = p.week_total === 0 ? ' zero' : '';
+    card.innerHTML = `
+      <div class="wb-pc-avatar">${av}</div>
+      <div class="wb-pc-name">${p.first_name}</div>
+      <div class="wb-pc-total${zeroClass}">${p.week_total}</div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function startSSE() {
+  stopSSE();
+  sseSource = new EventSource(`/api/points/stream?class_id=${currentClassId}`);
+  sseSource.onmessage = e => {
+    try { handleSSEAward(JSON.parse(e.data)); } catch (_) {}
+  };
+  sseSource.onerror = () => {};
+}
+function stopSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null; }
+}
+
+function handleSSEAward(award) {
+  if (award.type !== 'award') return;
+
+  // Spotlight animation
+  const spot = document.getElementById('wb-spotlight-content');
+  spot.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'wb-award-anim';
+  const av = award.child_photo
+    ? `<img src="${award.child_photo}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 10px">`
+    : `<div style="width:80px;height:80px;border-radius:50%;background:#4a9abf;display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:700;color:#fff;margin:0 auto 10px">${(award.child_first||'?')[0].toUpperCase()}</div>`;
+  div.innerHTML = `
+    ${av}
+    <div class="wb-award-icon">${award.category_icon}</div>
+    <div class="wb-award-cat">${award.category_name}</div>
+    <div class="wb-award-name">${award.child_first || award.child_name}</div>
+    ${award.reason_text ? `<div class="wb-award-reason">"${award.reason_text}"</div>` : ''}
+  `;
+  spot.appendChild(div);
+
+  // Update leaderboard
+  if (wbLeaderboard[award.child_id]) {
+    wbLeaderboard[award.child_id].week_total += award.value > 0 ? 1 : -1;
+  }
+  renderWbLeaderboard();
+
+  // Highlight card
+  const card = document.getElementById(`wb-card-${award.child_id}`);
+  if (card) {
+    card.classList.add('highlight');
+    setTimeout(() => card.classList.remove('highlight'), 3000);
+  }
+}
+
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Module builder — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <script src="/js/wren-module-renderer.js" defer></script>
+  <style>
+    /* ── Top-level tab bar ── */
+    .mod-tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--c-border)}
+    .mod-tab{padding:8px 18px;border-radius:8px 8px 0 0;font-size:.875rem;font-weight:600;cursor:pointer;
+             color:var(--c-muted);background:none;border:none;font-family:inherit;
+             border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+    .mod-tab.active{color:var(--c-blue);border-bottom-color:var(--c-blue)}
+    .mod-tab:hover:not(.active){color:var(--c-text)}
+    .mod-pane{display:none}.mod-pane.active{display:block}
+
+    /* ── Active modules ── */
+    .modules-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    @media(max-width:1100px){.modules-grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:600px) {.modules-grid{grid-template-columns:1fr}}
+    .module-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:16px;
+                 position:relative;display:flex;flex-direction:column;gap:8px;transition:border-color .2s,box-shadow .2s}
+    .module-card:hover{border-color:rgba(91,143,255,.4);box-shadow:0 0 0 1px rgba(91,143,255,.1)}
+    .module-card.inactive{opacity:.5}
+    .module-card-top{display:flex;align-items:flex-start;gap:10px}
+    .module-icon{font-size:1.8rem;line-height:1;flex-shrink:0}
+    .module-info{flex:1;min-width:0}
+    .module-name{font-size:.95rem;font-weight:700;color:var(--c-text);margin-bottom:3px}
+    .module-desc{font-size:.78rem;color:var(--c-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .module-meta{font-size:.72rem;color:var(--c-muted)}
+    .module-badges{display:flex;flex-wrap:wrap;gap:4px}
+    .portal-badge{font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em}
+    .pb-ey{background:rgba(91,143,255,.15);color:#5b8fff}
+    .pb-admin{background:rgba(138,155,191,.12);color:#8a9bbf}
+    .pb-parents{background:rgba(240,195,74,.15);color:#f0c34a}
+    .pb-hr{background:rgba(52,211,153,.12);color:#34d399}
+    .card-actions{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:6px}
+    .kebab-btn{background:none;border:none;color:var(--c-muted);cursor:pointer;font-size:1.1rem;padding:2px 6px;border-radius:6px;line-height:1}
+    .kebab-btn:hover{background:rgba(255,255,255,.06);color:var(--c-text)}
+    .card-body-link{cursor:pointer}
+    .toggle-switch{position:relative;width:38px;height:21px;flex-shrink:0}
+    .toggle-switch input{display:none}
+    .toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,.1);border-radius:999px;cursor:pointer;transition:.2s}
+    .toggle-slider::before{content:'';position:absolute;width:15px;height:15px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+    .toggle-switch input:checked+.toggle-slider{background:var(--c-green)}
+    .toggle-switch input:checked+.toggle-slider::before{transform:translateX(17px)}
+    .drop-menu{position:absolute;right:0;top:calc(100% + 4px);background:#141e36;border:1px solid var(--c-border);
+               border-radius:8px;min-width:140px;z-index:200;box-shadow:0 4px 16px rgba(0,0,0,.5);overflow:hidden}
+    .drop-menu a{display:block;padding:8px 14px;font-size:.82rem;color:var(--c-text);cursor:pointer;text-decoration:none}
+    .drop-menu a:hover{background:rgba(255,255,255,.06)}
+    .drop-menu a.danger{color:var(--c-red)}
+    .filter-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:20px}
+    .filter-row input[type="text"],.filter-row select{background:var(--c-surface);border:1px solid var(--c-border);
+      border-radius:8px;color:var(--c-text);padding:7px 10px;font-size:.82rem}
+    .filter-row input[type="text"]:focus,.filter-row select:focus{outline:none;border-color:var(--c-blue)}
+    .inactive-check{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--c-muted);cursor:pointer}
+    .inactive-check input{width:15px;height:15px}
+
+    /* ── Templates ── */
+    .tpl-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+    .tpl-tab{padding:6px 14px;border-radius:99px;border:1px solid var(--c-border);background:transparent;
+             color:var(--c-muted);font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit;
+             transition:.15s;text-transform:capitalize}
+    .tpl-tab:hover{border-color:var(--c-blue);color:var(--c-blue)}
+    .tpl-tab.active{background:var(--c-blue);border-color:var(--c-blue);color:#fff}
+    .tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+    .tpl-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:18px;
+              display:flex;flex-direction:column;gap:10px;transition:border-color .2s,box-shadow .2s;position:relative}
+    .tpl-card:hover{border-color:rgba(74,154,191,.5);box-shadow:0 0 0 1px rgba(74,154,191,.12)}
+    .tpl-card.installed{border-color:rgba(34,197,94,.3)}
+    .tpl-card-top{display:flex;align-items:flex-start;gap:12px}
+    .tpl-icon{font-size:2rem;line-height:1;flex-shrink:0;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.05);border-radius:10px}
+    .tpl-info{flex:1;min-width:0}
+    .tpl-name{font-size:.95rem;font-weight:700;color:var(--c-text);margin-bottom:4px}
+    .tpl-category{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:99px;display:inline-block}
+    .cat-safeguarding{background:rgba(239,68,68,.15);color:#ef4444}
+    .cat-health_safety{background:rgba(245,158,11,.15);color:#f59e0b}
+    .cat-staff{background:rgba(74,154,191,.15);color:#4a9abf}
+    .cat-outings{background:rgba(138,92,246,.15);color:#8b5cf6}
+    .cat-other{background:rgba(148,163,184,.12);color:#94a3b8}
+    .tpl-desc{font-size:.8rem;color:var(--c-muted);line-height:1.45}
+    .tpl-meta{font-size:.72rem;color:var(--c-muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .tpl-portals{display:flex;gap:4px}
+    .tpl-portal-badge{font-size:.62rem;font-weight:700;padding:2px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;background:rgba(74,154,191,.12);color:#4a9abf}
+    .tpl-actions{display:flex;gap:8px;margin-top:2px;flex-wrap:wrap}
+    .tpl-btn{padding:8px 16px;border-radius:10px;border:none;cursor:pointer;font-size:.82rem;font-weight:600;font-family:inherit;min-height:36px;transition:.2s ease;display:inline-flex;align-items:center;gap:5px}
+    .tpl-btn-enable{background:var(--c-orange);color:#fff}
+    .tpl-btn-enable:hover:not(:disabled){filter:brightness(1.1)}
+    .tpl-btn-enable:disabled{opacity:.5;cursor:not-allowed}
+    .tpl-btn-view{background:rgba(74,154,191,.15);color:var(--c-blue);border:1px solid rgba(74,154,191,.3)}
+    .tpl-btn-view:hover{background:rgba(74,154,191,.25)}
+    .tpl-btn-sync{background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.3)}
+    .tpl-btn-sync:hover{background:rgba(245,158,11,.22)}
+    .installed-badge{position:absolute;top:14px;right:14px;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:99px;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.25)}
+    .tpl-empty{text-align:center;padding:48px 20px;color:var(--c-muted);font-size:.88rem}
+    .tpl-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px}
+    .tpl-modal{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:24px;max-width:420px;width:100%}
+    .tpl-modal h3{margin:0 0 10px;font-size:1rem;color:var(--c-text)}
+    .tpl-modal p{margin:0 0 18px;font-size:.84rem;color:var(--c-muted);line-height:1.5}
+    .tpl-modal-actions{display:flex;gap:8px;justify-content:flex-end}
+    .tpl-modal-cancel{padding:8px 16px;border-radius:8px;background:rgba(255,255,255,.07);border:1px solid var(--c-border);color:var(--c-text);cursor:pointer;font-family:inherit;font-size:.82rem}
+    .tpl-modal-confirm{padding:8px 16px;border-radius:8px;background:var(--c-orange);border:none;color:#fff;cursor:pointer;font-family:inherit;font-size:.82rem;font-weight:600}
+
+    /* ── Demo ── */
+    .demo-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:20px;max-width:680px}
+    .demo-meta{font-size:.75rem;color:var(--c-muted);margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--c-border)}
+    .demo-success{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:16px;color:#22c55e;margin-bottom:16px}
+    .demo-success h3{margin:0 0 6px 0;font-size:.95rem}
+    .demo-success p{margin:0;font-size:.82rem}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🧩 Module builder</div>
+      <div class="page-subtitle">Custom forms and records for your setting.</div>
+    </div>
+    <button class="btn btn-primary" id="btn-new-module">+ Create new module</button>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="mod-tabs">
+    <button class="mod-tab" data-tab="active">Active modules</button>
+    <button class="mod-tab" data-tab="templates" id="mod-tab-templates">Templates</button>
+    <button class="mod-tab" data-tab="demo"      id="mod-tab-demo" style="display:none">🧪 Demo</button>
+  </div>
+
+  <!-- ══ TAB: Active modules ══ -->
+  <div class="mod-pane" id="mod-pane-active">
+    <div class="filter-row">
+      <input type="text" id="search-input" placeholder="🔍 Search modules…" style="flex:1;min-width:180px">
+      <select id="attaches-filter">
+        <option value="">All types</option>
+        <option value="child">Child</option>
+        <option value="staff">Staff</option>
+        <option value="parent">Parent</option>
+        <option value="standalone">Standalone</option>
+        <option value="multi">Multi</option>
+      </select>
+      <select id="portal-filter">
+        <option value="">All portals</option>
+        <option value="ey">EY</option>
+        <option value="admin">Admin</option>
+        <option value="parents">Parents</option>
+        <option value="hr">HR</option>
+      </select>
+      <label class="inactive-check">
+        <input type="checkbox" id="show-inactive">
+        Show inactive
+      </label>
+    </div>
+    <div id="modules-area"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- ══ TAB: Templates ══ -->
+  <div class="mod-pane" id="mod-pane-templates">
+    <p style="color:var(--c-muted);font-size:.84rem;margin-bottom:16px">Pre-built form modules ready to enable with one click. Enabled modules appear under Forms in the EY portal.</p>
+    <div class="tpl-tabs" id="tpl-tabs">
+      <button class="tpl-tab active" data-cat="all">All</button>
+    </div>
+    <div class="tpl-grid" id="tpl-grid">
+      <div class="tpl-empty">Loading templates…</div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: Demo / sandbox ══ -->
+  <div class="mod-pane" id="mod-pane-demo">
+    <div class="page-subtitle" style="margin-bottom:16px">End-to-end smoke test: demo-accident-report → submit → save record</div>
+    <div id="demo-container">
+      <div class="loading-state"><div class="spinner"></div><p>Loading module…</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+const _modInitDone = {};
+
+function modSwitchTab(tab) {
+  document.querySelectorAll('.mod-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('.mod-pane').forEach(el => el.classList.toggle('active', el.id === 'mod-pane-' + tab));
+  const url = new URL(window.location);
+  url.searchParams.set('tab', tab);
+  history.replaceState(null, '', url);
+  if (!_modInitDone[tab]) {
+    _modInitDone[tab] = true;
+    if (tab === 'active')    loadModules();
+    if (tab === 'templates') tpl_loadTemplates();
+    if (tab === 'demo')      loadDemo();
+  }
+}
+
+// ── TAB: Active modules ──────────────────────────────────────────────────────
+let allModules = [];
+function modEsc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+const PORTAL_LABELS = { ey:'EY', admin:'Admin', parents:'Parents', hr:'HR' };
+const PORTAL_CLASS  = { ey:'pb-ey', admin:'pb-admin', parents:'pb-parents', hr:'pb-hr' };
+
+async function loadModules() {
+  try {
+    allModules = await Wren.api('/api/modules?active=all');
+  } catch(e) {
+    document.getElementById('modules-area').innerHTML = '<div class="alert alert-danger">Failed to load modules</div>';
+    return;
+  }
+  applyFilters();
+}
+
+function applyFilters() {
+  const search   = document.getElementById('search-input').value.toLowerCase();
+  const attaches = document.getElementById('attaches-filter').value;
+  const portal   = document.getElementById('portal-filter').value;
+  const showInact= document.getElementById('show-inactive').checked;
+  const filtered = allModules.filter(m => {
+    if (!showInact && !m.is_active) return false;
+    if (search && !m.name.toLowerCase().includes(search) && !(m.description||'').toLowerCase().includes(search)) return false;
+    if (attaches && m.attaches_to !== attaches) return false;
+    if (portal) { const portals = modToArray(m.portals); if (!portals.includes(portal)) return false; }
+    return true;
+  });
+  renderModules(filtered);
+}
+
+function modToArray(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') { try { return JSON.parse(v); } catch { return []; } }
+  return [];
+}
+
+function renderModules(modules) {
+  const area = document.getElementById('modules-area');
+  if (!modules.length) {
+    area.innerHTML = `<div class="empty-state"><div class="empty-icon">🧩</div><div class="empty-title">No modules found</div>
+      <div class="empty-body" style="max-width:420px;margin:8px auto 0">Click <strong>+ Create new module</strong> to get started.</div></div>`;
+    return;
+  }
+  area.innerHTML = `<div class="modules-grid">${modules.map(m => modCardHtml(m)).join('')}</div>`;
+  area.querySelectorAll('.card-body-link').forEach(el => {
+    el.addEventListener('click', () => location.href = `/module-builder.html?id=${el.dataset.id}`);
+  });
+  area.querySelectorAll('.mod-records-link').forEach(el => {
+    el.addEventListener('click', e => e.stopPropagation());
+  });
+  area.querySelectorAll('.active-toggle').forEach(el => {
+    el.addEventListener('change', e => { e.stopPropagation(); toggleActive(+el.dataset.id, el.checked); });
+  });
+  area.querySelectorAll('.kebab-btn').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); showMenu(el, +el.dataset.id); });
+  });
+}
+
+function modCardHtml(m) {
+  const portals = modToArray(m.portals), fields = modToArray(m.fields);
+  const badges = portals.map(p => `<span class="portal-badge ${PORTAL_CLASS[p]||'pb-admin'}">${PORTAL_LABELS[p]||p}</span>`).join('');
+  return `<div class="module-card${m.is_active?'':' inactive'}">
+    <div class="card-actions">
+      <label class="toggle-switch" title="${m.is_active?'Active':'Inactive'}">
+        <input type="checkbox" class="active-toggle" data-id="${m.id}" ${m.is_active?'checked':''}>
+        <span class="toggle-slider"></span>
+      </label>
+      <div style="position:relative">
+        <button class="kebab-btn" data-id="${m.id}" title="More options">⋮</button>
+      </div>
+    </div>
+    <div class="card-body-link" data-id="${m.id}">
+      <div class="module-card-top">
+        <div class="module-icon">${modEsc(m.icon||'📋')}</div>
+        <div class="module-info">
+          <div class="module-name">${modEsc(m.name)}</div>
+          ${m.description?`<div class="module-desc">${modEsc(m.description)}</div>`:''}
+        </div>
+      </div>
+      <div class="module-meta">Attached to: <strong>${modEsc(m.attaches_to||'—')}</strong>
+        · ${fields.length} field${fields.length===1?'':'s'}
+        · <a href="/module-records.html?id=${m.id}" class="mod-records-link" style="color:var(--c-blue)">View records</a>
+      </div>
+      ${badges?`<div class="module-badges">${badges}</div>`:''}
+    </div>
+  </div>`;
+}
+
+function showMenu(btn, id) {
+  document.querySelectorAll('.drop-menu').forEach(el => el.remove());
+  const menu = document.createElement('div');
+  menu.className = 'drop-menu';
+  menu.innerHTML = `
+    <a data-action="view-records">📊 View records</a>
+    <a data-action="edit-module">✏️ Edit</a>
+    <a data-action="clone-module">📋 Clone</a>
+    <a class="danger" data-action="delete-module">🗑 Delete</a>`;
+  menu.querySelector('[data-action="view-records"]').addEventListener('click', () => location.href = `/module-records.html?id=${id}`);
+  menu.querySelector('[data-action="edit-module"]').addEventListener('click', () => location.href = `/module-builder.html?id=${id}`);
+  menu.querySelector('[data-action="clone-module"]').addEventListener('click', () => cloneModule(id));
+  menu.querySelector('[data-action="delete-module"]').addEventListener('click', () => deleteModule(id));
+  btn.parentElement.appendChild(menu);
+  const close = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+async function toggleActive(id, active) {
+  try {
+    await Wren.api(`/api/modules/${id}`, { method: 'PUT', body: { is_active: active } });
+    const m = allModules.find(x => x.id === id);
+    if (m) m.is_active = active;
+    Wren.toast(active ? 'Module activated' : 'Module deactivated', 'success');
+    applyFilters();
+  } catch(e) { Wren.toast('Failed to update module', 'error'); applyFilters(); }
+}
+
+async function cloneModule(id) {
+  const m = allModules.find(x => x.id === id); if (!m) return;
+  try {
+    const clone = await Wren.api('/api/modules', { method: 'POST', body: {
+      name: m.name+' (copy)', description: m.description, icon: m.icon,
+      attaches_to: m.attaches_to, portals: modToArray(m.portals),
+      permissions: m.permissions||{}, fields: modToArray(m.fields),
+      workflows: modToArray(m.workflows), ai_prompts: modToArray(m.ai_prompts),
+    }});
+    await Wren.api(`/api/modules/${clone.id}`, { method: 'PUT', body: { is_active: false } });
+    clone.is_active = false;
+    allModules.push(clone);
+    Wren.toast('Cloned — review and activate when ready', 'success');
+    applyFilters();
+  } catch(e) { Wren.toast(e.error||'Clone failed', 'error'); }
+}
+
+async function deleteModule(id) {
+  const m = allModules.find(x => x.id === id);
+  if (!m || !confirm(`Delete "${m.name}"?\nThis will deactivate it. Records are preserved.`)) return;
+  try {
+    await Wren.api(`/api/modules/${id}`, { method: 'DELETE' });
+    const idx = allModules.findIndex(x => x.id === id);
+    if (idx >= 0) allModules[idx].is_active = false;
+    Wren.toast('Module deleted', 'success');
+    applyFilters();
+  } catch(e) { Wren.toast(e.error||'Delete failed', 'error'); }
+}
+
+// ── TAB: Templates ───────────────────────────────────────────────────────────
+const CATEGORY_LABELS = { safeguarding:'Safeguarding', health_safety:'Health & Safety', staff:'Staff', outings:'Outings' };
+let allTemplates = [], tpl_activeCategory = 'all';
+
+function tpl_categoryClass(cat) { return 'cat-'+(cat||'other'); }
+function tpl_categoryLabel(cat) { return CATEGORY_LABELS[cat]||cat||'Other'; }
+
+function tpl_renderTabs(templates) {
+  const cats = [...new Set(templates.map(t => t.category).filter(Boolean))];
+  const tabsEl = document.getElementById('tpl-tabs');
+  tabsEl.querySelectorAll('[data-cat]:not([data-cat="all"])').forEach(b => b.remove());
+  cats.forEach(cat => {
+    const btn = document.createElement('button');
+    btn.className = 'tpl-tab';
+    btn.dataset.cat = cat;
+    btn.textContent = tpl_categoryLabel(cat);
+    btn.addEventListener('click', () => tpl_setCategory(cat));
+    tabsEl.appendChild(btn);
+  });
+}
+
+function tpl_setCategory(cat) {
+  tpl_activeCategory = cat;
+  document.querySelectorAll('.tpl-tab').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
+  tpl_renderGrid();
+}
+
+function tpl_renderGrid() {
+  const grid = document.getElementById('tpl-grid');
+  const filtered = tpl_activeCategory === 'all' ? allTemplates : allTemplates.filter(t => t.category === tpl_activeCategory);
+  if (!filtered.length) { grid.innerHTML = '<div class="tpl-empty">No templates in this category.</div>'; return; }
+  grid.innerHTML = filtered.map(t => tpl_templateCard(t)).join('');
+  grid.querySelectorAll('.tpl-enable-btn').forEach(btn => {
+    btn.addEventListener('click', () => tpl_enableTemplate(btn.dataset.slug, btn));
+  });
+  grid.querySelectorAll('.tpl-sync-btn').forEach(btn => {
+    btn.addEventListener('click', () => tpl_syncTemplate(btn.dataset.slug, btn));
+  });
+}
+
+function tpl_templateCard(t) {
+  const fieldCount = (t.fields||[]).filter(f => f.type !== 'timestamp_auto').length;
+  const portals = (t.portals||[]).map(p => `<span class="tpl-portal-badge">${p}</span>`).join('');
+  const installedBadge = t.is_installed ? `<span class="installed-badge">Enabled ✓</span>` : '';
+  const actions = t.is_installed
+    ? `<a class="tpl-btn tpl-btn-view" href="/module-builder.html?id=${t.installed_id}">View / Edit</a>
+       <button class="tpl-btn tpl-btn-sync tpl-sync-btn" data-slug="${t.slug}" title="Sync with latest template">↻ Sync</button>`
+    : `<button class="tpl-btn tpl-btn-enable tpl-enable-btn" data-slug="${t.slug}">Enable</button>`;
+  return `<div class="tpl-card${t.is_installed?' installed':''}" id="tpl-card-${t.slug}">
+    ${installedBadge}
+    <div class="tpl-card-top">
+      <div class="tpl-icon">${t.icon||'📋'}</div>
+      <div class="tpl-info">
+        <div class="tpl-name">${t.name}</div>
+        <span class="tpl-category ${tpl_categoryClass(t.category)}">${tpl_categoryLabel(t.category)}</span>
+      </div>
+    </div>
+    <div class="tpl-desc">${t.description||''}</div>
+    <div class="tpl-meta">
+      <div class="tpl-portals">${portals}</div>
+      <span>${fieldCount} field${fieldCount!==1?'s':''}</span>
+    </div>
+    <div class="tpl-actions">${actions}</div>
+  </div>`;
+}
+
+async function tpl_enableTemplate(slug, btn) {
+  btn.disabled = true; btn.textContent = 'Enabling…';
+  try {
+    const resp = await Wren.api('/api/modules/templates/'+slug+'/enable', { method: 'POST' });
+    const tpl = allTemplates.find(t => t.slug === slug);
+    if (tpl) { tpl.is_installed = true; tpl.installed_id = resp.id; tpl.is_active = true; }
+    tpl_renderGrid();
+    Wren.toast('✓ '+(resp.name||slug)+' enabled successfully', 'success');
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Enable';
+    Wren.toast('✕ '+((e&&e.error)?e.error:'Failed to enable template'), 'error');
+  }
+}
+
+function tpl_syncTemplate(slug, btn) {
+  const tpl = allTemplates.find(t => t.slug === slug);
+  const name = tpl ? tpl.name : slug;
+  const overlay = document.createElement('div');
+  overlay.className = 'tpl-modal-overlay';
+  overlay.innerHTML = `<div class="tpl-modal">
+    <h3>Sync "${name}"?</h3>
+    <p>This will overwrite the installed module's fields and settings with the latest template. Custom changes will be lost.</p>
+    <div class="tpl-modal-actions">
+      <button class="tpl-modal-cancel">Cancel</button>
+      <button class="tpl-modal-confirm">Yes, sync</button>
+    </div>
+  </div>`;
+  overlay.querySelector('.tpl-modal-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('.tpl-modal-confirm').addEventListener('click', async () => {
+    overlay.remove(); btn.disabled = true; btn.textContent = 'Syncing…';
+    try {
+      await Wren.api('/api/modules/templates/'+slug+'/sync', { method: 'POST' });
+      btn.disabled = false; btn.textContent = '↻ Sync';
+      Wren.toast('✓ '+name+' synced', 'success');
+    } catch(e) {
+      btn.disabled = false; btn.textContent = '↻ Sync';
+      Wren.toast('✕ Sync failed: '+((e&&e.error)?e.error:'unknown'), 'error');
+    }
+  });
+  document.body.appendChild(overlay);
+}
+
+async function tpl_loadTemplates() {
+  try {
+    allTemplates = await Wren.api('/api/modules/templates');
+    tpl_renderTabs(allTemplates);
+    tpl_renderGrid();
+  } catch(e) {
+    document.getElementById('tpl-grid').innerHTML = '<div class="tpl-empty">Failed to load templates. Please refresh.</div>';
+  }
+}
+
+document.getElementById('tpl-tabs').querySelector('[data-cat="all"]').addEventListener('click', () => tpl_setCategory('all'));
+
+// ── TAB: Demo ────────────────────────────────────────────────────────────────
+let _demoModule = null;
+
+async function loadDemo() {
+  const container = document.getElementById('demo-container');
+  try {
+    _demoModule = await Wren.api('/api/modules/by-slug/demo-accident-report');
+  } catch(e) {
+    container.innerHTML = `<div class="alert alert-danger">Failed to load demo module: ${e&&e.error?e.error:JSON.stringify(e)}<br>Make sure demo-accident-report module is seeded.</div>`;
+    return;
+  }
+  const card = document.createElement('div');
+  card.className = 'demo-card';
+  const meta = document.createElement('div');
+  meta.className = 'demo-meta';
+  meta.innerHTML = `<strong>${_demoModule.icon||'📋'} ${_demoModule.name}</strong>
+    &nbsp;·&nbsp; slug: <code>${_demoModule.slug}</code>
+    &nbsp;·&nbsp; ${(_demoModule.fields||[]).length} fields
+    &nbsp;·&nbsp; portal: admin / role: manager
+    <br><span style="margin-top:4px;display:block">Submitting as entity_type=child, entity_id=1.</span>`;
+  card.appendChild(meta);
+  const formContainer = document.createElement('div');
+  card.appendChild(formContainer);
+  container.innerHTML = '';
+  container.appendChild(card);
+  WrenModuleRenderer.renderForm(_demoModule, formContainer, {
+    portal: 'admin', role: 'manager', entityType: 'child', entityId: 1,
+    onSubmit: async function(data) {
+      const res = await Wren.api('/api/modules/'+_demoModule.id+'/records', {
+        method: 'POST', body: { entity_type: 'child', entity_id: 1, data }
+      });
+      setTimeout(() => {
+        const existing = container.querySelector('.demo-success');
+        if (existing) existing.remove();
+        const banner = document.createElement('div');
+        banner.className = 'demo-success';
+        banner.innerHTML = `<h3>✓ Record saved — ID: ${res.id}</h3>
+          <p>Submitted at ${res.submitted_at?new Date(res.submitted_at).toLocaleString('en-GB'):'now'}.
+          &nbsp;<a href="#" data-action="reload-demo" style="color:#22c55e">Submit another →</a></p>`;
+        banner.querySelector('[data-action="reload-demo"]').addEventListener('click', e => { e.preventDefault(); loadDemo(); });
+        container.insertBefore(banner, container.firstChild);
+        window.scrollTo(0,0);
+      }, 500);
+      return res;
+    }
+  });
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.getElementById('btn-new-module').addEventListener('click', () => location.href = '/module-builder.html');
+document.querySelector('.mod-tabs').addEventListener('click', e => {
+  const btn = e.target.closest('.mod-tab[data-tab]');
+  if (btn) modSwitchTab(btn.dataset.tab);
+});
+document.getElementById('search-input').addEventListener('input', applyFilters);
+document.getElementById('attaches-filter').addEventListener('change', applyFilters);
+document.getElementById('portal-filter').addEventListener('change', applyFilters);
+document.getElementById('show-inactive').addEventListener('change', applyFilters);
+
+document.addEventListener('wren:ready', () => {
+  const role = Wren.user?.role || 'practitioner';
+  const isAdmin = ['manager','deputy_manager','admin'].includes(role);
+  const isDemo  = !!document.querySelector('meta[name="wren-demo"]');
+
+  if (!isAdmin) document.getElementById('mod-tab-templates').style.display = 'none';
+  if (isDemo)   document.getElementById('mod-tab-demo').style.display = '';
+
+  const tab = new URLSearchParams(window.location.search).get('tab') || 'active';
+  modSwitchTab(tab);
+});
+</script>
+</body>
+</html>

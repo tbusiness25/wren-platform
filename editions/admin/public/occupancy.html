@@ -1,0 +1,307 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Occupancy &amp; Ratios · Wren</title>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;--blue:#4a9abf;--orange:#e07820;
+   --good:#22c55e;--tight:#f59e0b;--under:#ef4444;--closed:#475569}
+ .occ-wrap{padding:18px;max-width:1100px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+ .c{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+ .c .n{font-size:1.7rem;font-weight:800}.c .l{color:var(--mut);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+ .c.alert .n{color:var(--orange)}
+ table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden;font-size:.85rem}
+ th{background:#15233f;text-align:left;padding:9px 11px;font-size:.72rem;text-transform:uppercase;color:var(--mut)}
+ td{padding:8px 11px;border-top:1px solid var(--bd);vertical-align:middle}
+ .bar{height:18px;border-radius:5px;background:#1e293b;position:relative;min-width:120px;overflow:hidden}
+ .bar > span{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+ .fill-ok{background:var(--blue)}.fill-full{background:#22c55e}.fill-over{background:#ef4444}
+ .bartxt{position:absolute;right:6px;top:0;line-height:18px;font-size:.7rem;font-weight:700;color:#fff;text-shadow:0 0 3px #000}
+ .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.72rem;font-weight:700}
+ .pill.out{background:#7f1d1d;color:#fecaca}.pill.up{background:#1e3a5f;color:#bfdbfe}.pill.in{background:#14532d;color:#bbf7d0}
+ .free{color:#22c55e;font-weight:700}.over{color:#ef4444;font-weight:700}
+ /* ── view toggle ── */
+ .vtabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+ .vtab{background:var(--card);border:1px solid var(--bd);color:var(--mut);padding:8px 16px;border-radius:12px;font-size:.86rem;font-weight:700;cursor:pointer;transition:.2s ease;min-height:40px}
+ .vtab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+ .vtab:hover:not(.active){color:var(--txt)}
+ /* ── history ── */
+ .hbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+ .navbtn{background:var(--card);border:1px solid var(--bd);color:var(--txt);width:38px;height:38px;border-radius:10px;cursor:pointer;font-size:1.1rem;line-height:1}
+ .navbtn:hover{border-color:var(--blue)}
+ .hmonth{font-weight:800;font-size:1.05rem;min-width:150px;text-align:center}
+ .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.74rem;color:var(--mut);margin:4px 0 14px}
+ .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+ .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+ .cal .dow{text-align:center;font-size:.7rem;text-transform:uppercase;color:var(--mut);font-weight:700;padding:2px 0}
+ .cell{min-height:78px;border-radius:10px;border:1px solid var(--bd);padding:6px 7px;background:var(--card);position:relative;cursor:default;transition:.12s ease;display:flex;flex-direction:column}
+ .cell.clk{cursor:pointer}.cell.clk:hover{transform:translateY(-2px);box-shadow:0 4px 14px #0006}
+ .cell .dnum{font-size:.74rem;color:var(--mut);font-weight:700}
+ .cell .kk{font-size:1.25rem;font-weight:800;line-height:1.1;margin-top:2px}
+ .cell .ss{font-size:.72rem;color:var(--mut)}
+ .cell .dl{position:absolute;top:6px;right:7px;font-size:.72rem;font-weight:800;padding:0 5px;border-radius:8px}
+ .cell.empty{background:transparent;border:none}
+ .cell.closed{opacity:.5}
+ .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:16px}
+ .statword{font-weight:800;text-transform:capitalize}
+ /* ── drill-down drawer ── */
+ .drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:#0b1426;border-left:1px solid var(--bd);box-shadow:-8px 0 30px #0008;transform:translateX(105%);transition:transform .25s ease;z-index:60;overflow-y:auto;padding:18px}
+ .drawer.open{transform:translateX(0)}
+ .drawer h2{font-size:1.05rem;margin:0 0 2px}
+ .drawer .x{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--mut);font-size:1.4rem;cursor:pointer;line-height:1}
+ .drawer .sec{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:16px 0 6px;font-weight:700}
+ .rowi{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--bd);font-size:.82rem}
+ .rowi small{color:var(--mut)}
+ .tag{display:inline-block;padding:0 6px;border-radius:8px;font-size:.66rem;font-weight:700;margin-left:5px}
+ .tag.ratio{background:#14532d;color:#bbf7d0}.tag.nonratio{background:#3a2a12;color:#fde68a}
+ .tag.actual{background:#1e3a5f;color:#bfdbfe}.tag.inferred{background:#3a1e5f;color:#e9d5ff}.tag.leave{background:#7f1d1d;color:#fecaca}
+ .scrim{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:.25s;z-index:55}
+ .scrim.open{opacity:1;pointer-events:auto}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="occ-wrap">
+  <h1>📊 Occupancy &amp; Ratios</h1>
+  <div class="sub" id="occ-sub">Loading…</div>
+
+  <div style="margin:6px 0 16px;font-size:12px;color:#94a3b8;background:#1e293b;border:1px solid #2d3748;border-left:3px solid #4a9abf;border-radius:8px;padding:8px 12px;line-height:1.5">
+    ℹ️ Children counts come from the live <b>attendance register</b>; staff numbers are <b>inferred</b> from rota work-patterns. Live staff clock-in (<code>staff_shifts</code>) isn't captured yet, so ratios reflect <b>planned cover</b>, not punched hours.
+  </div>
+
+  <div class="vtabs">
+    <button class="vtab" id="vt-history">📅 History (look back)</button>
+    <button class="vtab" id="vt-forecast">🔮 Year ahead (forecast)</button>
+  </div>
+
+  <!-- ── HISTORY VIEW (retrospective occupancy & ratio) ───────────────────── -->
+  <div id="view-history">
+    <div class="hbar">
+      <button class="navbtn" id="hist-prev" title="Previous month">‹</button>
+      <div class="hmonth" id="hist-month">—</div>
+      <button class="navbtn" id="hist-next" title="Next month">›</button>
+      <span style="flex:1"></span>
+      <span class="sub" style="margin:0" id="hist-monthsum"></span>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--good)"></i>Good — above ratio</span>
+      <span><i style="background:var(--tight)"></i>Tight — exactly on ratio</span>
+      <span><i style="background:var(--under)"></i>Under ratio</span>
+      <span><i style="background:var(--closed)"></i>Closed / no data</span>
+      <span style="color:var(--mut)">· each cell: 👶 children-in · staff-in · Δ vs ratio · tap for who was in</span>
+    </div>
+    <div class="cal" id="hist-cal"></div>
+
+    <h3 style="margin:26px 0 4px;font-size:1rem">Roll-ups</h3>
+    <div class="hbar">
+      <label class="sub" style="margin:0">From <input type="date" id="hist-from" class="form-control" style="margin-left:4px"></label>
+      <label class="sub" style="margin:0">To <input type="date" id="hist-to" class="form-control" style="margin-left:4px"></label>
+      <label class="sub" style="margin:0">By
+        <select id="hist-gran" class="form-control" style="margin-left:4px">
+          <option value="week">Week</option><option value="month">Month</option>
+        </select>
+      </label>
+      <button class="vtab active" style="padding:7px 14px;min-height:38px" id="hist-go">View</button>
+    </div>
+    <div style="overflow-x:auto"><table id="hist-rollup"><thead><tr>
+      <th>Period</th><th>Op. days</th><th>Children (avg / peak)</th><th>Staff in</th><th>Required</th><th>Δ</th><th>Status</th><th>Source</th>
+    </tr></thead><tbody><tr><td colspan="8" style="color:var(--mut);padding:18px">Pick a range and click View.</td></tr></tbody></table></div>
+    <p class="sub" id="hist-note" style="margin-top:12px"></p>
+  </div>
+
+  <!-- ── FORECAST VIEW (existing — unchanged) ─────────────────────────────── -->
+  <div id="view-forecast" hidden>
+    <div class="cards" id="occ-cards"></div>
+    <div style="overflow-x:auto"><table id="occ-table"><thead><tr>
+      <th>Month</th><th>Baby Room</th><th>Pre-school</th><th>Out</th><th>In</th><th>Transfer ↑</th></tr></thead>
+      <tbody id="occ-body"><tr><td colspan="6" style="color:var(--mut);padding:20px">Loading forecast…</td></tr></tbody>
+    </table></div>
+    <p class="sub" style="margin-top:14px">Baby→Pre-school transfers modelled at 24 months. Capacity is a hard ceiling — red = over, green = full/spaces. Source: live enrol/leave dates. Tweak the 24-month transfer (hold-back / bring-forward) is a planning lever — ask Wren to adjust.</p>
+  </div>
+</div>
+
+<div class="scrim" id="hist-scrim"></div>
+<aside class="drawer" id="hist-drawer"><button class="x" id="hist-drawer-x">✕</button><div id="hist-drawer-body"></div></aside>
+
+<script src="/js/wren-shell-v2.js" defer></script>
+<script>
+/* ════════ shared ════════ */
+function statColor(st){return st==='good'?'#22c55e':st==='tight'?'#f59e0b':st==='under'?'#ef4444':'#475569';}
+function statBg(st){return st==='good'?'rgba(34,197,94,.16)':st==='tight'?'rgba(245,158,11,.16)':st==='under'?'rgba(239,68,68,.18)':'rgba(71,85,105,.10)';}
+function pad(n){return String(n).padStart(2,'0');}
+function ymdUTC(d){return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());}
+function bandLabel(b){return b==='under2'?'Under 2':b==='two'?'2 yrs':b==='threePlus'?'3+ yrs':b;}
+function hm(ts){return ts?String(ts).slice(11,16):'—';}
+
+var VIEW='history';
+function showView(v){
+  VIEW=v;
+  document.getElementById('view-history').hidden = v!=='history';
+  document.getElementById('view-forecast').hidden = v!=='forecast';
+  document.getElementById('vt-history').classList.toggle('active',v==='history');
+  document.getElementById('vt-forecast').classList.toggle('active',v==='forecast');
+  if(v==='forecast' && !window._fcLoaded){ window._fcLoaded=true; loadOcc(); }
+}
+
+/* ════════ HISTORY: calendar ════════ */
+var HCAL={y:null,m:null,latest:null};
+function monthName(y,m){return new Date(Date.UTC(y,m,1)).toLocaleDateString('en-GB',{month:'long',year:'numeric'});}
+
+function loadCalendar(){
+  var first=ymdUTC(new Date(Date.UTC(HCAL.y,HCAL.m,1)));
+  var last =ymdUTC(new Date(Date.UTC(HCAL.y,HCAL.m+1,0)));
+  document.getElementById('hist-month').textContent=monthName(HCAL.y,HCAL.m);
+  document.getElementById('hist-cal').innerHTML='<div style="grid-column:1/-1;color:var(--mut);padding:20px;text-align:center">Loading…</div>';
+  Wren.api('/api/occupancy/history?from='+first+'&to='+last+'&granularity=day').then(function(d){
+    HCAL.latest=d.data_range&&d.data_range.latest;
+    document.getElementById('occ-sub').textContent='Retrospective occupancy — data '+(d.data_range.earliest||'?')+' → '+(d.data_range.latest||'?')+' · ratios under-2 1:'+d.ratios.under2+', 2yr 1:'+d.ratios.two+', 3yr+ 1:'+d.ratios.threePlus;
+    document.getElementById('hist-note').textContent=d.staffing_note||'';
+    renderCalendar(d.buckets);
+    // month summary (operating days only)
+    var op=d.buckets.filter(function(b){return b.status!=='closed';});
+    var sum=document.getElementById('hist-monthsum');
+    if(op.length){var kAvg=Math.round(op.reduce(function(s,b){return s+b.children_in;},0)/op.length);
+      var under=op.filter(function(b){return b.status==='under';}).length;
+      sum.innerHTML=op.length+' open days · avg '+kAvg+' children/day'+(under?' · <span style="color:var(--under);font-weight:700">'+under+' under-ratio</span>':' · <span style="color:var(--good);font-weight:700">all on/above ratio</span>');
+    } else sum.textContent='No attendance recorded this month.';
+  }).catch(function(e){document.getElementById('hist-cal').innerHTML='<div style="grid-column:1/-1;color:#ef4444;padding:20px">Could not load: '+((e&&e.message)||e)+'</div>';});
+}
+function renderCalendar(buckets){
+  var map={};buckets.forEach(function(b){map[b.period]=b;});
+  var dows=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var html=dows.map(function(d){return '<div class="dow">'+d+'</div>';}).join('');
+  var firstDow=(new Date(Date.UTC(HCAL.y,HCAL.m,1)).getUTCDay()+6)%7; // 0=Mon
+  for(var i=0;i<firstDow;i++) html+='<div class="cell empty"></div>';
+  var daysIn=new Date(Date.UTC(HCAL.y,HCAL.m+1,0)).getUTCDate();
+  for(var day=1;day<=daysIn;day++){
+    var ds=HCAL.y+'-'+pad(HCAL.m+1)+'-'+pad(day);
+    var b=map[ds];
+    if(!b||b.status==='closed'){
+      html+='<div class="cell closed"><div class="dnum">'+day+'</div>'+
+            (b&&b.children_in?('<div class="kk">'+b.children_in+'</div><div class="ss">closed</div>'):'<div class="ss" style="margin-top:auto;color:#475569">—</div>')+'</div>';
+      continue;
+    }
+    var col=statColor(b.status);
+    var dl=(b.delta>0?'+':'')+b.delta;
+    html+='<div class="cell clk" data-date="'+ds+'" style="background:'+statBg(b.status)+';border-color:'+col+'66">'+
+      '<div class="dnum">'+day+'</div>'+
+      '<div class="dl" style="background:'+col+'22;color:'+col+'">Δ'+dl+'</div>'+
+      '<div class="kk">👶 '+b.children_in+'</div>'+
+      '<div class="ss">'+b.staff_in+' staff · need '+b.staff_required+'</div></div>';
+  }
+  document.getElementById('hist-cal').innerHTML=html;
+}
+function stepMonth(delta){
+  var d=new Date(Date.UTC(HCAL.y,HCAL.m+delta,1));HCAL.y=d.getUTCFullYear();HCAL.m=d.getUTCMonth();loadCalendar();
+}
+
+/* ════════ HISTORY: drill-down drawer ════════ */
+function openDay(date){
+  var body=document.getElementById('hist-drawer-body');
+  body.innerHTML='<div style="color:var(--mut);padding:30px 0">Loading '+date+'…</div>';
+  document.getElementById('hist-drawer').classList.add('open');
+  document.getElementById('hist-scrim').classList.add('open');
+  Wren.api('/api/occupancy/history/day?date='+date).then(function(j){
+    var col=statColor(j.status);
+    var rooms={};j.children.forEach(function(c){(rooms[c.room]=rooms[c.room]||[]).push(c);});
+    var kidsHtml=Object.keys(rooms).sort().map(function(rm){
+      return '<div class="sec">'+rm+' ('+rooms[rm].length+')</div>'+rooms[rm].map(function(c){
+        return '<div class="rowi"><span>'+c.name+' <small>'+bandLabel(c.age_band)+'</small></span><small>'+hm(c.sign_in)+'–'+hm(c.sign_out)+'</small></div>';
+      }).join('');
+    }).join('');
+    var staffHtml=j.staff.map(function(s){
+      var rt=s.in_ratio?'<span class="tag ratio">ratio</span>':'<span class="tag nonratio">not in ratio</span>';
+      var src=s.on_leave?'<span class="tag leave">leave: '+(s.absence||'')+'</span>':'<span class="tag '+s.source+'">'+s.source+'</span>';
+      var when=s.scheduled&&s.scheduled.shift_start?(s.scheduled.shift_start.slice(0,5)+'–'+(s.scheduled.shift_end||'').slice(0,5))
+              :(s.scheduled&&s.scheduled.clock_in?('clocked '+hm(s.scheduled.clock_in)+'–'+hm(s.scheduled.clock_out))
+              :(s.scheduled&&s.scheduled.contract?('contract'+(s.scheduled.hours_per_week?' '+s.scheduled.hours_per_week+'h':'')):''));
+      return '<div class="rowi"><span>'+s.name+' <small>'+(s.role||'')+'</small>'+rt+'</span><span style="text-align:right">'+src+'<br><small>'+when+'</small></span></div>';
+    }).join('');
+    body.innerHTML=
+      '<h2>'+new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+'</h2>'+
+      '<div class="sub" style="margin-bottom:10px">'+
+        '<span class="statword" style="color:'+col+'">'+(j.status==='closed'?'Closed':j.status)+'</span> · '+
+        j.children_in+' children · '+j.staff_in+' ratio staff · need '+j.staff_required+' · Δ '+(j.delta>0?'+':'')+j.delta+'</div>'+
+      '<div class="grid2">'+
+        '<div class="c"><div class="n">'+j.children_in+'</div><div class="l">Children in</div></div>'+
+        '<div class="c"><div class="n" style="color:'+col+'">'+j.staff_in+'/'+j.staff_required+'</div><div class="l">Staff in / required</div></div>'+
+      '</div>'+
+      '<div class="sub" style="margin:0 0 4px">Age bands: '+bandLabel('under2')+' '+j.children_by_band.under2+' · '+bandLabel('two')+' '+j.children_by_band.two+' · '+bandLabel('threePlus')+' '+j.children_by_band.threePlus+'</div>'+
+      '<div class="sec">Staff in ('+j.staff.filter(function(s){return s.in_ratio;}).length+' counting toward ratio)</div>'+staffHtml+
+      kidsHtml+
+      '<p class="sub" style="margin-top:14px;font-size:.74rem">'+(j.staffing_note||'')+'</p>';
+  }).catch(function(e){body.innerHTML='<div style="color:#ef4444;padding:20px">'+((e&&e.message)||e)+'</div>';});
+}
+function closeDay(){document.getElementById('hist-drawer').classList.remove('open');document.getElementById('hist-scrim').classList.remove('open');}
+
+/* ════════ HISTORY: roll-up table ════════ */
+function loadRollup(){
+  var from=document.getElementById('hist-from').value,to=document.getElementById('hist-to').value,g=document.getElementById('hist-gran').value;
+  if(!from||!to)return;
+  var tb=document.querySelector('#hist-rollup tbody');
+  tb.innerHTML='<tr><td colspan="8" style="color:var(--mut);padding:18px">Loading…</td></tr>';
+  Wren.api('/api/occupancy/history?from='+from+'&to='+to+'&granularity='+g).then(function(d){
+    if(!d.buckets.length){tb.innerHTML='<tr><td colspan="8" style="color:var(--mut);padding:18px">No operating days in range.</td></tr>';return;}
+    var maxK=Math.max.apply(null,d.buckets.map(function(b){return b.children_peak||b.children_in;}));
+    tb.innerHTML=d.buckets.map(function(b){
+      var col=statColor(b.status);var pct=Math.round((b.children_in/(maxK||1))*100);
+      var lbl=g==='week'?('w/c '+new Date(b.period+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short'})):new Date(b.period+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+      return '<tr><td style="font-weight:700;white-space:nowrap">'+lbl+'</td>'+
+        '<td>'+b.operating_days+'</td>'+
+        '<td><div style="display:flex;align-items:center;gap:8px"><div class="bar" style="flex:1"><span class="fill-ok" style="width:'+pct+'%"></span><span class="bartxt">'+b.children_in+' / '+b.children_peak+'</span></div></div></td>'+
+        '<td>'+b.staff_in+'</td><td>'+b.staff_required+'</td>'+
+        '<td style="color:'+col+';font-weight:800">'+(b.delta>0?'+':'')+b.delta+'</td>'+
+        '<td><span class="pill" style="background:'+col+'22;color:'+col+'">'+b.status+'</span></td>'+
+        '<td><small style="color:var(--mut)">'+b.staff_source+'</small></td></tr>';
+    }).join('');
+  }).catch(function(e){tb.innerHTML='<tr><td colspan="8" style="color:#ef4444;padding:18px">'+((e&&e.message)||e)+'</td></tr>';});
+}
+
+/* ════════ FORECAST (existing — verbatim) ════════ */
+function bar(o){var pct=Math.min(100,Math.round(o.count/o.capacity*100));
+ var cls=o.over?'fill-over':(o.headroom===0?'fill-full':'fill-ok');
+ var note=o.over?('<span class="over">+'+o.over+' over</span>'):(o.headroom>0?('<span class="free">'+o.headroom+' free</span>'):'full');
+ return '<div style="display:flex;align-items:center;gap:8px"><div class="bar" style="flex:1"><span class="'+cls+'" style="width:'+pct+'%"></span><span class="bartxt">'+o.count+'/'+o.capacity+'</span></div>'+note+'</div>';}
+function mlabel(m){var d=new Date(m+'-01T00:00:00Z');return d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'});}
+function loadOcc(){
+ var from=new Date();var f=from.getUTCFullYear()+'-'+String(from.getUTCMonth()+1).padStart(2,'0');
+ Wren.api('/api/occupancy/forecast?from='+f+'&months=14').then(function(d){
+  var augN=(d.summary.august_leavers[0]||{}).leavers||0;
+  var tr=d.summary.preschool_trough;
+  var cur=d.series[0];
+  document.getElementById('occ-cards').innerHTML=
+   '<div class="c alert"><div class="n">'+augN+'</div><div class="l">Pre-school leavers this August</div></div>'+
+   '<div class="c"><div class="n">'+cur.preschool.count+'/'+cur.preschool.capacity+'</div><div class="l">Pre-school now'+(cur.preschool.over?' (over '+cur.preschool.over+')':'')+'</div></div>'+
+   '<div class="c"><div class="n">'+cur.baby.count+'/'+cur.baby.capacity+'</div><div class="l">Baby room now</div></div>'+
+   '<div class="c"><div class="n">'+mlabel(tr.month)+'</div><div class="l">Pre-school low point ('+tr.count+', '+tr.headroom+' free)</div></div>';
+  document.getElementById('occ-body').innerHTML=d.series.map(function(s){
+   var pl=function(a,c){return a.length?'<span class="pill '+c+'">'+a.length+'</span> '+a.map(function(x){return x.name;}).join(', '):'<span style="color:#475569">—</span>';};
+   return '<tr><td style="font-weight:700;white-space:nowrap">'+mlabel(s.month)+'</td><td>'+bar(s.baby)+'</td><td>'+bar(s.preschool)+'</td>'+
+    '<td>'+pl(s.leavers,'out')+'</td><td>'+pl(s.starters,'in')+'</td><td>'+pl(s.transfers,'up')+'</td></tr>';
+  }).join('');
+ }).catch(function(e){document.getElementById('occ-body').innerHTML='<tr><td colspan=6 style="color:#ef4444;padding:20px">Could not load forecast: '+(e&&e.message||e)+'</td></tr>';});
+}
+
+/* ════════ init ════════ */
+function initOcc(){
+  var now=new Date();HCAL.y=now.getUTCFullYear();HCAL.m=now.getUTCMonth();
+  // roll-up defaults: last 30 days, by week
+  var to=ymdUTC(now);var f=new Date(now.getTime()-29*86400000);
+  document.getElementById('hist-from').value=ymdUTC(f);
+  document.getElementById('hist-to').value=to;
+  document.getElementById('hist-prev').onclick=function(){stepMonth(-1);};
+  document.getElementById('hist-next').onclick=function(){stepMonth(1);};
+  document.getElementById('hist-go').onclick=loadRollup;
+  // CSP: admin edition sets script-src-attr 'none' — NO inline onclick; wire here.
+  document.getElementById('vt-history').addEventListener('click',function(){showView('history');});
+  document.getElementById('vt-forecast').addEventListener('click',function(){showView('forecast');});
+  document.getElementById('hist-scrim').addEventListener('click',closeDay);
+  document.getElementById('hist-drawer-x').addEventListener('click',closeDay);
+  document.getElementById('hist-cal').addEventListener('click',function(e){var c=e.target.closest('.cell.clk');if(c&&c.dataset.date)openDay(c.dataset.date);});
+  showView('history');
+  loadCalendar();
+  loadRollup();
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closeDay();});
+}
+document.addEventListener('wren:ready', initOcc);
+</script></body></html>

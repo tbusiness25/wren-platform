@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Observations — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <script src="/js/wren-chat.js?v=2026070901" defer></script>
+  <style>
+    :root {
+      --navy:   #0f172a;
+      --surface:#1e293b;
+      --border: #2d3748;
+      --blue:   #4a9abf;
+      --orange: #e07820;
+      --text:   #f1f5f9;
+      --muted:  #94a3b8;
+      --green:  #22c55e;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--navy); color: var(--text); font-family: system-ui, Arial, sans-serif; min-height: 100vh; }
+
+    /* ── Split layout ── */
+    .obs-layout {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      height: calc(100vh - 60px);
+      overflow: hidden;
+      gap: 0;
+    }
+
+    /* ── Left panel ── */
+    .obs-list-panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      background: var(--navy);
+    }
+
+    .obs-list-header {
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .obs-list-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .obs-list-title {
+      font-size: .9rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Filter bar */
+    .obs-filter-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .obs-filter-grid .form-control,
+    .obs-filter-search {
+      font-size: .78rem;
+      padding: 6px 8px;
+      background: var(--navy);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      width: 100%;
+      outline: none;
+      font-family: inherit;
+    }
+    .obs-filter-grid .form-control:focus,
+    .obs-filter-search:focus { border-color: var(--blue); }
+
+    .obs-date-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+    .obs-date-row label { font-size: .7rem; color: var(--muted); white-space: nowrap; }
+    .obs-date-row input[type=date] {
+      font-size: .75rem;
+      padding: 5px 7px;
+      background: var(--navy);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      flex: 1;
+      outline: none;
+      font-family: inherit;
+      colorscheme: dark;
+    }
+    .obs-date-row input[type=date]:focus { border-color: var(--blue); }
+
+    .obs-search-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .obs-filter-btn {
+      padding: 6px 12px;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: .78rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      transition: .15s;
+    }
+    .obs-filter-btn:hover { background: #3a8aaf; }
+
+    /* Card list */
+    .obs-card-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+    .obs-card-list::-webkit-scrollbar { width: 4px; }
+    .obs-card-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .obs-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+      position: relative;
+    }
+    .obs-card:hover { border-color: var(--blue); }
+    .obs-card.active {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(74,154,191,.25);
+    }
+
+    .obs-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .obs-card-name {
+      font-size: .82rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .obs-card-date {
+      font-size: .7rem;
+      color: var(--muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .obs-card-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+
+    .obs-type-badge {
+      font-size: .65rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      text-transform: capitalize;
+    }
+
+    .obs-area-chip {
+      font-size: .6rem;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(74,154,191,.15);
+      color: var(--blue);
+    }
+
+    .obs-card-text {
+      font-size: .75rem;
+      color: var(--muted);
+      line-height: 1.4;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .obs-card-footer {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .obs-dot-indicator {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--orange);
+      flex-shrink: 0;
+      title: "Has next steps";
+    }
+
+    .obs-share-badge {
+      font-size: .6rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(34,197,94,.15);
+      color: var(--green);
+    }
+
+    .obs-empty {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: .85rem;
+    }
+
+    /* ── Right panel ── */
+    .obs-form-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--navy);
+    }
+
+    .obs-form-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .obs-form-toolbar-title {
+      font-size: .9rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .obs-form-toolbar-btns {
+      display: flex;
+      gap: 8px;
+    }
+
+    .obs-form-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+    }
+    .obs-form-scroll::-webkit-scrollbar { width: 4px; }
+    .obs-form-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* Form sections */
+    .obs-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    .obs-section-title {
+      font-size: .72rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 12px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-label {
+      font-size: .72rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .form-label.italic {
+      font-style: italic;
+    }
+
+    .form-control {
+      background: var(--navy);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: .83rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+      width: 100%;
+    }
+
+    .form-control:focus { border-color: var(--blue); }
+    textarea.form-control { resize: vertical; line-height: 1.5; }
+
+    /* Child selector */
+    .child-selector {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px;
+      background: var(--navy);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .child-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(74,154,191,.2);
+      border: 2px solid var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .child-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .child-info { flex: 1; min-width: 0; }
+    .child-info-name { font-size: .9rem; font-weight: 700; color: var(--text); }
+    .child-info-meta { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+
+    /* Tag chips */
+    .tags-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: .75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .15s;
+      font-family: inherit;
+    }
+    .tag-chip input[type=checkbox] { display: none; }
+    .tag-chip.checked {
+      background: rgba(74,154,191,.18);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    /* EYFS area chips */
+    .eyfs-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .eyfs-chip {
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: .75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .15s;
+      font-family: inherit;
+    }
+    .eyfs-chip.selected {
+      background: rgba(74,154,191,.18);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    /* Share toggle */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .toggle-label {
+      font-size: .83rem;
+      color: var(--text);
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input { display: none; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: .2s;
+    }
+    .toggle-slider:before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: .2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: var(--green); }
+    .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+    /* Media / thumbnails */
+    .photo-thumbs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .photo-thumb {
+      width: 72px;
+      height: 72px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: .15s;
+    }
+    .photo-thumb:hover { border-color: var(--blue); }
+
+    /* Framework accordion */
+    .framework-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+
+    .framework-toggle-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: .83rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      text-align: left;
+    }
+
+    .framework-toggle-btn .chevron {
+      font-size: .8rem;
+      transition: transform .2s;
+    }
+    .framework-toggle-btn.open .chevron { transform: rotate(180deg); }
+
+    .framework-body {
+      display: none;
+      padding: 0 16px 14px;
+    }
+    .framework-body.open { display: block; }
+
+    .fw-area-group {
+      margin-bottom: 12px;
+    }
+    .fw-area-header {
+      font-size: .72rem;
+      font-weight: 700;
+      color: var(--blue);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 6px 0 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 6px;
+    }
+    .fw-age-group { margin-bottom: 8px; }
+    .fw-age-label {
+      font-size: .68rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .fw-statement {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: .12s;
+    }
+    .fw-statement:hover { background: rgba(74,154,191,.06); }
+    .fw-statement input[type=checkbox] {
+      margin-top: 2px;
+      accent-color: var(--blue);
+      flex-shrink: 0;
+    }
+    .fw-statement-text {
+      font-size: .75rem;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 8px 16px;
+      border-radius: 10px;
+      border: none;
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .15s;
+      font-family: inherit;
+      white-space: nowrap;
+      min-height: 36px;
+    }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-primary:hover { background: #3a8aaf; }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-success:hover { background: #16a34a; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
+    .btn-sm { padding: 5px 10px; font-size: .75rem; min-height: 30px; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* No selection state */
+    .obs-empty-form {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: .9rem;
+      gap: 10px;
+      padding: 40px;
+    }
+    .obs-empty-form .icon { font-size: 3rem; opacity: .4; }
+
+    /* Loading */
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin: 30px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Mobile: full-screen panels with slide */
+    @media (max-width: 768px) {
+      .obs-layout {
+        grid-template-columns: 1fr;
+        height: calc(100vh - 60px);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .obs-list-panel {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        transform: translateX(0);
+        transition: transform .3s ease;
+        border-right: none;
+      }
+
+      .obs-list-panel.slide-out {
+        transform: translateX(-100%);
+      }
+
+      .obs-form-panel {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        transform: translateX(100%);
+        transition: transform .3s ease;
+      }
+
+      .obs-form-panel.slide-in {
+        transform: translateX(0);
+        z-index: 3;
+      }
+
+      .back-btn {
+        display: inline-flex !important;
+      }
+
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .back-btn { display: none; }
+
+    /* Child select modal */
+    .child-modal-list {
+      max-height: 360px;
+      overflow-y: auto;
+    }
+    .child-modal-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: .12s;
+    }
+    .child-modal-item:hover { background: rgba(74,154,191,.1); }
+    .child-modal-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(74,154,191,.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    .child-modal-name { font-size: .85rem; font-weight: 600; color: var(--text); }
+    .child-modal-meta { font-size: .72rem; color: var(--muted); }
+
+    /* Alert */
+    .alert { padding: 10px 14px; border-radius: 8px; font-size: .82rem; margin-bottom: 10px; }
+    .alert-danger { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3); color: #fca5a5; }
+    .alert-success { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: #86efac; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="obs-layout" id="obs-layout">
+
+    <!-- ════════════════════════════════ LEFT PANEL ════════════════════════════════ -->
+    <div class="obs-list-panel" id="obs-list-panel">
+      <div class="obs-list-header">
+        <div class="obs-list-header-row">
+          <span class="obs-list-title">Observations</span>
+          <button class="btn btn-primary btn-sm" id="btn-new-obs">+ New</button>
+        </div>
+
+        <!-- Child + Type dropdowns -->
+        <div class="obs-filter-grid">
+          <select class="form-control" id="f-child" style="font-size:.75rem;padding:5px 8px">
+            <option value="">All Children</option>
+          </select>
+          <select class="form-control" id="f-type" style="font-size:.75rem;padding:5px 8px">
+            <option value="">All Types</option>
+            <option value="learning_story">Learning Story</option>
+            <option value="assessment">Assessment</option>
+            <option value="incident_report">Incident Report</option>
+            <option value="parental">Parental</option>
+            <option value="photo_note">Photo Note</option>
+          </select>
+        </div>
+
+        <!-- EYFS area dropdown -->
+        <div style="margin-bottom:6px">
+          <select class="form-control" id="f-area" style="font-size:.75rem;padding:5px 8px;width:100%">
+            <option value="">All EYFS Areas</option>
+            <option value="Communication and Language">Communication &amp; Language</option>
+            <option value="Personal Social and Emotional Development">PSED</option>
+            <option value="Physical Development">Physical Development</option>
+            <option value="Literacy">Literacy</option>
+            <option value="Mathematics">Mathematics</option>
+            <option value="Understanding the World">Understanding the World</option>
+            <option value="Expressive Arts and Design">Expressive Arts &amp; Design</option>
+          </select>
+        </div>
+
+        <!-- Date range -->
+        <div class="obs-date-row">
+          <label>From</label>
+          <input type="date" id="f-date-from" colorscheme="dark">
+          <label>To</label>
+          <input type="date" id="f-date-to" colorscheme="dark">
+        </div>
+
+        <!-- Search + filter button -->
+        <div class="obs-search-row">
+          <input type="text" class="obs-filter-search" id="f-search" placeholder="Search text...">
+          <button class="obs-filter-btn" id="btn-filter">Filter</button>
+        </div>
+      </div>
+
+      <!-- Card list -->
+      <div class="obs-card-list" id="obs-card-list">
+        <div class="spinner"></div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════ RIGHT PANEL ════════════════════════════════ -->
+    <div class="obs-form-panel" id="obs-form-panel">
+
+      <!-- Toolbar -->
+      <div class="obs-form-toolbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-ghost btn-sm back-btn" id="back-btn">← Back</button>
+          <span class="obs-form-toolbar-title" id="form-panel-title">Select an observation</span>
+        </div>
+        <div class="obs-form-toolbar-btns" id="toolbar-btns" style="display:none">
+          <button class="btn btn-ghost btn-sm" id="btn-share" title="Share with parents"></button>
+          <button class="btn btn-ghost btn-sm" id="btn-export-pdf" title="Export as PDF">⬇ PDF</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete">Delete</button>
+          <button class="btn btn-primary btn-sm" id="btn-save">Save</button>
+        </div>
+      </div>
+
+      <!-- Empty state (no selection) -->
+      <div class="obs-empty-form" id="obs-empty-form">
+        <div class="icon">📔</div>
+        <div>Select an observation or create a new one</div>
+        <button class="btn btn-primary" id="btn-new-obs-empty">+ New Observation</button>
+      </div>
+
+      <!-- Form -->
+      <div class="obs-form-scroll" id="obs-form-scroll" style="display:none">
+
+        <!-- 1. Child selector -->
+        <div class="obs-section">
+          <div class="obs-section-title">Child</div>
+          <div class="child-selector" id="child-selector-row">
+            <div class="child-avatar" id="child-avatar">👶</div>
+            <div class="child-info">
+              <div class="child-info-name" id="child-name-display">No child selected</div>
+              <div class="child-info-meta" id="child-meta-display">Tap to choose a child</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btn-change-child">Change Child</button>
+          </div>
+        </div>
+
+        <!-- 2. Observer + date -->
+        <div class="obs-section">
+          <div class="obs-section-title">Observed By</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Practitioner</label>
+              <input type="text" class="form-control" id="f-observed-by" placeholder="Observed by...">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date &amp; Time</label>
+              <input type="datetime-local" class="form-control" id="f-obs-date" colorscheme="dark">
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Observation tags -->
+        <div class="obs-section">
+          <div class="obs-section-title">Tags</div>
+          <div class="tags-row" id="obs-tags-row">
+            <label class="tag-chip" id="tag-post-its">
+              <input type="checkbox" id="tag-post-its-cb"> Post-its
+            </label>
+            <label class="tag-chip" id="tag-parental">
+              <input type="checkbox" id="tag-parental-cb"> Parental
+            </label>
+            <label class="tag-chip" id="tag-termly">
+              <input type="checkbox" id="tag-termly-cb"> Termly Update
+            </label>
+            <label class="tag-chip" id="tag-baseline">
+              <input type="checkbox" id="tag-baseline-cb"> Baseline
+            </label>
+            <label class="tag-chip" id="tag-planned">
+              <input type="checkbox" id="tag-planned-cb"> Planned Activity
+            </label>
+          </div>
+        </div>
+
+        <!-- 4. Observation text -->
+        <div class="obs-section">
+          <div class="form-group">
+            <label class="form-label">Observation — What and how is the child learning</label>
+            <textarea class="form-control" id="f-obs-text" rows="6" placeholder="Describe what you observed the child doing, saying and how they were learning..."></textarea>
+          </div>
+        </div>
+
+        <!-- 5. Analysis -->
+        <div class="obs-section">
+          <div class="form-group">
+            <label class="form-label">Analysis</label>
+            <textarea class="form-control" id="f-analysis" rows="4" placeholder="What does this tell us about the child's learning and development?"></textarea>
+          </div>
+        </div>
+
+        <!-- 6. Next Steps -->
+        <div class="obs-section">
+          <div class="form-group">
+            <label class="form-label">Next Steps — What are you going to do next?</label>
+            <textarea class="form-control" id="f-next-steps" rows="4" placeholder="Next steps for this child's development..."></textarea>
+          </div>
+        </div>
+
+        <!-- 7. Additional Comments + Staff Notes -->
+        <div class="obs-section">
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="form-label">Additional Comments</label>
+            <textarea class="form-control" id="f-comments" rows="3" placeholder="Any additional comments..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label italic">Staff Notes — Internal notes, not visible to parents</label>
+            <textarea class="form-control" id="f-staff-notes" rows="3" placeholder="Internal notes only..."></textarea>
+          </div>
+        </div>
+
+        <!-- 8. Media -->
+        <div class="obs-section">
+          <div class="obs-section-title">Media</div>
+          <div class="form-group">
+            <label class="form-label">Add Photos</label>
+            <input type="file" class="form-control" id="f-photos" accept="image/*" multiple style="padding:6px">
+          </div>
+          <div class="photo-thumbs" id="photo-thumbs"></div>
+        </div>
+
+        <!-- 9. Observation Type -->
+        <div class="obs-section">
+          <div class="obs-section-title">Observation Type &amp; EYFS Areas</div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label class="form-label">Observation Type</label>
+            <select class="form-control" id="f-obs-type">
+              <option value="learning_story">Learning Story</option>
+              <option value="assessment">Assessment</option>
+              <option value="parental">Parental</option>
+              <option value="photo_note">Photo Note</option>
+              <option value="incident_report">Incident Report</option>
+            </select>
+          </div>
+
+          <!-- 10. EYFS Areas multi-select chips -->
+          <div>
+            <div class="form-label" style="margin-bottom:8px">EYFS Areas (click to toggle)</div>
+            <div class="eyfs-chips" id="eyfs-chips">
+              <button type="button" class="eyfs-chip" data-area="Communication and Language">Communication &amp; Language</button>
+              <button type="button" class="eyfs-chip" data-area="Personal Social and Emotional Development">PSED</button>
+              <button type="button" class="eyfs-chip" data-area="Physical Development">Physical Development</button>
+              <button type="button" class="eyfs-chip" data-area="Literacy">Literacy</button>
+              <button type="button" class="eyfs-chip" data-area="Mathematics">Mathematics</button>
+              <button type="button" class="eyfs-chip" data-area="Understanding the World">Understanding the World</button>
+              <button type="button" class="eyfs-chip" data-area="Expressive Arts and Design">Expressive Arts &amp; Design</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 11. Share with Parents toggle -->
+        <div class="obs-section">
+          <div class="toggle-row">
+            <span class="toggle-label">Share with Parents</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="f-share-parents">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 12. Framework Linking (collapsible) -->
+        <div class="framework-section" id="framework-section" style="display:none">
+          <button type="button" class="framework-toggle-btn" id="framework-toggle-btn">
+            Link to Birth to 5 Matters
+            <span class="chevron">▼</span>
+          </button>
+          <div class="framework-body" id="framework-body">
+            <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="btn btn-ghost" id="btn-ai-suggest" style="font-size:.78rem;padding:6px 12px">✨ Suggest statements</button>
+              <input type="search" id="fw-stmt-search" placeholder="Search all statements…" autocomplete="off"
+                     style="flex:1;min-width:160px;background:transparent;border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:inherit;font-size:.78rem">
+              <a href="#" id="fw-open-tracker" style="font-size:.75rem;color:var(--muted);white-space:nowrap" hidden>Open tracker →</a>
+            </div>
+            <div id="fw-suggest-results"></div>
+            <div id="framework-content">
+              <div class="spinner"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Save / Share / Delete row (bottom) -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;padding-bottom:20px">
+          <button class="btn btn-primary" id="btn-save-bottom">
+            <span id="save-btn-label">Save Observation</span>
+          </button>
+          <button class="btn btn-ghost" id="btn-share-bottom" style="display:none"></button>
+          <button class="btn btn-danger" id="btn-delete-bottom" style="display:none">Delete</button>
+        </div>
+
+      </div><!-- /obs-form-scroll -->
+    </div><!-- /obs-form-panel -->
+
+  </div><!-- /obs-layout -->
+</div><!-- /wren-content -->
+
+<!-- Child picker modal (injected via JS) -->
+<div id="child-picker-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px">
+  <div id="child-picker-modal-inner" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:420px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:.9rem;font-weight:700;color:var(--text)">Choose Child</span>
+      <button id="btn-close-child-modal" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:0;line-height:1">✕</button>
+    </div>
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+      <input type="text" id="child-search-input" class="form-control" placeholder="Search name..." style="width:100%">
+    </div>
+    <div class="child-modal-list" id="child-modal-list" style="overflow-y:auto;padding:8px">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Auth check (raw fetch — before Wren.api is available) ────────────────────
+(function() {
+  const token = sessionStorage.getItem('wrenToken');
+  if (!token) { window.location.href = '/login.html'; }
+})();
+
+// ── State ────────────────────────────────────────────────────────────────────
+let allObs        = [];
+let allChildren   = [];
+let currentObs    = null;   // full observation object loaded in form
+let currentObsId  = null;   // id of obs currently in form (null = new)
+let selectedChild = null;   // child object selected for current form
+let frameworkData = null;   // cached framework data for current child
+let frameworkLoaded = false;
+
+const EYFS_FULL = [
+  'Communication and Language',
+  'Personal Social and Emotional Development',
+  'Physical Development',
+  'Literacy',
+  'Mathematics',
+  'Understanding the World',
+  'Expressive Arts and Design'
+];
+
+const TYPE_COLOURS = {
+  learning_story:  '#4a9abf',
+  assessment:      '#f59e0b',
+  incident_report: '#ef4444',
+  parental:        '#8b5cf6',
+  photo_note:      '#22c55e'
+};
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+let _pageBound = false;
+function bindPageListeners() {
+  if (_pageBound) return;
+  _pageBound = true;
+  document.getElementById('btn-new-obs').addEventListener('click', newObs);
+  document.getElementById('btn-filter').addEventListener('click', applyFilters);
+  document.getElementById('back-btn').addEventListener('click', goBackToList);
+  document.getElementById('btn-share').addEventListener('click', shareObs);
+  document.getElementById('btn-export-pdf').addEventListener('click', exportObsPDF);
+  document.getElementById('btn-delete').addEventListener('click', deleteObs);
+  document.getElementById('btn-save').addEventListener('click', saveObs);
+  document.getElementById('btn-new-obs-empty').addEventListener('click', newObs);
+  document.getElementById('btn-change-child').addEventListener('click', openChildModal);
+  document.getElementById('framework-toggle-btn').addEventListener('click', toggleFramework);
+  document.getElementById('btn-ai-suggest').addEventListener('click', runAdminSuggest);
+  wireStmtSearch();
+  document.getElementById('btn-save-bottom').addEventListener('click', saveObs);
+  document.getElementById('btn-share-bottom').addEventListener('click', shareObs);
+  document.getElementById('btn-delete-bottom').addEventListener('click', deleteObs);
+  document.getElementById('btn-close-child-modal').addEventListener('click', closeChildModal);
+  document.getElementById('child-search-input').addEventListener('input', filterChildModal);
+  const modal = document.getElementById('child-picker-modal');
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeChildModal(); });
+  document.getElementById('obs-card-list').addEventListener('click', function(e) {
+    const card = e.target.closest('.obs-card');
+    if (card) loadObs(parseInt(card.dataset.obsId));
+  });
+  document.getElementById('child-modal-list').addEventListener('click', function(e) {
+    const item = e.target.closest('.child-modal-item');
+    if (item) pickChild(parseInt(item.dataset.childId));
+  });
+  document.getElementById('photo-thumbs').addEventListener('click', function(e) {
+    const thumb = e.target.closest('.photo-thumb');
+    if (thumb) window.open(thumb.dataset.photoUrl, '_blank');
+  });
+}
+
+document.addEventListener('wren:ready', function() {
+  bindPageListeners();
+  initTagChips();
+  initEyfsChips();
+  setDefaultDateTime();
+  autoFillObserver();
+  loadChildren().then(() => {
+    const params = new URLSearchParams(location.search);
+    const preChild = params.get('child_id');
+    if (preChild) {
+      const c = allChildren.find(c => String(c.id) === preChild);
+      if (c) setSelectedChild(c);
+    }
+    applyFilters();
+  });
+});
+
+// Also run on DOMContentLoaded in case wren:ready already fired or shell is delayed
+document.addEventListener('DOMContentLoaded', function() {
+  // Slight delay to allow wren-shell to initialise
+  if (!window.Wren) {
+    setTimeout(function() {
+      if (window.Wren && Wren.user !== undefined) initPage();
+    }, 300);
+  }
+});
+
+function initPage() {
+  bindPageListeners();
+  initTagChips();
+  initEyfsChips();
+  setDefaultDateTime();
+  autoFillObserver();
+  loadChildren().then(() => {
+    const params = new URLSearchParams(location.search);
+    const preChild = params.get('child_id');
+    if (preChild) {
+      const c = allChildren.find(c => String(c.id) === preChild);
+      if (c) setSelectedChild(c);
+    }
+    applyFilters();
+  });
+}
+
+// ── Load children ────────────────────────────────────────────────────────────
+async function loadChildren() {
+  try {
+    allChildren = await Wren.api('/api/children');
+    // Populate child filter dropdown
+    const sel = document.getElementById('f-child');
+    allChildren.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id;
+      o.textContent = `${c.first_name} ${c.last_name}`;
+      sel.appendChild(o);
+    });
+  } catch(e) {
+    allChildren = [];
+  }
+}
+
+// ── Filters / list ───────────────────────────────────────────────────────────
+async function applyFilters() {
+  const childId  = document.getElementById('f-child').value;
+  const type     = document.getElementById('f-type').value;
+  const area     = document.getElementById('f-area').value;
+  const dateFrom = document.getElementById('f-date-from').value;
+  const dateTo   = document.getElementById('f-date-to').value;
+  const search   = document.getElementById('f-search').value.trim();
+
+  const params = new URLSearchParams();
+  if (childId)  params.set('child_id', childId);
+  if (type)     params.set('observation_type', type);
+  if (area)     params.set('eyfs_area', area);
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo)   params.set('date_to', dateTo);
+  if (search)   params.set('search', search);
+
+  document.getElementById('obs-card-list').innerHTML = '<div class="spinner"></div>';
+  try {
+    allObs = await Wren.api('/api/observations?' + params.toString());
+    renderCardList(allObs);
+  } catch(e) {
+    document.getElementById('obs-card-list').innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px">Failed to load observations</div>`;
+  }
+}
+
+function renderCardList(obs) {
+  const list = document.getElementById('obs-card-list');
+  if (!obs || !obs.length) {
+    list.innerHTML = `<div class="obs-empty"><div style="font-size:2rem;margin-bottom:8px">📔</div>No observations found</div>`;
+    return;
+  }
+  list.innerHTML = obs.map(o => {
+    const typeColour = TYPE_COLOURS[o.observation_type] || '#64748b';
+    const areas = parseAreas(o.eyfs_areas);
+    const areaChips = areas.slice(0, 3).map(a =>
+      `<span class="obs-area-chip">${abbreviateArea(a)}</span>`
+    ).join('');
+    const extraAreas = areas.length > 3 ? `<span class="obs-area-chip">+${areas.length - 3}</span>` : '';
+    const preview = (o.observation_text || '').slice(0, 80) + ((o.observation_text || '').length > 80 ? '…' : '');
+    const dateStr = o.observed_at ? new Date(o.observed_at).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'2-digit'}) :
+                    o.created_at  ? new Date(o.created_at).toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'2-digit'}) : '';
+    const isActive = currentObsId === o.id ? 'active' : '';
+
+    return `<div class="obs-card ${isActive}" data-obs-id="${o.id}">
+      <div class="obs-card-top">
+        <span class="obs-card-name">${o.child_first_name || ''} ${o.child_last_name || ''}
+          ${o.room_name ? `<span style="background:rgba(74,154,191,.15);color:var(--blue);font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:4px">${o.room_name}</span>` : ''}
+        </span>
+        <span class="obs-card-date">${dateStr}</span>
+      </div>
+      <div class="obs-card-badges">
+        <span class="obs-type-badge" style="background:${typeColour}22;color:${typeColour}">${formatType(o.observation_type)}</span>
+        ${areaChips}${extraAreas}
+      </div>
+      ${preview ? `<div class="obs-card-text">${escHtml(preview)}</div>` : ''}
+      <div class="obs-card-footer">
+        ${o.next_steps ? `<div class="obs-dot-indicator" title="Has next steps"></div>` : ''}
+        ${o.shared_with_parents ? `<span class="obs-share-badge">Shared</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Load single observation into form ────────────────────────────────────────
+async function loadObs(id) {
+  // Update active state in list
+  document.querySelectorAll('.obs-card').forEach(c => c.classList.toggle('active', +c.dataset.obsId === id));
+
+  try {
+    const obs = await Wren.api(`/api/observations/${id}`);
+    currentObs = obs;
+    currentObsId = id;
+    populateForm(obs);
+    showFormPanel('Edit Observation');
+  } catch(e) {
+    Wren.toast('Failed to load observation', 'error');
+  }
+}
+
+function populateForm(obs) {
+  // Child
+  const child = allChildren.find(c => c.id === obs.child_id);
+  if (child) {
+    setSelectedChild(child);
+  } else {
+    clearChildDisplay();
+  }
+
+  // Observer + date
+  document.getElementById('f-observed-by').value = obs.observed_by || obs.staff_name || '';
+  if (obs.observed_at) {
+    const dt = new Date(obs.observed_at);
+    document.getElementById('f-obs-date').value = toDateTimeLocal(dt);
+  }
+
+  // Tags
+  document.getElementById('tag-post-its-cb').checked  = !!obs.is_post_it;
+  document.getElementById('tag-parental-cb').checked  = !!obs.is_parental;
+  document.getElementById('tag-termly-cb').checked    = !!obs.is_termly_update;
+  document.getElementById('tag-baseline-cb').checked  = !!obs.is_baseline;
+  document.getElementById('tag-planned-cb').checked   = !!obs.is_planned_activity;
+  refreshTagChips();
+
+  // Text fields
+  document.getElementById('f-obs-text').value    = obs.observation_text || '';
+  document.getElementById('f-analysis').value    = obs.analysis || '';
+  document.getElementById('f-next-steps').value  = obs.next_steps || '';
+  document.getElementById('f-comments').value    = obs.additional_comments || '';
+  document.getElementById('f-staff-notes').value = obs.staff_notes || '';
+
+  // Photos
+  renderPhotoThumbs(obs.photo_urls || []);
+
+  // Type
+  document.getElementById('f-obs-type').value = obs.observation_type || 'learning_story';
+
+  // EYFS areas
+  const areas = parseAreas(obs.eyfs_areas);
+  document.querySelectorAll('.eyfs-chip').forEach(chip => {
+    chip.classList.toggle('selected', areas.includes(chip.dataset.area));
+  });
+
+  // Share toggle
+  document.getElementById('f-share-parents').checked = !!obs.shared_with_parents;
+
+  // Framework
+  frameworkLoaded = false;
+  frameworkData = null;
+  document.getElementById('framework-body').classList.remove('open');
+  document.getElementById('framework-toggle-btn').classList.remove('open');
+  document.getElementById('framework-content').innerHTML = '<div class="spinner"></div>';
+  if (obs.child_id) {
+    document.getElementById('framework-section').style.display = 'block';
+  }
+
+  // Toolbar
+  updateToolbarButtons();
+}
+
+function updateToolbarButtons() {
+  const isNew = !currentObsId;
+  const tbBtns = document.getElementById('toolbar-btns');
+  tbBtns.style.display = 'flex';
+
+  const shared = document.getElementById('f-share-parents').checked;
+  const shareLabel = shared ? '🔒 Unshare' : '📤 Share';
+  document.getElementById('btn-share').textContent = shareLabel;
+  document.getElementById('btn-share-bottom').textContent = shareLabel;
+  document.getElementById('btn-share').style.display = isNew ? 'none' : '';
+  document.getElementById('btn-share-bottom').style.display = isNew ? 'none' : 'inline-flex';
+
+  // Delete: only show for existing obs + manager role
+  const user = Wren.user;
+  const isManager = user && (user.role === 'manager' || user.role === 'deputy_manager');
+  const deleteBtns = [document.getElementById('btn-delete'), document.getElementById('btn-delete-bottom')];
+  deleteBtns.forEach(b => { b.style.display = (!isNew && isManager) ? '' : 'none'; });
+
+  document.getElementById('save-btn-label').textContent = isNew ? 'Save Observation' : 'Update Observation';
+}
+
+// ── New observation ───────────────────────────────────────────────────────────
+function newObs() {
+  currentObs = null;
+  currentObsId = null;
+  document.querySelectorAll('.obs-card').forEach(c => c.classList.remove('active'));
+
+  // Clear form
+  clearChildDisplay();
+  setDefaultDateTime();
+  autoFillObserver();
+
+  ['tag-post-its-cb','tag-parental-cb','tag-termly-cb','tag-baseline-cb','tag-planned-cb'].forEach(id => {
+    document.getElementById(id).checked = false;
+  });
+  refreshTagChips();
+
+  document.getElementById('f-obs-text').value    = '';
+  document.getElementById('f-analysis').value    = '';
+  document.getElementById('f-next-steps').value  = '';
+  document.getElementById('f-comments').value    = '';
+  document.getElementById('f-staff-notes').value = '';
+  document.getElementById('f-obs-type').value    = 'learning_story';
+  document.getElementById('f-share-parents').checked = false;
+  document.getElementById('photo-thumbs').innerHTML = '';
+
+  document.querySelectorAll('.eyfs-chip').forEach(c => c.classList.remove('selected'));
+
+  document.getElementById('framework-section').style.display = 'none';
+  frameworkData = null;
+  frameworkLoaded = false;
+
+  updateToolbarButtons();
+  showFormPanel('New Observation');
+}
+
+// ── Save ─────────────────────────────────────────────────────────────────────
+async function saveObs() {
+  if (!selectedChild) {
+    Wren.toast('Please select a child first', 'warning');
+    return;
+  }
+
+  const obsText = document.getElementById('f-obs-text').value.trim();
+  if (!obsText) {
+    Wren.toast('Observation text is required', 'warning');
+    return;
+  }
+
+  const selectedAreas = Array.from(document.querySelectorAll('.eyfs-chip.selected'))
+                             .map(c => c.dataset.area);
+
+  // Collect selected framework statement IDs (from the tracker panel, AI
+  // suggestions and search results — all share .fw-tracker-cb). Dedupe + drop
+  // legacy rows with no statement id.
+  const fwIds = [...new Set(Array.from(document.querySelectorAll('.fw-tracker-cb:checked'))
+                     .map(cb => parseInt(cb.dataset.trackerId))
+                     .filter(n => !isNaN(n)))];
+
+  const payload = {
+    child_id:              selectedChild.id,
+    observed_by:           document.getElementById('f-observed-by').value.trim(),
+    observed_at:           document.getElementById('f-obs-date').value,
+    is_post_it:            document.getElementById('tag-post-its-cb').checked,
+    is_parental:           document.getElementById('tag-parental-cb').checked,
+    is_termly_update:      document.getElementById('tag-termly-cb').checked,
+    is_baseline:           document.getElementById('tag-baseline-cb').checked,
+    is_planned_activity:   document.getElementById('tag-planned-cb').checked,
+    observation_text:      obsText,
+    analysis:              document.getElementById('f-analysis').value.trim(),
+    next_steps:            document.getElementById('f-next-steps').value.trim(),
+    additional_comments:   document.getElementById('f-comments').value.trim(),
+    staff_notes:           document.getElementById('f-staff-notes').value.trim(),
+    observation_type:      document.getElementById('f-obs-type').value,
+    eyfs_areas:            selectedAreas,
+    shared_with_parents:   document.getElementById('f-share-parents').checked,
+    framework_tracker_ids: fwIds
+  };
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  try {
+    let result;
+    if (currentObsId) {
+      result = await Wren.api(`/api/observations/${currentObsId}`, { method: 'PUT', body: payload });
+    } else {
+      result = await Wren.api('/api/observations', { method: 'POST', body: payload });
+    }
+    currentObsId = result.id || currentObsId;
+    currentObs = result;
+    Wren.toast((currentObsId ? 'Observation saved' : 'Observation saved') +
+      (fwIds.length ? ` · ${fwIds.length} statement${fwIds.length === 1 ? '' : 's'} → framework tracker` : ''), 'success');
+    const trackerLink = document.getElementById('fw-open-tracker');
+    if (trackerLink && selectedChild) {
+      trackerLink.href = `/child-profile.html?id=${selectedChild.id}`;
+      trackerLink.hidden = false;
+    }
+    updateToolbarButtons();
+    applyFilters();
+  } catch(e) {
+    Wren.toast(e.error || 'Failed to save observation', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Share / unshare ──────────────────────────────────────────────────────────
+async function shareObs() {
+  if (!currentObsId) return;
+  const shared = document.getElementById('f-share-parents').checked;
+  try {
+    await Wren.api(`/api/observations/${currentObsId}/share`, {
+      method: 'POST',
+      body: { shared: !shared }
+    });
+    document.getElementById('f-share-parents').checked = !shared;
+    updateToolbarButtons();
+    Wren.toast(!shared ? 'Shared with parents' : 'Removed from parents view', 'success');
+    applyFilters();
+  } catch(e) {
+    Wren.toast(e.error || 'Failed to update sharing', 'error');
+  }
+}
+
+// ── Delete ───────────────────────────────────────────────────────────────────
+function deleteObs() {
+  if (!currentObsId) return;
+  const childName = selectedChild ? `${selectedChild.first_name} ${selectedChild.last_name}` : 'this child';
+  Wren.modal('Delete Observation', `<p style="color:var(--text);font-size:.9rem">Are you sure you want to permanently delete this observation for <strong>${childName}</strong>? This cannot be undone.</p>`, [
+    {
+      label: 'Delete', class: 'btn-danger',
+      action: async () => {
+        try {
+          await Wren.api(`/api/observations/${currentObsId}`, { method: 'DELETE' });
+          Wren.toast('Observation deleted', 'success');
+          currentObs = null;
+          currentObsId = null;
+          hideFormPanel();
+          applyFilters();
+        } catch(e) {
+          Wren.toast(e.error || 'Failed to delete', 'error');
+        }
+      }
+    },
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+// ── Framework linking ────────────────────────────────────────────────────────
+async function toggleFramework() {
+  const btn  = document.getElementById('framework-toggle-btn');
+  const body = document.getElementById('framework-body');
+  const isOpen = body.classList.contains('open');
+
+  if (isOpen) {
+    body.classList.remove('open');
+    btn.classList.remove('open');
+    return;
+  }
+
+  body.classList.add('open');
+  btn.classList.add('open');
+
+  if (!frameworkLoaded && selectedChild) {
+    await loadFrameworkData();
+  }
+}
+
+async function loadFrameworkData() {
+  if (!selectedChild) return;
+  document.getElementById('framework-content').innerHTML = '<div class="spinner"></div>';
+  try {
+    frameworkData = await Wren.api(`/api/observations/child/${selectedChild.id}/framework?framework=birth_to_5`);
+    frameworkLoaded = true;
+    renderFramework(frameworkData);
+  } catch(e) {
+    document.getElementById('framework-content').innerHTML = `<p style="color:var(--muted);font-size:.8rem;padding:10px">Framework data not available</p>`;
+  }
+}
+
+// ── AI statement suggest + catalogue search ─────────────────────────────────
+async function runAdminSuggest() {
+  const txt = document.getElementById('f-obs-text').value.trim();
+  if (!txt) { Wren.toast('Write some observation text first', 'warning'); return; }
+  const btn = document.getElementById('btn-ai-suggest');
+  btn.disabled = true; btn.textContent = '✨ Suggesting…';
+  try {
+    const data = await Wren.api(`/api/observations/${currentObsId || 'new'}/suggest-statements`, {
+      method: 'POST',
+      body: {
+        observation_text: txt,
+        child_id: selectedChild ? selectedChild.id : null,
+        frameworks: ['birth_to_5', 'development_matters', 'coel']
+      }
+    });
+    renderSuggestResults(data.suggestions || [], true);
+    if (!(data.suggestions || []).length) Wren.toast('No confident matches — pick manually or search', 'info');
+  } catch (e) {
+    Wren.toast('AI unavailable — pick manually or use search', 'warning');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Suggest statements';
+  }
+}
+
+function renderSuggestResults(list, preTicked) {
+  const el = document.getElementById('fw-suggest-results');
+  if (!list.length) { el.innerHTML = ''; return; }
+  let html = `<div class="fw-area-group"><div class="fw-area-header">${preTicked ? '✨ Suggested — untick any that don\'t fit' : '🔍 Search results'}</div>`;
+  list.forEach(s => {
+    html += `<label class="fw-statement">
+      <input type="checkbox" class="fw-tracker-cb" data-tracker-id="${parseInt(s.id) || ''}" ${preTicked ? 'checked' : ''}>
+      <span class="fw-statement-text">${escHtml(s.statement_text || '')}
+        ${s.age_range ? `<em style="color:var(--muted);font-size:.7rem"> · ${escHtml(s.age_range)}</em>` : ''}
+        ${s._why ? `<br><em style="color:var(--muted);font-size:.7rem">${escHtml(s._why)}</em>` : ''}
+      </span>
+    </label>`;
+  });
+  el.innerHTML = html + '</div>';
+}
+
+let _stmtSearchT = null;
+function wireStmtSearch() {
+  const inp = document.getElementById('fw-stmt-search');
+  if (!inp) return;
+  inp.addEventListener('input', () => {
+    clearTimeout(_stmtSearchT);
+    const q = inp.value.trim();
+    if (q.length < 3) { if (!q) renderSuggestResults([], false); return; }
+    _stmtSearchT = setTimeout(async () => {
+      try {
+        const rows = await Wren.api(`/api/observations/statements?framework=birth_to_5&q=${encodeURIComponent(q)}&limit=30`);
+        renderSuggestResults(rows, false);
+      } catch (e) { /* search is best-effort */ }
+    }, 350);
+  });
+}
+
+function renderFramework(data) {
+  if (!data || !data.length) {
+    document.getElementById('framework-content').innerHTML = `<p style="color:var(--muted);font-size:.8rem;padding:10px">No framework statements found</p>`;
+    return;
+  }
+
+  // Group by area, then age_range
+  const byArea = {};
+  data.forEach(item => {
+    const area = item.area || 'Other';
+    if (!byArea[area]) byArea[area] = {};
+    const ageRange = item.age_range || 'All ages';
+    if (!byArea[area][ageRange]) byArea[area][ageRange] = [];
+    byArea[area][ageRange].push(item);
+  });
+
+  let html = '';
+  Object.entries(byArea).forEach(([area, ageGroups]) => {
+    html += `<div class="fw-area-group">
+      <div class="fw-area-header">${escHtml(area)}</div>`;
+
+    Object.entries(ageGroups).forEach(([ageRange, statements]) => {
+      html += `<div class="fw-age-group">
+        <div class="fw-age-label">${escHtml(ageRange)}</div>`;
+
+      statements.forEach(s => {
+        const linked = s.linked_observation_id === currentObsId || !!s.is_linked;
+        // The save endpoint expects framework_statements ids — tracker rows carry
+        // that in statement_id (legacy rows may have NULL: shown but not tickable).
+        const sid = s.statement_id;
+        html += `<label class="fw-statement">
+          <input type="checkbox" class="fw-tracker-cb" data-tracker-id="${sid || ''}" ${linked ? 'checked' : ''} ${sid ? '' : 'disabled'}>
+          <span class="fw-statement-text">${escHtml(s.statement || s.description || '')}</span>
+        </label>`;
+      });
+
+      html += `</div>`;
+    });
+
+    html += `</div>`;
+  });
+
+  document.getElementById('framework-content').innerHTML = html;
+}
+
+// ── Child picker modal ────────────────────────────────────────────────────────
+let _childModalActive = false;
+
+function openChildModal() {
+  _childModalActive = true;
+  const modal = document.getElementById('child-picker-modal');
+  modal.style.display = 'flex';
+  document.getElementById('child-search-input').value = '';
+  renderChildModalList('');
+  setTimeout(() => document.getElementById('child-search-input').focus(), 100);
+}
+
+function closeChildModal(e) {
+  if (e && e.target !== document.getElementById('child-picker-modal') && !e.target.closest('.child-picker-close')) {
+    if (!e.target.classList.contains('child-picker-modal-bg')) return;
+  }
+  document.getElementById('child-picker-modal').style.display = 'none';
+  _childModalActive = false;
+}
+
+// Override: always close on explicit call
+function closeChildModal(e) {
+  document.getElementById('child-picker-modal').style.display = 'none';
+  _childModalActive = false;
+}
+
+function filterChildModal() {
+  const q = document.getElementById('child-search-input').value.toLowerCase();
+  renderChildModalList(q);
+}
+
+function renderChildModalList(query) {
+  const list = document.getElementById('child-modal-list');
+  const filtered = allChildren.filter(c =>
+    !query || `${c.first_name} ${c.last_name}`.toLowerCase().includes(query) ||
+    (c.room_name || '').toLowerCase().includes(query)
+  );
+
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:.82rem">No children found</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(c => `
+    <div class="child-modal-item" data-child-id="${c.id}">
+      <div class="child-modal-avatar">👶</div>
+      <div>
+        <div class="child-modal-name">${escHtml(c.first_name)} ${escHtml(c.last_name)}</div>
+        <div class="child-modal-meta">${escHtml(c.room_name || '')}${c.date_of_birth ? ' · ' + ageString(c.date_of_birth) : ''}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function pickChild(id) {
+  const child = allChildren.find(c => c.id === id);
+  if (child) {
+    setSelectedChild(child);
+    document.getElementById('child-picker-modal').style.display = 'none';
+    _childModalActive = false;
+    // Show framework section
+    document.getElementById('framework-section').style.display = 'block';
+    frameworkLoaded = false;
+    frameworkData = null;
+    document.getElementById('framework-content').innerHTML = '<div class="spinner"></div>';
+  }
+}
+
+function setSelectedChild(child) {
+  selectedChild = child;
+  document.getElementById('child-name-display').textContent = `${child.first_name} ${child.last_name}`;
+  document.getElementById('child-meta-display').textContent =
+    (child.room_name || '') + (child.date_of_birth ? ' · ' + ageString(child.date_of_birth) : '');
+  document.getElementById('child-avatar').innerHTML = child.photo_url
+    ? `<img src="${escHtml(child.photo_url)}" alt="">`
+    : '👶';
+}
+
+function clearChildDisplay() {
+  selectedChild = null;
+  document.getElementById('child-name-display').textContent = 'No child selected';
+  document.getElementById('child-meta-display').textContent = 'Tap to choose a child';
+  document.getElementById('child-avatar').innerHTML = '👶';
+  document.getElementById('framework-section').style.display = 'none';
+}
+
+// ── Panel show/hide (mobile slide + desktop) ─────────────────────────────────
+function showFormPanel(title) {
+  document.getElementById('form-panel-title').textContent = title || 'Observation';
+  document.getElementById('obs-empty-form').style.display = 'none';
+  document.getElementById('obs-form-scroll').style.display = 'block';
+  document.getElementById('toolbar-btns').style.display = 'flex';
+
+  // Mobile: slide
+  if (window.innerWidth <= 768) {
+    document.getElementById('obs-list-panel').classList.add('slide-out');
+    document.getElementById('obs-form-panel').classList.add('slide-in');
+  }
+}
+
+function hideFormPanel() {
+  document.getElementById('obs-empty-form').style.display = 'flex';
+  document.getElementById('obs-form-scroll').style.display = 'none';
+  document.getElementById('toolbar-btns').style.display = 'none';
+  document.getElementById('form-panel-title').textContent = 'Select an observation';
+}
+
+function goBackToList() {
+  document.getElementById('obs-list-panel').classList.remove('slide-out');
+  document.getElementById('obs-form-panel').classList.remove('slide-in');
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function initTagChips() {
+  document.querySelectorAll('.tag-chip').forEach(chip => {
+    const cb = chip.querySelector('input[type=checkbox]');
+    if (cb) {
+      cb.addEventListener('change', () => {
+        chip.classList.toggle('checked', cb.checked);
+      });
+    }
+  });
+}
+
+function refreshTagChips() {
+  document.querySelectorAll('.tag-chip').forEach(chip => {
+    const cb = chip.querySelector('input[type=checkbox]');
+    if (cb) chip.classList.toggle('checked', cb.checked);
+  });
+}
+
+function initEyfsChips() {
+  document.querySelectorAll('.eyfs-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      chip.classList.toggle('selected');
+    });
+  });
+}
+
+function setDefaultDateTime() {
+  const now = new Date();
+  document.getElementById('f-obs-date').value = toDateTimeLocal(now);
+}
+
+function autoFillObserver() {
+  if (window.Wren && Wren.user && Wren.user.name) {
+    document.getElementById('f-observed-by').value = Wren.user.name;
+  }
+}
+
+function toDateTimeLocal(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseAreas(areas) {
+  if (!areas) return [];
+  if (Array.isArray(areas)) return areas;
+  try { return JSON.parse(areas); } catch { return []; }
+}
+
+function abbreviateArea(a) {
+  const MAP = {
+    'Communication and Language':             'C&L',
+    'Personal Social and Emotional Development': 'PSED',
+    'Physical Development':                   'PD',
+    'Literacy':                               'Lit',
+    'Mathematics':                            'Maths',
+    'Understanding the World':                'UTW',
+    'Expressive Arts and Design':             'EAD'
+  };
+  return MAP[a] || a.slice(0, 4);
+}
+
+function formatType(t) {
+  if (!t) return 'Observation';
+  return t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function ageString(dob) {
+  const ms = new Date() - new Date(dob);
+  const months = Math.floor(ms / (1000 * 60 * 60 * 24 * 30.44));
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return y > 0 ? `${y}y ${m}m` : `${m}m`;
+}
+
+function renderPhotoThumbs(urls) {
+  const container = document.getElementById('photo-thumbs');
+  if (!urls || !urls.length) { container.innerHTML = ''; return; }
+  container.innerHTML = urls.map(u =>
+    `<img src="${escHtml(u)}" class="photo-thumb" data-photo-url="${escHtml(u)}" alt="Photo">`
+  ).join('');
+}
+
+function escHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ── PDF Export ────────────────────────────────────────────────────────────────
+function exportObsPDF() {
+  if (!currentObsId) return;
+  const token = sessionStorage.getItem('wrenToken') || localStorage.getItem('wrenToken') || '';
+  fetch(`/api/export/pdf/observation/${currentObsId}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `observation-${currentObsId}-${new Date().toISOString().slice(0,10)}.pdf`;
+      a.click();
+      Wren.toast('PDF downloaded ✓', 'success');
+    })
+    .catch(() => Wren.toast('PDF export failed', 'error'));
+}
+</script>
+</body>
+</html>

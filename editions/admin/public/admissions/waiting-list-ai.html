@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Waiting List AI — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .ai-layout { display:grid; grid-template-columns:300px 1fr; gap:16px; height:calc(100vh - 120px); }
+    @media(max-width:900px){ .ai-layout{grid-template-columns:1fr;height:auto} }
+    .list-panel { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;overflow-y:auto; }
+    .list-header { padding:12px 14px;border-bottom:1px solid var(--c-border);font-size:.78rem;font-weight:700;color:var(--c-muted); }
+    .enq-row { padding:10px 14px;border-bottom:1px solid var(--c-border);cursor:pointer;transition:background .1s; }
+    .enq-row:hover { background:rgba(74,154,191,.07); }
+    .enq-row.active { background:rgba(74,154,191,.12);border-left:3px solid #4a9abf; }
+    .enq-name { font-size:.85rem;font-weight:600;color:var(--c-text); }
+    .enq-meta { font-size:.7rem;color:var(--c-muted);margin-top:2px; }
+    .enq-score { display:inline-block;padding:2px 8px;border-radius:8px;font-size:.68rem;font-weight:700; }
+    .score-hot  { background:rgba(239,68,68,.15);color:#ef4444; }
+    .score-warm { background:rgba(245,158,11,.15);color:#f59e0b; }
+    .score-cool { background:rgba(100,116,139,.15);color:#94a3b8; }
+    .ai-panel { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden; }
+    .ai-toolbar { padding:12px 16px;border-bottom:1px solid var(--c-border);display:flex;gap:8px;flex-wrap:wrap; }
+    .ai-output { flex:1;overflow-y:auto;padding:16px;font-size:.875rem;line-height:1.7;color:var(--c-text); }
+    .ai-output pre { white-space:pre-wrap;word-break:break-word;font-family:inherit; }
+    .placeholder-txt { color:var(--c-muted);text-align:center;padding:40px 20px;font-size:.9rem; }
+    .score-badge { display:flex;align-items:center;gap:6px;padding:8px 14px;background:#0f172a;border-radius:8px;margin-bottom:12px; }
+    .btn-ai { background:rgba(74,154,191,.15);color:#4a9abf;border:1px solid rgba(74,154,191,.3);border-radius:8px;padding:7px 14px;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s; }
+    .btn-ai:hover { background:rgba(74,154,191,.25); }
+    .btn-ai:disabled { opacity:.5;cursor:default; }
+    .spinner-sm { width:14px;height:14px;border:2px solid rgba(74,154,191,.3);border-top-color:#4a9abf;border-radius:50%;animation:spin .7s linear infinite;display:inline-block; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🤖 Waiting List AI</div>
+    <a href="/admissions/index.html" class="btn btn-secondary btn-sm">← Back to admissions</a>
+  </div>
+  <div class="ai-layout">
+    <!-- Enquiries list -->
+    <div class="list-panel">
+      <div class="list-header">Enquiries</div>
+      <div id="enq-list"><div class="loading-state" style="padding:20px"><div class="spinner"></div></div></div>
+    </div>
+    <!-- AI panel -->
+    <div class="ai-panel">
+      <div class="ai-toolbar">
+        <button class="btn-ai" id="btn-score" disabled>⚡ Score</button>
+        <button class="btn-ai" id="btn-draft" disabled>📧 Draft follow-up</button>
+        <button class="btn-ai" id="btn-notes" disabled>📝 Summarise notes</button>
+        <button class="btn-ai" id="btn-priority" disabled>🎯 Priority ranking</button>
+        <span id="ai-status" style="margin-left:auto;font-size:.75rem;color:var(--c-muted);align-self:center"></span>
+      </div>
+      <div class="ai-output" id="ai-output">
+        <p class="placeholder-txt">Select an enquiry from the list to run AI analysis.</p>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+let enquiries = [], selected = null;
+
+document.addEventListener('wren:ready', async () => {
+  document.getElementById('btn-score').addEventListener('click', function() { runAI('score'); });
+  document.getElementById('btn-draft').addEventListener('click', function() { runAI('email'); });
+  document.getElementById('btn-notes').addEventListener('click', function() { runAI('notes'); });
+  document.getElementById('btn-priority').addEventListener('click', function() { runAI('priority'); });
+  document.getElementById('enq-list').addEventListener('click', function(e) {
+    const row = e.target.closest('[data-action="select-enq"]');
+    if (row) selectEnq(parseInt(row.dataset.id));
+  });
+  try {
+    enquiries = await Wren.api('/api/enquiries?status=waiting_list&limit=50').catch(() => []);
+    if (!Array.isArray(enquiries)) enquiries = [];
+    renderList();
+  } catch(e) {
+    document.getElementById('enq-list').innerHTML = '<div style="padding:14px;color:var(--c-muted);font-size:.82rem">Failed to load enquiries</div>';
+  }
+});
+
+function renderList() {
+  const el = document.getElementById('enq-list');
+  if (!enquiries.length) { el.innerHTML = '<div style="padding:14px;color:var(--c-muted);font-size:.82rem">No waiting list enquiries</div>'; return; }
+  el.innerHTML = enquiries.map(e => {
+    const score = e.ai_score;
+    const badge = score >= 70 ? `<span class="enq-score score-hot">${score}%</span>` :
+                  score >= 40 ? `<span class="enq-score score-warm">${score}%</span>` :
+                  score !== null && score !== undefined ? `<span class="enq-score score-cool">${score}%</span>` : '';
+    return `<div class="enq-row${selected?.id === e.id ? ' active' : ''}" data-action="select-enq" data-id="${e.id}">
+      <div class="enq-name">${e.child_first_name || ''} ${e.child_last_name || ''} ${badge}</div>
+      <div class="enq-meta">${e.parent_name || 'Parent unknown'} · ${e.room_preference || 'Room TBC'}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectEnq(id) {
+  selected = enquiries.find(e => e.id === id);
+  if (!selected) return;
+  renderList();
+  ['btn-score','btn-draft','btn-notes','btn-priority'].forEach(b => document.getElementById(b).disabled = false);
+  document.getElementById('ai-output').innerHTML = `
+    <div class="score-badge">
+      <span style="font-size:.8rem;color:var(--c-muted)">Selected:</span>
+      <span style="font-weight:700;color:var(--c-text)">${selected.child_first_name} ${selected.child_last_name}</span>
+      ${selected.ai_score != null ? `<span class="enq-score ${selected.ai_score>=70?'score-hot':selected.ai_score>=40?'score-warm':'score-cool'}" style="margin-left:auto">${selected.ai_score}% priority</span>` : ''}
+    </div>
+    <p style="color:var(--c-muted);font-size:.82rem">Choose an AI action above.</p>
+  `;
+}
+
+async function runAI(action) {
+  if (!selected) return;
+  const statusEl = document.getElementById('ai-status');
+  const outputEl = document.getElementById('ai-output');
+  ['btn-score','btn-draft','btn-notes','btn-priority'].forEach(b => document.getElementById(b).disabled = true);
+  statusEl.innerHTML = '<span class="spinner-sm"></span> Thinking…';
+  outputEl.innerHTML = '<pre id="stream-out" style="color:var(--c-text)"></pre>';
+
+  try {
+    const res = await fetch('/api/ai/waiting-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('wrenToken') },
+      body: JSON.stringify({ action, enquiry_id: selected.id })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let txt = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      txt += dec.decode(value);
+      document.getElementById('stream-out').textContent = txt;
+    }
+    statusEl.textContent = 'Done';
+    // Refresh enquiry score if scored
+    if (action === 'score') {
+      enquiries = await Wren.api('/api/enquiries?status=waiting_list&limit=50').catch(() => enquiries);
+      selected = enquiries.find(e => e.id === selected.id) || selected;
+      renderList();
+    }
+  } catch(e) {
+    outputEl.innerHTML = `<p style="color:#ef4444">Error: ${e.message}</p>`;
+    statusEl.textContent = 'Failed';
+  } finally {
+    ['btn-score','btn-draft','btn-notes','btn-priority'].forEach(b => document.getElementById(b).disabled = false);
+    setTimeout(() => statusEl.textContent = '', 3000);
+  }
+}
+</script>
+</body>
+</html>

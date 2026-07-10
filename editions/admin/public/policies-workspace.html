@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Policies — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .pw-wrap{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+    @media(max-width:800px){.pw-wrap{grid-template-columns:1fr}}
+    .pw-list{background:#0f172a;border:1px solid #2d3748;border-radius:12px;max-height:78vh;overflow-y:auto}
+    .pw-cat{font-size:.7rem;text-transform:uppercase;color:#64748b;padding:10px 12px 4px;letter-spacing:.04em}
+    .pw-item{padding:8px 12px;border-top:1px solid #1e293b;cursor:pointer;color:#cbd5e1;font-size:.85rem}
+    .pw-item:hover{background:#162133}
+    .pw-item.active{background:#1e3a5f;color:#fff}
+    .pw-main{background:#0f172a;border:1px solid #2d3748;border-radius:12px;padding:16px;min-height:60vh}
+    .pw-body{white-space:pre-wrap;font-size:.85rem;color:#cbd5e1;line-height:1.55;max-height:34vh;overflow-y:auto;background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:12px;margin:8px 0}
+    .pw-ai{background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-top:8px}
+    .pw-ai textarea,.pw-ai input{width:100%;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#f1f5f9;padding:8px;font-size:.85rem;margin-bottom:6px}
+    .pw-answer{white-space:pre-wrap;font-size:.85rem;color:#e2e8f0;line-height:1.5;background:#0f1e17;border:1px solid #14532d;border-radius:8px;padding:12px;margin-top:8px}
+    .pw-draft{white-space:pre-wrap;font-size:.82rem;color:#e2e8f0;line-height:1.5;background:#1a1408;border:1px solid #78350f;border-radius:8px;padding:12px;margin-top:8px;max-height:40vh;overflow-y:auto}
+    .pw-src{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:.82rem;color:#94a3b8}
+    .pw-src select{background:#1e293b;border:1px solid #334155;border-radius:7px;color:#f1f5f9;padding:5px 8px}
+    .spin{opacity:.6}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <h1 class="page-title">Policies</h1>
+    <div class="page-subtitle">Your policies, with AI to clarify and draft rewrites. Rewrites are drafts — you review and publish.</div>
+  </div>
+
+  <div class="pw-src">
+    <span>Reference source for AI:</span>
+    <select id="pw-source" onchange="setSource(this.value)">
+      <option value="own">Our own policies only</option>
+      <option value="dfe_ofsted">DfE / Ofsted statutory</option>
+      <option value="eya">Early Years Alliance (our uploaded pack)</option>
+    </select>
+    <span style="color:#64748b">· AI uses your policy text + public statutory guidance. Nothing auto-publishes.</span>
+  </div>
+
+  <div id="pw-legislation" style="margin-bottom:14px"></div>
+
+  <div class="pw-wrap">
+    <div class="pw-list" id="pw-list"><div style="padding:16px;color:#94a3b8">Loading…</div></div>
+    <div class="pw-main" id="pw-main"><div style="color:#94a3b8">Select a policy to view it, ask the AI a question, or draft a rewrite.</div></div>
+  </div>
+</div>
+
+<script>
+let POLICIES = [], CUR = null;
+const esc = s => String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+async function load(){
+  try{
+    const d = await Wren.api('/api/policies');
+    POLICIES = Array.isArray(d) ? d : (d.policies||[]);
+    renderList();
+  }catch(e){ document.getElementById('pw-list').innerHTML='<div style="padding:16px;color:#ef4444">Could not load policies</div>'; }
+  try{ const s = await Wren.api('/api/policies-ai/source'); document.getElementById('pw-source').value = s.source||'own'; }catch{}
+  loadLegislation();
+}
+
+async function loadLegislation(){
+  const host = document.getElementById('pw-legislation');
+  try{
+    const d = await Wren.api('/api/legislation');
+    const changed = (d.sources||[]).filter(s=>s.last_change_summary && s.last_changed_at);
+    if(!changed.length){
+      host.innerHTML = `<div style="background:#0f172a;border:1px solid #2d3748;border-radius:12px;padding:10px 14px;font-size:.8rem;color:#64748b">📡 Watching ${(d.sources||[]).length} DfE/Ofsted sources — no changes flagged. You'll get a notification here when the law updates.</div>`;
+      return;
+    }
+    host.innerHTML = changed.map(s=>`
+      <div style="background:#1a1408;border:1px solid #78350f;border-radius:12px;padding:12px 14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <div style="font-weight:700;color:#fed7aa">📋 ${esc(s.title)} <span style="font-weight:400;color:#a16207;font-size:.72rem">updated ${new Date(s.last_changed_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span></div>
+          <a href="${esc(s.url)}" target="_blank" rel="noopener" style="font-size:.75rem;color:#7dd3fc">View source ↗</a>
+        </div>
+        <div style="white-space:pre-wrap;font-size:.82rem;color:#e2e8f0;line-height:1.5;margin-top:6px">${esc(s.last_change_summary)}</div>
+        <button class="btn btn-sm" style="margin-top:8px;background:#78350f;color:#fed7aa;border:none" onclick="showAffected('${esc(s.slug)}', this)">Which of our policies does this affect?</button>
+        <div class="pw-affected" style="margin-top:6px"></div>
+      </div>`).join('');
+  }catch(e){ host.innerHTML=''; }
+}
+
+async function showAffected(slug, btn){
+  const box = btn.nextElementSibling;
+  box.innerHTML = '<span style="color:#94a3b8;font-size:.8rem">Checking…</span>';
+  try{
+    const d = await Wren.api('/api/legislation/'+encodeURIComponent(slug)+'/affected');
+    if(!d.policies || !d.policies.length){ box.innerHTML='<span style="color:#64748b;font-size:.8rem">No matching policies found.</span>'; return; }
+    box.innerHTML = '<div style="font-size:.78rem;color:#94a3b8;margin-bottom:4px">'+d.policies.length+' policies may need review — click to open:</div>' +
+      d.policies.map(p=>`<button class="btn btn-xs" style="margin:2px;background:#1e293b;color:#cbd5e1;border:1px solid #334155;border-radius:6px;padding:3px 8px;font-size:.75rem" onclick="openPolicy(${p.id})">${esc(p.title)}</button>`).join('');
+  }catch(e){ box.innerHTML='<span style="color:#ef4444;font-size:.8rem">Could not load.</span>'; }
+}
+
+function renderList(){
+  const byCat = {};
+  POLICIES.forEach(p=>{ (byCat[p.category||'Other'] = byCat[p.category||'Other']||[]).push(p); });
+  document.getElementById('pw-list').innerHTML = Object.keys(byCat).sort().map(cat=>
+    `<div class="pw-cat">${esc(cat)}</div>` +
+    byCat[cat].map(p=>`<div class="pw-item" data-id="${p.id}" onclick="openPolicy(${p.id})">${esc(p.title)}</div>`).join('')
+  ).join('');
+}
+
+async function openPolicy(id){
+  document.querySelectorAll('.pw-item').forEach(x=>x.classList.toggle('active', +x.dataset.id===id));
+  const main = document.getElementById('pw-main');
+  main.innerHTML = '<div style="color:#94a3b8">Loading policy…</div>';
+  try{
+    const p = await Wren.api('/api/policies/'+id);
+    CUR = p;
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0;color:#f1f5f9;font-size:1.05rem">${esc(p.title)}</h2>
+        <span style="font-size:.72rem;color:#64748b">v${p.version||1} · ${esc(p.category||'')}</span>
+      </div>
+      <div class="pw-body">${esc(p.content||'(no content)')}</div>
+
+      <div class="pw-ai">
+        <div style="font-weight:700;color:#f1f5f9;margin-bottom:6px">🔍 Ask about this policy</div>
+        <input id="pw-q" placeholder="e.g. How long before we call social care? Does this meet EYFS 2024?">
+        <button class="btn btn-sm btn-primary" onclick="clarify()">Ask</button>
+        <div id="pw-answer"></div>
+      </div>
+
+      <div class="pw-ai">
+        <div style="font-weight:700;color:#f1f5f9;margin-bottom:6px">✍️ Draft a rewrite <span style="font-weight:400;color:#64748b;font-size:.75rem">(you review + publish — nothing auto-saves)</span></div>
+        <input id="pw-instr" placeholder="How should it change? e.g. 'clearer + concise, keep our procedures'">
+        <button class="btn btn-sm" style="background:#78350f;color:#fed7aa;border:none" onclick="rewrite()">Draft rewrite</button>
+        <div id="pw-draft"></div>
+      </div>`;
+  }catch(e){ main.innerHTML='<div style="color:#ef4444">Could not load policy</div>'; }
+}
+
+async function clarify(){
+  const q = document.getElementById('pw-q').value.trim();
+  if(!q) return;
+  const out = document.getElementById('pw-answer');
+  out.innerHTML = '<div class="spin" style="color:#94a3b8;margin-top:8px">Thinking… (local AI, ~30–60s)</div>';
+  try{
+    const d = await Wren.api('/api/policies-ai/'+CUR.id+'/clarify',{method:'POST',body:{question:q}});
+    out.innerHTML = `<div class="pw-answer">${esc(d.answer)}</div>` +
+      (d.statutory_used&&d.statutory_used.length?`<div style="font-size:.72rem;color:#64748b;margin-top:4px">Grounded in: ${esc(d.statutory_used.join(', '))}</div>`:'');
+  }catch(e){ out.innerHTML='<div style="color:#ef4444;margin-top:8px">AI unavailable — try again.</div>'; }
+}
+
+async function rewrite(){
+  const instr = document.getElementById('pw-instr').value.trim();
+  const out = document.getElementById('pw-draft');
+  out.innerHTML = '<div class="spin" style="color:#94a3b8;margin-top:8px">Drafting… (local AI, up to ~2 min)</div>';
+  try{
+    const d = await Wren.api('/api/policies-ai/'+CUR.id+'/rewrite',{method:'POST',body:{instruction:instr||undefined}});
+    out.innerHTML = `<div style="font-size:.72rem;color:#fbbf24;margin-top:8px">${esc(d.note)}</div>
+      <div class="pw-draft">${esc(d.draft)}</div>
+      <button class="btn btn-sm btn-ghost" style="margin-top:6px" onclick="copyDraft(this)">Copy draft</button>`;
+    out._draft = d.draft;
+  }catch(e){ out.innerHTML='<div style="color:#ef4444;margin-top:8px">AI unavailable — try again.</div>'; }
+}
+function copyDraft(btn){ const out=document.getElementById('pw-draft'); navigator.clipboard.writeText(out._draft||'').then(()=>{btn.textContent='Copied ✓';}); }
+
+async function setSource(v){ try{ await Wren.api('/api/policies-ai/source',{method:'POST',body:{source:v}}); Wren.toast&&Wren.toast('Source set','success'); }catch{ Wren.toast&&Wren.toast('Could not set source','error'); } }
+
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

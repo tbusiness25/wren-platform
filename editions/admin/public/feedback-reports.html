@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Feedback &amp; Bug Reports · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ .fb-wrap{padding:18px;max-width:1000px;margin:0 auto;color:#f1f5f9}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:#94a3b8;font-size:.85rem;margin-bottom:14px}
+ .fb-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+ .fb-filter{padding:7px 12px;border-radius:999px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.8rem}
+ .fb-filter.on{background:#4a9abf;border-color:#4a9abf;color:#04101c;font-weight:700}
+ .fb-card{background:#0f1a34;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+ .fb-kind{font-size:.72rem;padding:2px 9px;border-radius:10px;margin-right:6px}
+ .k-bug{background:rgba(239,68,68,.18);color:#f87171}.k-idea{background:rgba(245,158,11,.18);color:#fbbf24}
+ .k-works{background:rgba(34,197,94,.18);color:#4ade80}.k-feedback{background:rgba(74,154,191,.2);color:#7dd3fc}
+ .fb-meta{color:#94a3b8;font-size:.78rem;margin-top:3px}
+ .fb-body{margin-top:8px;white-space:pre-wrap;font-size:.88rem;background:rgba(255,255,255,.03);border-radius:8px;padding:10px}
+ .fb-shot{max-width:100%;border-radius:10px;margin-top:8px;border:1px solid #334155;cursor:pointer}
+ .fb-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+ .fb-act{padding:6px 11px;border-radius:8px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.78rem}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+</head><body data-portal="admin">
+<div class="fb-wrap">
+  <h1>🐞 Feedback &amp; Bug Reports</h1>
+  <div class="sub">Everything staff and parents send from the feedback button — each one also lands as a card on your Cockpit backlog.</div>
+  <div class="fb-filters" id="fb-filters">
+    <button class="fb-filter on" data-s="">All open</button>
+    <button class="fb-filter" data-s="new">New</button>
+    <button class="fb-filter" data-s="in_progress">In progress</button>
+    <button class="fb-filter" data-s="done">Done</button>
+    <button class="fb-filter" data-s="dismissed">Dismissed</button>
+  </div>
+  <div id="fb-list">Loading…</div>
+</div>
+<script>
+(function(){
+  'use strict';
+  let statusFilter = '';
+  const esc = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+
+  async function load(){
+    const el = document.getElementById('fb-list');
+    try {
+      const rows = await Wren.api('/api/feedback' + (statusFilter ? '?status=' + statusFilter : ''));
+      const visible = statusFilter ? rows : rows.filter(r => !['done','dismissed'].includes(r.status));
+      if (!visible.length) { el.innerHTML = '<div style="color:#94a3b8">Nothing here — quiet day 🎉</div>'; return; }
+      el.innerHTML = visible.map(r => `
+        <div class="fb-card">
+          <span class="fb-kind k-${esc(r.kind)}">${esc(r.kind)}</span><b>${esc(r.title)}</b>
+          <span style="float:right;color:#94a3b8;font-size:.78rem">${esc(r.status.replace('_',' '))}</span>
+          <div class="fb-meta">${esc(r.submitted_by_name||'?')} · ${esc(r.portal)} · ${esc(r.page_path||'')} · ${new Date(r.created_at).toLocaleString('en-GB')}${r.cockpit_card_id ? ' · 🛩️ card #'+r.cockpit_card_id : ''}</div>
+          ${r.body ? `<div class="fb-body">${esc(r.body)}</div>` : ''}
+          ${r.has_screenshot ? `<img class="fb-shot" loading="lazy" src="/api/feedback/${r.id}/screenshot" onclick="window.open(this.src)">` : ''}
+          <div class="fb-actions">
+            ${['triaged','in_progress','done','dismissed'].map(s => `<button class="fb-act" data-id="${r.id}" data-set="${s}">${s.replace('_',' ')}</button>`).join('')}
+          </div>
+        </div>`).join('');
+    } catch(e) { el.innerHTML = '<div style="color:#ef4444">Could not load reports.</div>'; }
+  }
+
+  document.addEventListener('wren:ready', function(){
+    document.getElementById('fb-filters').addEventListener('click', e => {
+      const b = e.target.closest('.fb-filter'); if (!b) return;
+      statusFilter = b.dataset.s;
+      document.querySelectorAll('.fb-filter').forEach(x => x.classList.toggle('on', x === b));
+      load();
+    });
+    document.getElementById('fb-list').addEventListener('click', async e => {
+      const b = e.target.closest('.fb-act'); if (!b) return;
+      try { await Wren.api('/api/feedback/' + b.dataset.id + '/status', { method:'POST', body:{ status: b.dataset.set } }); Wren.toast('Updated','success'); load(); }
+      catch(x){ Wren.toast('Update failed','error'); }
+    });
+    load();
+  });
+})();
+</script>
+</body></html>

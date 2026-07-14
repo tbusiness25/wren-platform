@@ -34,7 +34,7 @@ router.get('/stats', managerOnly, async (req, res) => {
 
 // POST /api/vapi-health/run — trigger smoke test workflow via its webhook
 router.post('/run', managerOnly, async (req, res) => {
-  const n8nBaseUrl = process.env.N8N_BASE_URL || 'http://your-server:5678';
+  const n8nBaseUrl = process.env.N8N_BASE_URL || 'http://100.126.215.7:5678';
   const webhookPath = 'vapi-smoke-test-run';
 
   try {

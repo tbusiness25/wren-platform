@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Staff Sign In/Out">
+  <meta name="wren-app-chat"  content="on">
+  <title>Staff Sign In/Out · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #staff-clock-page {
+      padding: 12px 12px env(safe-area-inset-bottom, 16px);
+    }
+
+    /* Summary strip */
+    .staff-summary {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .staff-summary-card {
+      flex: 1;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .staff-summary-num {
+      font-size: 1.4rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--c-text);
+    }
+    .staff-summary-num.in   { color: var(--c-green, #22c55e); }
+    .staff-summary-num.out  { color: var(--c-muted); }
+    .staff-summary-label {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--c-muted);
+      margin-top: 2px;
+    }
+
+    /* Staff list */
+    .staff-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .staff-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .staff-card-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .staff-avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: rgba(74,154,191,0.18);
+      color: var(--c-blue);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: .95rem;
+      flex-shrink: 0;
+    }
+    .staff-name-wrap { flex: 1; min-width: 0; }
+    .staff-name {
+      font-size: .95rem;
+      font-weight: 700;
+      color: var(--c-text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .staff-meta {
+      font-size: .76rem;
+      color: var(--c-muted);
+      margin-top: 2px;
+    }
+    .staff-status {
+      flex-shrink: 0;
+      font-size: .72rem;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    .staff-status.in        { background: rgba(34,197,94,0.15); color: var(--c-green, #22c55e); }
+    .staff-status.on-break  { background: rgba(245,158,11,0.15); color: var(--c-amber, #f59e0b); }
+    .staff-status.out       { background: rgba(148,163,184,0.15); color: var(--c-muted); }
+
+    .staff-times {
+      margin-top: 8px;
+      font-size: .76rem;
+      color: var(--c-muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .staff-times span {
+      white-space: nowrap;
+    }
+
+    .staff-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .staff-btn {
+      flex: 1;
+      min-height: 44px;
+      border-radius: 10px;
+      border: 1px solid var(--c-border);
+      background: transparent;
+      color: var(--c-text);
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .staff-btn:active { transform: scale(.98); }
+    .staff-btn.in         { border-color: var(--c-green, #22c55e); color: var(--c-green, #22c55e); }
+    .staff-btn.in:hover   { background: rgba(34,197,94,0.12); }
+    .staff-btn.out        { border-color: var(--c-blue); color: var(--c-blue); }
+    .staff-btn.out:hover  { background: rgba(74,154,191,0.12); }
+    .staff-btn.break      { border-color: var(--c-amber, #f59e0b); color: var(--c-amber, #f59e0b); }
+    .staff-btn.break:hover{ background: rgba(245,158,11,0.12); }
+    .staff-btn:disabled   { opacity: .4; cursor: default; }
+
+    .staff-empty {
+      text-align: center;
+      padding: 30px 16px;
+      color: var(--c-muted);
+      font-size: .9rem;
+    }
+
+    .staff-room-label {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--c-muted);
+      margin: 14px 4px 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="staff-clock-page"></div>
+
+  <script src="/js/wren-core.js"></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <script>
+  document.addEventListener('wren:ready', function () {
+    const API = wrenApi();
+    const page = document.getElementById('staff-clock-page');
+
+    let allStaff = [];
+
+    async function loadStaffClock() {
+      try {
+        const data = await API.get('/api/attendance/staff/today');
+        allStaff = data || [];
+        renderStaffClock();
+      } catch (err) {
+        console.error('Load staff clock:', err);
+        page.innerHTML = `<div class="staff-empty">Failed to load staff clock: ${err.message}</div>`;
+      }
+    }
+
+    function renderStaffClock() {
+      if (!allStaff.length) {
+        page.innerHTML = '<div class="staff-empty">No staff found</div>';
+        return;
+      }
+
+      // Count signed in (clock_in but no clock_out)
+      const signedIn = allStaff.filter(s => s.clock_in && !s.clock_out).length;
+      const total = allStaff.length;
+
+      // Group by room
+      const byRoom = {};
+      for (const s of allStaff) {
+        const room = s.room_name || 'No Room';
+        if (!byRoom[room]) byRoom[room] = [];
+        byRoom[room].push(s);
+      }
+
+      let html = `
+        <div class="staff-summary">
+          <div class="staff-summary-card">
+            <div class="staff-summary-num in">${signedIn}</div>
+            <div class="staff-summary-label">Signed In</div>
+          </div>
+          <div class="staff-summary-card">
+            <div class="staff-summary-num out">${total - signedIn}</div>
+            <div class="staff-summary-label">Not Signed In</div>
+          </div>
+          <div class="staff-summary-card">
+            <div class="staff-summary-num">${total}</div>
+            <div class="staff-summary-label">Total Staff</div>
+          </div>
+        </div>
+      `;
+
+      for (const room of Object.keys(byRoom).sort()) {
+        html += `<div class="staff-room-label">${room}</div>`;
+        html += '<div class="staff-list">';
+        for (const s of byRoom[room]) {
+          html += renderStaffCard(s);
+        }
+        html += '</div>';
+      }
+
+      page.innerHTML = html;
+      attachHandlers();
+    }
+
+    function renderStaffCard(s) {
+      const initials = (s.first_name[0] || '') + (s.last_name[0] || '');
+      const name = `${s.first_name} ${s.last_name}`;
+      const role = s.role || '';
+
+      let status = 'out';
+      let statusLabel = 'Not Signed In';
+      if (s.clock_in && !s.clock_out) {
+        if (s.break_start && !s.break_end) {
+          status = 'on-break';
+          statusLabel = 'On Break';
+        } else {
+          status = 'in';
+          statusLabel = 'Signed In';
+        }
+      }
+
+      let times = '';
+      if (s.clock_in) {
+        times += `<span><strong>In:</strong> ${formatTime(s.clock_in)}</span>`;
+      }
+      if (s.clock_out) {
+        times += `<span><strong>Out:</strong> ${formatTime(s.clock_out)}</span>`;
+      }
+      if (s.break_start && !s.break_end) {
+        times += `<span><strong>Break:</strong> ${formatTime(s.break_start)}</span>`;
+      }
+      if (s.hours_worked) {
+        times += `<span><strong>Hours:</strong> ${parseFloat(s.hours_worked).toFixed(1)}</span>`;
+      }
+
+      let actions = '';
+      if (!s.clock_in) {
+        // Not clocked in yet — show Sign In
+        actions = `<button class="staff-btn in" data-action="clock-in" data-staff-id="${s.id}">Sign In</button>`;
+      } else if (!s.clock_out) {
+        // Clocked in
+        if (s.break_start && !s.break_end) {
+          // On break — show Back In + Sign Out
+          actions = `
+            <button class="staff-btn in" data-action="break-end" data-staff-id="${s.id}">Back In</button>
+            <button class="staff-btn out" data-action="clock-out" data-staff-id="${s.id}">Sign Out</button>
+          `;
+        } else {
+          // Not on break — show Start Break + Sign Out
+          actions = `
+            <button class="staff-btn break" data-action="break-start" data-staff-id="${s.id}">Start Break</button>
+            <button class="staff-btn out" data-action="clock-out" data-staff-id="${s.id}">Sign Out</button>
+          `;
+        }
+      }
+
+      return `
+        <div class="staff-card" data-staff-id="${s.id}">
+          <div class="staff-card-top">
+            <div class="staff-avatar">${initials}</div>
+            <div class="staff-name-wrap">
+              <div class="staff-name">${name}</div>
+              ${role ? `<div class="staff-meta">${role}</div>` : ''}
+            </div>
+            <div class="staff-status ${status}">${statusLabel}</div>
+          </div>
+          ${times ? `<div class="staff-times">${times}</div>` : ''}
+          ${actions ? `<div class="staff-actions">${actions}</div>` : ''}
+        </div>
+      `;
+    }
+
+    function formatTime(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
+    }
+
+    function attachHandlers() {
+      document.querySelectorAll('.staff-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const action = btn.dataset.action;
+          const staffId = parseInt(btn.dataset.staffId);
+          btn.disabled = true;
+          try {
+            await handleStaffAction(action, staffId);
+            await loadStaffClock(); // refresh
+          } catch (err) {
+            alert(err.message);
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    async function handleStaffAction(action, staffId) {
+      const endpoint = {
+        'clock-in': '/api/attendance/staff/clock-in',
+        'clock-out': '/api/attendance/staff/clock-out',
+        'break-start': '/api/attendance/staff/break-start',
+        'break-end': '/api/attendance/staff/break-end',
+      }[action];
+
+      if (!endpoint) throw new Error('Unknown action');
+
+      await API.post(endpoint, { staff_id: staffId });
+    }
+
+    loadStaffClock();
+  });
+  </script>
+</body>
+</html>

@@ -23,13 +23,13 @@ const PROMPTS = {
     grammar:    (t) => `Fix any grammar, spelling and punctuation errors. Return ONLY the corrected text:\n\n${t}`,
   },
   newsletter: {
-    polish:     (t) => `You are writing a nursery newsletter for Your Nursery, Ealing. Polish this section to be engaging, warm and professional. Return ONLY the improved text:\n\n${t}`,
+    polish:     (t) => `You are writing a nursery newsletter for Little Angels Day Nursery, Ealing. Polish this section to be engaging, warm and professional. Return ONLY the improved text:\n\n${t}`,
     expand:     (t) => `Expand this newsletter section with more detail and a warm nursery tone. Return ONLY the expanded text:\n\n${t}`,
     summarise:  (t) => `Summarise this newsletter section into 2-3 punchy sentences. Return ONLY the summary:\n\n${t}`,
     headline:   (t) => `Suggest 3 engaging newsletter headline options for this content. Return ONLY the 3 headlines as a numbered list:\n\n${t}`,
   },
   report: {
-    polish:     (t) => `You are writing an EYFS parent report for Your Nursery. Polish this section to be positive, informative and professionally written. Return ONLY the improved text:\n\n${t}`,
+    polish:     (t) => `You are writing an EYFS parent report for Little Angels Day Nursery. Polish this section to be positive, informative and professionally written. Return ONLY the improved text:\n\n${t}`,
     expand:     (t) => `Expand this EYFS report section with specific developmental observations and achievements. Return ONLY the expanded text:\n\n${t}`,
     evidence:   (t) => `Suggest 2-3 types of evidence that could be collected to support this EYFS report statement. Return ONLY the suggestions as a brief bulleted list:\n\n${t}`,
     framework:  (t) => `Identify which sections of the EYFS framework (2021) are most relevant to this report statement. Return ONLY the framework references with brief explanations:\n\n${t}`,

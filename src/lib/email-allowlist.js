@@ -30,7 +30,7 @@ const BYPASS_ROLES = [
 
 // Staff on the nursery's own Google Workspace domain — inter-staff mail is always
 // permitted regardless of role.
-const INTERNAL_DOMAIN = (process.env.STAFF_EMAIL_DOMAIN || 'example-nursery.co.uk').toLowerCase();
+const INTERNAL_DOMAIN = (process.env.STAFF_EMAIL_DOMAIN || 'littleangelsealing.co.uk').toLowerCase();
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const norm = (e) => String(e || '').trim().toLowerCase();

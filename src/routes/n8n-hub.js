@@ -4,7 +4,7 @@ const express      = require('express');
 const router       = express.Router();
 const authenticate = require('../middleware/auth');
 
-const N8N_URL = process.env.N8N_HUB_URL || 'http://your-server:5678';
+const N8N_URL = process.env.N8N_HUB_URL || 'http://100.126.215.7:5678';
 const N8N_KEY = process.env.N8N_HUB_API_KEY || 'n8n_api_b007762aa54cc675724a04b28b05bc0943b64a7ce38c4040';
 const SEARXNG_URL = process.env.SEARXNG_URL || 'http://localhost:8082';
 
@@ -72,18 +72,25 @@ router.get('/workflows/:id/executions', async (req, res) => {
 router.post('/workflows/:id/run', express.json(), async (req, res) => {
   if (!MGRS.has(req.user?.role)) return res.status(403).json({ error: 'Managers only' });
   try {
-    // n8n manual trigger via test execution
     const wf = await n8n(`/api/v1/workflows/${req.params.id}`);
-    // Find a webhook or schedule trigger node to call
-    const webhookNode = (wf.nodes || []).find(n => n.type?.includes('webhook') || n.type?.includes('Webhook'));
-    if (webhookNode?.webhookId) {
-      const trigRes = await fetch(`${N8N_URL}/webhook-test/${webhookNode.webhookId}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"source":"wren-hub"}',
-        signal: AbortSignal.timeout(10000),
+    // Find a webhook trigger and call its PRODUCTION path (/webhook/<path>). The old
+    // code hit /webhook-test/<id>, which only works while the n8n editor is "listening"
+    // — so manual Run never worked. Production path works whenever the workflow is active.
+    const webhookNode = (wf.nodes || []).find(n => /webhook/i.test(n.type || ''));
+    const path = webhookNode?.parameters?.path || webhookNode?.webhookId;
+    if (path) {
+      if (!wf.active) {
+        return res.json({ ok: false, message: 'Workflow is switched off — turn it on first, then Run.' });
+      }
+      const trigRes = await fetch(`${N8N_URL}/webhook/${path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'wren-hub', triggered_by: req.user?.id || null }),
+        signal: AbortSignal.timeout(15000),
       });
-      return res.json({ ok: trigRes.ok, status: trigRes.status });
+      const txt = await trigRes.text().catch(() => '');
+      return res.json({ ok: trigRes.ok, status: trigRes.status, response: txt.slice(0, 200) });
     }
-    res.json({ ok: false, message: 'No webhook trigger found — activate the workflow and it will run on schedule' });
+    res.json({ ok: false, message: 'No manual trigger on this workflow — it runs on its schedule only.' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>COSHH Register — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">⚗️ COSHH Register</div>
+    <button class="btn btn-primary" id="btn-coshh-new">+ Add Substance</button>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <select id="coshh-cat" class="v2-sort-select" aria-label="Filter category">
+      <option value="">All categories</option>
+      <option value="cleaning">Cleaning</option>
+      <option value="art">Art materials</option>
+      <option value="kitchen">Kitchen</option>
+      <option value="maintenance">Maintenance</option>
+      <option value="garden">Garden</option>
+      <option value="other">Other</option>
+    </select>
+    <span style="font-size:.8rem;color:#64748b;line-height:34px">COSHH — Control of Substances Hazardous to Health</span>
+  </div>
+
+  <div id="coshh-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', function() {
+  document.getElementById('btn-coshh-new').addEventListener('click', coshhNew);
+  document.getElementById('coshh-cat').addEventListener('change', coshhLoad);
+  document.getElementById('coshh-area').addEventListener('click', function(e) {
+    const card = e.target.closest('[data-action="coshh-open"]');
+    if (card) coshhOpen(parseInt(card.dataset.id));
+    const newBtn = e.target.closest('[data-action="coshh-new"]');
+    if (newBtn) coshhNew();
+  });
+  // Drawer button delegation (drawer is appended to body)
+  document.addEventListener('click', function(e) {
+    const editBtn = e.target.closest('[data-action="coshh-edit"]');
+    if (editBtn) { coshhEdit(parseInt(editBtn.dataset.id)); return; }
+    const reviewBtn = e.target.closest('[data-action="coshh-review"]');
+    if (reviewBtn) coshhReview(parseInt(reviewBtn.dataset.id));
+  });
+  coshhLoad();
+});
+
+const HAZARD_LABELS = {
+  flammable:'🔥 Flammable', corrosive:'⚡ Corrosive', irritant:'⚠️ Irritant',
+  toxic:'☠️ Toxic', harmful:'🚫 Harmful', oxidising:'🌪️ Oxidising'
+};
+const HAZARD_COLORS = {
+  flammable:'#f59e0b', corrosive:'#ef4444', irritant:'#f59e0b',
+  toxic:'#ef4444', harmful:'#ef4444', oxidising:'#e07820'
+};
+
+async function coshhLoad() {
+  const cat = document.getElementById('coshh-cat')?.value;
+  const area = document.getElementById('coshh-area');
+  area.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const rows = await Wren.api('/api/coshh' + (cat ? `?category=${cat}` : '')).catch(()=>[]);
+
+  if (!rows.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">⚗️</div><h3>No substances registered</h3>
+      <p>Record all hazardous substances used on site — cleaning products, art materials, kitchen chemicals.</p>
+      <button class="btn btn-primary" data-action="coshh-new">+ Add Substance</button>
+    </div>`;
+    return;
+  }
+
+  area.innerHTML = `<div style="display:grid;gap:10px">` + rows.map(s => `
+    <div class="v2-card" style="cursor:pointer" data-action="coshh-open" data-id="${s.id}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+        <div>
+          <div style="font-weight:600;font-size:.95rem">${esc(s.substance_name)}</div>
+          ${s.trade_name ? `<div style="font-size:.78rem;color:#64748b">${esc(s.trade_name)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+          ${s.review_overdue ? `<span class="badge badge-red" style="font-size:.68rem">Review overdue</span>` : ''}
+          ${s.review_due_soon ? `<span class="badge badge-yellow" style="font-size:.68rem">Review due</span>` : ''}
+          ${s.category ? `<span class="badge badge-blue" style="font-size:.68rem">${esc(s.category)}</span>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        ${(s.hazard_type||[]).map(h => `<span style="font-size:.72rem;background:${HAZARD_COLORS[h]||'#475569'}22;color:${HAZARD_COLORS[h]||'#94a3b8'};padding:2px 7px;border-radius:4px">${HAZARD_LABELS[h]||h}</span>`).join('')}
+      </div>
+      <div style="display:flex;gap:16px;font-size:.78rem;color:#64748b;flex-wrap:wrap">
+        ${s.storage_location ? `<span>📦 ${esc(s.storage_location)}</span>` : ''}
+        ${s.supplier ? `<span>🏭 ${esc(s.supplier)}</span>` : ''}
+        ${s.review_date ? `<span>📅 Review: ${new Date(s.review_date).toLocaleDateString('en-GB')}</span>` : ''}
+        ${s.ppe_required?.length ? `<span>🥽 PPE: ${s.ppe_required.join(', ')}</span>` : ''}
+      </div>
+    </div>`).join('') + `</div>`;
+}
+
+function coshhOpen(id) {
+  Wren.api(`/api/coshh/${id}`).then(s => {
+    const isManager = ['manager','deputy_manager','admin'].includes(Wren.user?.role);
+    Wren.openDrawer(`
+      <div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+          ${(s.hazard_type||[]).map(h=>`<span style="font-size:.75rem;background:${HAZARD_COLORS[h]||'#475569'}22;color:${HAZARD_COLORS[h]||'#94a3b8'};padding:3px 8px;border-radius:4px">${HAZARD_LABELS[h]||h}</span>`).join('')}
+        </div>
+        <div class="drawer-info-grid">
+          ${s.trade_name ? `<div class="drawer-info-row"><span>Trade name</span><span>${esc(s.trade_name)}</span></div>` : ''}
+          ${s.category ? `<div class="drawer-info-row"><span>Category</span><span>${esc(s.category)}</span></div>` : ''}
+          ${s.storage_location ? `<div class="drawer-info-row"><span>Storage</span><span>${esc(s.storage_location)}</span></div>` : ''}
+          ${s.max_quantity ? `<div class="drawer-info-row"><span>Max quantity</span><span>${esc(s.max_quantity)}</span></div>` : ''}
+          ${s.supplier ? `<div class="drawer-info-row"><span>Supplier</span><span>${esc(s.supplier)}</span></div>` : ''}
+          ${s.review_date ? `<div class="drawer-info-row"><span>Review date</span><span>${new Date(s.review_date).toLocaleDateString('en-GB')}</span></div>` : ''}
+        </div>
+        ${s.first_aid_response ? `<h4 style="font-size:.78rem;text-transform:uppercase;color:#64748b;margin:14px 0 6px">First Aid Response</h4><p style="font-size:.85rem;line-height:1.5;background:#1e293b;padding:10px;border-radius:6px">${esc(s.first_aid_response)}</p>` : ''}
+        ${s.disposal_method ? `<h4 style="font-size:.78rem;text-transform:uppercase;color:#64748b;margin:14px 0 6px">Disposal</h4><p style="font-size:.85rem;line-height:1.5">${esc(s.disposal_method)}</p>` : ''}
+        ${s.ppe_required?.length ? `<h4 style="font-size:.78rem;text-transform:uppercase;color:#64748b;margin:14px 0 6px">PPE Required</h4><div style="display:flex;gap:6px;flex-wrap:wrap">${s.ppe_required.map(p=>`<span class="badge badge-blue" style="font-size:.75rem">${esc(p)}</span>`).join('')}</div>` : ''}
+        ${s.sds_url ? `<div style="margin-top:12px"><a href="${esc(s.sds_url)}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">View Safety Data Sheet</a></div>` : ''}
+        ${isManager ? `<div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn btn-sm btn-ghost" data-action="coshh-edit" data-id="${s.id}">Edit</button>
+          <button class="btn btn-sm btn-ghost" data-action="coshh-review" data-id="${s.id}">Mark reviewed</button>
+        </div>` : ''}
+      </div>`, `⚗️ ${esc(s.substance_name)}`);
+  });
+}
+
+async function coshhNew() {
+  const isManager = ['manager','deputy_manager','admin'].includes(Wren.user?.role);
+  if (!isManager) { Wren.toast('Manager access required', 'error'); return; }
+  Wren.modal('Add Substance to COSHH Register', coshhForm(), [
+    { label: 'Add', class: 'btn-primary', close: false, action: async () => {
+      const data = getCoshhForm();
+      if (!data.substance_name) { Wren.toast('Substance name required', 'error'); return; }
+      await Wren.api('/api/coshh', { method:'POST', body: data });
+      Wren.toast('Added to COSHH register', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      coshhLoad();
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+async function coshhEdit(id) {
+  const s = await Wren.api(`/api/coshh/${id}`);
+  Wren.modal('Edit Substance', coshhForm(s), [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      const data = getCoshhForm();
+      await Wren.api(`/api/coshh/${id}`, { method:'PUT', body: data });
+      Wren.toast('Saved', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      coshhLoad();
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+async function coshhReview(id) {
+  const next = new Date();
+  next.setFullYear(next.getFullYear() + 1);
+  await Wren.api(`/api/coshh/${id}/review`, { method:'POST', body:{ next_review_date: next.toISOString().split('T')[0] }});
+  Wren.toast('Marked as reviewed. Next review: ' + next.toLocaleDateString('en-GB'), 'success');
+  coshhLoad();
+}
+
+function coshhForm(s={}) {
+  const hazards = ['flammable','corrosive','irritant','toxic','harmful','oxidising'];
+  const ppe = ['Gloves','Eye protection','Apron','Face mask','Respirator','Overalls'];
+  return `<div style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto;padding-right:4px">
+    <input class="wren-input" id="cf-name" value="${esc(s.substance_name||'')}" placeholder="Substance name *" style="width:100%">
+    <input class="wren-input" id="cf-trade" value="${esc(s.trade_name||'')}" placeholder="Trade/brand name" style="width:100%">
+    <select class="wren-select" id="cf-cat" style="width:100%">
+      <option value="">Category…</option>
+      ${['cleaning','art','kitchen','maintenance','garden','other'].map(c=>`<option value="${c}" ${s.category===c?'selected':''}>${c}</option>`).join('')}
+    </select>
+    <div>
+      <label class="wren-label">Hazard types</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${hazards.map(h=>`<label style="display:flex;align-items:center;gap:4px;font-size:.82rem;cursor:pointer">
+          <input type="checkbox" name="hazard" value="${h}" ${(s.hazard_type||[]).includes(h)?'checked':''} style="accent-color:#4a9abf"> ${h}
+        </label>`).join('')}
+      </div>
+    </div>
+    <input class="wren-input" id="cf-storage" value="${esc(s.storage_location||'')}" placeholder="Storage location" style="width:100%">
+    <input class="wren-input" id="cf-qty" value="${esc(s.max_quantity||'')}" placeholder="Maximum quantity on site" style="width:100%">
+    <input class="wren-input" id="cf-supplier" value="${esc(s.supplier||'')}" placeholder="Supplier" style="width:100%">
+    <input class="wren-input" id="cf-sds" value="${esc(s.sds_url||'')}" placeholder="Safety data sheet URL" style="width:100%">
+    <textarea class="wren-textarea" id="cf-first-aid" placeholder="First aid response…" style="width:100%;min-height:60px">${esc(s.first_aid_response||'')}</textarea>
+    <textarea class="wren-textarea" id="cf-disposal" placeholder="Disposal method…" style="width:100%;min-height:40px">${esc(s.disposal_method||'')}</textarea>
+    <div>
+      <label class="wren-label">PPE required</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${ppe.map(p=>`<label style="display:flex;align-items:center;gap:4px;font-size:.82rem;cursor:pointer">
+          <input type="checkbox" name="ppe" value="${p}" ${(s.ppe_required||[]).includes(p)?'checked':''} style="accent-color:#4a9abf"> ${p}
+        </label>`).join('')}
+      </div>
+    </div>
+    <input type="date" class="wren-input" id="cf-review" value="${s.review_date ? s.review_date.split('T')[0] : ''}" style="width:100%">
+  </div>`;
+}
+
+function getCoshhForm() {
+  return {
+    substance_name:    document.getElementById('cf-name')?.value?.trim(),
+    trade_name:        document.getElementById('cf-trade')?.value?.trim() || null,
+    category:          document.getElementById('cf-cat')?.value || null,
+    hazard_type:       Array.from(document.querySelectorAll('input[name="hazard"]:checked')).map(e=>e.value),
+    storage_location:  document.getElementById('cf-storage')?.value?.trim() || null,
+    max_quantity:      document.getElementById('cf-qty')?.value?.trim() || null,
+    supplier:          document.getElementById('cf-supplier')?.value?.trim() || null,
+    sds_url:           document.getElementById('cf-sds')?.value?.trim() || null,
+    first_aid_response:document.getElementById('cf-first-aid')?.value?.trim() || null,
+    disposal_method:   document.getElementById('cf-disposal')?.value?.trim() || null,
+    ppe_required:      Array.from(document.querySelectorAll('input[name="ppe"]:checked')).map(e=>e.value),
+    review_date:       document.getElementById('cf-review')?.value || null,
+  };
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

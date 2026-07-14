@@ -78,7 +78,7 @@ async function sendDailySummary() {
 
   <!-- Header -->
   <div style="background:#0f172a;padding:24px 28px">
-    <div style="font-size:1rem;font-weight:700;color:#4a9abf;letter-spacing:0.05em;text-transform:uppercase">Your Nursery</div>
+    <div style="font-size:1rem;font-weight:700;color:#4a9abf;letter-spacing:0.05em;text-transform:uppercase">Little Angels</div>
     <div style="font-size:1.4rem;font-weight:700;color:#f1f5f9;margin-top:4px">Daily Summary</div>
     <div style="font-size:0.82rem;color:#64748b;margin-top:4px">${dateLabel}</div>
   </div>
@@ -106,13 +106,13 @@ async function sendDailySummary() {
     </div>
 
     <div style="margin-top:16px">
-      <a href="https://admin.example-nursery.co.uk" style="display:inline-block;background:#4a9abf;color:#fff;text-decoration:none;border-radius:8px;padding:10px 20px;font-size:0.85rem;font-weight:600">Open Admin Portal →</a>
+      <a href="https://admin.littleangelsealing.co.uk" style="display:inline-block;background:#4a9abf;color:#fff;text-decoration:none;border-radius:8px;padding:10px 20px;font-size:0.85rem;font-weight:600">Open Admin Portal →</a>
     </div>
   </div>
 
   <!-- Footer -->
   <div style="background:#f8fafc;padding:16px 28px;border-top:1px solid #e2e8f0">
-    <div style="font-size:0.75rem;color:#94a3b8">Your Nursery · 1A Example Lane, W13 9LU · Mon–Fri 8am–6pm</div>
+    <div style="font-size:0.75rem;color:#94a3b8">Little Angels Day Nursery · 1A Dudley Gardens, W13 9LU · Mon–Fri 8am–6pm</div>
     <div style="font-size:0.72rem;color:#cbd5e1;margin-top:4px">Automated daily summary from Wren. To adjust, visit Admin → System → Notifications.</div>
   </div>
 
@@ -122,7 +122,7 @@ async function sendDailySummary() {
   `.trim();
 
   await sendEmail(
-    'toby@example-nursery.co.uk',
+    'toby@littleangelsealing.co.uk',
     `LADN Daily Summary — ${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
     html,
     'daily_summary'
@@ -133,7 +133,7 @@ async function sendDailySummary() {
     await db.query(
       `INSERT INTO daily_summary_log (coverage_start, coverage_end, items_count, email_to)
        VALUES ($1, $2, $3, $4)`,
-      [coverageStart, coverageEnd, totalItems, 'toby@example-nursery.co.uk']
+      [coverageStart, coverageEnd, totalItems, 'toby@littleangelsealing.co.uk']
     );
   } catch (e) {
     console.error('[daily-summary] log insert failed:', e.message);

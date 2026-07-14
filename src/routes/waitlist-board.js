@@ -31,7 +31,7 @@ const { getPool } = require('../db/pool');
 const authenticate = require('../middleware/auth');
 const pub = require('./public-availability');
 
-const OLLAMA_URL = process.env.OLLAMA_URL || process.env.OLLAMA_HOST || 'http://your-ollama-host:11434';
+const OLLAMA_URL = process.env.OLLAMA_URL || process.env.OLLAMA_HOST || 'http://100.109.248.102:11434';
 const ADVISOR_MODEL = process.env.WREN_ADVISOR_MODEL || 'qwen3.6:35b-a3b';
 
 router.use(express.json({ limit: '64kb' }));

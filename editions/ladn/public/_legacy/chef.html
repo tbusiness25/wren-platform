@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="wren-edition" content="ladn">
+<title>Chef View — Today's Menu</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js"></script>
+<style>
+.allergen-banner { background:rgba(239,68,68,.12); border:2px solid #ef4444; border-radius:12px; padding:16px; margin-bottom:20px; display:none; }
+.allergen-child-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid rgba(239,68,68,.2); }
+.allergen-child-row:last-child { border-bottom:none; }
+.child-avatar { width:40px; height:40px; border-radius:50%; background:#2d3748; display:flex; align-items:center; justify-content:center; font-size:.9rem; font-weight:700; color:#f1f5f9; flex-shrink:0; }
+.meal-card { background:#1e293b; border:1px solid #2d3748; border-radius:14px; padding:20px; margin-bottom:14px; }
+.meal-card.served { border-color:#22c55e; background:rgba(34,197,94,.05); }
+.meal-type-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px; }
+.allergen-tag { display:inline-block; padding:3px 7px; border-radius:5px; font-size:.68rem; font-weight:700; background:rgba(245,158,11,.15); color:#f59e0b; margin:2px; }
+.allergen-tag.danger { background:rgba(239,68,68,.15); color:#ef4444; }
+.serves-input { background:#0f172a; border:1.5px solid #2d3748; color:#f1f5f9; border-radius:8px; padding:7px 10px; font-size:.85rem; width:80px; }
+.btn-serve { padding:10px 22px; background:#22c55e; border:none; border-radius:10px; color:#fff; font-size:.875rem; font-weight:700; cursor:pointer; transition:.15s; }
+.btn-serve:hover { background:#16a34a; }
+.btn-serve:disabled { background:#2d3748; color:#64748b; cursor:not-allowed; }
+.nutrition-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:12px; }
+.nutrition-cell { background:#0f172a; border-radius:8px; padding:8px; text-align:center; }
+.nutrition-val { font-size:1rem; font-weight:700; color:#4a9abf; }
+.nutrition-lbl { font-size:.65rem; color:var(--c-muted); margin-top:2px; }
+@media(max-width:600px){ .nutrition-grid{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+<div id="wren-shell"></div>
+<div class="page-content" data-role="manager deputy_manager practitioner">
+
+  <div id="allergen-banner" class="allergen-banner">
+    <div style="font-size:1rem;font-weight:800;color:#ef4444;margin-bottom:12px">⚠ ALLERGEN ALERT — CHILDREN WITH DIETARY REQUIREMENTS ATTENDING TODAY</div>
+    <div id="allergen-children-list"></div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap">
+    <div>
+      <div id="today-date" style="font-size:.85rem;color:var(--c-muted)">Today</div>
+      <h1 style="margin:2px 0;font-size:1.3rem;color:#f1f5f9">Chef View</h1>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <select id="room-select" style="background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:7px 12px;font-size:.82rem">
+        <option value="preschool">Pre-school (22)</option>
+        <option value="baby">Baby Room (10)</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="menu-container">
+    <div style="color:var(--c-muted);text-align:center;padding:40px">Loading today's menu…</div>
+  </div>
+
+</div>
+
+<script>
+const MEAL_LABELS = {breakfast:'Breakfast',snack_am:'AM Snack',lunch:'Lunch',snack_pm:'PM Snack',tea:'Tea'};
+const MEAL_COLORS = {breakfast:'#4a9abf',snack_am:'#8b5cf6',lunch:'#e07820',snack_pm:'#8b5cf6',tea:'#4a9abf'};
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function loadTodayMenu() {
+  const room = document.getElementById('room-select').value;
+  document.getElementById('menu-container').innerHTML = '<div style="color:var(--c-muted);text-align:center;padding:40px">Loading…</div>';
+  try {
+    const data = await Wren.api(`/api/menus/today?room=${room}`);
+
+    document.getElementById('today-date').textContent = new Date(data.date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+    // Allergen banner
+    const banner = document.getElementById('allergen-banner');
+    const childrenWithAllergens = data.allergen_children || [];
+    const todayAllergens = new Set();
+    (data.plans||[]).forEach(p => (p.allergens||[]).forEach(a => todayAllergens.add(a)));
+
+    const atRiskChildren = childrenWithAllergens.filter(c =>
+      (c.allergens||[]).some(a => todayAllergens.has(a))
+    );
+
+    if (atRiskChildren.length) {
+      banner.style.display='block';
+      document.getElementById('allergen-children-list').innerHTML = atRiskChildren.map(c => {
+        const overlap = (c.allergens||[]).filter(a => todayAllergens.has(a));
+        return `<div class="allergen-child-row">
+          <div class="child-avatar">${esc(c.first_name[0]||'?')}</div>
+          <div>
+            <div style="font-weight:700;color:#f1f5f9">${esc(c.first_name)} ${esc(c.last_name)}</div>
+            <div style="font-size:.78rem;color:#ef4444;margin-top:2px">Has allergen conflict with today's menu: <b>${overlap.map(a=>esc(a)).join(', ')}</b></div>
+            <div style="font-size:.72rem;color:var(--c-muted);margin-top:2px">Ensure alternative dish is prepared and labelled.</div>
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      banner.style.display='none';
+    }
+
+    // Render meal cards
+    if (!data.plans || !data.plans.length) {
+      document.getElementById('menu-container').innerHTML = '<div style="color:var(--c-muted);text-align:center;padding:40px;background:#1e293b;border-radius:12px">No menu planned for today. Check with manager.</div>';
+      return;
+    }
+
+    document.getElementById('menu-container').innerHTML = data.plans.map(plan => {
+      const n = plan.nutrition_per_serving_json || {};
+      const served = plan.status === 'served';
+      return `<div class="meal-card ${served?'served':''}" id="meal-card-${plan.id}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div>
+            <div class="meal-type-badge" style="background:rgba(74,154,191,.15);color:${MEAL_COLORS[plan.meal_type]||'#4a9abf'}">${MEAL_LABELS[plan.meal_type]||plan.meal_type}</div>
+            <h2 style="margin:4px 0;font-size:1rem;color:#f1f5f9">${esc(plan.recipe_name||'No recipe set')}</h2>
+          </div>
+          <div style="text-align:right">
+            ${served?'<div style="color:#22c55e;font-size:.8rem;font-weight:700">✓ Served '+new Date(plan.served_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'</div>':
+              `<div style="display:flex;align-items:center;gap:8px">
+                <label style="font-size:.72rem;color:var(--c-muted)">Serves:</label>
+                <input type="number" id="serves-${plan.id}" class="serves-input" value="${plan.override_serves_n||plan.serves_n||22}" min="1" max="50">
+                <button class="btn-serve" data-action="mark-served" data-id="${plan.id}">✓ Mark Served</button>
+              </div>`}
+          </div>
+        </div>
+
+        ${plan.description?`<p style="font-size:.82rem;color:var(--c-muted);margin:10px 0;line-height:1.5">${esc(plan.description)}</p>`:''}
+
+        <div style="margin-bottom:10px">
+          ${(plan.allergen_codes_display||[]).length?
+            '<div style="font-size:.72rem;color:var(--c-muted);margin-bottom:4px;font-weight:700">ALLERGENS:</div>'+
+            (plan.allergen_codes_display||[]).map(c=>`<span class="allergen-tag">${esc(c)}</span>`).join('')
+            :'<span style="font-size:.75rem;color:#22c55e">✓ No declared allergens</span>'}
+        </div>
+
+        ${plan.instructions?`
+          <details style="margin-top:10px">
+            <summary style="font-size:.78rem;color:#4a9abf;cursor:pointer;font-weight:700">Cooking Instructions</summary>
+            <div style="font-size:.8rem;color:var(--c-text);line-height:1.6;padding:10px 0;white-space:pre-wrap">${esc(plan.instructions)}</div>
+          </details>`:''
+        }
+
+        ${n.kcal?`<div class="nutrition-grid">
+          <div class="nutrition-cell"><div class="nutrition-val">${n.kcal}</div><div class="nutrition-lbl">kcal</div></div>
+          <div class="nutrition-cell"><div class="nutrition-val">${n.protein_g}g</div><div class="nutrition-lbl">Protein</div></div>
+          <div class="nutrition-cell"><div class="nutrition-val">${n.carbs_g}g</div><div class="nutrition-lbl">Carbs</div></div>
+          <div class="nutrition-cell"><div class="nutrition-val">${n.fat_g}g</div><div class="nutrition-lbl">Fat</div></div>
+        </div>`:''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('menu-container').innerHTML = `<div style="color:#ef4444;text-align:center;padding:40px">${esc(e.error||e.message||'Error')}</div>`;
+  }
+}
+
+async function markServed(planId) {
+  const serves = parseInt(document.getElementById('serves-'+planId)?.value) || null;
+  try {
+    await Wren.api(`/api/menus/plans/${planId}/serve`,{method:'POST',body:{override_serves_n:serves}});
+    Wren.toast('Marked as served','success');
+    await loadTodayMenu();
+  } catch(e){ Wren.toast('Error: '+(e.error||e.message),'error'); }
+}
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('room-select').addEventListener('change', loadTodayMenu);
+  document.getElementById('menu-container').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="mark-served"]');
+    if (!btn) return;
+    markServed(parseInt(btn.dataset.id));
+  });
+  loadTodayMenu();
+});
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

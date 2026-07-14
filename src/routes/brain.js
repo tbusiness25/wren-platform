@@ -61,7 +61,7 @@ router.post('/ask', async (req, res) => {
   try {
     const chunks = await qdrantSearch(question);
     const context = chunks.map((c, i) => `[#${i + 1}] ${c.title}\n${c.text}`).join('\n\n');
-    const systemPrompt = `You are Wren Brain, a knowledge assistant for Your Nursery. Use only the provided context passages to answer the question. Cite passages by their number in brackets, e.g., [#1].\n\nContext:\n${context}`;
+    const systemPrompt = `You are Wren Brain, a knowledge assistant for Little Angels Day Nursery. Use only the provided context passages to answer the question. Cite passages by their number in brackets, e.g., [#1].\n\nContext:\n${context}`;
     const answer = await answerWithOllama(systemPrompt, question);
     res.json({ answer, sources: chunks.map(c => c.source) });
   } catch (e) {
@@ -81,7 +81,7 @@ router.post('/swot-draft', async (req, res) => {
   try {
     const results = {};
     for (const [key, p] of Object.entries(prompts)) {
-      const answer = await answerWithOllama('You are drafting a SWOT quadrant for Your Nursery. Respond concisely.', p);
+      const answer = await answerWithOllama('You are drafting a SWOT quadrant for Little Angels Day Nursery. Respond concisely.', p);
       results[key] = answer;
     }
     res.json({ swot: results, note: 'draft by Wren brain — review before keeping' });

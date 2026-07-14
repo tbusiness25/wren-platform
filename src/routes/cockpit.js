@@ -29,7 +29,7 @@ const path = require('path');
 const { logDecision } = require('../lib/decision-log');
 
 // 2026-07-08: deputy_manager REMOVED — cockpit surfaces confidential owner emails / SWOT.
-// Deputies (the deputy) get child-data + operational access elsewhere, not the cockpit. Manager/owner only.
+// Deputies (Ayla) get child-data + operational access elsewhere, not the cockpit. Manager/owner only.
 const MGR_ROLES = ['manager', 'admin'];
 const COLUMNS   = ['backlog', 'this_week', 'in_progress', 'done'];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -566,7 +566,7 @@ router.get('/comms', async (req, res) => {
 //  MIND-MAP NOTES — Obsidian-compatible markdown vault (Toby's thinking space)
 // ═══════════════════════════════════════════════════════════════════════════════
 // Notes are plain .md files in OBSIDIAN_VAULT_DIR (default /app/data/obsidian-vault/wren →
-// host /app/data/ladn/obsidian-vault/wren via the prod rw bind mount). [[wikilinks]]
+// host /home/toby/wren/data/ladn/obsidian-vault/wren via the prod rw bind mount). [[wikilinks]]
 // are preserved verbatim, so pointing/symlinking a real Obsidian vault at that path gives a
 // two-way filesystem sync. Manager-only (inherits the router's auth gate above).
 

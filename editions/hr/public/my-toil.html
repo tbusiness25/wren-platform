@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>My TOIL — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <h1 class="page-title">My TOIL Bank</h1>
+    <button class="btn btn-primary" id="use-toil-btn">Request to Use TOIL</button>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;text-align:center">
+    <div style="font-size:3rem;font-weight:700;color:#4a9abf" id="toil-balance">—</div>
+    <div style="color:#94a3b8;margin-top:4px">hours available</div>
+  </div>
+
+  <h2 class="section-title">History</h2>
+  <div id="toil-list" style="display:flex;flex-direction:column;gap:8px">
+    <div style="color:#94a3b8">Loading…</div>
+  </div>
+</div>
+
+<!-- Use TOIL modal -->
+<div id="use-toil-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;overflow-y:auto">
+  <div style="background:#1e293b;border-radius:12px;max-width:420px;margin:8vh auto;padding:24px">
+    <h3 style="margin:0 0 20px;color:#f1f5f9">Request to Use TOIL</h3>
+    <div class="form-group">
+      <label class="form-label">Hours to use</label>
+      <input type="number" class="form-control" id="use-hours" min="0.5" step="0.5" placeholder="e.g. 2.5">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Date</label>
+      <input type="date" class="form-control" id="use-date">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason (optional)</label>
+      <input type="text" class="form-control" id="use-reason" placeholder="e.g. Personal appointment">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" id="cancel-toil-btn">Cancel</button>
+      <button class="btn btn-primary" id="submit-toil-btn">Submit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', loadToil);
+
+async function loadToil() {
+  const el = document.getElementById('toil-list');
+  try {
+    const data = await Wren.api('/api/toil/my');
+    const balance = parseFloat(data.balance) || 0;
+    document.getElementById('toil-balance').textContent = balance.toFixed(1) + 'h';
+    if (balance < 0) document.getElementById('toil-balance').style.color = '#ef4444';
+
+    const entries = data.entries || [];
+    if (!entries.length) {
+      el.innerHTML = '<div class="card" style="color:#94a3b8;text-align:center;padding:32px">No TOIL entries yet. Your manager will add earned hours here.</div>';
+      return;
+    }
+    const typeIcon = { earned: '➕', used: '➖', adjustment: '⚖️' };
+    const typeColour = { earned: '#22c55e', used: '#e07820', adjustment: '#4a9abf' };
+    el.innerHTML = entries.map(e => `
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="color:#f1f5f9;font-weight:500">
+            <span style="color:${typeColour[e.type] || '#94a3b8'}">${typeIcon[e.type] || ''}</span>
+            ${e.type.charAt(0).toUpperCase() + e.type.slice(1)}
+            ${e.reason ? `— ${escHtml(e.reason)}` : ''}
+          </div>
+          <div style="color:#94a3b8;font-size:.8rem">${fmt(e.occurred_on)}</div>
+        </div>
+        <div style="font-size:1.25rem;font-weight:700;color:${typeColour[e.type] || '#f1f5f9'}">
+          ${e.type === 'used' ? '-' : '+'} ${Math.abs(e.hours)}h
+        </div>
+      </div>`).join('');
+  } catch (err) {
+    el.innerHTML = '<div style="color:#ef4444">Could not load TOIL: ' + (err.message || err.error || 'error') + '</div>';
+  }
+}
+
+function fmt(d) { return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—'; }
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.getElementById('use-toil-btn').addEventListener('click', () => {
+  document.getElementById('use-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('use-toil-modal').style.display = 'block';
+});
+document.getElementById('cancel-toil-btn').addEventListener('click', () => {
+  document.getElementById('use-toil-modal').style.display = 'none';
+});
+document.getElementById('submit-toil-btn').addEventListener('click', async () => {
+  const hours = document.getElementById('use-hours').value;
+  const occurred_on = document.getElementById('use-date').value;
+  const reason = document.getElementById('use-reason').value;
+  if (!hours || !occurred_on) { Wren.toast('Hours and date are required', 'error'); return; }
+  try {
+    await Wren.api('/api/toil/request', { method:'POST', body:{ hours: parseFloat(hours), occurred_on, reason } });
+    document.getElementById('use-toil-modal').style.display = 'none';
+    Wren.toast('TOIL request submitted', 'success');
+    loadToil();
+  } catch (err) {
+    Wren.toast(err.error || 'Could not submit TOIL request', 'error');
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,343 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attendance Monitoring · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .am-wrap{padding:18px;max-width:1400px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .filters{display:flex;gap:12px;margin:14px 0;align-items:center;flex-wrap:wrap}
+ .filters label{font-size:.85rem;color:var(--mut)}
+ .filters input{background:var(--card);border:1px solid var(--bd);color:var(--txt);border-radius:6px;
+   padding:6px 10px;font-size:.85rem}
+ .filters button{background:var(--blue);border:none;color:#06121f;border-radius:6px;padding:8px 16px;
+   font-size:.85rem;font-weight:700;cursor:pointer}
+ .filters button:hover{opacity:.9}
+ .grid{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:0;margin:16px 0;overflow:hidden}
+ table{width:100%;border-collapse:collapse;font-size:.85rem}
+ th{background:rgba(255,255,255,.03);padding:10px 12px;text-align:left;font-weight:700;
+   border-bottom:1px solid var(--bd);color:var(--txt)}
+ td{padding:10px 12px;border-bottom:1px solid var(--bd)}
+ tr:last-child td{border-bottom:none}
+ tr.concern{background:rgba(239,68,68,.08)}
+ tr:hover{background:rgba(255,255,255,.03);cursor:pointer}
+ td.name{font-weight:600}
+ td.pct{text-align:center;font-weight:700}
+ td.pct.good{color:var(--ok)}
+ td.pct.warn{color:var(--warn)}
+ td.pct.bad{color:var(--bad)}
+ .flag{display:inline-block;background:var(--bad);color:#fff;font-size:.7rem;font-weight:700;
+   padding:3px 8px;border-radius:999px;margin-left:6px}
+ .actions{display:inline-flex;gap:8px}
+ .btn-sm{background:var(--card);border:1px solid var(--bd);color:var(--txt);border-radius:6px;
+   padding:5px 10px;font-size:.75rem;cursor:pointer}
+ .btn-sm:hover{border-color:var(--blue)}
+ .msg{margin:10px 0;font-size:.82rem;color:var(--warn);min-height:1em}
+ .detail-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.8);
+   display:none;align-items:center;justify-content:center;z-index:9999}
+ .detail-modal.show{display:flex}
+ .detail-box{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;
+   max-width:800px;width:90%;max-height:90vh;overflow-y:auto}
+ .detail-box h2{margin:0 0 8px;font-size:1.1rem}
+ .detail-box .sub{margin-bottom:12px}
+ .close-btn{float:right;background:none;border:none;color:var(--mut);font-size:1.2rem;
+   cursor:pointer;padding:0 8px}
+ .close-btn:hover{color:var(--txt)}
+ .weekday-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}
+ .weekday-card{background:rgba(255,255,255,.03);border:1px solid var(--bd);border-radius:8px;
+   padding:10px;text-align:center}
+ .weekday-card .day{font-weight:700;font-size:.85rem;margin-bottom:4px}
+ .weekday-card .pct{font-size:1.2rem;font-weight:700}
+ .section{margin:20px 0}
+ .section h3{font-size:.95rem;margin:0 0 8px;color:var(--mut)}
+ .absence-list{display:flex;flex-direction:column;gap:6px}
+ .absence-item{background:rgba(255,255,255,.02);border:1px solid var(--bd);border-radius:6px;
+   padding:8px 10px;font-size:.8rem}
+ .absence-item .date{font-weight:700;color:var(--txt)}
+ .absence-item .reason{color:var(--warn);margin-left:8px}
+ .action-form{margin:12px 0}
+ .action-form textarea{width:100%;background:var(--card);border:1px solid var(--bd);color:var(--txt);
+   border-radius:6px;padding:10px;font-size:.85rem;font-family:inherit;resize:vertical;min-height:80px}
+ .action-form button{background:var(--blue);border:none;color:#06121f;border-radius:6px;
+   padding:8px 16px;font-size:.85rem;font-weight:700;cursor:pointer;margin-top:8px}
+ .action-list{display:flex;flex-direction:column;gap:8px}
+ .action-item{background:rgba(74,154,191,.08);border:1px solid rgba(74,154,191,.2);border-radius:6px;
+   padding:10px;font-size:.8rem}
+ .action-item .meta{color:var(--mut);font-size:.75rem;margin-bottom:4px}
+ .action-item .note{color:var(--txt)}
+ .empty{color:var(--mut);font-size:.82rem;padding:12px;text-align:center}
+</style></head>
+<body data-portal="admin">
+<div class="am-wrap">
+  <h1>📊 Attendance Monitoring</h1>
+  <div class="sub">Ofsted-ready attendance pattern tracking. Flags persistent absence (&lt;90%) and repeated same-day absences.</div>
+
+  <div class="filters">
+    <label>From: <input type="date" id="filter-from"></label>
+    <label>To: <input type="date" id="filter-to"></label>
+    <button id="btn-refresh">Refresh</button>
+  </div>
+
+  <div class="msg" id="am-msg"></div>
+
+  <div class="grid">
+    <table>
+      <thead>
+        <tr>
+          <th>Child</th>
+          <th style="text-align:center">Expected</th>
+          <th style="text-align:center">Attended</th>
+          <th style="text-align:center">Absent</th>
+          <th style="text-align:center">%</th>
+          <th style="text-align:center">Actions Logged</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="am-table">
+        <tr><td colspan="7" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="detail-modal" id="detail-modal">
+  <div class="detail-box">
+    <button class="close-btn" id="close-modal">×</button>
+    <h2 id="detail-name">—</h2>
+    <div class="sub" id="detail-range">—</div>
+
+    <div class="section">
+      <h3>Weekday Breakdown</h3>
+      <div class="weekday-grid" id="detail-weekdays">
+        <div class="empty">No data</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Recent Absences</h3>
+      <div class="absence-list" id="detail-absences">
+        <div class="empty">No absences recorded</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Log Action Taken</h3>
+      <div class="action-form">
+        <textarea id="action-note" placeholder="Describe action taken (e.g., 'Contacted parent, discussed attendance concerns, agreed on follow-up plan')"></textarea>
+        <button id="btn-log-action">Log Action</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Actions Logged (This Period)</h3>
+      <div class="action-list" id="detail-actions">
+        <div class="empty">No actions logged yet</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var overview = null;
+  var currentChildId = null;
+
+  function esc(s){ var d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+  function fmt(d){ if(!d) return '—'; var dt=new Date(d); return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+
+  function msg(txt, err){ document.getElementById('am-msg').textContent = txt; }
+
+  function renderTable(){
+    var tbody = document.getElementById('am-table');
+    if(!overview || !overview.children || overview.children.length === 0){
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No data</td></tr>';
+      return;
+    }
+    var html = '';
+    overview.children.forEach(function(c){
+      var pct = c.attendance_percentage;
+      var pctClass = pct === null ? '' : (pct >= 95 ? 'good' : (pct >= 90 ? 'warn' : 'bad'));
+      var concern = c.persistent_absence;
+      html += '<tr class="' + (concern ? 'concern' : '') + '" data-id="' + c.id + '">';
+      html += '<td class="name">' + esc(c.first_name + ' ' + c.last_name);
+      if(concern) html += '<span class="flag">⚠ CONCERN</span>';
+      html += '</td>';
+      html += '<td style="text-align:center">' + (c.expected_sessions || 0) + '</td>';
+      html += '<td style="text-align:center">' + (c.attended_sessions || 0) + '</td>';
+      html += '<td style="text-align:center">' + (c.absent_sessions || 0) + '</td>';
+      html += '<td class="pct ' + pctClass + '">' + (pct === null ? '—' : pct + '%') + '</td>';
+      html += '<td style="text-align:center">' + (c.action_count || 0) + '</td>';
+      html += '<td><button class="btn-sm" data-id="' + c.id + '">View Detail</button></td>';
+      html += '</tr>';
+    });
+    tbody.innerHTML = html;
+
+    document.querySelectorAll('#am-table tr[data-id]').forEach(function(tr){
+      tr.addEventListener('click', function(e){
+        if(e.target.tagName === 'BUTTON') return;
+        showDetail(parseInt(tr.dataset.id));
+      });
+    });
+    document.querySelectorAll('.btn-sm[data-id]').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        showDetail(parseInt(btn.dataset.id));
+      });
+    });
+  }
+
+  function showDetail(childId){
+    currentChildId = childId;
+    var modal = document.getElementById('detail-modal');
+    modal.classList.add('show');
+    document.getElementById('action-note').value = '';
+    loadDetail(childId);
+  }
+
+  function closeDetail(){
+    document.getElementById('detail-modal').classList.remove('show');
+    currentChildId = null;
+  }
+
+  function loadDetail(childId){
+    var from = document.getElementById('filter-from').value;
+    var to = document.getElementById('filter-to').value;
+    var url = '/api/attendance-monitoring/child/' + childId + '?from=' + from + '&to=' + to;
+    fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('wrenToken') }
+    }).then(function(r){
+      if(!r.ok) throw new Error('Failed to load detail');
+      return r.json();
+    }).then(function(data){
+      renderDetail(data);
+    }).catch(function(err){
+      console.error(err);
+      msg('Failed to load detail', true);
+    });
+  }
+
+  function renderDetail(data){
+    document.getElementById('detail-name').textContent = data.child.first_name + ' ' + data.child.last_name;
+    document.getElementById('detail-range').textContent = fmt(data.from) + ' – ' + fmt(data.to);
+
+    // Weekday breakdown
+    var weekdaysEl = document.getElementById('detail-weekdays');
+    if(!data.weekday_breakdown || data.weekday_breakdown.length === 0){
+      weekdaysEl.innerHTML = '<div class="empty">No expected sessions</div>';
+    } else {
+      var html = '';
+      data.weekday_breakdown.forEach(function(wd){
+        var pct = wd.attendance_percentage;
+        var pctClass = pct === null ? '' : (pct >= 95 ? 'good' : (pct >= 90 ? 'warn' : 'bad'));
+        html += '<div class="weekday-card">';
+        html += '<div class="day">' + esc(wd.day_name.substring(0,3)) + '</div>';
+        html += '<div class="pct ' + pctClass + '">' + (pct === null ? '—' : pct + '%') + '</div>';
+        html += '<div style="font-size:.7rem;color:var(--mut);margin-top:4px">';
+        html += (wd.expected_count - wd.absent_count) + ' / ' + wd.expected_count + '</div>';
+        html += '</div>';
+      });
+      weekdaysEl.innerHTML = html;
+    }
+
+    // Recent absences
+    var absencesEl = document.getElementById('detail-absences');
+    if(!data.recent_absences || data.recent_absences.length === 0){
+      absencesEl.innerHTML = '<div class="empty">No absences recorded</div>';
+    } else {
+      var html = '';
+      data.recent_absences.forEach(function(a){
+        html += '<div class="absence-item">';
+        html += '<span class="date">' + fmt(a.date) + '</span>';
+        if(a.absence_reason) html += '<span class="reason">' + esc(a.absence_reason) + '</span>';
+        if(a.notes) html += '<div style="margin-top:4px;color:var(--mut)">' + esc(a.notes) + '</div>';
+        html += '</div>';
+      });
+      absencesEl.innerHTML = html;
+    }
+
+    // Actions
+    var actionsEl = document.getElementById('detail-actions');
+    if(!data.actions || data.actions.length === 0){
+      actionsEl.innerHTML = '<div class="empty">No actions logged yet</div>';
+    } else {
+      var html = '';
+      data.actions.forEach(function(a){
+        html += '<div class="action-item">';
+        html += '<div class="meta">' + fmt(a.created_at) + ' — ' + esc(a.logged_by_name || 'Unknown') + '</div>';
+        html += '<div class="note">' + esc(a.note) + '</div>';
+        html += '</div>';
+      });
+      actionsEl.innerHTML = html;
+    }
+  }
+
+  function logAction(){
+    if(!currentChildId) return;
+    var note = document.getElementById('action-note').value.trim();
+    if(!note){ msg('Please enter a note', true); return; }
+
+    fetch('/api/attendance-monitoring/child/' + currentChildId + '/action', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + sessionStorage.getItem('wrenToken'),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ note: note })
+    }).then(function(r){
+      if(!r.ok) throw new Error('Failed to log action');
+      return r.json();
+    }).then(function(){
+      msg('Action logged');
+      document.getElementById('action-note').value = '';
+      loadDetail(currentChildId);
+      loadOverview(); // Refresh table count
+    }).catch(function(err){
+      console.error(err);
+      msg('Failed to log action', true);
+    });
+  }
+
+  function loadOverview(){
+    var from = document.getElementById('filter-from').value;
+    var to = document.getElementById('filter-to').value;
+    var url = '/api/attendance-monitoring/overview?from=' + from + '&to=' + to;
+    fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('wrenToken') }
+    }).then(function(r){
+      if(!r.ok) throw new Error('Failed to load overview');
+      return r.json();
+    }).then(function(data){
+      overview = data;
+      renderTable();
+      msg('');
+    }).catch(function(err){
+      console.error(err);
+      msg('Failed to load attendance overview', true);
+    });
+  }
+
+  function init(){
+    // Default to last 90 days
+    var to = new Date();
+    var from = new Date(to.getTime() - 90 * 24 * 60 * 60 * 1000);
+    document.getElementById('filter-from').value = from.toISOString().split('T')[0];
+    document.getElementById('filter-to').value = to.toISOString().split('T')[0];
+
+    document.getElementById('btn-refresh').addEventListener('click', loadOverview);
+    document.getElementById('close-modal').addEventListener('click', closeDetail);
+    document.getElementById('detail-modal').addEventListener('click', function(e){
+      if(e.target.id === 'detail-modal') closeDetail();
+    });
+    document.getElementById('btn-log-action').addEventListener('click', logAction);
+
+    loadOverview();
+  }
+
+  document.addEventListener('wren:ready', init);
+})();
+</script>
+</body></html>

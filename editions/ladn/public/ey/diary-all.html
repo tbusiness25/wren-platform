@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Daily Diary — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Toolbar ──────────────────────────────────────────────────────────────── */
+    .diary-toolbar {
+      display:flex;align-items:center;justify-content:space-between;padding:14px 20px;
+      background:var(--c-surface);border-bottom:1px solid var(--c-border);
+      position:sticky;top:0;z-index:100;
+    }
+    .date-nav {
+      display:flex;align-items:center;gap:10px;
+    }
+    .date-nav button {
+      min-width:40px;height:40px;border-radius:10px;background:var(--c-surface);
+      border:1px solid var(--c-border);color:var(--c-text);font-size:1.2rem;
+      cursor:pointer;transition:background .12s;
+    }
+    .date-nav button:hover { background:rgba(255,255,255,0.06); }
+    .date-nav input[type="date"] {
+      height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--c-border);
+      background:var(--c-surface);color:var(--c-text);font-size:.9rem;
+    }
+    .select-all-wrapper {
+      display:flex;align-items:center;gap:8px;
+    }
+    .select-all-wrapper input[type="checkbox"] {
+      width:20px;height:20px;cursor:pointer;
+    }
+    .select-all-wrapper label {
+      font-size:.9rem;color:var(--c-text);cursor:pointer;
+    }
+
+    /* ── Tab bar ──────────────────────────────────────────────────────────────── */
+    .tab-bar {
+      display:flex;gap:0;border-bottom:1px solid var(--c-border);
+      background:var(--c-surface);overflow-x:auto;-webkit-overflow-scrolling:touch;
+    }
+    .tab {
+      flex:1 1 0;min-width:90px;padding:14px 12px;text-align:center;
+      font-size:.88rem;font-weight:700;color:var(--c-muted);
+      border-bottom:3px solid transparent;cursor:pointer;transition:all .15s;
+      white-space:nowrap;
+    }
+    .tab:hover { background:rgba(255,255,255,0.04); }
+    .tab.active {
+      color:var(--c-primary);border-bottom-color:var(--c-primary);
+      background:rgba(74,154,191,0.08);
+    }
+
+    /* ── Per-child table ──────────────────────────────────────────────────────── */
+    .children-table {
+      width:100%;border-collapse:collapse;
+    }
+    .children-table thead {
+      background:var(--c-surface);
+      border-bottom:1px solid var(--c-border);
+    }
+    .children-table th {
+      padding:12px 10px;text-align:left;font-size:.78rem;font-weight:700;
+      text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);
+    }
+    .children-table tbody tr {
+      border-bottom:1px solid var(--c-border);
+    }
+    .children-table tbody tr:hover {
+      background:rgba(255,255,255,0.03);
+    }
+    .children-table td {
+      padding:10px;vertical-align:middle;
+    }
+    .child-avatar {
+      width:36px;height:36px;border-radius:50%;display:flex;align-items:center;
+      justify-content:center;font-size:.9rem;font-weight:700;color:#fff;
+      flex-shrink:0;overflow:hidden;
+    }
+    .child-avatar img { width:100%;height:100%;object-fit:cover;border-radius:50%; }
+    .child-name-cell {
+      display:flex;align-items:center;gap:10px;
+    }
+    .child-name {
+      font-size:.92rem;color:var(--c-text);font-weight:600;
+    }
+    .child-room {
+      font-size:.75rem;color:var(--c-muted);
+    }
+    /* Inline input/select */
+    .diary-input {
+      width:100%;min-width:80px;padding:6px 8px;border-radius:6px;
+      border:1px solid var(--c-border);background:var(--c-surface);
+      color:var(--c-text);font-size:.85rem;
+    }
+    .diary-input:focus {
+      outline:none;border-color:var(--c-primary);
+    }
+    select.diary-input { cursor:pointer; }
+
+    /* Portion pie (food tab) */
+    .portion-btn {
+      display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
+      border-radius:8px;border:1px solid var(--c-border);background:transparent;
+      cursor:pointer;transition:background .12s,border-color .12s;
+    }
+    .portion-pie {
+      width:28px;height:28px;border-radius:50%;border:2px solid var(--c-border);
+      transition:background .12s,border-color .12s;
+    }
+    .portion-btn[data-amount="all"] .portion-pie {
+      background:conic-gradient(var(--c-green) 0 100%, var(--c-green) 0);
+      border-color:var(--c-green);
+    }
+    .portion-btn[data-amount="most"] .portion-pie {
+      background:conic-gradient(var(--c-blue) 0 75%, transparent 75% 100%);
+      border-color:var(--c-blue);
+    }
+    .portion-btn[data-amount="some"] .portion-pie {
+      background:conic-gradient(var(--c-orange) 0 33%, transparent 33% 100%);
+      border-color:var(--c-orange);
+    }
+    .portion-btn[data-amount="refused"] .portion-pie {
+      background:transparent;border-color:var(--c-danger);border-style:dashed;
+    }
+
+    /* ── Bottom action bar ────────────────────────────────────────────────────── */
+    .action-bar {
+      position:sticky;bottom:0;padding:14px 20px;background:var(--c-surface);
+      border-top:1px solid var(--c-border);display:flex;gap:10px;
+      box-shadow:0 -2px 8px rgba(0,0,0,0.15);
+    }
+    .action-bar button {
+      flex:1;height:44px;border-radius:10px;font-size:.95rem;font-weight:700;
+      border:none;cursor:pointer;transition:opacity .15s;
+    }
+    .action-bar button:hover { opacity:.88; }
+    .btn-publish {
+      background:var(--c-primary);color:#fff;
+    }
+    .btn-share {
+      background:var(--c-blue);color:#fff;
+    }
+    .btn-draft {
+      background:var(--c-border);color:var(--c-text);
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding:60px 20px;text-align:center;color:var(--c-muted);
+    }
+    .empty-state .icon { font-size:3rem;margin-bottom:12px; }
+    .empty-state .title { font-size:1.1rem;font-weight:700;margin-bottom:6px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📝 Daily Diary</div>
+      <div class="page-subtitle">Log the whole day for your room</div>
+    </div>
+  </div>
+
+  <!-- Date picker + Select All -->
+  <div class="diary-toolbar">
+    <div class="date-nav">
+      <button type="button" id="btn-prev-day" aria-label="Previous day">◀</button>
+      <input type="date" id="diary-date" aria-label="Date">
+      <button type="button" id="btn-next-day" aria-label="Next day">▶</button>
+    </div>
+    <div class="select-all-wrapper">
+      <input type="checkbox" id="select-all">
+      <label for="select-all">Select All</label>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar" role="tablist">
+    <div class="tab active" data-tab="food" role="tab" aria-selected="true">What I ate</div>
+    <div class="tab" data-tab="sleep" role="tab" aria-selected="false">Sleep</div>
+    <div class="tab" data-tab="bottle" role="tab" aria-selected="false">Bottle</div>
+    <div class="tab" data-tab="nappy" role="tab" aria-selected="false">Nappies</div>
+    <div class="tab" data-tab="sun" role="tab" aria-selected="false">Sun cream</div>
+    <div class="tab" data-tab="notes" role="tab" aria-selected="false">Notes</div>
+  </div>
+
+  <!-- Tab panels -->
+  <div id="tab-content" style="min-height:400px;"></div>
+
+  <!-- Bottom action bar -->
+  <div class="action-bar">
+    <button type="button" class="btn-publish" id="btn-publish">Publish</button>
+    <button type="button" class="btn-share" id="btn-share">Share with Parents</button>
+    <button type="button" class="btn-draft" id="btn-draft">Save as Draft</button>
+  </div>
+</div>
+
+<script src="/js/wren-core.js" defer></script>
+<script>
+(function(){
+  'use strict';
+
+  const COLORS=['#4a9abf','#e07820','#22c55e','#a855f7','#ef4444','#06b6d4','#f59e0b','#10b981','#ec4899','#3b82f6'];
+  function color(n){return COLORS[(n||'A').charCodeAt(0)%COLORS.length];}
+  function e(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+  let _children = [];
+  let _currentTab = 'food';
+  let _data = {}; // childId -> { food: {...}, sleep: {...}, ... }
+
+  function _p2(n){return(n<10?'0':'')+n;}
+  function todayISO() {
+    const d = new Date();
+    return d.getFullYear()+'-'+_p2(d.getMonth()+1)+'-'+_p2(d.getDate());
+  }
+  function nearestSlot() {
+    const now=new Date();const mins=now.getHours()*60+now.getMinutes();
+    const near=Math.round(mins/5)*5;
+    return _p2(Math.floor(near/60))+':'+_p2(near%60);
+  }
+
+  // ── Load children from /api/children (active children in current room) ────────
+  async function loadChildren() {
+    try {
+      const data = await Wren.api('/api/children');
+      const all = Array.isArray(data) ? data : (data && data.rows ? data.rows : []);
+      // Filter to active children only
+      _children = all.filter(c => c.is_active !== false);
+      // Initialize data structure for each child
+      _children.forEach(c => {
+        _data[c.id] = {
+          food: { amount: 'all', meal: 'lunch', time: nearestSlot() },
+          sleep: { start: nearestSlot(), end: nearestSlot(), status: 'sound' },
+          bottle: { time: nearestSlot(), drink_type: 'formula', amount_ml: 180 },
+          nappy: { time: nearestSlot(), state: 'wet' },
+          sun: { applied: false, time: nearestSlot() },
+          notes: { note: '' },
+        };
+      });
+      renderTab();
+    } catch (err) {
+      Wren.toast('Failed to load children: ' + (err.message || 'error'), 'error');
+    }
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    _currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => {
+      const isActive = t.dataset.tab === tab;
+      t.classList.toggle('active', isActive);
+      t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    renderTab();
+  }
+
+  // ── Render current tab ─────────────────────────────────────────────────────────
+  function renderTab() {
+    const container = document.getElementById('tab-content');
+    if (!_children.length) {
+      container.innerHTML = `<div class="empty-state">
+        <div class="icon">📋</div>
+        <div class="title">No children</div>
+        <div>No active children found for today.</div>
+      </div>`;
+      return;
+    }
+
+    const headers = {
+      food: ['Child', 'Time', 'Meal', 'Amount'],
+      sleep: ['Child', 'Start', 'End', 'Status'],
+      bottle: ['Child', 'Time', 'Type', 'Amount (ml)'],
+      nappy: ['Child', 'Time', 'State'],
+      sun: ['Child', 'Applied', 'Time'],
+      notes: ['Child', 'Notes'],
+    };
+
+    let html = `<table class="children-table"><thead><tr>`;
+    headers[_currentTab].forEach(h => html += `<th>${e(h)}</th>`);
+    html += `</tr></thead><tbody>`;
+
+    _children.forEach(c => {
+      const init = (c.first_name||'?').charAt(0).toUpperCase();
+      const av = c.photo_url
+        ? `<div class="child-avatar"><img src="${e(c.photo_url)}" alt="${e(c.first_name)}"></div>`
+        : `<div class="child-avatar" style="background:${color(init)}">${e(init)}</div>`;
+      const name = `<div class="child-name-cell">${av}<div><div class="child-name">${e(c.first_name)} ${e((c.last_name||'').charAt(0))}.</div>${c.room ? `<div class="child-room">${e(c.room)}</div>` : ''}</div></div>`;
+
+      html += `<tr data-child-id="${c.id}">`;
+
+      if (_currentTab === 'food') {
+        const d = _data[c.id].food;
+        html += `<td>${name}</td>`;
+        html += `<td><select class="diary-input" data-field="time">${timeOptions(d.time)}</select></td>`;
+        html += `<td><select class="diary-input" data-field="meal">
+          <option value="breakfast"${d.meal==='breakfast'?' selected':''}>Breakfast</option>
+          <option value="snack-am"${d.meal==='snack-am'?' selected':''}>Morning snack</option>
+          <option value="lunch"${d.meal==='lunch'?' selected':''}>Lunch</option>
+          <option value="snack-pm"${d.meal==='snack-pm'?' selected':''}>Afternoon snack</option>
+          <option value="tea"${d.meal==='tea'?' selected':''}>Tea</option>
+        </select></td>`;
+        html += `<td><button type="button" class="portion-btn" data-field="amount" data-amount="${d.amount}">
+          <span class="portion-pie"></span>
+          <span>${portionLabel(d.amount)}</span>
+        </button></td>`;
+      }
+      else if (_currentTab === 'sleep') {
+        const d = _data[c.id].sleep;
+        html += `<td>${name}</td>`;
+        html += `<td><select class="diary-input" data-field="start">${timeOptions(d.start)}</select></td>`;
+        html += `<td><select class="diary-input" data-field="end">${timeOptions(d.end)}</select></td>`;
+        html += `<td><select class="diary-input" data-field="status">
+          <option value="sound"${d.status==='sound'?' selected':''}>Sound asleep</option>
+          <option value="restless"${d.status==='restless'?' selected':''}>Restless</option>
+          <option value="woke"${d.status==='woke'?' selected':''}>Woke early</option>
+        </select></td>`;
+      }
+      else if (_currentTab === 'bottle') {
+        const d = _data[c.id].bottle;
+        html += `<td>${name}</td>`;
+        html += `<td><select class="diary-input" data-field="time">${timeOptions(d.time)}</select></td>`;
+        html += `<td><select class="diary-input" data-field="drink_type">
+          <option value="formula"${d.drink_type==='formula'?' selected':''}>Formula</option>
+          <option value="EBM"${d.drink_type==='EBM'?' selected':''}>Breast / Expressed</option>
+          <option value="water"${d.drink_type==='water'?' selected':''}>Water</option>
+          <option value="cow"${d.drink_type==='cow'?' selected':''}>Cow's milk</option>
+          <option value="other"${d.drink_type==='other'?' selected':''}>Other</option>
+        </select></td>`;
+        html += `<td><input type="number" class="diary-input" data-field="amount_ml" value="${d.amount_ml}" min="0" max="500" style="width:80px"></td>`;
+      }
+      else if (_currentTab === 'nappy') {
+        const d = _data[c.id].nappy;
+        html += `<td>${name}</td>`;
+        html += `<td><select class="diary-input" data-field="time">${timeOptions(d.time)}</select></td>`;
+        html += `<td><select class="diary-input" data-field="state">
+          <option value="wet"${d.state==='wet'?' selected':''}>Wet</option>
+          <option value="soiled"${d.state==='soiled'?' selected':''}>Soiled</option>
+          <option value="clean"${d.state==='clean'?' selected':''}>Clean / Dry</option>
+          <option value="toilet"${d.state==='toilet'?' selected':''}>Used toilet</option>
+        </select></td>`;
+      }
+      else if (_currentTab === 'sun') {
+        const d = _data[c.id].sun;
+        html += `<td>${name}</td>`;
+        html += `<td><input type="checkbox" class="diary-input" data-field="applied" ${d.applied?'checked':''}></td>`;
+        html += `<td><select class="diary-input" data-field="time">${timeOptions(d.time)}</select></td>`;
+      }
+      else if (_currentTab === 'notes') {
+        const d = _data[c.id].notes;
+        html += `<td>${name}</td>`;
+        html += `<td colspan="3"><textarea class="diary-input" data-field="note" rows="2" placeholder="Optional notes for this child…" style="width:100%;min-width:300px">${e(d.note)}</textarea></td>`;
+      }
+
+      html += `</tr>`;
+    });
+
+    html += `</tbody></table>`;
+    container.innerHTML = html;
+
+    // Wire change events
+    container.addEventListener('change', handleFieldChange);
+    container.addEventListener('click', handlePortionClick);
+  }
+
+  function timeOptions(selected) {
+    let html = '';
+    for (let m = 0; m < 1440; m += 5) {
+      const v = _p2(Math.floor(m/60)) + ':' + _p2(m%60);
+      html += `<option value="${v}"${v===selected?' selected':''}>${v}</option>`;
+    }
+    return html;
+  }
+
+  function portionLabel(amount) {
+    const labels = { all: 'All', most: 'Most', some: 'Some', refused: 'Refused' };
+    return labels[amount] || 'All';
+  }
+
+  // ── Handle field changes ───────────────────────────────────────────────────────
+  function handleFieldChange(e) {
+    const input = e.target.closest('[data-field]');
+    if (!input) return;
+    const row = input.closest('tr[data-child-id]');
+    if (!row) return;
+    const childId = parseInt(row.dataset.childId, 10);
+    const field = input.dataset.field;
+    const value = input.type === 'checkbox' ? input.checked : input.value;
+    if (_data[childId] && _data[childId][_currentTab]) {
+      _data[childId][_currentTab][field] = value;
+    }
+  }
+
+  // ── Handle portion pie clicks (food tab) ───────────────────────────────────────
+  function handlePortionClick(e) {
+    const btn = e.target.closest('.portion-btn');
+    if (!btn) return;
+    const row = btn.closest('tr[data-child-id]');
+    if (!row) return;
+    const childId = parseInt(row.dataset.childId, 10);
+    const cycle = ['all', 'most', 'some', 'refused'];
+    const cur = btn.dataset.amount;
+    const next = cycle[(cycle.indexOf(cur) + 1) % cycle.length];
+    btn.dataset.amount = next;
+    btn.querySelector('span:last-child').textContent = portionLabel(next);
+    if (_data[childId] && _data[childId].food) {
+      _data[childId].food.amount = next;
+    }
+  }
+
+  // ── Select All toggle ──────────────────────────────────────────────────────────
+  function wireSelectAll() {
+    // This is a placeholder — in a real implementation, you'd track which children
+    // are selected and only save those. For now, all children are always "selected".
+    document.getElementById('select-all').addEventListener('change', function(e) {
+      // In future: filter _children to only those checked
+      Wren.toast(e.target.checked ? 'All children selected' : 'All children deselected', 'info');
+    });
+  }
+
+  // ── Date navigation ────────────────────────────────────────────────────────────
+  function wireDate() {
+    const input = document.getElementById('diary-date');
+    input.value = todayISO();
+    document.getElementById('btn-prev-day').addEventListener('click', () => {
+      const d = new Date(input.value);
+      d.setDate(d.getDate() - 1);
+      input.value = d.toISOString().slice(0, 10);
+    });
+    document.getElementById('btn-next-day').addEventListener('click', () => {
+      const d = new Date(input.value);
+      d.setDate(d.getDate() + 1);
+      input.value = d.toISOString().slice(0, 10);
+    });
+  }
+
+  // ── Save actions ───────────────────────────────────────────────────────────────
+  async function saveAll(share) {
+    const date = document.getElementById('diary-date').value;
+    if (!date) {
+      Wren.toast('Please select a date', 'error');
+      return;
+    }
+
+    // We'll save each diary type separately, for each child
+    // This mirrors the existing /api/daily-diary/group endpoint pattern
+    const promises = [];
+    const types = ['food', 'sleep', 'bottle', 'nappy'];
+
+    for (const type of types) {
+      const childIds = _children.map(c => c.id);
+      const perChild = {};
+      _children.forEach(c => {
+        const d = _data[c.id][type];
+        if (type === 'food') perChild[c.id] = { amount: d.amount };
+        else if (type === 'sleep') perChild[c.id] = { end: d.end };
+        else if (type === 'bottle') perChild[c.id] = { amount_ml: d.amount_ml };
+        else if (type === 'nappy') perChild[c.id] = { state: d.state };
+      });
+
+      const common = {};
+      if (type === 'food') {
+        common.time = _data[_children[0].id].food.time;
+        common.meal = _data[_children[0].id].food.meal;
+        common.amount = 'all';
+      } else if (type === 'sleep') {
+        common.start = _data[_children[0].id].sleep.start;
+        common.end = _data[_children[0].id].sleep.end;
+        common.status = _data[_children[0].id].sleep.status;
+      } else if (type === 'bottle') {
+        common.time = _data[_children[0].id].bottle.time;
+        common.drink_type = _data[_children[0].id].bottle.drink_type;
+        common.amount_ml = _data[_children[0].id].bottle.amount_ml;
+      } else if (type === 'nappy') {
+        common.time = _data[_children[0].id].nappy.time;
+        common.state = _data[_children[0].id].nappy.state;
+      }
+      common.share = share;
+
+      promises.push(
+        Wren.api('/api/daily-diary/group', {
+          method: 'POST',
+          body: JSON.stringify({ child_ids: childIds, type, date, common, per_child: perChild }),
+        }).catch(err => ({ error: true, type, message: err.message || 'error' }))
+      );
+    }
+
+    const results = await Promise.all(promises);
+    const errors = results.filter(r => r.error);
+    if (errors.length) {
+      Wren.toast(`Failed to save some entries: ${errors.map(e => e.type).join(', ')}`, 'error');
+    } else {
+      Wren.toast(`Diary saved for ${_children.length} children`, 'success');
+      setTimeout(() => Wren.navigate('/ey/home'), 1200);
+    }
+  }
+
+  function wireActions() {
+    document.getElementById('btn-publish').addEventListener('click', () => saveAll(true));
+    document.getElementById('btn-share').addEventListener('click', () => saveAll(true));
+    document.getElementById('btn-draft').addEventListener('click', () => saveAll(false));
+  }
+
+  // ── Tab bar event delegation ───────────────────────────────────────────────────
+  function wireTabs() {
+    document.querySelector('.tab-bar').addEventListener('click', (e) => {
+      const tab = e.target.closest('.tab');
+      if (tab && tab.dataset.tab) switchTab(tab.dataset.tab);
+    });
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────────
+  document.addEventListener('wren:ready', function() {
+    wireTabs();
+    wireSelectAll();
+    wireDate();
+    wireActions();
+    loadChildren();
+  });
+}());
+</script>
+</body>
+</html>

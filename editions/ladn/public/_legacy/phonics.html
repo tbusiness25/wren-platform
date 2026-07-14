@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Phonics — Little Angels</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Tabs ── */
+    .ph-tabs{display:flex;gap:0;border-bottom:2px solid var(--c-border);margin-bottom:20px;overflow-x:auto;scrollbar-width:none}
+    .ph-tabs::-webkit-scrollbar{display:none}
+    .ph-tab{padding:10px 18px;border:none;background:none;color:var(--c-muted);font-size:.875rem;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:.15s}
+    .ph-tab.active{color:var(--c-blue);border-bottom-color:var(--c-blue)}
+    .ph-pane{display:none}.ph-pane.active{display:block}
+    /* ── Phase selector ── */
+    .phase-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+    .phase-btn{padding:6px 14px;border-radius:8px;border:1.5px solid var(--c-border);background:none;color:var(--c-muted);font-size:.8rem;font-weight:700;cursor:pointer;transition:.15s;min-height:36px}
+    .phase-btn.active{background:var(--c-blue);border-color:var(--c-blue);color:#fff}
+    /* ── Sound tiles ── */
+    .sound-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+    .sound-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:52px;min-height:52px;border-radius:10px;border:2px solid transparent;cursor:pointer;transition:.15s;padding:6px 10px;user-select:none;-webkit-tap-highlight-color:transparent;position:relative}
+    .sound-tile .sc{font-size:1.15rem;font-weight:800;line-height:1}
+    .sound-tile .conf{font-size:.6rem;margin-top:3px;line-height:1}
+    .sound-tile.c0{background:#1e293b;border-color:#2d3748;color:#475569}
+    .sound-tile.c1{background:#f59e0b22;border-color:#f59e0b55;color:#f59e0b}
+    .sound-tile.c2{background:#4a9abf22;border-color:#4a9abf55;color:#4a9abf}
+    .sound-tile.c3{background:#22c55e22;border-color:#22c55e55;color:#22c55e}
+    .sound-tile:active{transform:scale(.92)}
+    /* ── Child row ── */
+    .child-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1.5px solid var(--c-border);margin-bottom:8px;cursor:pointer;transition:.15s}
+    .child-row:hover,.child-row.selected{border-color:var(--c-blue);background:rgba(74,154,191,.07)}
+    .child-avatar-sm{width:34px;height:34px;border-radius:50%;background:var(--c-blue);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0}
+    /* ── Bulk view ── */
+    .bulk-sound-select{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+    .bulk-sound-btn{padding:7px 14px;border-radius:8px;border:1.5px solid var(--c-border);background:none;color:var(--c-text);font-size:.85rem;font-weight:700;cursor:pointer;transition:.15s;min-height:40px}
+    .bulk-sound-btn.selected{background:var(--c-orange);border-color:var(--c-orange);color:#fff}
+    .bulk-child-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;border:1.5px solid var(--c-border);margin-bottom:8px;transition:.15s}
+    .conf-btns{display:flex;gap:4px;margin-left:auto}
+    .conf-btn{padding:5px 12px;border-radius:7px;border:1.5px solid var(--c-border);background:none;font-size:.78rem;font-weight:700;cursor:pointer;min-height:34px;transition:.15s}
+    .conf-btn.b1.active{background:#f59e0b22;border-color:#f59e0b;color:#f59e0b}
+    .conf-btn.b2.active{background:#4a9abf22;border-color:#4a9abf;color:#4a9abf}
+    .conf-btn.b3.active{background:#22c55e22;border-color:#22c55e;color:#22c55e}
+    /* ── Notes modal ── */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;display:flex;align-items:flex-end;justify-content:center;padding:0}
+    .modal-backdrop.hidden{display:none}
+    .modal-sheet{background:var(--c-card);border-radius:16px 16px 0 0;padding:20px 20px 32px;width:100%;max-width:540px}
+    .modal-sheet h3{font-size:1rem;margin-bottom:14px;color:var(--c-text)}
+    /* ── Legend ── */
+    .legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;font-size:.75rem;color:var(--c-muted)}
+    .legend span{display:flex;align-items:center;gap:5px}
+    .legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+    /* ── Progress bar ── */
+    .prog-bar{height:6px;border-radius:3px;background:var(--c-border);overflow:hidden;margin-top:4px}
+    .prog-fill{height:100%;border-radius:3px;background:var(--c-blue);transition:.4s}
+    /* ── Phase info ── */
+    .phase-info{background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:.82rem;color:var(--c-muted);line-height:1.5}
+    .phase-info strong{color:var(--c-text)}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🔤 Phonics</div>
+      <div class="page-subtitle">Letters &amp; Sounds / Read Write Inc</div>
+    </div>
+  </div>
+
+  <div class="ph-tabs">
+    <button class="ph-tab active" onclick="setTab('quick',this)">Quick Assessment</button>
+    <button class="ph-tab" onclick="setTab('bulk',this)">Phase Bulk Update</button>
+    <button class="ph-tab" onclick="setTab('overview',this)">Room Overview</button>
+  </div>
+
+  <!-- ── TAB 1: Quick Assessment ── -->
+  <div id="pane-quick" class="ph-pane active">
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+      <select id="qa-child" class="form-control" style="max-width:280px" onchange="loadChildProgress(this.value)">
+        <option value="">Select child…</option>
+      </select>
+      <div id="qa-phase-info" style="font-size:.8rem;color:var(--c-muted);padding-top:8px"></div>
+    </div>
+
+    <div class="legend">
+      <span><span class="legend-dot" style="background:#2d3748"></span>Not yet</span>
+      <span><span class="legend-dot" style="background:#f59e0b"></span>1 — Introduced</span>
+      <span><span class="legend-dot" style="background:#4a9abf"></span>2 — Recognising</span>
+      <span><span class="legend-dot" style="background:#22c55e"></span>3 — Secure</span>
+      <span style="color:var(--c-muted);font-size:.7rem">Tap to cycle · hold to add note</span>
+    </div>
+
+    <div class="phase-bar" id="qa-phase-bar"></div>
+    <div id="qa-sounds-area"></div>
+  </div>
+
+  <!-- ── TAB 2: Phase Bulk Update ── -->
+  <div id="pane-bulk" class="ph-pane">
+    <div style="margin-bottom:14px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Phase</label>
+      <div class="phase-bar" id="bulk-phase-bar"></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:8px">Pick a sound to update across all children</label>
+      <div class="bulk-sound-select" id="bulk-sound-list"></div>
+    </div>
+    <div id="bulk-children-area"></div>
+    <div id="bulk-save-row" style="display:none;margin-top:14px">
+      <button class="btn btn-primary" onclick="saveBulk()" style="min-width:140px">Save All Changes</button>
+    </div>
+  </div>
+
+  <!-- ── TAB 3: Room Overview ── -->
+  <div id="pane-overview" class="ph-pane">
+    <div id="overview-area"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<!-- Notes modal -->
+<div class="modal-backdrop hidden" id="notes-modal" onclick="closeNotesModal(event)">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <h3>📝 Note for <span id="notes-sound-label"></span></h3>
+    <textarea id="notes-text" class="form-control" rows="3" placeholder="e.g. Confused s/sh — worked on it" style="width:100%;margin-bottom:14px;resize:none"></textarea>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-primary" onclick="saveNote()" style="flex:1">Save Note</button>
+      <button class="btn btn-secondary" onclick="closeNotesModal()" style="flex:1">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PHASE_LABELS = {
+  1:'Phase 1 — Environmental &amp; Oral',
+  2:'Phase 2 — Set 1–5 + Tricky Words',
+  3:'Phase 3 — Digraphs + Vowel Sounds',
+  4:'Phase 4 — Adjacent Consonants',
+  5:'Phase 5 — Alternative Graphemes',
+  6:'Phase 6 — Spelling &amp; Affixes'
+};
+
+let allChildren = [], allSounds = {}, childProgress = {};
+let qaChildId = null, qaPhase = 2;
+let bulkPhase = 2, bulkSoundId = null, bulkSoundCode = '', bulkChanges = {};
+let notesChildId = null, notesSoundId = null;
+
+async function init() {
+  try {
+    const [children, s2, s3, s4] = await Promise.all([
+      Wren.api('/api/children').catch(() => []),
+      Wren.api('/api/phonics/sounds?phase=2').catch(() => []),
+      Wren.api('/api/phonics/sounds?phase=3').catch(() => []),
+      Wren.api('/api/phonics/sounds?phase=4').catch(() => [])
+    ]);
+    allChildren = (children || []).filter(c => c.is_active);
+    // Populate child select
+    const sel = document.getElementById('qa-child');
+    allChildren.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id;
+      o.textContent = c.first_name + ' ' + c.last_name;
+      sel.appendChild(o);
+    });
+    // Preload sounds for phases 2-4
+    for (const list of [s2, s3, s4]) {
+      list.forEach(s => { allSounds[s.id] = s; });
+    }
+    // Load all phases if needed
+    for (let p = 1; p <= 6; p++) {
+      if (!Object.values(allSounds).some(s => s.phase === p)) {
+        Wren.api('/api/phonics/sounds?phase=' + p).then(list => {
+          (list || []).forEach(s => { allSounds[s.id] = s; });
+        });
+      }
+    }
+    buildPhaseBar('qa-phase-bar', 2, 6, setQaPhase);
+    buildPhaseBar('bulk-phase-bar', 2, 4, setBulkPhase);
+    loadOverview();
+    setBulkPhase(2);
+  } catch(e) { console.error('init', e); }
+}
+
+function buildPhaseBar(elId, from, to, fn) {
+  const el = document.getElementById(elId);
+  el.innerHTML = '';
+  for (let p = from; p <= to; p++) {
+    const btn = document.createElement('button');
+    btn.className = 'phase-btn' + (p === from ? ' active' : '');
+    btn.dataset.phase = p;
+    btn.textContent = 'Phase ' + p;
+    btn.onclick = () => {
+      el.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      fn(p);
+    };
+    el.appendChild(btn);
+  }
+}
+
+// ── QUICK ASSESSMENT ─────────────────────────────────────────────────────────
+
+function setQaPhase(p) {
+  qaPhase = p;
+  if (qaChildId) renderQaSounds();
+}
+
+async function loadChildProgress(childId) {
+  if (!childId) { qaChildId = null; document.getElementById('qa-sounds-area').innerHTML = ''; return; }
+  qaChildId = parseInt(childId);
+  document.getElementById('qa-sounds-area').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const rows = await Wren.api('/api/phonics/child/' + childId + '/progress');
+    childProgress[childId] = {};
+    rows.forEach(r => {
+      if (r.progress_id) {
+        childProgress[childId][r.sound_id] = { confidence: r.confidence, notes: r.notes };
+      }
+      // Also cache the sound
+      allSounds[r.sound_id] = { id: r.sound_id, phase: r.phase, sound_code: r.sound_code,
+        sound_type: r.sound_type, example_words: r.example_words,
+        pronunciation_guide: r.pronunciation_guide, rwi_action: r.rwi_action,
+        position_in_phase: r.position_in_phase };
+    });
+    // Expected phase
+    const ep = await Wren.api('/api/phonics/expected-phase/' + childId).catch(() => null);
+    if (ep) {
+      document.getElementById('qa-phase-info').textContent = 'Expected phase: ' + ep.expected_phase;
+      // Auto-select expected phase bar
+      const bar = document.getElementById('qa-phase-bar');
+      bar.querySelectorAll('.phase-btn').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.phase) === ep.expected_phase);
+      });
+      qaPhase = ep.expected_phase < 2 ? 2 : ep.expected_phase;
+    }
+    renderQaSounds();
+  } catch(e) {
+    document.getElementById('qa-sounds-area').innerHTML = '<p style="color:var(--c-danger)">Failed to load</p>';
+  }
+}
+
+function renderQaSounds() {
+  const area = document.getElementById('qa-sounds-area');
+  const phaseSounds = Object.values(allSounds).filter(s => s.phase === qaPhase)
+    .sort((a,b) => (a.position_in_phase||99) - (b.position_in_phase||99));
+  if (!phaseSounds.length) {
+    area.innerHTML = '<p style="color:var(--c-muted)">Loading sounds…</p>';
+    Wren.api('/api/phonics/sounds?phase=' + qaPhase).then(list => {
+      (list || []).forEach(s => { allSounds[s.id] = s; });
+      renderQaSounds();
+    });
+    return;
+  }
+  // Group by type
+  const graphemes = phaseSounds.filter(s => s.sound_type !== 'tricky_word' && s.sound_type !== 'phase1_aspect');
+  const tricky = phaseSounds.filter(s => s.sound_type === 'tricky_word');
+  const aspects = phaseSounds.filter(s => s.sound_type === 'phase1_aspect');
+  const cp = childProgress[qaChildId] || {};
+
+  let html = `<div class="phase-info"><strong>${PHASE_LABELS[qaPhase] || 'Phase ' + qaPhase}</strong></div>`;
+
+  if (aspects.length) {
+    html += renderSoundSection('Phase 1 Aspects', aspects, cp);
+  }
+  if (graphemes.length) {
+    const label = qaPhase <= 3 ? 'Sounds' : 'Consonant Clusters';
+    html += renderSoundSection(label, graphemes, cp);
+  }
+  if (tricky.length) {
+    html += renderSoundSection('Tricky Words', tricky, cp);
+  }
+
+  // Progress bar
+  const total = phaseSounds.length;
+  const secure = phaseSounds.filter(s => (cp[s.id] && cp[s.id].confidence >= 3)).length;
+  html = `<div style="margin-bottom:12px">
+    <div style="font-size:.78rem;color:var(--c-muted);display:flex;justify-content:space-between;margin-bottom:4px">
+      <span>Phase ${qaPhase} progress</span><span>${secure}/${total} secure</span>
+    </div>
+    <div class="prog-bar"><div class="prog-fill" style="width:${total?Math.round(secure/total*100):0}%"></div></div>
+  </div>` + html;
+
+  area.innerHTML = html;
+}
+
+function renderSoundSection(label, sounds, cp) {
+  return `<div style="margin-bottom:18px">
+    <div style="font-size:.72rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">${label}</div>
+    <div class="sound-grid">
+      ${sounds.map(s => {
+        const prog = cp[s.id];
+        const conf = prog ? prog.confidence : 0;
+        const hasNote = prog && prog.notes;
+        const display = s.sound_code === 'oo_s' ? 'oo' : s.sound_code;
+        const sub = s.sound_code === 'oo_s' ? '(book)' :
+                    s.sound_code === 'oo' ? '(moon)' :
+                    s.sound_type === 'phase1_aspect' ? s.sound_code.replace(/_/g,' ') :
+                    s.example_words ? s.example_words[0] : '';
+        return `<div class="sound-tile c${conf}" onclick="cycleTile(${s.id})" oncontextmenu="openNote(${s.id},event)" title="${s.rwi_action || ''}">
+          ${hasNote ? '<span style="position:absolute;top:2px;right:3px;font-size:.55rem;color:var(--c-orange)">●</span>' : ''}
+          <span class="sc">${display}</span>
+          <span class="conf">${sub || confLabel(conf)}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function confLabel(c) {
+  return ['—','intro','recog','secure'][c] || '—';
+}
+
+async function cycleTile(soundId) {
+  if (!qaChildId) return;
+  const cp = childProgress[qaChildId] || (childProgress[qaChildId] = {});
+  const current = cp[soundId] ? cp[soundId].confidence : 0;
+  const next = current >= 3 ? 0 : current + 1;
+  if (next === 0) {
+    delete cp[soundId];
+  } else {
+    cp[soundId] = { ...cp[soundId], confidence: next };
+  }
+  renderQaSounds();
+  if (next === 0) return; // no API call to remove — just leave at 0 locally
+  try {
+    await Wren.api('/api/phonics/child/' + qaChildId + '/progress', {
+      method: 'PUT', body: JSON.stringify({ sound_id: soundId, confidence: next })
+    });
+  } catch(e) {
+    Wren.toast('Save failed', 'error');
+    if (next === 1) delete cp[soundId]; else cp[soundId].confidence = next - 1;
+    renderQaSounds();
+  }
+}
+
+function openNote(soundId, e) {
+  if (e) e.preventDefault();
+  if (!qaChildId) return;
+  const s = allSounds[soundId];
+  notesSoundId = soundId;
+  notesChildId = qaChildId;
+  document.getElementById('notes-sound-label').textContent = s ? s.sound_code : soundId;
+  const cp = childProgress[qaChildId] || {};
+  document.getElementById('notes-text').value = (cp[soundId] && cp[soundId].notes) || '';
+  document.getElementById('notes-modal').classList.remove('hidden');
+}
+
+async function saveNote() {
+  const text = document.getElementById('notes-text').value;
+  try {
+    await Wren.api('/api/phonics/child/' + notesChildId + '/progress/note', {
+      method: 'POST', body: JSON.stringify({ sound_id: notesSoundId, notes: text })
+    });
+    if (!childProgress[notesChildId]) childProgress[notesChildId] = {};
+    if (!childProgress[notesChildId][notesSoundId]) childProgress[notesChildId][notesSoundId] = {};
+    childProgress[notesChildId][notesSoundId].notes = text;
+    closeNotesModal();
+    renderQaSounds();
+    Wren.toast('Note saved');
+  } catch(e) { Wren.toast('Failed to save note', 'error'); }
+}
+
+function closeNotesModal(e) {
+  if (e && e.target !== document.getElementById('notes-modal')) return;
+  document.getElementById('notes-modal').classList.add('hidden');
+}
+
+// ── BULK UPDATE ───────────────────────────────────────────────────────────────
+
+function setBulkPhase(p) {
+  bulkPhase = p;
+  bulkSoundId = null;
+  bulkChanges = {};
+  renderBulkSounds();
+  document.getElementById('bulk-children-area').innerHTML = '';
+  document.getElementById('bulk-save-row').style.display = 'none';
+}
+
+function renderBulkSounds() {
+  const el = document.getElementById('bulk-sound-list');
+  const sounds = Object.values(allSounds).filter(s => s.phase === bulkPhase)
+    .sort((a,b) => (a.position_in_phase||99) - (b.position_in_phase||99));
+  if (!sounds.length) {
+    el.innerHTML = '<span style="color:var(--c-muted);font-size:.82rem">Loading…</span>';
+    Wren.api('/api/phonics/sounds?phase=' + bulkPhase).then(list => {
+      (list || []).forEach(s => { allSounds[s.id] = s; });
+      renderBulkSounds();
+    });
+    return;
+  }
+  el.innerHTML = sounds.map(s => {
+    const display = s.sound_code === 'oo_s' ? 'oo (book)' : s.sound_code === 'oo' ? 'oo (moon)' : s.sound_code;
+    return `<button class="bulk-sound-btn${bulkSoundId===s.id?' selected':''}"
+      onclick="selectBulkSound(${s.id},'${display}')">${display}</button>`;
+  }).join('');
+}
+
+async function selectBulkSound(soundId, display) {
+  bulkSoundId = soundId;
+  bulkSoundCode = display;
+  bulkChanges = {};
+  renderBulkSounds();
+
+  // Load all children's progress for this sound
+  const area = document.getElementById('bulk-children-area');
+  area.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    // Get matrix data for this sound from progress endpoint (per child)
+    const overview = await Wren.api('/api/phonics/overview');
+    const childIds = allChildren.map(c => c.id);
+
+    // Build individual progress quickly from existing childProgress cache, or fetch
+    area.innerHTML = `<div style="font-size:.82rem;color:var(--c-muted);margin-bottom:12px">
+      Mark confidence for <strong style="color:var(--c-text)">${display}</strong> across all children:</div>`;
+
+    let rows = '';
+    for (const c of allChildren) {
+      const cp = childProgress[c.id];
+      let conf = 0;
+      if (cp && cp[soundId]) conf = cp[soundId].confidence;
+      else {
+        // Try to find in overview
+        const ov = (overview || []).find(x => x.id === c.id);
+        // We don't have per-sound data from overview, leave as 0
+      }
+      rows += `<div class="bulk-child-row" id="brow-${c.id}">
+        <div class="child-avatar-sm">${(c.first_name||'')[0]}${(c.last_name||'')[0]}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:.9rem">${c.first_name} ${c.last_name}</div>
+        </div>
+        <div class="conf-btns">
+          <button class="conf-btn b0${conf===0?' active':''}" onclick="setBulkConf(${c.id},0)">—</button>
+          <button class="conf-btn b1${conf===1?' active':''}" onclick="setBulkConf(${c.id},1)">1</button>
+          <button class="conf-btn b2${conf===2?' active':''}" onclick="setBulkConf(${c.id},2)">2</button>
+          <button class="conf-btn b3${conf===3?' active':''}" onclick="setBulkConf(${c.id},3)">3</button>
+        </div>
+      </div>`;
+    }
+    area.insertAdjacentHTML('beforeend', rows);
+    document.getElementById('bulk-save-row').style.display = 'block';
+  } catch(e) {
+    area.innerHTML = '<p style="color:var(--c-danger)">Failed to load</p>';
+  }
+}
+
+function setBulkConf(childId, conf) {
+  bulkChanges[childId] = conf;
+  const row = document.getElementById('brow-' + childId);
+  if (!row) return;
+  row.querySelectorAll('.conf-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', i === conf);
+  });
+}
+
+async function saveBulk() {
+  const updates = Object.entries(bulkChanges)
+    .filter(([,conf]) => conf > 0)
+    .map(([child_id, confidence]) => ({ child_id: parseInt(child_id), confidence }));
+  if (!updates.length) { Wren.toast('No changes to save'); return; }
+  try {
+    await Wren.api('/api/phonics/bulk-progress', {
+      method: 'POST', body: JSON.stringify({ sound_id: bulkSoundId, updates })
+    });
+    // Update local cache
+    updates.forEach(u => {
+      if (!childProgress[u.child_id]) childProgress[u.child_id] = {};
+      childProgress[u.child_id][bulkSoundId] = { confidence: u.confidence, notes: null };
+    });
+    bulkChanges = {};
+    Wren.toast(`Saved ${updates.length} children for "${bulkSoundCode}"`);
+  } catch(e) { Wren.toast('Save failed', 'error'); }
+}
+
+// ── ROOM OVERVIEW ─────────────────────────────────────────────────────────────
+
+async function loadOverview() {
+  const area = document.getElementById('overview-area');
+  try {
+    const data = await Wren.api('/api/phonics/overview');
+    if (!data.length) {
+      area.innerHTML = '<div class="empty-state">No phonics assessments yet. Use Quick Assessment to get started.</div>';
+      return;
+    }
+    area.innerHTML = data.map(c => {
+      const confident = parseInt(c.confident) || 0;
+      const recognising = parseInt(c.recognising) || 0;
+      const introduced = parseInt(c.introduced) || 0;
+      const ep = c.expected_phase || 1;
+      return `<div class="child-row" onclick="document.getElementById('qa-child').value=${c.id};setTab('quick',document.querySelector('.ph-tab'));loadChildProgress(${c.id})">
+        <div class="child-avatar-sm">${(c.first_name||'')[0]}${(c.last_name||'')[0]}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:.9rem;margin-bottom:2px">${c.first_name} ${c.last_name}</div>
+          <div style="display:flex;gap:10px;font-size:.72rem;flex-wrap:wrap">
+            <span style="color:#22c55e">${confident} secure</span>
+            <span style="color:#4a9abf">${recognising} recognising</span>
+            <span style="color:#f59e0b">${introduced} introduced</span>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <span class="badge" style="background:#4a9abf22;color:#4a9abf;font-size:.72rem;padding:2px 8px;border-radius:6px">Ph ${ep}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    area.innerHTML = '<p style="color:var(--c-danger)">Failed to load overview</p>';
+  }
+}
+
+function setTab(name, btn) {
+  document.querySelectorAll('.ph-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.ph-pane').forEach(p => p.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('pane-' + name).classList.add('active');
+  if (name === 'overview') loadOverview();
+}
+
+document.addEventListener('wren:ready', init);
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

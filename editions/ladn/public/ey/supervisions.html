@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>My Supervisions — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .sup-card { border-left: 4px solid #4a9abf; }
+    .sup-card.status-completed { border-color: #22c55e; }
+    .sup-card.status-scheduled { border-color: #f59e0b; }
+    .sup-card.status-overdue   { border-color: #ef4444; }
+    .sup-meta { font-size:12px; color:var(--c-muted); margin-top:4px; }
+    .sup-summary { font-size:13px; color:var(--c-muted); margin-top:8px; line-height:1.5; }
+    .sup-targets { margin-top:10px; }
+    .target-item { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-top:1px solid var(--c-border); font-size:13px; }
+    .target-item .t-check { color:#22c55e; flex-shrink:0; }
+    .target-item .t-open  { color:#f59e0b; flex-shrink:0; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📋 My Supervisions</div>
+      <div class="page-subtitle">Your scheduled and past supervision sessions</div>
+    </div>
+  </div>
+
+  <div id="sup-list"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<script>
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function statusClass(status) {
+  if (!status) return '';
+  if (status === 'completed' || status === 'finalized') return 'status-completed';
+  if (status === 'scheduled') return 'status-scheduled';
+  if (status === 'overdue') return 'status-overdue';
+  return '';
+}
+
+function statusLabel(status) {
+  const labels = { completed:'Completed', finalized:'Completed', scheduled:'Scheduled', overdue:'Overdue', draft:'Draft' };
+  return labels[status] || (status||'').replace(/_/g,' ');
+}
+
+function badgeClass(status) {
+  if (status === 'completed' || status === 'finalized') return 'badge-green';
+  if (status === 'scheduled') return 'badge-blue';
+  if (status === 'overdue') return 'badge-red';
+  return 'badge-orange';
+}
+
+async function loadSupervisions() {
+  const el = document.getElementById('sup-list');
+  try {
+    const user = (window.Wren && (Wren.getUser ? Wren.getUser() : Wren.user)) || null;
+    const data = await Wren.api('/api/supervisions?limit=50' + (user ? '&staff_id=' + user.id : ''));
+
+    if (!data || !data.length) {
+      el.innerHTML = `<div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">No supervisions yet</div>
+        <div class="empty-body">Your manager will schedule your first supervision and you'll see it here.</div>
+      </div>`;
+      return;
+    }
+
+    el.innerHTML = data.map(s => {
+      const d = s.conducted_date || s.scheduled_date || s.finalized_at || s.created_at;
+      const dateStr = d ? new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : 'Date TBC';
+      const sc = statusClass(s.status);
+      const bc = badgeClass(s.status);
+
+      // Parse targets if stored as JSON string
+      let targets = [];
+      try { targets = typeof s.smart_targets === 'string' ? JSON.parse(s.smart_targets) : (s.smart_targets || []); } catch(_){}
+      const targetHtml = targets.length ? `
+        <div class="sup-targets">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);margin-bottom:4px">SMART Targets</div>
+          ${targets.slice(0,3).map(t => `
+            <div class="target-item">
+              <span class="${t.completed ? 't-check' : 't-open'}">${t.completed ? '✓' : '○'}</span>
+              <span>${escHtml(t.text || t)}</span>
+            </div>`).join('')}
+          ${targets.length > 3 ? `<div style="font-size:12px;color:var(--c-muted);padding-top:4px">+${targets.length - 3} more</div>` : ''}
+        </div>` : '';
+
+      // Pre-supervision form link (only for upcoming scheduled supervisions)
+      const formLink = s.status === 'scheduled' && s.pre_form_token
+        ? `<a href="/ey/supervisions/form/${escHtml(s.pre_form_token)}" class="btn btn-outline btn-sm" style="margin-top:12px;display:inline-block">📝 Complete pre-supervision form</a>`
+        : '';
+
+      return `<div class="card sup-card ${sc}" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div>
+            <div style="font-weight:700;font-size:1rem">${dateStr}</div>
+            <div class="sup-meta">
+              ${s.supervisor_name ? `Supervised by ${escHtml(s.supervisor_name)}` : ''}
+              ${s.location ? ` · 📍 ${escHtml(s.location)}` : ''}
+            </div>
+          </div>
+          <span class="badge ${bc}">${escHtml(statusLabel(s.status))}</span>
+        </div>
+        ${s.ai_summary ? `<div class="sup-summary">${escHtml(String(s.ai_summary).slice(0, 200))}${s.ai_summary.length > 200 ? '…' : ''}</div>` : ''}
+        ${targetHtml}
+        ${formLink}
+      </div>`;
+    }).join('');
+
+  } catch(e) {
+    el.innerHTML = `<div class="alert alert-danger">Could not load supervisions: ${escHtml(e.message||'Unknown error')}</div>`;
+  }
+}
+
+document.addEventListener('wren:ready', loadSupervisions);
+</script>
+</body>
+</html>

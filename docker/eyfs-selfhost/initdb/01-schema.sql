@@ -6208,7 +6208,7 @@ CREATE TABLE demo_eyfs.newsletters (
     sections jsonb DEFAULT '[]'::jsonb,
     rendered_html text,
     sent_by integer,
-    from_name character varying(255) DEFAULT 'Nursery Manager'::character varying,
+    from_name character varying(255) DEFAULT 'Toby Jones'::character varying,
     title character varying(255),
     week_starting date,
     template_id integer,

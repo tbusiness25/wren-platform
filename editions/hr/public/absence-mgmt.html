@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="hr">
+  <title>Absence Management — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .am-tab-bar { display:flex;gap:4px;background:#1e293b;border-radius:10px;padding:4px;margin-bottom:20px;flex-wrap:wrap; }
+    .am-tab { flex:1;min-width:80px;padding:8px;border-radius:8px;border:none;background:transparent;color:#94a3b8;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500; }
+    .am-tab.active { background:#4a9abf;color:#fff;font-weight:700; }
+    .am-pane { display:none; }
+    .am-pane.active { display:block; }
+    .req-card { background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px;margin-bottom:12px;transition:.15s; }
+    .req-card:hover { border-color:#4a9abf; }
+    .staff-avatar { width:38px;height:38px;border-radius:50%;background:#4a9abf;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;flex-shrink:0; }
+    .pill { font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;display:inline-block; }
+    .pill-pending  { background:rgba(245,158,11,.15);color:#f59e0b; }
+    .pill-approved { background:rgba(34,197,94,.15);color:#22c55e; }
+    .pill-declined { background:rgba(239,68,68,.15);color:#ef4444; }
+    .pill-review   { background:rgba(74,154,191,.15);color:#4a9abf; }
+    .ai-badge { font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700; }
+    .ai-auto_approve         { background:rgba(34,197,94,.15);color:#22c55e; }
+    .ai-conditional_approve  { background:rgba(245,158,11,.15);color:#f59e0b; }
+    .ai-manual_review        { background:rgba(74,154,191,.15);color:#4a9abf; }
+    .ai-decline_clash        { background:rgba(239,68,68,.15);color:#ef4444; }
+    .ai-decline_no_entitlement { background:rgba(239,68,68,.15);color:#ef4444; }
+    .bf-badge { display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px; }
+    .bf-low       { background:rgba(34,197,94,.12);color:#22c55e; }
+    .bf-moderate  { background:rgba(245,158,11,.12);color:#f59e0b; }
+    .bf-high      { background:rgba(239,68,68,.12);color:#ef4444; }
+    .bf-very_high { background:rgba(239,68,68,.2);color:#ef4444;border:1px solid rgba(239,68,68,.4); }
+    .action-btns { display:flex;gap:8px;flex-wrap:wrap; }
+    .watchlist-row { display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b;font-size:13px; }
+    .watchlist-row:last-child { border-bottom:none; }
+    .bf-bar { height:6px;background:#1e293b;border-radius:3px;flex:1;min-width:60px; }
+    .bf-bar-fill { height:6px;border-radius:3px;transition:.3s; }
+    .filter-row { display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center; }
+    .filter-row select, .filter-row input { background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:6px 10px;font-size:13px;font-family:inherit; }
+    .stats-row { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px; }
+    .stat-mini { background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:12px;text-align:center; }
+    .stat-mini-val { font-size:1.4rem;font-weight:800;color:#f1f5f9;line-height:1; }
+    .stat-mini-lbl { font-size:10px;color:#64748b;margin-top:4px;font-weight:600;text-transform:uppercase; }
+    .empty-state { color:#64748b;font-size:13px;padding:24px;text-align:center; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Absence Management</div>
+      <div class="page-subtitle">Pending requests · Bradford watchlist · History</div>
+    </div>
+    <a href="/staff.html" class="btn btn-secondary btn-sm">← Staff</a>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="stats-row" id="am-stats">
+    <div class="stat-mini"><div class="stat-mini-val" id="st-pending">—</div><div class="stat-mini-lbl">Pending review</div></div>
+    <div class="stat-mini"><div class="stat-mini-val" id="st-watch">—</div><div class="stat-mini-lbl">Bradford watchlist</div></div>
+    <div class="stat-mini"><div class="stat-mini-val" id="st-approved">—</div><div class="stat-mini-lbl">Approved this month</div></div>
+    <div class="stat-mini"><div class="stat-mini-val" id="st-declined">—</div><div class="stat-mini-lbl">Declined this month</div></div>
+  </div>
+
+  <div class="am-tab-bar">
+    <button class="am-tab active" id="btn-tab-pending">Pending Review</button>
+    <button class="am-tab"        id="btn-tab-all">All Requests</button>
+    <button class="am-tab"        id="btn-tab-calendar">Calendar</button>
+    <button class="am-tab"        id="btn-tab-watchlist">Bradford Watchlist</button>
+  </div>
+
+  <!-- ─── PENDING ─── -->
+  <div class="am-pane active" id="am-pane-pending">
+    <div id="pending-list"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- ─── ALL REQUESTS ─── -->
+  <div class="am-pane" id="am-pane-all">
+    <div class="filter-row">
+      <select id="flt-staff"><option value="">All staff</option></select>
+      <select id="flt-type">
+        <option value="">All types</option>
+        <option>holiday</option><option>sick</option><option>compassionate</option>
+        <option>training</option><option>maternity</option><option>paternity</option>
+      </select>
+      <select id="flt-status">
+        <option value="">All statuses</option>
+        <option>pending</option><option>approved</option><option>declined</option>
+      </select>
+      <input type="month" id="flt-month" placeholder="Month">
+    </div>
+    <div id="all-list"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- ─── CALENDAR ─── -->
+  <div class="am-pane" id="am-pane-calendar">
+    <div class="filter-row">
+      <button class="btn btn-ghost btn-sm" id="cal-prev">‹ Prev</button>
+      <span id="cal-month-label" style="color:#f1f5f9;font-weight:700;font-size:1rem;padding:0 12px"></span>
+      <button class="btn btn-ghost btn-sm" id="cal-next">Next ›</button>
+    </div>
+    <div style="margin-bottom:10px;font-size:11px;color:#64748b;display:flex;gap:14px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;margin-right:4px"></span>Approved</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:repeating-linear-gradient(45deg,#f59e0b,#f59e0b 3px,transparent 3px,transparent 6px);border-radius:2px;margin-right:4px"></span>Pending</span>
+    </div>
+    <div id="cal-grid" style="overflow-x:auto"></div>
+  </div>
+
+  <!-- ─── BRADFORD WATCHLIST ─── -->
+  <div class="am-pane" id="am-pane-watchlist">
+    <div style="margin-bottom:12px;font-size:12px;color:#64748b">
+      Rolling 52-week window. Bradford Factor = (absence spells)² × total sick days.
+      Source: BrightHR historical data + Wren absence requests.
+    </div>
+    <div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px">
+      <div id="watchlist-list"><div class="empty-state">Loading...</div></div>
+    </div>
+  </div>
+</div>
+<script>
+let allRequests = [];
+let watchlistData = [];
+
+document.addEventListener('wren:ready', async () => {
+  await Promise.all([loadPending(), loadAll(), loadWatchlist()]);
+});
+
+// ── Tab navigation ─────────────────────────────────────────────────────────
+function amTab(name, btn) {
+  document.querySelectorAll('.am-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.am-pane').forEach(p => p.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('am-pane-' + name)?.classList.add('active');
+}
+
+// ── Pending queue ──────────────────────────────────────────────────────────
+async function loadPending() {
+  const el = document.getElementById('pending-list');
+  try {
+    const reqs = await Wren.api('/api/absence/pending-review').catch(() => []);
+    document.getElementById('st-pending').textContent = reqs.length;
+    if (!reqs.length) {
+      el.innerHTML = '<div class="empty-state">No requests pending review.</div>';
+      return;
+    }
+    el.innerHTML = reqs.map(r => renderRequestCard(r, true)).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="empty-state">Failed to load pending requests.</div>';
+  }
+}
+
+// ── All requests ───────────────────────────────────────────────────────────
+async function loadAll() {
+  try {
+    allRequests = await Wren.api('/api/absence/all').catch(() => []);
+    const staffEl = document.getElementById('flt-staff');
+    const names = {};
+    allRequests.forEach(r => { if (r.staff_id && r.staff_name) names[r.staff_id] = r.staff_name; });
+    staffEl.innerHTML = '<option value="">All staff</option>' +
+      Object.entries(names).map(([id, nm]) => `<option value="${id}">${nm}</option>`).join('');
+
+    // Stats
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thisMonth = allRequests.filter(r => new Date(r.created_at) >= monthStart);
+    document.getElementById('st-approved').textContent = thisMonth.filter(r => r.status === 'approved').length;
+    document.getElementById('st-declined').textContent = thisMonth.filter(r => r.status === 'declined').length;
+
+    filterAll();
+  } catch(e) {
+    document.getElementById('all-list').innerHTML = '<div class="empty-state">Failed to load requests.</div>';
+  }
+}
+
+function filterAll() {
+  const staff  = document.getElementById('flt-staff').value;
+  const type   = document.getElementById('flt-type').value;
+  const status = document.getElementById('flt-status').value;
+  const month  = document.getElementById('flt-month').value;
+
+  let rows = allRequests;
+  if (staff)  rows = rows.filter(r => String(r.staff_id) === staff);
+  if (type)   rows = rows.filter(r => (r.request_type || r.absence_type) === type);
+  if (status) rows = rows.filter(r => r.status === status);
+  if (month) {
+    const [y, m] = month.split('-').map(Number);
+    rows = rows.filter(r => {
+      const d = new Date(r.start_date);
+      return d.getFullYear() === y && d.getMonth() + 1 === m;
+    });
+  }
+
+  const el = document.getElementById('all-list');
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">No requests match filters.</div>'; return; }
+  el.innerHTML = rows.slice(0, 200).map(r => renderRequestCard(r, r.status === 'pending')).join('');
+}
+
+// ── Bradford watchlist ─────────────────────────────────────────────────────
+async function loadWatchlist() {
+  const el = document.getElementById('watchlist-list');
+  try {
+    watchlistData = await Wren.api('/api/absence/bradford-watchlist').catch(() => []);
+    const watchCount = watchlistData.filter(s => s.score > 100).length;
+    document.getElementById('st-watch').textContent = watchCount;
+
+    if (!watchlistData.length) { el.innerHTML = '<div class="empty-state">No staff data.</div>'; return; }
+
+    const maxScore = Math.max(...watchlistData.map(s => s.score), 1);
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:180px 80px 60px 60px 1fr 100px;gap:8px;align-items:center;
+                  font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;padding:0 0 8px;
+                  border-bottom:1px solid #2d3748;margin-bottom:4px">
+        <span>Staff</span><span>Score</span><span>Spells</span><span>Days</span><span>Trend</span><span>Level</span>
+      </div>
+      ${watchlistData.map(s => {
+        const pct = Math.min(100, Math.round(s.score / maxScore * 100));
+        const col = s.score > 200 ? '#ef4444' : s.score > 100 ? '#f59e0b' : s.score > 50 ? '#64748b' : '#22c55e';
+        const initials = (s.first_name?.[0] || '') + (s.last_name?.[0] || '');
+        return `<div class="watchlist-row" style="display:grid;grid-template-columns:180px 80px 60px 60px 1fr 100px;gap:8px;align-items:center">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:28px;height:28px;border-radius:50%;background:#4a9abf;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${initials}</div>
+            <span style="color:#f1f5f9;font-weight:600">${s.first_name} ${s.last_name}</span>
+          </div>
+          <span style="color:${col};font-weight:800">${s.score}</span>
+          <span style="color:#94a3b8">${s.instances}</span>
+          <span style="color:#94a3b8">${s.days_total}</span>
+          <div class="bf-bar"><div class="bf-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+          <span class="bf-badge bf-${s.classification}">${s.classification.replace('_',' ')}</span>
+        </div>`;
+      }).join('')}`;
+  } catch(e) {
+    el.innerHTML = '<div class="empty-state">Failed to load watchlist.</div>';
+  }
+}
+
+// ── Shared card renderer ────────────────────────────────────────────────────
+function renderRequestCard(r, showActions) {
+  const initials = (r.first_name?.[0] || r.staff_name?.[0] || '?') + (r.last_name?.[0] || r.staff_name?.split(' ')?.[1]?.[0] || '');
+  const name = r.staff_name || `${r.first_name || ''} ${r.last_name || ''}`.trim();
+  const type = (r.request_type || r.absence_type || 'leave').replace(/_/g,' ');
+  const start = new Date(r.start_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const end   = new Date(r.end_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const days  = r.days_count ? `${r.days_count} day${r.days_count > 1 ? 's' : ''}` : '';
+  const statusPill = `<span class="pill pill-${r.status}">${r.status}</span>`;
+  const aiReason = r.ai_decision_reason || '';
+  const aiDecision = aiReason ? detectAiDecision(aiReason) : null;
+
+  return `<div class="req-card" id="req-${r.id}">
+    <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div class="staff-avatar">${initials}</div>
+      <div style="flex:1;min-width:200px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+          <span style="font-weight:700;color:#f1f5f9;font-size:14px">${name}</span>
+          ${r.room_name ? `<span style="font-size:11px;color:#64748b">${r.room_name}</span>` : ''}
+          ${statusPill}
+          ${aiDecision ? `<span class="ai-badge ai-${aiDecision}">${aiDecision.replace(/_/g,' ')}</span>` : ''}
+        </div>
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:2px">
+          <b style="color:#f1f5f9;text-transform:capitalize">${type}</b>${days ? ' · ' + days : ''} · ${start}${start !== end ? ' → ' + end : ''}
+        </div>
+        ${r.notes ? `<div style="font-size:12px;color:#64748b;margin-top:2px">"${r.notes}"</div>` : ''}
+        ${aiReason ? `<div style="font-size:12px;color:#94a3b8;margin-top:6px;padding:8px;background:#0f172a;border-radius:6px;border-left:3px solid #4a9abf">
+          <span style="color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase">AI assessment</span><br>${aiReason}
+        </div>` : ''}
+        ${r.rejected_reason ? `<div style="font-size:12px;color:#ef4444;margin-top:4px">Declined: ${r.rejected_reason}</div>` : ''}
+      </div>
+      ${showActions && r.status === 'pending' ? `
+      <div class="action-btns">
+        <button class="btn btn-primary btn-sm" data-action="am-approve" data-id="${r.id}">Approve</button>
+        <button class="btn btn-secondary btn-sm" data-action="am-decline" data-id="${r.id}">Decline</button>
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+
+function detectAiDecision(reason) {
+  if (!reason) return null;
+  const r = reason.toLowerCase();
+  if (r.includes('auto-approved') || r.includes('automatically')) return 'auto_approve';
+  if (r.includes('elevated') || r.includes('welfare conversation')) return 'conditional_approve';
+  if (r.includes('decline') || r.includes('cannot approve') || r.includes('not enough') || r.includes('insufficient')) {
+    return r.includes('clash') ? 'decline_clash' : 'decline_no_entitlement';
+  }
+  return 'manual_review';
+}
+
+// ── Actions ────────────────────────────────────────────────────────────────
+async function approveReq(id) {
+  try {
+    await Wren.api(`/api/absence/${id}/approve`, { method: 'PUT', body: { auto_approved: false } });
+    Wren.toast('Approved', 'success');
+    await Promise.all([loadPending(), loadAll()]);
+  } catch(e) { Wren.toast('Error: ' + (e.error || e.message), 'error'); }
+}
+
+// ── Inline handler migration ────────────────────────────────────────────────
+document.getElementById('btn-tab-pending').addEventListener('click', function() { amTab('pending', this); });
+document.getElementById('btn-tab-all').addEventListener('click', function() { amTab('all', this); });
+document.getElementById('btn-tab-calendar').addEventListener('click', function() { amTab('calendar', this); calRender(); });
+document.getElementById('btn-tab-watchlist').addEventListener('click', function() { amTab('watchlist', this); });
+document.getElementById('flt-staff').addEventListener('change', filterAll);
+document.getElementById('flt-type').addEventListener('change', filterAll);
+document.getElementById('flt-status').addEventListener('change', filterAll);
+document.getElementById('flt-month').addEventListener('change', filterAll);
+
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  if (el.dataset.action === 'am-approve') approveReq(+el.dataset.id);
+  else if (el.dataset.action === 'am-decline') declineReq(+el.dataset.id);
+});
+
+async function declineReq(id) {
+  const reason = prompt('Reason for declining (optional):') ?? '';
+  try {
+    await Wren.api(`/api/absence/${id}/decline`, { method: 'PUT', body: { reason } });
+    Wren.toast('Declined', 'success');
+    await Promise.all([loadPending(), loadAll()]);
+  } catch(e) { Wren.toast('Error: ' + (e.error || e.message), 'error'); }
+}
+
+// ── Calendar ───────────────────────────────────────────────────────────────
+let _calYear = new Date().getFullYear();
+let _calMonth = new Date().getMonth() + 1;
+
+const TYPE_COLOURS = {
+  'Annual leave': '#22c55e', holiday: '#22c55e',
+  'Sickness': '#ef4444', sick: '#ef4444',
+  'Time off in lieu': '#8b5cf6', toil: '#8b5cf6',
+  'Training / events': '#4a9abf', training: '#4a9abf',
+  'Compassionate': '#f59e0b', compassionate: '#f59e0b',
+  'Maternity': '#ec4899', maternity: '#ec4899',
+  'Paternity': '#06b6d4', paternity: '#06b6d4',
+  'Public holiday': '#64748b',
+};
+function typeColour(t) { return TYPE_COLOURS[t] || '#94a3b8'; }
+
+document.getElementById('cal-prev').addEventListener('click', function() {
+  _calMonth--; if (_calMonth < 1) { _calMonth = 12; _calYear--; }
+  calRender();
+});
+document.getElementById('cal-next').addEventListener('click', function() {
+  _calMonth++; if (_calMonth > 12) { _calMonth = 1; _calYear++; }
+  calRender();
+});
+
+async function calRender() {
+  const el = document.getElementById('cal-grid');
+  if (!el) return;
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('cal-month-label').textContent = monthNames[_calMonth - 1] + ' ' + _calYear;
+  el.innerHTML = '<div class="empty-state">Loading calendar…</div>';
+
+  let rows;
+  try {
+    rows = await Wren.api(`/api/absence/calendar?month=${_calMonth}&year=${_calYear}`);
+  } catch(e) {
+    el.innerHTML = '<div class="empty-state">Could not load calendar data.</div>'; return;
+  }
+
+  const daysInMonth = new Date(_calYear, _calMonth, 0).getDate();
+  const days = Array.from({length: daysInMonth}, (_, i) => i + 1);
+
+  // Build per-day presence map: day → [{name, type, status}]
+  const byDay = {};
+  days.forEach(d => { byDay[d] = []; });
+  (rows || []).forEach(r => {
+    const s = new Date(r.start_date), e = new Date(r.end_date);
+    for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+      if (d.getMonth() + 1 !== _calMonth || d.getFullYear() !== _calYear) continue;
+      const day = d.getDate();
+      byDay[day].push({ name: r.staff_name, type: r.request_type || r.absence_type, status: r.status });
+    }
+  });
+
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === _calYear && today.getMonth() + 1 === _calMonth;
+
+  let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;min-width:560px">`;
+  // Day-of-week headers
+  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d => {
+    html += `<div style="text-align:center;font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;padding:4px 0">${d}</div>`;
+  });
+  // Leading blank cells
+  const firstDow = new Date(_calYear, _calMonth - 1, 1).getDay(); // 0=Sun
+  const leading = firstDow === 0 ? 6 : firstDow - 1;
+  for (let i = 0; i < leading; i++) html += `<div></div>`;
+  // Day cells
+  days.forEach(d => {
+    const isToday = isCurrentMonth && d === today.getDate();
+    const isWeekend = (() => { const dow = new Date(_calYear, _calMonth - 1, d).getDay(); return dow === 0 || dow === 6; })();
+    const entries = byDay[d];
+    const border = isToday ? '2px solid #4a9abf' : '1px solid #2d3748';
+    const bg = isWeekend ? '#0f172a' : '#1e293b';
+    const dots = entries.slice(0, 4).map(entry => {
+      const col = typeColour(entry.type);
+      const style = entry.status === 'pending'
+        ? `background:repeating-linear-gradient(45deg,${col},${col} 2px,transparent 2px,transparent 4px)`
+        : `background:${col}`;
+      return `<div style="font-size:10px;padding:1px 4px;border-radius:3px;${style};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;margin-bottom:1px" title="${entry.name} (${entry.type})">${entry.name.split(' ')[0]}</div>`;
+    }).join('');
+    const overflow = entries.length > 4 ? `<div style="font-size:9px;color:#64748b">+${entries.length - 4} more</div>` : '';
+    html += `<div style="border:${border};border-radius:6px;padding:4px 6px;min-height:64px;background:${bg};${isWeekend?'opacity:.5':''}">
+      <div style="font-size:11px;font-weight:${isToday?'800':'600'};color:${isToday?'#4a9abf':'#94a3b8'};margin-bottom:3px">${d}</div>
+      ${dots}${overflow}
+    </div>`;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+</script>
+</body>
+</html>

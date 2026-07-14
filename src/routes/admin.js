@@ -396,7 +396,7 @@ router.put('/rooms/:id', managerOnly, async (req, res) => {
 router.get('/backup-status', managerOnly, async (req, res) => {
   const { execSync } = require('child_process');
   try {
-    const snapDir = '/app-backups/snapshots';
+    const snapDir = '/home/toby/wren-backups/snapshots';
     const rawSnaps = execSync(`ls -dt ${snapDir}/daily-* 2>/dev/null | head -7 || true`, { encoding: 'utf8' }).trim();
     const snapshots = rawSnaps ? rawSnaps.split('\n').filter(Boolean) : [];
     const latestSize = snapshots[0]
@@ -432,7 +432,7 @@ router.post('/run-backup', managerOnly, async (req, res) => {
     return res.status(409).json({ error: 'Backup already in progress. Check status in a moment.' });
   }
   const { exec } = require('child_process');
-  const script = '/app/scripts/backup.sh';
+  const script = '/home/toby/wren/scripts/backup.sh';
   backupRunning = true;
   exec(`bash ${script} >> /var/log/wren-backup.log 2>&1`, (err) => {
     backupRunning = false;
@@ -809,6 +809,40 @@ router.post('/wipe-everything', managerOnly, async (req, res) => {
       await db.query(`TRUNCATE ${plan.truncate.map(t => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
     }
     res.json({ ok: true, wiped: plan.truncate.length, kept: plan.keep.length, keptTables: plan.keep, truncatedTables: plan.truncate });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Ratio settings ────────────────────────────────────────────────────────────
+// GET /ratio-settings — retrieve ratio calculation settings
+router.get('/ratio-settings', managerOnly, async (req, res) => {
+  try {
+    const db = getPool();
+    const { rows } = await db.query(`
+      SELECT key, value FROM settings
+      WHERE key IN ('ratio_include_settling', 'ratio_include_event_children', 'ratio_include_staff_on_booking')
+    `);
+    const settings = {};
+    for (const r of rows) settings[r.key] = r.value === 'true';
+    res.json(settings);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /ratio-settings — update ratio calculation settings
+router.post('/ratio-settings', managerOnly, async (req, res) => {
+  try {
+    const db = getPool();
+    const keys = ['ratio_include_settling', 'ratio_include_event_children', 'ratio_include_staff_on_booking'];
+    for (const key of keys) {
+      if (req.body[key] != null) {
+        const val = req.body[key] ? 'true' : 'false';
+        await db.query(
+          `INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value=$2, updated_at=NOW()`,
+          [key, val]
+        );
+      }
+    }
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

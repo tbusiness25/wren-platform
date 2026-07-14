@@ -135,12 +135,13 @@ router.put('/child/:id/settling-plan', canWrite, async (req, res) => {
   const sessions = Array.isArray(req.body?.sessions) ? req.body.sessions : null;
   if (!sessions) return res.status(400).json({ error: 'sessions array required' });
   try {
+    const countsOnRatio = req.body?.counts_on_ratio != null ? req.body.counts_on_ratio : true;
     const { rows } = await getPool().query(
-      `INSERT INTO settling_in_plans (child_id, room_type, sessions, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (child_id) DO UPDATE SET sessions=$3, notes=$4, room_type=COALESCE($2,settling_in_plans.room_type), updated_at=now()
+      `INSERT INTO settling_in_plans (child_id, room_type, sessions, notes, counts_on_ratio, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (child_id) DO UPDATE SET sessions=$3, notes=$4, counts_on_ratio=$5, room_type=COALESCE($2,settling_in_plans.room_type), updated_at=now()
        RETURNING *`,
-      [req.params.id, req.body?.room_type || null, JSON.stringify(sessions), req.body?.notes || null, req.user.id]);
+      [req.params.id, req.body?.room_type || null, JSON.stringify(sessions), req.body?.notes || null, countsOnRatio, req.user.id]);
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

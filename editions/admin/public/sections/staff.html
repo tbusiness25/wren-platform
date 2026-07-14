@@ -613,22 +613,65 @@ window.wrenStaffGoTab = function(tab){
     }
 
     if (tabId === 'training') {
-      Wren.api(`/api/cpd?staff_id=${s.id}`).then(rows => {
-        if (!rows.length) { panel.innerHTML = `<div class="tab-coming-soon" style="padding:24px 0"><div class="coming-icon">🎓</div><h3>No training records</h3></div>`; return; }
-        panel.innerHTML = `<div class="obs-timeline">` + rows.map(r => {
-          const expired = r.expiry_date && new Date(r.expiry_date) < new Date();
-          const soon = r.expiry_date && !expired && (new Date(r.expiry_date) - new Date()) < 60*86400000;
-          return `<div class="obs-item${expired?' obs-item-alert':''}">
-            <div class="obs-meta">${r.title||r.course_name||'Training'}</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-              ${r.hours ? `<span style="font-size:.8rem;color:var(--c-muted)">${r.hours}h</span>` : ''}
-              ${r.completion_date ? `<span style="font-size:.8rem;color:var(--c-muted)">Completed ${new Date(r.completion_date).toLocaleDateString('en-GB')}</span>` : ''}
-              ${expired ? `<span class="badge badge-red">EXPIRED</span>` : soon ? `<span class="badge badge-yellow">Expiring soon</span>` : ''}
-              ${r.expiry_date && !expired ? `<span style="font-size:.8rem;color:var(--c-muted)">Valid to ${new Date(r.expiry_date).toLocaleDateString('en-GB')}</span>` : ''}
-            </div>
-          </div>`;
-        }).join('') + `</div>`;
-      }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load training.</p>`; });
+      const _isMgr = ['manager','deputy_manager'].includes((window.Wren && Wren.user && Wren.user.role) || '');
+      const MT_LABELS = { first_aid:'Paediatric First Aid', safeguarding_l2:'Safeguarding L2', safeguarding_l3:'Safeguarding L3', fire_safety:'Fire Safety', food_hygiene:'Food Hygiene', health_safety:'Health & Safety', send:'SEND', prevent:'Prevent Duty' };
+      const _mtLabel = t => MT_LABELS[t] || String(t||'').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+      const _d = d => d ? new Date(d).toISOString().slice(0,10) : '';
+      const _inS = 'background:var(--c-bg,#0b1428);border:1px solid var(--c-border,rgba(255,255,255,.12));color:var(--c-text,#f1f5f9);border-radius:5px;padding:4px 6px;font-size:.78rem';
+      const _btnS = 'background:#4a9abf;border:none;color:#06121f;border-radius:5px;padding:4px 9px;font-size:.72rem;font-weight:700;cursor:pointer';
+      function _renderTraining() {
+        Promise.all([
+          Wren.api(`/api/staff/${s.id}/training`).catch(() => []),
+          Wren.api(`/api/cpd?staff_id=${s.id}`).catch(() => [])
+        ]).then(([mand, courses]) => {
+          const now = new Date();
+          const mrows = (mand||[]).map(r => {
+            const exp = r.expiry_date && new Date(r.expiry_date) < now;
+            const soon = r.expiry_date && !exp && (new Date(r.expiry_date) - now) < 60*86400000;
+            return `<tr data-mt="${r.id}">
+              <td style="padding:6px 8px">${_mtLabel(r.training_type)} ${exp?'<span class="badge badge-red">EXPIRED</span>':soon?'<span class="badge badge-yellow">Soon</span>':''}</td>
+              <td style="padding:4px 6px"><input type="date" data-f="completed_date" value="${_d(r.completed_date)}" ${_isMgr?'':'disabled'} style="${_inS}"></td>
+              <td style="padding:4px 6px"><input type="date" data-f="expiry_date" value="${_d(r.expiry_date)}" ${_isMgr?'':'disabled'} style="${_inS}"></td>
+              <td style="padding:4px 6px"><input type="text" data-f="provider" value="${(r.provider||'').replace(/"/g,'&quot;')}" placeholder="provider" ${_isMgr?'':'disabled'} style="${_inS};width:110px"></td>
+              ${_isMgr?`<td style="padding:4px 6px;white-space:nowrap"><button data-mtsave="${r.id}" style="${_btnS}">Save</button> <button data-mtdel="${r.id}" style="${_btnS};background:transparent;border:1px solid #ef4444;color:#ef4444">✕</button></td>`:'<td></td>'}
+            </tr>`;
+          }).join('');
+          const addForm = _isMgr ? `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <select id="mt-new-type" style="${_inS}">${Object.entries(MT_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}<option value="__custom">Custom…</option></select>
+            <input type="date" id="mt-new-completed" title="Completed" style="${_inS}">
+            <input type="date" id="mt-new-expiry" title="Expiry" style="${_inS}">
+            <input type="text" id="mt-new-provider" placeholder="Provider" style="${_inS};width:110px">
+            <button data-mtadd="1" style="${_btnS}">+ Add training</button>
+          </div>` : '';
+          const coursesHtml = (courses&&courses.length) ? `<h4 style="margin:18px 0 6px;font-size:.9rem">CPD courses</h4><div class="obs-timeline">` + courses.map(r => {
+            const expired = r.expiry_date && new Date(r.expiry_date) < now;
+            return `<div class="obs-item${expired?' obs-item-alert':''}"><div class="obs-meta">${r.title||r.course_name||'Training'}</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">${r.hours?`<span style="font-size:.8rem;color:var(--c-muted)">${r.hours}h</span>`:''}${r.completion_date?`<span style="font-size:.8rem;color:var(--c-muted)">Completed ${new Date(r.completion_date).toLocaleDateString('en-GB')}</span>`:''}${expired?'<span class="badge badge-red">EXPIRED</span>':''}</div></div>`;
+          }).join('') + `</div>` : '';
+          panel.innerHTML = `<h4 style="margin:0 0 6px;font-size:.9rem">Mandatory training</h4>
+            <table class="wren-table" style="width:100%;font-size:.82rem"><thead><tr><th>Type</th><th>Completed</th><th>Expiry</th><th>Provider</th><th></th></tr></thead>
+            <tbody>${mrows || '<tr><td colspan="5" style="color:var(--c-muted);padding:8px">None recorded yet.</td></tr>'}</tbody></table>
+            ${addForm}${coursesHtml}`;
+
+          panel.querySelectorAll('[data-mtsave]').forEach(b => b.onclick = () => {
+            const tr = b.closest('tr'); const body = {};
+            tr.querySelectorAll('[data-f]').forEach(i => body[i.getAttribute('data-f')] = i.value || null);
+            Wren.api(`/api/cpd/mandatory/${b.getAttribute('data-mtsave')}`, { method:'PUT', body }).then(() => { Wren.toast('Training updated','success'); _renderTraining(); }).catch(() => Wren.toast('Save failed','error'));
+          });
+          panel.querySelectorAll('[data-mtdel]').forEach(b => b.onclick = () => {
+            if (!confirm('Delete this training record?')) return;
+            Wren.api(`/api/cpd/mandatory/${b.getAttribute('data-mtdel')}`, { method:'DELETE' }).then(() => { Wren.toast('Deleted','success'); _renderTraining(); }).catch(() => Wren.toast('Delete failed','error'));
+          });
+          const addBtn = panel.querySelector('[data-mtadd]');
+          if (addBtn) addBtn.onclick = () => {
+            let type = document.getElementById('mt-new-type').value;
+            if (type === '__custom') { type = prompt('Training type (short id, e.g. epilepsy_awareness):'); if (!type) return; type = type.trim().toLowerCase().replace(/\s+/g,'_'); }
+            const body = { staff_id: s.id, training_type: type, completed_date: document.getElementById('mt-new-completed').value || null, expiry_date: document.getElementById('mt-new-expiry').value || null, provider: document.getElementById('mt-new-provider').value || null };
+            Wren.api('/api/cpd/mandatory', { method:'POST', body }).then(() => { Wren.toast('Training added','success'); _renderTraining(); }).catch(() => Wren.toast('Add failed','error'));
+          };
+        }).catch(() => { panel.innerHTML = `<p style="color:var(--c-muted);padding:16px 0">Could not load training.</p>`; });
+      }
+      _renderTraining();
       return;
     }
 

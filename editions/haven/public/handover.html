@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Handover</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+</head>
+<body>
+<template id="page">
+  <div class="hv-actions-bar">
+    <div><h1 class="hv-page-title">Shift handover</h1>
+      <p class="hv-page-sub" style="margin-bottom:0">Early → late → night. Incoming staff acknowledge each note.</p></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input type="date" id="dateSel" class="hv-field" style="margin:0;background:#10161f;color:var(--h-text);border:1px solid var(--h-border);border-radius:10px;padding:9px 12px">
+      <button class="hv-btn" id="addBtn">Add note</button>
+    </div>
+  </div>
+  <div class="hv-grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))" id="cols"></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+let RESIDENTS = [];
+if (Haven.guard()) {
+  Haven.shell('handover');
+  document.getElementById('dateSel').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('dateSel').addEventListener('change', load);
+  load();
+}
+async function load() {
+  try {
+    const date = document.getElementById('dateSel').value;
+    const [rows, residents] = await Promise.all([
+      Haven.api('/api/haven/notes/handover?date=' + date),
+      Haven.api('/api/haven/residents'),
+    ]);
+    RESIDENTS = residents;
+    const shifts = ['early', 'late', 'night'];
+    document.getElementById('cols').innerHTML = shifts.map(sh => {
+      const notes = rows.filter(r => r.shift === sh);
+      return `<div class="hv-card"><h3 style="text-transform:capitalize">${sh} shift</h3>
+        ${notes.map(h => `<div style="padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+          ${Haven.badge(h.priority, h.priority)}
+          ${h.first_name ? `<b>${Haven.esc(h.first_name + ' ' + h.last_name)}</b> — ` : '<b>Whole home</b> — '}${Haven.esc(h.note)}
+          <div class="hv-note-meta" style="margin-top:4px">
+            ${Haven.esc((h.recorded_by_first || '') + ' ' + (h.recorded_by_last || ''))} · ${Haven.fmtDateTime(h.created_at)}
+            ${h.acknowledged_at
+              ? ` · ✓ acknowledged by ${Haven.esc((h.ack_first || '') + ' ' + (h.ack_last || ''))}`
+              : ` <button class="hv-btn small secondary" onclick="ack(${h.id})">Acknowledge</button>`}
+          </div></div>`).join('') || '<div class="hv-empty">No notes</div>'}</div>`;
+    }).join('');
+  } catch (e) { Haven.toast(e.message, true); }
+}
+async function ack(id) {
+  await Haven.api(`/api/haven/notes/handover/${id}/ack`, { method: 'PATCH' });
+  load();
+}
+document.addEventListener('click', e => {
+  if (e.target.id !== 'addBtn') return;
+  Haven.modal('Add handover note', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Shift *</label><select name="shift"><option>early</option><option>late</option><option>night</option></select></div>
+      <div class="hv-field"><label>Priority</label><select name="priority"><option>normal</option><option>watch</option><option>urgent</option></select></div>
+    </div>
+    <div class="hv-field"><label>Resident (blank = whole home)</label><select name="resident_id"><option value="">— whole home —</option>
+      ${RESIDENTS.map(r => `<option value="${r.id}">${Haven.esc(r.first_name + ' ' + r.last_name)}</option>`).join('')}</select></div>
+    <div class="hv-field"><label>Note *</label><textarea name="note" required></textarea></div>`,
+    async fd => {
+      fd.shift_date = document.getElementById('dateSel').value;
+      await Haven.api('/api/haven/notes/handover', { method: 'POST', body: fd });
+      Haven.toast('Handover note added'); load();
+    }, 'Add note');
+});
+</script>
+</body>
+</html>

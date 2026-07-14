@@ -8,7 +8,7 @@ authenticator.options = { window: 1, step: 30 };
 
 function generateSecret() { return authenticator.generateSecret(); }
 
-function buildOtpauthUrl(secret, accountName, issuer = 'Wren') {
+function buildOtpauthUrl(secret, accountName, issuer = 'Wren LADN') {
   return authenticator.keyuri(accountName, issuer, secret);
 }
 

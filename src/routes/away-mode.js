@@ -3,7 +3,7 @@ const router = express.Router();
 const { getPool } = require('../db/pool');
 const authenticate = require('../middleware/auth');
 
-const N8N_WEBHOOK = 'https://n8n.example-nursery.co.uk/webhook/away-mode-changed';
+const N8N_WEBHOOK = 'https://n8n.littleangelsealing.co.uk/webhook/away-mode-changed';
 
 const managerOnly = (req, res, next) => {
   if (!['manager', 'deputy_manager', 'admin'].includes(req.user.role)) {

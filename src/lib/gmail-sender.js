@@ -3,10 +3,10 @@
 // and the inbound poll source for the comms hub.
 //
 // Auth model: a single service account (client_id 113082589617878840904,
-// gmail090426@your-project.iam.gserviceaccount.com) is authorised in Google
+// gmail090426@ladn-local-system.iam.gserviceaccount.com) is authorised in Google
 // Workspace Admin → Domain-wide delegation for scopes gmail.send (live) and
 // gmail.readonly (Toby is adding this). We impersonate a real Workspace mailbox
-// (COMMS_MAILBOX, default admin@example-nursery.co.uk) via JWT `subject`.
+// (COMMS_MAILBOX, default admin@littleangelsealing.co.uk) via JWT `subject`.
 //
 // If a call returns 403 / unauthorized_client the DWD scope has not propagated —
 // callers should LOG that clearly and NOT fall back to a fake transport.
@@ -17,14 +17,14 @@ const { google } = require('googleapis');
 
 // Mailbox we send from / read. Configurable so a different parent-facing inbox
 // can be used without code changes.
-const COMMS_MAILBOX = process.env.COMMS_MAILBOX || 'admin@example-nursery.co.uk';
+const COMMS_MAILBOX = process.env.COMMS_MAILBOX || 'admin@littleangelsealing.co.uk';
 
 const SEND_SCOPE     = 'https://www.googleapis.com/auth/gmail.send';
 const READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 
 // Resolve the SA key from a number of candidate locations. The ladn/.env sets
 // GOOGLE_SA_KEY=/app/secrets/google-service-account.json, but the secrets dir is
-// actually bind-mounted at /run/secrets inside the container — so the env
+// actually bind-mounted at /home/toby/secrets inside the container — so the env
 // path is wrong. Try inline JSON, the env path(s), then the real mount points.
 let _cachedKey = null;
 function loadKey() {
@@ -40,7 +40,7 @@ function loadKey() {
   const candidates = [
     process.env.GOOGLE_SA_KEY_PATH,
     raw, // env value, if it's a path
-    '/run/secrets/google-service-account.json',
+    '/home/toby/secrets/google-service-account.json',
     '/app/secrets/google-service-account.json',
   ].filter(Boolean);
 
@@ -52,7 +52,7 @@ function loadKey() {
       }
     } catch (_) { /* try next */ }
   }
-  throw new Error('Google SA key not found (checked GOOGLE_SA_KEY/_PATH + /run/secrets + /app/secrets)');
+  throw new Error('Google SA key not found (checked GOOGLE_SA_KEY/_PATH + /home/toby/secrets + /app/secrets)');
 }
 
 function isConfigured() {
@@ -69,10 +69,29 @@ function jwtClient(scopes, subject) {
   });
 }
 
+const crypto = require('crypto');
+
+// The body part (text / html / multipart-alternative) as { headerLines, content }.
+function _bodyPart(html, text) {
+  if (html && text) {
+    const alt = 'alt_' + crypto.randomBytes(8).toString('hex');
+    return {
+      headerLines: [`Content-Type: multipart/alternative; boundary="${alt}"`],
+      content: [
+        `--${alt}`, 'Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit', '', text, '',
+        `--${alt}`, 'Content-Type: text/html; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit', '', html, '',
+        `--${alt}--`,
+      ].join('\r\n'),
+    };
+  }
+  if (html) return { headerLines: ['Content-Type: text/html; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit'], content: html };
+  return { headerLines: ['Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: 8bit'], content: text || '' };
+}
+
 // Build an RFC822 MIME message and base64url-encode it for gmail.users.messages.send.
-function buildRaw({ from, to, subject, html, text, inReplyTo, references }) {
+// attachments: [{ filename, content: Buffer|base64-string, contentType }].
+function buildRaw({ from, to, subject, html, text, inReplyTo, references, attachments }) {
   const toList = Array.isArray(to) ? to.join(', ') : to;
-  const boundary = 'wren_' + Buffer.from(String(subject || '') + toList).toString('hex').slice(0, 16);
   const headers = [
     `From: ${from}`,
     `To: ${toList}`,
@@ -82,31 +101,36 @@ function buildRaw({ from, to, subject, html, text, inReplyTo, references }) {
   if (inReplyTo)  headers.push(`In-Reply-To: ${inReplyTo}`);
   if (references) headers.push(`References: ${references}`);
 
-  let body;
-  if (html && text) {
-    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
-    body = [
-      `--${boundary}`,
-      'Content-Type: text/plain; charset="UTF-8"',
-      'Content-Transfer-Encoding: 8bit', '',
-      text, '',
-      `--${boundary}`,
-      'Content-Type: text/html; charset="UTF-8"',
-      'Content-Transfer-Encoding: 8bit', '',
-      html, '',
-      `--${boundary}--`,
-    ].join('\r\n');
-  } else if (html) {
-    headers.push('Content-Type: text/html; charset="UTF-8"');
-    headers.push('Content-Transfer-Encoding: 8bit');
-    body = html;
-  } else {
-    headers.push('Content-Type: text/plain; charset="UTF-8"');
-    headers.push('Content-Transfer-Encoding: 8bit');
-    body = text || '';
-  }
+  const bp = _bodyPart(html, text);
+  const hasAtt = Array.isArray(attachments) && attachments.length > 0;
 
-  const mime = headers.join('\r\n') + '\r\n\r\n' + body;
+  let mime;
+  if (!hasAtt) {
+    mime = headers.concat(bp.headerLines).join('\r\n') + '\r\n\r\n' + bp.content;
+  } else {
+    const mixed = 'mixed_' + crypto.randomBytes(8).toString('hex');
+    headers.push(`Content-Type: multipart/mixed; boundary="${mixed}"`);
+    const parts = [];
+    // 1) the message body
+    parts.push(`--${mixed}`, ...bp.headerLines, '', bp.content);
+    // 2) each attachment, base64 in 76-char lines
+    for (const a of attachments) {
+      const b64 = Buffer.isBuffer(a.content)
+        ? a.content.toString('base64')
+        : (a.encoding === 'base64' ? String(a.content) : Buffer.from(String(a.content)).toString('base64'));
+      const fname = (a.filename || 'attachment').replace(/"/g, '');
+      parts.push(
+        `--${mixed}`,
+        `Content-Type: ${a.contentType || 'application/octet-stream'}; name="${fname}"`,
+        'Content-Transfer-Encoding: base64',
+        `Content-Disposition: attachment; filename="${fname}"`,
+        '',
+        (b64.match(/.{1,76}/g) || []).join('\r\n'),
+      );
+    }
+    parts.push(`--${mixed}--`);
+    mime = headers.join('\r\n') + '\r\n\r\n' + parts.join('\r\n');
+  }
   return Buffer.from(mime).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
@@ -123,14 +147,14 @@ function encodeHeader(s) {
  * Returns { ok:true, messageId, threadId } on success. Throws on failure
  * (including 403/unauthorized_client when DWD has not propagated).
  */
-async function sendViaGmail({ to, subject, html, text, from, inReplyTo, references, threadId } = {}) {
+async function sendViaGmail({ to, subject, html, text, from, inReplyTo, references, threadId, attachments } = {}) {
   if (!to) throw new Error('sendViaGmail: missing recipient');
   const mailbox = from || COMMS_MAILBOX;
-  const fromHeader = `Your Nursery <${mailbox}>`;
+  const fromHeader = `Little Angels Day Nursery <${mailbox}>`;
   const auth = jwtClient([SEND_SCOPE], mailbox);
   const gmail = google.gmail({ version: 'v1', auth });
 
-  const raw = buildRaw({ from: fromHeader, to, subject, html, text, inReplyTo, references });
+  const raw = buildRaw({ from: fromHeader, to, subject, html, text, inReplyTo, references, attachments });
   const requestBody = { raw };
   if (threadId) requestBody.threadId = threadId;
 

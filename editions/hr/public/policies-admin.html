@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>Policies Admin — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <h1 class="page-title">Policy Library</h1>
+    <button class="btn btn-primary" id="new-policy-btn">+ New Policy</button>
+  </div>
+
+  <div id="policies-list" style="display:flex;flex-direction:column;gap:10px">
+    <div style="color:#94a3b8">Loading…</div>
+  </div>
+</div>
+
+<!-- New / Edit policy modal -->
+<div id="policy-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;overflow-y:auto">
+  <div style="background:#1e293b;border-radius:12px;max-width:640px;margin:4vh auto;padding:24px">
+    <h3 id="modal-heading" style="margin:0 0 20px;color:#f1f5f9">New Policy</h3>
+    <input type="hidden" id="edit-policy-id">
+    <div class="form-group">
+      <label class="form-label">Title</label>
+      <input type="text" class="form-control" id="p-title" placeholder="e.g. Safeguarding Policy">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <input type="text" class="form-control" id="p-category" placeholder="e.g. Safeguarding, Health & Safety">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Required roles (comma-separated)</label>
+      <input type="text" class="form-control" id="p-roles" value="practitioner,room_leader,manager">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Policy Content</label>
+      <textarea class="form-control" id="p-content" rows="12" placeholder="Enter the full policy text…" style="font-family:monospace;font-size:.85rem"></textarea>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px" id="bump-version-wrap" style="display:none">
+      <input type="checkbox" id="p-bump" style="width:18px;height:18px">
+      <label for="p-bump" style="cursor:pointer;color:#f1f5f9">Bump version — will require all staff to re-acknowledge</label>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" id="cancel-policy-btn">Cancel</button>
+      <button class="btn btn-primary" id="save-policy-btn">Save Policy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Acknowledgments modal -->
+<div id="acks-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;overflow-y:auto">
+  <div style="background:#1e293b;border-radius:12px;max-width:480px;margin:6vh auto;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 id="acks-heading" style="margin:0;color:#f1f5f9">Acknowledgments</h3>
+      <button id="close-acks-btn" style="background:none;border:none;color:#94a3b8;font-size:1.25rem;cursor:pointer">✕</button>
+    </div>
+    <div id="acks-list" style="display:flex;flex-direction:column;gap:6px"></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', loadPolicies);
+
+async function loadPolicies() {
+  const el = document.getElementById('policies-list');
+  try {
+    const data = await Wren.api('/api/policies');
+    if (!data.length) {
+      el.innerHTML = '<div class="card" style="color:#94a3b8;text-align:center;padding:40px">No policies yet. Create one above.</div>';
+      return;
+    }
+    el.innerHTML = data.map(p => `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-weight:600;color:#f1f5f9">${escHtml(p.title)}</div>
+            <div style="color:#94a3b8;font-size:.8rem">
+              ${p.category ? escHtml(p.category) + ' · ' : ''}v${p.version} · ${p.published_at ? fmt(p.published_at) : 'Draft'}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="badge ${p.is_active ? 'badge-green' : 'badge-orange'}">${p.is_active ? 'Active' : 'Inactive'}</span>
+            <button class="btn btn-ghost" style="font-size:.8rem;padding:4px 10px" data-id="${p.id}" data-action="acks">
+              ${parseInt(p.ack_count)||0}/${parseInt(p.staff_count)||0} read
+            </button>
+            <button class="btn btn-ghost" style="font-size:.8rem;padding:4px 10px" data-id="${p.id}" data-action="edit" data-title="${escHtml(p.title)}" data-category="${escHtml(p.category||'')}" data-roles="${escHtml((p.required_roles||[]).join(','))}" data-content="">Edit</button>
+          </div>
+        </div>
+      </div>`).join('');
+    el.querySelectorAll('[data-action="acks"]').forEach(btn => {
+      btn.addEventListener('click', () => showAcks(btn.dataset.id));
+    });
+    el.querySelectorAll('[data-action="edit"]').forEach(btn => {
+      btn.addEventListener('click', () => openEdit(btn.dataset.id));
+    });
+  } catch (err) {
+    el.innerHTML = '<div style="color:#ef4444">Could not load policies</div>';
+  }
+}
+
+async function showAcks(id) {
+  const el = document.getElementById('acks-list');
+  el.innerHTML = '<div style="color:#94a3b8">Loading…</div>';
+  document.getElementById('acks-modal').style.display = 'block';
+  try {
+    const data = await Wren.api('/api/policies/' + id + '/acknowledgments');
+    el.innerHTML = data.map(s => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #2d3748">
+        <span style="color:#f1f5f9">${escHtml(s.name||'')}</span>
+        ${s.acknowledged_at
+          ? `<span style="color:#22c55e;font-size:.8rem">✓ ${fmt(s.acknowledged_at)}</span>`
+          : `<span style="color:#94a3b8;font-size:.8rem">Not yet read</span>`}
+      </div>`).join('');
+  } catch {}
+}
+
+async function openEdit(id) {
+  document.getElementById('modal-heading').textContent = 'Edit Policy';
+  document.getElementById('edit-policy-id').value = id;
+  document.getElementById('bump-version-wrap').style.display = 'flex';
+  const p = await Wren.api('/api/policies/' + id);
+  document.getElementById('p-title').value = p.title || '';
+  document.getElementById('p-category').value = p.category || '';
+  document.getElementById('p-roles').value = (p.required_roles||[]).join(',');
+  document.getElementById('p-content').value = p.content || '';
+  document.getElementById('p-bump').checked = false;
+  document.getElementById('policy-modal').style.display = 'block';
+}
+
+document.getElementById('new-policy-btn').addEventListener('click', () => {
+  document.getElementById('modal-heading').textContent = 'New Policy';
+  document.getElementById('edit-policy-id').value = '';
+  document.getElementById('p-title').value = '';
+  document.getElementById('p-category').value = '';
+  document.getElementById('p-roles').value = 'practitioner,room_leader,manager';
+  document.getElementById('p-content').value = '';
+  document.getElementById('bump-version-wrap').style.display = 'none';
+  document.getElementById('policy-modal').style.display = 'block';
+});
+
+document.getElementById('save-policy-btn').addEventListener('click', async () => {
+  const id = document.getElementById('edit-policy-id').value;
+  const title = document.getElementById('p-title').value.trim();
+  const content = document.getElementById('p-content').value.trim();
+  const category = document.getElementById('p-category').value.trim();
+  const required_roles = document.getElementById('p-roles').value.split(',').map(s => s.trim()).filter(Boolean);
+  const bump_version = document.getElementById('p-bump').checked;
+  if (!title || !content) { Wren.toast('Title and content required', 'error'); return; }
+  try {
+    if (id) {
+      await Wren.api('/api/policies/' + id, { method:'PATCH', body:{ title, content, category, required_roles, bump_version } });
+    } else {
+      await Wren.api('/api/policies', { method:'POST', body:{ title, content, category, required_roles } });
+    }
+    document.getElementById('policy-modal').style.display = 'none';
+    Wren.toast(id ? 'Policy updated' : 'Policy created', 'success');
+    loadPolicies();
+  } catch (err) {
+    Wren.toast(err.error || 'Could not save policy', 'error');
+  }
+});
+
+document.getElementById('cancel-policy-btn').addEventListener('click', () => { document.getElementById('policy-modal').style.display = 'none'; });
+document.getElementById('close-acks-btn').addEventListener('click', () => { document.getElementById('acks-modal').style.display = 'none'; });
+
+function fmt(d) { return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—'; }
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

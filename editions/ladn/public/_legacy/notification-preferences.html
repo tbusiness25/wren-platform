@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Notification Preferences — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .pref-table { width:100%; border-collapse:collapse; font-size:.875rem }
+    .pref-table th { text-align:left; padding:8px 12px; color:var(--c-muted);
+      border-bottom:1px solid var(--c-border); font-weight:600; font-size:.8rem; text-transform:uppercase }
+    .pref-table td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.04) }
+    .pref-table tr:hover td { background:rgba(255,255,255,.02) }
+    .toggle-row { display:flex; gap:8px; align-items:center }
+    .toggle-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 10px;
+      border-radius:20px; font-size:.78rem; font-weight:600; cursor:pointer;
+      border:1px solid transparent; transition:.15s }
+    .toggle-chip.active-inapp  { background:#4a9abf22; border-color:#4a9abf; color:#4a9abf }
+    .toggle-chip.active-telegram { background:#0088cc22; border-color:#0088cc; color:#29b6f6 }
+    .toggle-chip.active-email  { background:#22c55e22; border-color:#22c55e; color:#22c55e }
+    .toggle-chip.inactive { background:transparent; border-color:#334155; color:#475569 }
+    .pref-enabled { width:16px; height:16px; accent-color:#4a9abf; cursor:pointer }
+    .scope-select { background:#1e293b; border:1px solid #334155; color:#f1f5f9;
+      border-radius:6px; padding:3px 8px; font-size:.78rem }
+    .urgent-badge { background:#ef444422; color:#ef4444; border-radius:4px;
+      padding:2px 6px; font-size:.72rem; font-weight:700 }
+    .telegram-box { background:#0088cc11; border:1px solid #0088cc44; border-radius:10px;
+      padding:16px 20px; margin-bottom:24px }
+    .link-code { font-family:monospace; font-size:1.4rem; font-weight:800; letter-spacing:.2em;
+      color:#4a9abf; background:#0f172a; border:2px dashed #4a9abf44;
+      border-radius:8px; padding:10px 20px; display:inline-block; margin:8px 0 }
+    .qr-hint { font-size:.8rem; color:#64748b; margin-top:4px }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="margin-bottom:24px">
+    <div class="page-title">🔔 Notification Preferences</div>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn btn-secondary btn-sm" onclick="resetToDefaults()">Reset to role defaults</button>
+      <button class="btn btn-primary btn-sm" onclick="savePrefs()">Save changes</button>
+    </div>
+  </div>
+
+  <!-- Telegram linking -->
+  <div class="telegram-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-weight:700;font-size:1rem;margin-bottom:2px">Telegram Linking</div>
+        <div id="tg-status" style="font-size:.85rem;color:#94a3b8">Checking…</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" id="tg-link-btn" onclick="generateCode()" style="background:#0088cc;color:#fff">
+          Link Telegram
+        </button>
+        <button class="btn btn-secondary btn-sm" id="tg-unlink-btn" onclick="unlinkTelegram()" style="display:none">
+          Unlink
+        </button>
+      </div>
+    </div>
+    <div id="tg-code-box" style="display:none;margin-top:14px">
+      <div style="font-size:.9rem;color:#94a3b8;margin-bottom:6px">
+        Open the nursery Wren bot on Telegram and send this command:
+      </div>
+      <div class="link-code" id="tg-code-display"></div>
+      <div style="font-size:.8rem;color:#64748b;margin-top:4px">
+        Code expires in 15 minutes. Once linked, you'll receive Telegram alerts for urgent events.
+      </div>
+      <button class="btn btn-sm btn-secondary" style="margin-top:10px" onclick="checkLinkStatus()">
+        Check if linked ↻
+      </button>
+    </div>
+  </div>
+
+  <!-- Test notification -->
+  <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+    <button class="btn btn-secondary btn-sm" onclick="sendTest()">Send test notification</button>
+  </div>
+
+  <!-- Preferences table -->
+  <div class="card" style="overflow:hidden">
+    <div class="card-header">
+      <div class="card-title">My notification preferences</div>
+      <div style="font-size:.8rem;color:#64748b;margin-top:2px">
+        Toggle channels per event. Scope controls which events apply to you.
+      </div>
+    </div>
+    <div id="prefs-area"><div class="loading-state"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<script>
+let allPrefs = [];
+let telegramLinked = false;
+
+async function loadAll() {
+  const [prefs, tgStatus] = await Promise.all([
+    Wren.api('/api/notifications/prefs'),
+    Wren.api('/api/notifications/telegram/status'),
+  ]);
+  allPrefs = prefs;
+  renderPrefs(prefs);
+  renderTelegramStatus(tgStatus);
+}
+
+function renderTelegramStatus(status) {
+  telegramLinked = status.linked;
+  const statusEl = document.getElementById('tg-status');
+  const linkBtn  = document.getElementById('tg-link-btn');
+  const unlinkBtn = document.getElementById('tg-unlink-btn');
+  if (status.linked) {
+    statusEl.innerHTML = `<span style="color:#22c55e">✓ Linked</span> — chat ${status.chat_id_partial || ''}${status.linked_at ? ', since ' + new Date(status.linked_at).toLocaleDateString('en-GB') : ''}`;
+    linkBtn.style.display = 'none';
+    unlinkBtn.style.display = '';
+  } else {
+    statusEl.innerHTML = '<span style="color:#f59e0b">Not linked</span> — link to receive Telegram alerts';
+    linkBtn.style.display = '';
+    unlinkBtn.style.display = 'none';
+  }
+}
+
+function renderPrefs(prefs) {
+  const area = document.getElementById('prefs-area');
+  area.innerHTML = `
+    <div class="table-wrapper" style="overflow-x:auto">
+      <table class="pref-table">
+        <thead>
+          <tr>
+            <th style="width:36px">On</th>
+            <th>Event</th>
+            <th>In-app</th>
+            <th>Telegram</th>
+            <th>Scope</th>
+          </tr>
+        </thead>
+        <tbody id="pref-tbody">
+          ${prefs.map(p => renderPrefRow(p)).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPrefRow(p) {
+  const inapp    = p.channels?.includes('inapp');
+  const telegram = p.channels?.includes('telegram');
+  const scopeOpts = [
+    { v:'all',            l:'Everyone' },
+    { v:'my_room',        l:'My room' },
+    { v:'my_keychildren', l:'My key children' },
+  ];
+  const scopeSel = p.scope || 'all';
+  return `
+    <tr data-cat="${p.event_category}">
+      <td><input type="checkbox" class="pref-enabled" data-cat="${p.event_category}" data-field="enabled"
+        ${p.enabled ? 'checked' : ''} onchange="onToggle(this)"></td>
+      <td>
+        <div style="font-weight:600">${p.label}</div>
+        ${p.urgent ? '<span class="urgent-badge">URGENT</span>' : ''}
+      </td>
+      <td>
+        <span class="toggle-chip ${inapp ? 'active-inapp' : 'inactive'}"
+          data-cat="${p.event_category}" data-ch="inapp" onclick="toggleChannel(this)">
+          🔔 In-app
+        </span>
+      </td>
+      <td>
+        <span class="toggle-chip ${telegram ? 'active-telegram' : 'inactive'}"
+          data-cat="${p.event_category}" data-ch="telegram" onclick="toggleChannel(this)">
+          ✈ Telegram
+        </span>
+      </td>
+      <td>
+        <select class="scope-select" data-cat="${p.event_category}" data-field="scope"
+          onchange="onScopeChange(this)">
+          ${scopeOpts.map(o => `<option value="${o.v}" ${scopeSel===o.v?'selected':''}>${o.l}</option>`).join('')}
+        </select>
+      </td>
+    </tr>
+  `;
+}
+
+function onToggle(el) {
+  const cat = el.dataset.cat;
+  const pref = allPrefs.find(p => p.event_category === cat);
+  if (pref) pref.enabled = el.checked;
+}
+
+function onScopeChange(el) {
+  const cat = el.dataset.cat;
+  const pref = allPrefs.find(p => p.event_category === cat);
+  if (pref) pref.scope = el.value;
+}
+
+function toggleChannel(el) {
+  const cat  = el.dataset.cat;
+  const ch   = el.dataset.ch;
+  const pref = allPrefs.find(p => p.event_category === cat);
+  if (!pref) return;
+  pref.channels = pref.channels || [];
+  if (pref.channels.includes(ch)) {
+    pref.channels = pref.channels.filter(c => c !== ch);
+    el.className = 'toggle-chip inactive';
+  } else {
+    pref.channels.push(ch);
+    const cls = ch === 'inapp' ? 'active-inapp' : ch === 'telegram' ? 'active-telegram' : 'active-email';
+    el.className = `toggle-chip ${cls}`;
+  }
+}
+
+async function savePrefs() {
+  try {
+    await Wren.api('/api/notifications/prefs', { method:'PUT', body: JSON.stringify({ prefs: allPrefs }) });
+    Wren.toast('Preferences saved', 'success');
+  } catch(e) {
+    Wren.toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+async function resetToDefaults() {
+  if (!confirm('Reset all preferences to role defaults?')) return;
+  try {
+    await Wren.api('/api/notifications/prefs/reset', { method:'POST' });
+    allPrefs = await Wren.api('/api/notifications/prefs');
+    renderPrefs(allPrefs);
+    Wren.toast('Reset to defaults', 'success');
+  } catch(e) {
+    Wren.toast('Reset failed: ' + e.message, 'error');
+  }
+}
+
+async function generateCode() {
+  try {
+    const r = await Wren.api('/api/notifications/telegram/generate-link', { method:'POST' });
+    document.getElementById('tg-code-display').textContent = '/link ' + r.code;
+    document.getElementById('tg-code-box').style.display = '';
+  } catch(e) {
+    Wren.toast('Failed to generate code', 'error');
+  }
+}
+
+async function checkLinkStatus() {
+  try {
+    const s = await Wren.api('/api/notifications/telegram/status');
+    renderTelegramStatus(s);
+    if (s.linked) {
+      document.getElementById('tg-code-box').style.display = 'none';
+      Wren.toast('Telegram linked!', 'success');
+    } else {
+      Wren.toast('Not linked yet — try sending the command again', 'warning');
+    }
+  } catch(e) {}
+}
+
+async function unlinkTelegram() {
+  if (!confirm('Unlink Telegram? You will stop receiving Telegram notifications.')) return;
+  await Wren.api('/api/notifications/telegram/unlink', { method:'POST' });
+  renderTelegramStatus({ linked: false });
+  Wren.toast('Telegram unlinked', 'success');
+}
+
+async function sendTest() {
+  try {
+    const r = await Wren.api('/api/notifications/test', { method:'POST' });
+    Wren.toast(r.message || 'Test sent', 'success');
+  } catch(e) {
+    Wren.toast('Test failed', 'error');
+  }
+}
+
+document.addEventListener('wren:ready', loadAll);
+</script>
+</body>
+</html>

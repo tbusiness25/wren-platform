@@ -211,7 +211,7 @@ router.get('/briefing', managerOnly, async (req, res) => {
     enriched.push({ ...it, waitInfo });
   }
   // Build prompt for Ollama
-  const prompt = `You are James, the calm front‑of‑house manager at Your Nursery. Summarise for Toby in first person, warm, brief, zero corporate speak. For each item give one sentence of what it is, one concrete suggested next step, and where a reply makes sense, a ready‑to‑send draft (SMS‑length for calls, email tone for emails). If a caller looks like a waiting‑list fit, say so and why. Never invent facts not in the data. Items:\n${JSON.stringify(enriched, null, 2)}`;
+  const prompt = `You are James, the calm front‑of‑house manager at Little Angels. Summarise for Toby in first person, warm, brief, zero corporate speak. For each item give one sentence of what it is, one concrete suggested next step, and where a reply makes sense, a ready‑to‑send draft (SMS‑length for calls, email tone for emails). If a caller looks like a waiting‑list fit, say so and why. Never invent facts not in the data. Items:\n${JSON.stringify(enriched, null, 2)}`;
   const ollamaRes = await fetch(process.env.OLLAMA_URL + '/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

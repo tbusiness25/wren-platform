@@ -28,6 +28,7 @@
 
   <div class="inc-tab-bar">
     <button class="inc-tab active" id="t-list">Records</button>
+    <button class="inc-tab" id="t-pract">By Practitioner</button>
     <button class="inc-tab" id="t-audit">Audit log</button>
   </div>
 
@@ -37,6 +38,15 @@
       <select id="f-child"><option value="">All children</option></select>
     </div>
     <div id="inc-list"><div class="inc-empty">Loading…</div></div>
+  </div>
+
+  <div class="inc-pane" id="p-pract">
+    <div class="inc-filters">
+      <label style="color:#94a3b8;font-size:13px;display:flex;align-items:center;gap:6px">From: <input type="date" id="f-from" style="background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:6px 10px;font-size:13px"></label>
+      <label style="color:#94a3b8;font-size:13px;display:flex;align-items:center;gap:6px">To: <input type="date" id="f-to" style="background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:6px 10px;font-size:13px"></label>
+      <button id="btn-filter-pract" class="btn btn-sm btn-primary">Filter</button>
+    </div>
+    <div id="pract-list"><div class="inc-empty">Loading…</div></div>
   </div>
 
   <div class="inc-pane" id="p-audit"><div class="inc-empty">Loading audit…</div></div>
@@ -85,12 +95,41 @@ async function loadAudit(){
   }catch(e){el.innerHTML='<div class="inc-empty" style="color:#ef4444">Could not load audit</div>';}
 }
 
+async function loadByPractitioner(){
+  const el=document.getElementById('pract-list');
+  const from=document.getElementById('f-from').value, to=document.getElementById('f-to').value;
+  const qs=new URLSearchParams(); if(from)qs.set('from',from); if(to)qs.set('to',to);
+  try{
+    const data=await Wren.api('/api/incidents/by-practitioner'+(qs.toString()?'?'+qs.toString():''));
+    if(!data.length){el.innerHTML='<div class="inc-empty">No incidents found in this period.</div>';return;}
+    el.innerHTML=data.map(p=>{
+      const details=p.recent_incidents.slice(0,5).map(inc=>`<div style="font-size:.76rem;color:#94a3b8;padding:4px 0;border-bottom:1px solid #0f172a"><strong style="color:#cbd5e1">${esc(inc.child_name||'')}</strong> · ${fmt(inc.incident_date)} · ${esc(inc.incident_type||'Incident')}</div>`).join('');
+      return `<div class="inc-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+          <div style="flex:1">
+            <div style="font-size:1rem;font-weight:700;color:#f1f5f9;margin-bottom:4px">${esc(p.staff_name)}</div>
+            <div style="font-size:.82rem;color:#94a3b8">
+              <strong style="color:#f59e0b">${p.incident_count}</strong> incident${p.incident_count===1?'':'s'} reported
+              <span style="margin-left:8px;color:#64748b">${p.closed_count} closed · ${p.open_count} open</span>
+            </div>
+          </div>
+        </div>
+        <details style="margin-top:10px"><summary style="color:#94a3b8;cursor:pointer;font-size:.8rem">Recent incidents (${Math.min(5,p.recent_incidents.length)})</summary><div style="margin-top:8px">${details}</div></details>
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML='<div class="inc-empty" style="color:#ef4444">'+esc(e.error||'Could not load')+'</div>';}
+}
+
 document.addEventListener('wren:ready', async ()=>{
   canSignOff = !!(Wren.user && ['manager','deputy_manager','admin'].includes(Wren.user.role));
   try{children=await Wren.api('/api/children');}catch(e){children=[];}
   document.getElementById('f-child').innerHTML='<option value="">All children</option>'+(children||[]).map(c=>`<option value="${c.id}">${esc(c.first_name+' '+c.last_name)}</option>`).join('');
-  document.getElementById('t-list').addEventListener('click',()=>{document.getElementById('t-list').classList.add('active');document.getElementById('t-audit').classList.remove('active');document.getElementById('p-list').classList.add('active');document.getElementById('p-audit').classList.remove('active');});
-  document.getElementById('t-audit').addEventListener('click',()=>{document.getElementById('t-audit').classList.add('active');document.getElementById('t-list').classList.remove('active');document.getElementById('p-audit').classList.add('active');document.getElementById('p-list').classList.remove('active');loadAudit();});
+  const tabs=['t-list','t-pract','t-audit'], panes=['p-list','p-pract','p-audit'];
+  function switchTab(t,p){tabs.forEach(x=>document.getElementById(x).classList.toggle('active',x===t));panes.forEach(x=>document.getElementById(x).classList.toggle('active',x===p));}
+  document.getElementById('t-list').addEventListener('click',()=>switchTab('t-list','p-list'));
+  document.getElementById('t-pract').addEventListener('click',()=>{switchTab('t-pract','p-pract');loadByPractitioner();});
+  document.getElementById('t-audit').addEventListener('click',()=>{switchTab('t-audit','p-audit');loadAudit();});
+  document.getElementById('btn-filter-pract').addEventListener('click',loadByPractitioner);
   document.getElementById('f-status').addEventListener('change',render);
   document.getElementById('f-child').addEventListener('change',render);
   document.getElementById('wren-content').addEventListener('click',async e=>{

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Send an Email — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .gw-verdict { border-radius: 12px; padding: 14px 16px; margin-top: 16px; display: none; }
+    .gw-verdict.ok      { background: rgba(34,197,94,.12);  border: 1px solid rgba(34,197,94,.4); }
+    .gw-verdict.flagged { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); }
+    .gw-verdict.blocked { background: rgba(239,68,68,.12);  border: 1px solid rgba(239,68,68,.4); }
+    .gw-suggest { background: rgba(91,143,255,.08); border: 1px solid rgba(91,143,255,.3); border-radius: 10px; padding: 12px; margin-top: 10px; white-space: pre-wrap; font-size: .9rem; }
+    .gw-hist-item { padding: 10px 0; border-bottom: 1px solid var(--c-border, #2d3748); font-size: .9rem; }
+    .gw-status { font-size: .75rem; padding: 2px 8px; border-radius: 10px; margin-left: 6px; }
+    .gw-status.sent { background: rgba(34,197,94,.15); color: #22c55e; }
+    .gw-status.pending_review { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .gw-status.rejected, .gw-status.cancelled { background: rgba(239,68,68,.15); color: #ef4444; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">✉️ Send an Email</div>
+      <div class="page-subtitle">Goes out from the nursery mailbox after an AI safety check — parents must be messaged in-app instead</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <div class="form-group">
+      <label class="form-label">To <span style="color:var(--c-red)">*</span></label>
+      <input type="email" class="form-input" id="gw-to" placeholder="supplier@example.co.uk" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Subject <span style="color:var(--c-red)">*</span></label>
+      <input type="text" class="form-input" id="gw-subject" maxlength="200">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Message <span style="color:var(--c-red)">*</span></label>
+      <textarea class="form-input" id="gw-body" rows="8" placeholder="Write your email…"></textarea>
+    </div>
+    <button class="btn btn-primary" id="gw-send" style="width:100%">Check &amp; Send</button>
+
+    <div class="gw-verdict" id="gw-verdict"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:10px">My emails</div>
+    <div id="gw-history"><div style="color:var(--c-text-dim,#94a3b8)">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+async function loadHistory() {
+  const el = document.getElementById('gw-history');
+  try {
+    const rows = await Wren.api('/api/email-gateway/mine');
+    if (!rows.length) { el.innerHTML = '<div style="color:var(--c-text-dim,#94a3b8)">Nothing sent yet.</div>'; return; }
+    el.innerHTML = rows.map(r => `
+      <div class="gw-hist-item">
+        <b>${esc(r.subject)}</b> → ${esc(r.to_email)}
+        <span class="gw-status ${esc(r.status)}">${esc(r.status.replace('_',' '))}</span>
+        <div style="color:var(--c-text-dim,#94a3b8);font-size:.8rem">${new Date(r.created_at).toLocaleString('en-GB')}${r.ai_notes ? ' · ' + esc(r.ai_notes) : ''}</div>
+        ${r.reply ? `<div style="margin-top:4px;font-size:.85rem">↩︎ Reply ${esc(r.reply.received)}: ${esc(r.reply.gist)}</div>` : ''}
+      </div>`).join('');
+  } catch (e) {
+    el.innerHTML = '<div class="alert alert-danger">Could not load history</div>';
+  }
+}
+
+async function send(useSuggested) {
+  const to = document.getElementById('gw-to').value.trim();
+  const subject = document.getElementById('gw-subject').value.trim();
+  const body = document.getElementById('gw-body').value.trim();
+  if (!to || !subject || !body) { Wren.toast('Fill in all three fields', 'warning'); return; }
+
+  const btn = document.getElementById('gw-send');
+  const box = document.getElementById('gw-verdict');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  box.style.display = 'none';
+
+  try {
+    const r = await Wren.api('/api/email-gateway/compose', { method: 'POST', body: { to, subject, body, use_suggested: !!useSuggested } });
+    box.className = 'gw-verdict ' + r.verdict;
+    if (r.verdict === 'ok') {
+      box.innerHTML = `✅ <b>Sent.</b> ${esc(r.notes || '')}` +
+        (r.suggested_body ? `<div class="gw-suggest"><b>Tip — a tidied version was available:</b>\n${esc(r.suggested_body)}</div>` : '');
+      document.getElementById('gw-to').value = '';
+      document.getElementById('gw-subject').value = '';
+      document.getElementById('gw-body').value = '';
+      Wren.toast('Email sent ✓', 'success');
+    } else {
+      box.innerHTML = `⚠️ <b>Held for manager review.</b> ${esc(r.notes || '')}` +
+        (r.suggested_body ? `<div class="gw-suggest"><b>Suggested rewrite:</b>\n${esc(r.suggested_body)}</div>` : '');
+      Wren.toast('Sent to the manager for review', 'info');
+    }
+    box.style.display = 'block';
+    loadHistory();
+  } catch (e) {
+    if (e && e.verdict === 'blocked') {
+      box.className = 'gw-verdict blocked';
+      box.innerHTML = `⛔ <b>Not sent.</b> ${esc(e.reason || 'Blocked by policy.')}`;
+      box.style.display = 'block';
+      loadHistory();
+    } else {
+      Wren.toast('Failed: ' + (e.error || e.message || 'Unknown error'), 'error');
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = 'Check & Send';
+  }
+}
+
+document.addEventListener('wren:ready', () => {
+  document.getElementById('gw-send').addEventListener('click', () => send(false));
+  loadHistory();
+});
+</script>
+</body>
+</html>

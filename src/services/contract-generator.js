@@ -8,11 +8,11 @@ const path        = require('path');
 const { getPool } = require('../db/pool');
 
 const DATA_DIR       = process.env.CONTRACT_DATA_DIR || path.join(__dirname, '../../data/contracts');
-const LOGO_PATH      = '/app/little-angels-logo.png';
-const NURSERY_NAME   = 'Your Nursery';
-const NURSERY_ADDR   = '1A Example Lane, Ealing, London W13 9LU';
-const NURSERY_TEL    = '01234 567890';
-const NURSERY_EMAIL  = 'admissions@example-nursery.co.uk';
+const LOGO_PATH      = '/home/toby/little-angels-logo.png';
+const NURSERY_NAME   = 'Little Angels Day Nursery';
+const NURSERY_ADDR   = '1A Dudley Gardens, Ealing, London W13 9LU';
+const NURSERY_TEL    = '020 8051 0349';
+const NURSERY_EMAIL  = 'admissions@littleangelsealing.co.uk';
 
 // ─── Variable substitution ───────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ function renderPDF(outPath, filledMd, contract, staffName, templateName, opts = 
         Title:    `Contract of Employment — ${staffName}`,
         Author:   NURSERY_NAME,
         Subject:  templateName,
-        Creator:  'Wren by Your Nursery',
+        Creator:  'Wren by Little Angels',
       },
     });
 
@@ -131,7 +131,7 @@ function renderPDF(outPath, filledMd, contract, staffName, templateName, opts = 
         doc.image(LOGO_PATH, doc.page.margins.left, top, { width: 120 });
       } else {
         doc.fillColor('#4a9abf').fontSize(14).font('Helvetica-Bold')
-           .text('Your Nursery', doc.page.margins.left, top + 8);
+           .text('Little Angels', doc.page.margins.left, top + 8);
       }
       doc.restore();
 
@@ -261,7 +261,7 @@ function renderPDF(outPath, filledMd, contract, staffName, templateName, opts = 
       doc.moveDown(1);
 
       drawSigBox(doc, 'EMPLOYER',
-        'Nursery Manager', 'Manager',
+        'Toby Jones', 'Manager, Little Angels Day Nursery',
         opts.employerSigData,
         contract.employer_signature_at ? fmtDate(contract.employer_signature_at) : null
       );

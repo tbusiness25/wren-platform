@@ -256,7 +256,7 @@ async function sendEmail(to, subject, html, eventType = 'email') {
         },
       });
       await transporter.sendMail({
-        from: process.env.SMTP_FROM || 'wren@example-nursery.co.uk',
+        from: process.env.SMTP_FROM || 'wren@littleangelsealing.co.uk',
         to,
         subject,
         html,

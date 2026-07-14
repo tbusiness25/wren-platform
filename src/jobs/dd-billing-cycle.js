@@ -45,7 +45,7 @@ async function run() {
 
     for (const row of due) {
       try {
-        const desc = `Your Nursery fees — invoice ${row.reference || row.invoice_id}`;
+        const desc = `Little Angels fees — invoice ${row.reference || row.invoice_id}`;
         const gcPayment = await gc.createPayment({
           mandateId:   row.mandate_id,
           amountPence: row.amount_pence,
@@ -77,7 +77,7 @@ async function run() {
 
   if (failed > 0) {
     await sendEmail({
-      to: process.env.ADMIN_EMAIL || 'admin@example.com',
+      to: process.env.ADMIN_EMAIL || 'toby.jones1@gmail.com',
       subject: `DD billing: ${failed} failure(s) — action needed`,
       html: `<p>${summary}</p><p>Check the payments table for details.</p>`,
       text: summary,

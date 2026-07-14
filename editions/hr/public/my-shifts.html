@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>My Shifts — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .shift-card {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .shift-card.is-today {
+      border-color: #4a9abf;
+      background: rgba(74,154,191,.1);
+    }
+    .shift-date-block {
+      text-align: center;
+      min-width: 52px;
+    }
+    .shift-day {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .shift-dom {
+      font-size: 26px;
+      font-weight: 800;
+      color: #f1f5f9;
+      line-height: 1;
+    }
+    .shift-mon {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .shift-info { flex: 1; }
+    .shift-times-large {
+      font-size: 18px;
+      font-weight: 700;
+      color: #4a9abf;
+    }
+    .shift-room-label {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+    .shift-today-badge {
+      font-size: 10px;
+      font-weight: 700;
+      background: #4a9abf;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .next-shift-banner {
+      background: rgba(74,154,191,.12);
+      border: 1px solid rgba(74,154,191,.3);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .week-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin: 20px 0 10px;
+    }
+    /* Accept/decline + open-shift claim (Prompt 30) */
+    .shift-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .sa-btn {
+      border:none; border-radius:10px; font-size:13px; font-weight:700; padding:10px 16px;
+      cursor:pointer; min-height:44px; min-width:88px;
+    }
+    .sa-accept { background:#22c55e; color:#06281a; }
+    .sa-decline { background:rgba(239,68,68,.15); color:#ef4444; border:1px solid rgba(239,68,68,.4); }
+    .sa-claim  { background:#e07820; color:#1a0e02; }
+    .sa-pill {
+      font-size:11px; font-weight:700; padding:4px 10px; border-radius:8px; text-transform:uppercase; letter-spacing:.04em;
+      align-self:center;
+    }
+    .sa-pill.accepted { background:rgba(34,197,94,.18); color:#22c55e; }
+    .sa-pill.declined { background:rgba(239,68,68,.18); color:#ef4444; }
+    .sa-pill.pending  { background:rgba(245,158,11,.18); color:#f59e0b; }
+    .open-shift-card {
+      background:#1e293b; border:1px solid rgba(224,120,32,.4); border-radius:12px;
+      padding:16px 18px; margin-bottom:10px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    }
+    .open-shift-card .osc-info { flex:1; min-width:160px; }
+    .section-title {
+      font-size:13px; font-weight:800; color:#e07820; text-transform:uppercase; letter-spacing:.05em;
+      margin:24px 0 10px; display:flex; align-items:center; gap:8px;
+    }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">My Shifts</div>
+      <div class="page-subtitle" id="shifts-subtitle" style="color:#94a3b8">Your upcoming scheduled shifts</div>
+    </div>
+  </div>
+
+  <div id="next-shift-area"></div>
+  <div id="open-shifts-area"></div>
+  <div id="shifts-list"><div style="color:#64748b;padding:20px 0">Loading...</div></div>
+</div>
+
+<script>
+const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+document.addEventListener('wren:ready', () => {
+  document.body.addEventListener('click', onShiftAction);
+  loadMyShifts();
+});
+
+async function loadMyShifts() {
+  try {
+    const shifts = await Wren.api('/api/rota/my');
+    renderShifts(shifts || []);
+  } catch (e) {
+    document.getElementById('shifts-list').innerHTML =
+      `<div style="color:#ef4444;padding:20px 0">Could not load shifts: ${e.message}</div>`;
+  }
+  loadOpenShifts();
+}
+
+// ── Accept / decline + open-shift claim (Prompt 30) ──────────────────────────
+function shiftActions(s) {
+  if (!s || !s.id) return '';
+  if (s.acceptance === 'pending') {
+    return `<div class="shift-actions">
+      <button class="sa-btn sa-accept" data-action="accept" data-shift="${s.id}">Accept</button>
+      <button class="sa-btn sa-decline" data-action="decline" data-shift="${s.id}">Decline</button></div>`;
+  }
+  if (s.acceptance === 'accepted') return `<span class="sa-pill accepted">Accepted</span>`;
+  if (s.acceptance === 'declined') return `<span class="sa-pill declined">Declined</span>`;
+  return '';
+}
+
+async function onShiftAction(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = btn.dataset.shift;
+  const action = btn.dataset.action;
+  btn.disabled = true;
+  try {
+    if (action === 'accept' || action === 'decline') {
+      await Wren.api(`/api/rota/shift/${id}/respond`, { method:'POST', body: JSON.stringify({ accept: action === 'accept' }) });
+    } else if (action === 'claim') {
+      await Wren.api(`/api/rota/shift/${id}/claim`, { method:'POST', body: '{}' });
+    }
+    loadMyShifts();
+  } catch (err) {
+    btn.disabled = false;
+    const msg = String(err.message || '');
+    alert(msg.includes('already_claimed') ? 'Sorry — that shift was just claimed by someone else.'
+        : msg.includes('already_scheduled') ? 'You already have a shift that day.'
+        : 'Could not complete that action: ' + msg);
+  }
+}
+
+async function loadOpenShifts() {
+  const area = document.getElementById('open-shifts-area');
+  if (!area) return;
+  let open = [];
+  try { open = await Wren.api('/api/rota/open') || []; } catch { area.innerHTML = ''; return; }
+  if (!open.length) { area.innerHTML = ''; return; }
+  area.innerHTML = `<div class="section-title">📣 Open shifts you can claim</div>` + open.map(s => {
+    const d = new Date((typeof s.shift_date === 'string' ? s.shift_date.split('T')[0] : s.shift_date) + 'T00:00:00');
+    return `<div class="open-shift-card">
+      <div class="shift-date-block">
+        <div class="shift-day">${DAYS[d.getDay()].substring(0,3)}</div>
+        <div class="shift-dom">${d.getDate()}</div>
+        <div class="shift-mon">${MONTHS[d.getMonth()]}</div>
+      </div>
+      <div class="osc-info">
+        <div class="shift-times-large">${fmtTime(s.planned_start)} – ${fmtTime(s.planned_end)}</div>
+        <div class="shift-room-label">${s.label ? s.label + ' · ' : ''}${s.room_name || 'Any room'}</div>
+      </div>
+      <button class="sa-btn sa-claim" data-action="claim" data-shift="${s.id}">Claim</button>
+    </div>`;
+  }).join('');
+}
+
+function fmtTime(t) {
+  if (!t) return '—';
+  return String(t).substring(0, 5);
+}
+
+function renderShifts(shifts) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const nextBannerEl = document.getElementById('next-shift-area');
+  const listEl = document.getElementById('shifts-list');
+
+  if (!shifts.length) {
+    nextBannerEl.innerHTML = '';
+    listEl.innerHTML = `
+      <div style="background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:40px 24px;text-align:center">
+        <div style="font-size:2.5rem;margin-bottom:12px">📅</div>
+        <div style="color:#f1f5f9;font-weight:700;margin-bottom:6px">No shifts scheduled</div>
+        <div style="color:#64748b;font-size:13px">No published rota shifts found for the next 14 days.</div>
+      </div>`;
+    return;
+  }
+
+  // Next upcoming shift banner
+  const upcoming = shifts.filter(s => {
+    const d = new Date(s.shift_date.split('T')[0] + 'T00:00:00');
+    return d >= today;
+  });
+  const next = upcoming[0];
+  if (next) {
+    const d = new Date(next.shift_date.split('T')[0] + 'T00:00:00');
+    const isToday = d.getTime() === today.getTime();
+    nextBannerEl.innerHTML = `
+      <div class="next-shift-banner">
+        <div style="font-size:2rem">⏰</div>
+        <div>
+          <div style="font-size:12px;color:#4a9abf;font-weight:700;text-transform:uppercase;letter-spacing:.05em">
+            ${isToday ? 'Today' : 'Next Shift'}
+          </div>
+          <div style="font-size:18px;font-weight:700;color:#f1f5f9">
+            ${DAYS[d.getDay()]} — ${fmtTime(next.planned_start)} – ${fmtTime(next.planned_end)}
+          </div>
+          <div style="font-size:13px;color:#94a3b8">${next.room_name || 'Room not specified'}</div>
+        </div>
+      </div>`;
+  } else {
+    nextBannerEl.innerHTML = '';
+  }
+
+  // Group by week
+  const weeks = {};
+  for (const s of shifts) {
+    const d = new Date(s.shift_date.split('T')[0] + 'T00:00:00');
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const ws = new Date(d); ws.setDate(ws.getDate() + diff);
+    const wk = ws.toISOString().split('T')[0];
+    if (!weeks[wk]) weeks[wk] = [];
+    weeks[wk].push({ ...s, _date: d });
+  }
+
+  let html = '';
+  for (const [wk, wShifts] of Object.entries(weeks)) {
+    const wStart = new Date(wk + 'T00:00:00');
+    const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 6);
+    html += `<div class="week-group-title">Week of ${wStart.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${wEnd.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>`;
+
+    for (const s of wShifts) {
+      const d = s._date;
+      const isToday = d.getTime() === today.getTime();
+      html += `
+        <div class="shift-card${isToday ? ' is-today' : ''}">
+          <div class="shift-date-block">
+            <div class="shift-day">${DAYS[d.getDay()].substring(0,3)}</div>
+            <div class="shift-dom">${d.getDate()}</div>
+            <div class="shift-mon">${MONTHS[d.getMonth()]}</div>
+          </div>
+          <div class="shift-info">
+            <div class="shift-times-large">${fmtTime(s.planned_start)} – ${fmtTime(s.planned_end)}</div>
+            <div class="shift-room-label">${s.label ? s.label + ' · ' : ''}${s.room_name || 'Room not specified'}${s.break_mins ? ' · ' + s.break_mins + 'min break' : ''}</div>
+            ${s.notes ? `<div style="font-size:11px;color:#64748b;margin-top:4px">${s.notes}</div>` : ''}
+          </div>
+          ${shiftActions(s)}
+          ${isToday ? '<div class="shift-today-badge">Today</div>' : ''}
+        </div>`;
+    }
+  }
+
+  listEl.innerHTML = html;
+}
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

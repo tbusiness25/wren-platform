@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Learning Journey — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.obs-tag-chip{background:var(--c-card,#1e293b);border:1px solid var(--c-border,#2d3748);border-radius:20px;padding:5px 13px;font-size:.78rem;font-weight:600;cursor:pointer;color:#94a3b8;transition:.15s}
+.obs-tag-chip.active{background:#4a9abf22;border-color:#4a9abf;color:#4a9abf}
+.obs-tag-chip:hover:not(.active){border-color:#4a9abf;color:#f1f5f9}
+.obs-tag-badge{font-size:.68rem;font-weight:700;border-radius:4px;padding:1px 6px;margin-right:3px;text-transform:uppercase;letter-spacing:.04em}
+.obs-tag-planned_activity{background:#4a9abf22;color:#4a9abf}
+.obs-tag-tracking{background:#c4b5fd22;color:#c4b5fd}
+.obs-tag-next_step_followup{background:#86efac22;color:#86efac}
+.obs-tag-baseline{background:#fbbf2422;color:#fbbf24}
+.obs-tag-termly_update{background:#e0782022;color:#e07820}
+.obs-tag-parental{background:#f9a8d422;color:#f9a8d4}
+.obs-ns-section{background:#0f172a;border:1px solid #2d3748;border-radius:10px;padding:14px;margin-top:10px}
+.obs-ns-label{font-size:.8rem;font-weight:700;color:#94a3b8;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title" id="page-title">Learning Journey</div>
+      <div class="page-subtitle" id="page-subtitle">Recent observations</div>
+    </div>
+    <button class="btn btn-primary" id="btn-new-obs">+ New Observation</button>
+  </div>
+
+  <!-- Tag filter chips -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="obs-tag-chip active" data-tag="">All</button>
+    <button class="obs-tag-chip" data-tag="learning_story">Learning Stories</button>
+    <button class="obs-tag-chip" data-tag="planned_activity">Planned Activities</button>
+    <button class="obs-tag-chip" data-tag="tracking">Tracking</button>
+    <button class="obs-tag-chip" data-tag="next_step_followup">Next Step Follow-ups</button>
+    <button class="obs-tag-chip" data-tag="baseline">Baseline</button>
+    <button class="obs-tag-chip" data-tag="termly_update">Termly Update</button>
+  </div>
+
+  <div class="filter-bar">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search" placeholder="Search observations...">
+    </div>
+    <select class="form-control" id="type-filter" style="flex:0 0 160px">
+      <option value="">All types</option>
+      <option value="learning_story">Learning Story</option>
+      <option value="milestone">Milestone</option>
+      <option value="note">Note</option>
+      <option value="2year_check">2-Year Check</option>
+    </select>
+    <select class="form-control" id="area-filter" style="flex:0 0 140px">
+      <option value="">All EYFS Areas</option>
+      <option value="PSED">PSED</option>
+      <option value="CL">CL</option>
+      <option value="PD">PD</option>
+      <option value="Literacy">Literacy</option>
+      <option value="Mathematics">Mathematics</option>
+      <option value="UW">UW</option>
+      <option value="EA">EA</option>
+    </select>
+  </div>
+
+  <div id="obs-list">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const childId = params.get('child_id');
+let allObs = [];
+let children = [];
+let activeTag = '';
+
+const OBS_TAG_LABELS = {
+  planned_activity: 'Planned',
+  tracking: 'Tracking',
+  next_step_followup: 'NS Follow-up',
+  baseline: 'Baseline',
+  termly_update: 'Termly',
+  parental: 'Parental',
+};
+
+const EYFS_AREAS = ['PSED','CL','PD','Literacy','Mathematics','UW','EA'];
+
+async function loadData() {
+  try {
+    let obsData;
+    if (childId) {
+      const [obs, child] = await Promise.all([
+        Wren.api(`/api/observations/child/${childId}`),
+        Wren.api(`/api/children/${childId}`)
+      ]);
+      obsData = obs;
+      document.getElementById('page-title').textContent = `${child.first_name}'s Learning Journey`;
+      document.getElementById('page-subtitle').textContent = `${obs.length} observations`;
+    } else {
+      obsData = await Wren.api('/api/observations/recent?limit=50');
+      document.getElementById('page-subtitle').textContent = `${obsData.length} recent observations`;
+    }
+    allObs = obsData;
+    children = await Wren.api('/api/children').catch(() => []);
+    renderObs(allObs);
+  } catch(e) {
+    document.getElementById('obs-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderObs(obs) {
+  const list = document.getElementById('obs-list');
+  if (!obs.length) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📔</div>
+      <div class="empty-title">No observations yet</div>
+      <div class="empty-body">Tap + New Observation to add one</div>
+    </div>`;
+    return;
+  }
+  list.innerHTML = obs.map(o => `
+    <div class="obs-card ${o.observation_type === 'milestone' ? 'milestone' : o.observation_type === 'note' ? 'note' : ''}">
+      <div class="obs-header">
+        <div>
+          ${o.child_name ? `<div class="obs-child-name">👶 ${o.child_name}</div>` : ''}
+          <div class="obs-meta">
+            <span class="badge badge-grey">${o.observation_type?.replace('_',' ') || 'observation'}</span>
+            ${o.room_name ? `<span style="color:#94a3b8">· ${o.room_name}</span>` : ''}
+            <span style="color:#94a3b8">· ${o.staff_name || ''}</span>
+            <span style="color:#94a3b8">· ${new Date(o.created_at).toLocaleDateString('en-GB')}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${o.shared_with_parents ? '<span title="Shared with parents">👪</span>' : ''}
+          <button class="btn btn-sm btn-ghost" data-action="edit-obs" data-id="${o.id}">✏️</button>
+        </div>
+      </div>
+      <div class="obs-text">${o.observation_text}</div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">
+        ${(o.eyfs_areas || []).map(a => `<span class="eyfs-tag eyfs-${a}">${a}</span>`).join('')}
+        ${(o.obs_tags || []).map(t => OBS_TAG_LABELS[t]
+          ? `<span class="obs-tag-badge obs-tag-${t}">${OBS_TAG_LABELS[t]}</span>` : '').join('')}
+        ${(!o.obs_tags || !o.obs_tags.length) ? '<span class="obs-tag-badge" style="background:#1e293b;color:#64748b">Story</span>' : ''}
+      </div>
+      ${(o.photo_urls || []).length ? `<div class="obs-photos">${o.photo_urls.map(url=>`<img src="${url}" data-photo="${encodeURIComponent(url)}">`).join('')}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function filterObs() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const type   = document.getElementById('type-filter').value;
+  const area   = document.getElementById('area-filter').value;
+  renderObs(allObs.filter(o => {
+    const textMatch = o.observation_text.toLowerCase().includes(search) ||
+                      (o.child_name || '').toLowerCase().includes(search);
+    const typeMatch = !type || o.observation_type === type;
+    const areaMatch = !area || (o.eyfs_areas || []).includes(area);
+    // Tag filter: 'learning_story' = no tags; others = tag present
+    let tagMatch = true;
+    if (activeTag === 'learning_story') {
+      tagMatch = !o.obs_tags || o.obs_tags.length === 0;
+    } else if (activeTag) {
+      tagMatch = (o.obs_tags || []).includes(activeTag);
+    }
+    return textMatch && typeMatch && areaMatch && tagMatch;
+  }));
+}
+
+const OBS_TAG_DEFS = [
+  { value: 'planned_activity',   label: 'Planned Activity' },
+  { value: 'tracking',           label: 'Tracking' },
+  { value: 'next_step_followup', label: 'Next Step Follow-up' },
+  { value: 'baseline',           label: 'Baseline' },
+  { value: 'termly_update',      label: 'Termly Update' },
+  { value: 'parental',           label: 'Parental' },
+];
+
+let _pendingNsForChild = [];
+
+async function loadPendingNs(childId) {
+  if (!childId) { _pendingNsForChild = []; return; }
+  try {
+    const data = await Wren.api(`/api/next-steps?child_id=${childId}&status=pending&limit=20`);
+    _pendingNsForChild = data;
+  } catch(e) { _pendingNsForChild = []; }
+}
+
+function openNewObs() {
+  const form = document.createElement('div');
+  form.innerHTML = `
+    ${!childId ? `
+    <div class="form-group">
+      <label class="form-label">Child <span style="color:#ef4444">*</span></label>
+      <select class="form-control" id="obs-child">
+        <option value="">Select child...</option>
+        ${children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('')}
+      </select>
+    </div>` : ''}
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-control" id="obs-type">
+        <option value="learning_story">Learning Story</option>
+        <option value="milestone">Milestone</option>
+        <option value="note">Note</option>
+        <option value="2year_check">2-Year Check</option>
+        <option value="assessment">Assessment</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tags <span style="color:#94a3b8;font-weight:400;font-size:.78rem">(leave blank = Learning Story)</span></label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px" id="obs-tags-group">
+        ${OBS_TAG_DEFS.map(t => `
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:.83rem">
+            <input type="checkbox" value="${t.value}" class="obs-tag-cb">
+            <span>${t.label}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div id="obs-ns-fulfil-row" style="display:none;margin-top:10px">
+        <label class="form-label" style="font-size:.8rem">Which next step does this fulfil?</label>
+        <select class="form-control" id="obs-fulfils-ns" style="font-size:.85rem">
+          <option value="">None / select...</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">EYFS Areas</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${EYFS_AREAS.map(a => `
+          <label style="cursor:pointer">
+            <input type="checkbox" value="${a}" class="eyfs-cb" style="display:none">
+            <span class="eyfs-tag eyfs-${a}" style="opacity:.4;cursor:pointer">${a}</span>
+          </label>
+        `).join('')}
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Observation <span style="color:#ef4444">*</span></label>
+      <textarea class="form-control" id="obs-text" rows="5" placeholder="What did you observe? Tap 🎙️ to dictate."></textarea>
+    </div>
+    <div class="obs-ns-section" id="obs-next-step-section">
+      <div class="obs-ns-label">Next Step <span style="color:#94a3b8;font-weight:400">(optional)</span></div>
+      <textarea class="form-control" id="obs-next-steps" rows="2"
+        placeholder="What should happen next for this child?"></textarea>
+      <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <label class="form-label" style="font-size:.75rem">Target date</label>
+          <input class="form-control" type="date" id="obs-ns-due">
+        </div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="obs-share">
+        <span>Share with parents</span>
+      </label>
+    </div>
+  `;
+
+  // EYFS area toggle
+  form.querySelectorAll('.eyfs-cb').forEach(cb => {
+    cb.addEventListener('change', () => {
+      cb.nextElementSibling.style.opacity = cb.checked ? '1' : '.4';
+    });
+    cb.nextElementSibling.addEventListener('click', () => { cb.click(); });
+  });
+
+  // When next_step_followup tag is checked, show the "fulfils" dropdown
+  form.querySelectorAll('.obs-tag-cb').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const nsfRow = form.querySelector('#obs-ns-fulfil-row');
+      const nsfCb  = form.querySelector('input[value="next_step_followup"]');
+      if (nsfRow && nsfCb?.checked) {
+        const cid = childId || form.querySelector('#obs-child')?.value;
+        if (cid) await loadPendingNs(cid);
+        const sel = form.querySelector('#obs-fulfils-ns');
+        sel.innerHTML = '<option value="">None / select...</option>' +
+          _pendingNsForChild.map(ns =>
+            `<option value="${ns.id}">${ns.description.slice(0, 60)}</option>`
+          ).join('');
+        nsfRow.style.display = 'block';
+      } else if (nsfRow) {
+        nsfRow.style.display = 'none';
+      }
+    });
+  });
+
+  // When child changes, reload pending next steps
+  const childSel = form.querySelector('#obs-child');
+  if (childSel) {
+    childSel.addEventListener('change', () => loadPendingNs(childSel.value));
+  }
+  if (childId) loadPendingNs(childId);
+
+  setTimeout(() => {
+    const ta = document.getElementById('obs-text');
+    if (ta && window.WrenVoice) WrenVoice.attachTo(ta, { context: 'observation' });
+  }, 100);
+
+  Wren.modal('New Observation', form, [
+    { label: 'Save & Enhance with AI', class: 'btn-ghost', close: false, action: async () => {
+      const text = document.getElementById('obs-text').value.trim();
+      if (!text) { Wren.toast('Please enter observation text', 'warning'); return; }
+      try {
+        const enhanced = await Wren.api('/api/ai/enhance-observation', { method: 'POST', body: {
+          text,
+          eyfs_areas: [...form.querySelectorAll('.eyfs-cb:checked')].map(c => c.value)
+        }});
+        document.getElementById('obs-text').value = enhanced.enhanced || text;
+        Wren.toast('Enhanced by AI ✓', 'success');
+      } catch(e) {
+        Wren.toast('AI unavailable', 'warning');
+      }
+    }},
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      const text = document.getElementById('obs-text').value.trim();
+      const cid  = childId || document.getElementById('obs-child')?.value;
+      if (!cid || !text) { Wren.toast('Child and text required', 'warning'); return; }
+      const obsTags   = [...form.querySelectorAll('.obs-tag-cb:checked')].map(c => c.value);
+      const nextSteps = document.getElementById('obs-next-steps').value.trim();
+      const nsDue     = document.getElementById('obs-ns-due').value || null;
+      const fulfilsNs = document.getElementById('obs-fulfils-ns')?.value || null;
+      try {
+        const saved = await Wren.api('/api/observations', { method: 'POST', body: {
+          child_id:       parseInt(cid),
+          observation_text: text,
+          observation_type: document.getElementById('obs-type').value,
+          eyfs_areas:     [...form.querySelectorAll('.eyfs-cb:checked')].map(c => c.value),
+          shared_with_parents: document.getElementById('obs-share').checked,
+          obs_tags:       obsTags,
+          next_steps:     nextSteps || null,
+          next_step_due_by: nsDue,
+          fulfils_next_step_id: fulfilsNs ? parseInt(fulfilsNs) : null,
+        }});
+        const nsMsg = saved.next_step_id ? ' + next step created' : '';
+        Wren.toast(`Observation saved${nsMsg} ✓`, 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed to save', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function editObs(id) {
+  const obs = allObs.find(o => o.id === id);
+  if (!obs) return;
+  Wren.modal('Edit Observation', `
+    <div class="form-group">
+      <label class="form-label">Observation</label>
+      <textarea class="form-control" id="edit-text" rows="6">${obs.observation_text}</textarea>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="edit-share" ${obs.shared_with_parents ? 'checked' : ''}>
+        <span>Share with parents</span>
+      </label>
+    </div>
+  `, [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/observations/${id}`, { method: 'PUT', body: {
+          observation_text: document.getElementById('edit-text').value,
+          shared_with_parents: document.getElementById('edit-share').checked
+        }});
+        Wren.toast('Updated ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadData();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function viewPhoto(url) {
+  Wren.modal('Photo', `<img src="${url}" style="width:100%;border-radius:8px">`, [
+    { label: 'Close', class: 'btn-ghost' }
+  ]);
+}
+
+document.getElementById('btn-new-obs').addEventListener('click', openNewObs);
+document.getElementById('search').addEventListener('input', filterObs);
+document.getElementById('type-filter').addEventListener('change', filterObs);
+document.getElementById('area-filter').addEventListener('change', filterObs);
+document.getElementById('obs-list').addEventListener('click', function(e) {
+  const editBtn = e.target.closest('[data-action="edit-obs"]');
+  if (editBtn) { editObs(parseInt(editBtn.dataset.id)); return; }
+  const photo = e.target.closest('[data-photo]');
+  if (photo) viewPhoto(decodeURIComponent(photo.dataset.photo));
+});
+document.addEventListener('DOMContentLoaded', () => {
+  loadData();
+  document.querySelectorAll('.obs-tag-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.obs-tag-chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeTag = btn.dataset.tag;
+      filterObs();
+    });
+  });
+});
+</script>
+<script src="/js/wren-voice.js"></script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

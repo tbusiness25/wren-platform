@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Visitors Log — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .visitor-card {
+      background: white;
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .visitor-card.signed-out {
+      opacity: 0.65;
+      background: var(--c-bg-subtle);
+    }
+    .visitor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .visitor-name {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--c-text);
+    }
+    .visitor-org {
+      font-size: 14px;
+      color: var(--c-text-light);
+      margin-top: 2px;
+    }
+    .visitor-time {
+      font-size: 13px;
+      color: var(--c-text-light);
+    }
+    .visitor-status {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    .status-in {
+      background: var(--c-green-bg);
+      color: var(--c-green);
+    }
+    .status-out {
+      background: var(--c-bg-subtle);
+      color: var(--c-text-light);
+    }
+    .visitor-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    .detail-row {
+      color: var(--c-text-light);
+    }
+    .detail-row strong {
+      color: var(--c-text);
+      font-weight: 600;
+    }
+    .checks-row {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .check-yes { color: var(--c-green); }
+    .check-no { color: var(--c-text-light); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">👥 Visitors Log</div>
+      <div class="page-subtitle">Sign visitors in and out — today's log below</div>
+    </div>
+    <button class="btn btn-primary" id="btn-sign-in">+ Sign In Visitor</button>
+  </div>
+
+  <!-- Sign-in form -->
+  <div id="sign-in-panel" style="display:none;margin-bottom:20px">
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:14px;font-size:16px">Sign In a Visitor</div>
+      <div class="form-group">
+        <label class="form-label">Full Name <span style="color:var(--c-red)">*</span></label>
+        <input class="form-control" id="v-name" placeholder="e.g. Dr Sarah Williams">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Organisation</label>
+          <input class="form-control" id="v-organisation" placeholder="e.g. NHS, Ofsted, Local Authority">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Purpose of Visit</label>
+          <input class="form-control" id="v-purpose" placeholder="e.g. Health inspection, Observation">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Visiting Whom</label>
+          <input class="form-control" id="v-visiting" placeholder="e.g. Manager, Baby Room">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Car Registration (optional)</label>
+          <input class="form-control" id="v-car-reg" placeholder="e.g. AB12 CDE" style="text-transform:uppercase">
+        </div>
+      </div>
+      <div style="display:flex;gap:24px;margin:12px 0">
+        <label class="checkbox-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="v-dbs-seen">
+          <span>DBS certificate seen</span>
+        </label>
+        <label class="checkbox-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="v-id-seen">
+          <span>Photo ID checked</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <textarea class="form-control" id="v-notes" rows="2" placeholder="Any additional information"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn btn-primary" id="btn-save-visitor">Sign In</button>
+        <button class="btn" id="btn-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Today's visitors -->
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:16px;font-size:16px">Today's Visitors</div>
+    <div id="visitors-list">
+      <div style="text-align:center;padding:40px;color:var(--c-text-light)">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', () => {
+  const btnSignIn = document.getElementById('btn-sign-in');
+  const btnCancel = document.getElementById('btn-cancel');
+  const btnSave = document.getElementById('btn-save-visitor');
+  const panel = document.getElementById('sign-in-panel');
+  const listEl = document.getElementById('visitors-list');
+
+  // Show/hide sign-in form
+  btnSignIn.addEventListener('click', () => {
+    panel.style.display = 'block';
+    btnSignIn.style.display = 'none';
+    document.getElementById('v-name').focus();
+  });
+
+  btnCancel.addEventListener('click', () => {
+    panel.style.display = 'none';
+    btnSignIn.style.display = 'inline-flex';
+    clearForm();
+  });
+
+  // Sign in a visitor
+  btnSave.addEventListener('click', async () => {
+    const name = document.getElementById('v-name').value.trim();
+    if (!name) {
+      alert('Please enter the visitor\'s name');
+      return;
+    }
+
+    const data = {
+      name,
+      organisation: document.getElementById('v-organisation').value.trim() || null,
+      purpose: document.getElementById('v-purpose').value.trim() || null,
+      visiting_whom: document.getElementById('v-visiting').value.trim() || null,
+      car_reg: document.getElementById('v-car-reg').value.trim().toUpperCase() || null,
+      dbs_seen: document.getElementById('v-dbs-seen').checked,
+      id_seen: document.getElementById('v-id-seen').checked,
+      notes: document.getElementById('v-notes').value.trim() || null
+    };
+
+    try {
+      const res = await fetch('/api/visitors', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(data)
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to sign in visitor');
+      }
+
+      clearForm();
+      panel.style.display = 'none';
+      btnSignIn.style.display = 'inline-flex';
+      loadToday();
+    } catch (err) {
+      console.error('Error signing in visitor:', err);
+      alert('Error: ' + err.message);
+    }
+  });
+
+  // Sign out a visitor
+  async function signOut(id) {
+    if (!confirm('Sign this visitor out?')) return;
+
+    try {
+      const res = await fetch(`/api/visitors/${id}/sign-out`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to sign out visitor');
+      }
+
+      loadToday();
+    } catch (err) {
+      console.error('Error signing out visitor:', err);
+      alert('Error: ' + err.message);
+    }
+  }
+
+  // Load today's visitors
+  async function loadToday() {
+    try {
+      const res = await fetch('/api/visitors/today', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to load visitors');
+      }
+
+      const { visitors } = await res.json();
+
+      if (visitors.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--c-text-light)">No visitors today</div>';
+        return;
+      }
+
+      listEl.innerHTML = visitors.map(v => {
+        const isSignedOut = !!v.left_at;
+        const arrivedTime = new Date(v.arrived_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const leftTime = v.left_at ? new Date(v.left_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
+
+        return `
+          <div class="visitor-card ${isSignedOut ? 'signed-out' : ''}">
+            <div class="visitor-header">
+              <div>
+                <div class="visitor-name">${v.name}</div>
+                ${v.organisation ? `<div class="visitor-org">${v.organisation}</div>` : ''}
+              </div>
+              <div style="text-align:right">
+                <span class="visitor-status ${isSignedOut ? 'status-out' : 'status-in'}">
+                  ${isSignedOut ? '✓ Signed Out' : '● On Site'}
+                </span>
+                ${!isSignedOut ? `<div style="margin-top:8px"><button class="btn btn-sm" onclick="window.signOutVisitor(${v.id})">Sign Out</button></div>` : ''}
+              </div>
+            </div>
+            <div class="visitor-time">
+              Arrived: ${arrivedTime}${leftTime ? ` • Left: ${leftTime}` : ''}
+              ${v.signed_in_by_name ? ` • Signed in by ${v.signed_in_by_name}` : ''}
+            </div>
+            <div class="visitor-details">
+              ${v.purpose ? `<div class="detail-row"><strong>Purpose:</strong> ${v.purpose}</div>` : ''}
+              ${v.visiting_whom ? `<div class="detail-row"><strong>Visiting:</strong> ${v.visiting_whom}</div>` : ''}
+              ${v.car_reg ? `<div class="detail-row"><strong>Vehicle:</strong> ${v.car_reg}</div>` : ''}
+            </div>
+            <div class="checks-row">
+              <div class="check-item ${v.dbs_seen ? 'check-yes' : 'check-no'}">
+                ${v.dbs_seen ? '✓' : '✗'} DBS certificate
+              </div>
+              <div class="check-item ${v.id_seen ? 'check-yes' : 'check-no'}">
+                ${v.id_seen ? '✓' : '✗'} Photo ID
+              </div>
+            </div>
+            ${v.notes ? `<div style="margin-top:8px;font-size:13px;color:var(--c-text-light)"><strong>Notes:</strong> ${v.notes}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      console.error('Error loading visitors:', err);
+      listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--c-red)">Failed to load visitors</div>';
+    }
+  }
+
+  function clearForm() {
+    document.getElementById('v-name').value = '';
+    document.getElementById('v-organisation').value = '';
+    document.getElementById('v-purpose').value = '';
+    document.getElementById('v-visiting').value = '';
+    document.getElementById('v-car-reg').value = '';
+    document.getElementById('v-dbs-seen').checked = false;
+    document.getElementById('v-id-seen').checked = false;
+    document.getElementById('v-notes').value = '';
+  }
+
+  // Expose sign-out for inline onclick
+  window.signOutVisitor = signOut;
+
+  // Load on init
+  loadToday();
+});
+</script>
+</body>
+</html>

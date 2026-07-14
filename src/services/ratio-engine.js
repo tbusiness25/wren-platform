@@ -41,9 +41,19 @@ function requiredStaff(counts) {
 
 // Booked children by age band on a given date.
 // Primary source: child_bookings (§55 register). Fallback: attendance proxy.
+// Respects ratio_include_settling setting to exclude settling children if configured.
 async function bookedChildrenByBand(db, dateStr) {
+  // Read ratio settings
+  const { rows: settingsRows } = await db.query(`
+    SELECT key, value FROM settings WHERE key IN ('ratio_include_settling', 'ratio_include_event_children')
+  `);
+  const settings = {};
+  for (const s of settingsRows) settings[s.key] = s.value === 'true';
+  const includeSettling = settings.ratio_include_settling !== false; // default true
+
   // 1) Authoritative §55 booked register: an active pattern covering the date with
   //    the matching weekday bit set (Mon=1..Fri=5). One row per child (DISTINCT).
+  // Optionally exclude children with active settling plans where counts_on_ratio=false.
   const { rows: booked } = await db.query(`
     SELECT DISTINCT c.id, c.date_of_birth
     FROM child_bookings b
@@ -55,7 +65,13 @@ async function bookedChildrenByBand(db, dateStr) {
       AND CASE EXTRACT(DOW FROM $1::date)::int
             WHEN 1 THEN b.mon WHEN 2 THEN b.tue WHEN 3 THEN b.wed
             WHEN 4 THEN b.thu WHEN 5 THEN b.fri ELSE false END
-  `, [dateStr]);
+      AND ($2::boolean = true OR NOT EXISTS (
+        SELECT 1 FROM settling_in_plans sp
+        WHERE sp.child_id = c.id
+          AND COALESCE(sp.is_active, true) = true
+          AND COALESCE(sp.counts_on_ratio, true) = false
+      ))
+  `, [dateStr, includeSettling]);
   if (booked.length) {
     const counts = { under2: 0, two: 0, threePlus: 0, total: booked.length, source: 'bookings' };
     for (const r of booked) counts[ageBandOn(r.date_of_birth, dateStr)]++;
@@ -73,7 +89,13 @@ async function bookedChildrenByBand(db, dateStr) {
       AND EXTRACT(DOW FROM a.date) = $1
       AND a.date > (CURRENT_DATE - ($2 * 7) * INTERVAL '1 day')
       AND COALESCE(a.absent,false) = false
-  `, [dow, LOOKBACK_WEEKS]);
+      AND ($3::boolean = true OR NOT EXISTS (
+        SELECT 1 FROM settling_in_plans sp
+        WHERE sp.child_id = c.id
+          AND COALESCE(sp.is_active, true) = true
+          AND COALESCE(sp.counts_on_ratio, true) = false
+      ))
+  `, [dow, LOOKBACK_WEEKS, includeSettling]);
   const counts = { under2: 0, two: 0, threePlus: 0, total: rows.length,
                    source: rows.length ? 'attendance_proxy' : 'none' };
   for (const r of rows) counts[ageBandOn(r.date_of_birth, dateStr)]++;

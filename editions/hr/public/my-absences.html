@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>My Absences — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <h1 class="page-title">My Absences & Leave</h1>
+    <button class="btn btn-primary" id="new-request-btn">+ Request Leave</button>
+  </div>
+
+  <!-- Holiday balance card -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:16px">
+      <div>
+        <div style="color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.5px">Annual Entitlement</div>
+        <div style="font-size:1.75rem;font-weight:700;color:#f1f5f9" id="ent-total">—</div>
+      </div>
+      <div>
+        <div style="color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.5px">Taken</div>
+        <div style="font-size:1.75rem;font-weight:700;color:#e07820" id="ent-used">—</div>
+      </div>
+      <div>
+        <div style="color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.5px">Upcoming</div>
+        <div style="font-size:1.75rem;font-weight:700;color:#4a9abf" id="ent-upcoming">—</div>
+      </div>
+      <div>
+        <div style="color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.5px">Remaining</div>
+        <div style="font-size:1.75rem;font-weight:700;color:#22c55e" id="ent-remaining">—</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">My Requests</h2>
+  <div id="absence-list" style="display:flex;flex-direction:column;gap:10px">
+    <div style="color:#94a3b8">Loading…</div>
+  </div>
+</div>
+
+<!-- New request modal (hidden) -->
+<div id="new-request-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;overflow-y:auto;padding:0 12px">
+  <div style="background:#1e293b;border-radius:12px;max-width:480px;margin:5vh auto;padding:20px">
+    <h3 style="margin:0 0 20px;color:#f1f5f9">Request Leave</h3>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-control" id="req-type">
+        <option value="holiday">Annual Leave</option>
+        <option value="sick">Sick</option>
+        <option value="compassionate">Compassionate</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Start Date</label>
+      <input type="date" class="form-control" id="req-start">
+    </div>
+    <div class="form-group">
+      <label class="form-label">End Date</label>
+      <input type="date" class="form-control" id="req-end">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes (optional)</label>
+      <textarea class="form-control" id="req-notes" rows="3" placeholder="Reason or additional info"></textarea>
+    </div>
+    <div id="preview-panel" style="display:none;border:1px solid #334155;border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-weight:600;color:#f1f5f9;font-size:.9rem">Likelihood of approval</div>
+        <div id="preview-percent" style="font-weight:700;font-size:1.15rem">—</div>
+      </div>
+      <div style="background:#0f172a;border-radius:6px;height:8px;overflow:hidden;margin-bottom:10px">
+        <div id="preview-bar" style="height:100%;width:0;border-radius:6px;transition:width .3s"></div>
+      </div>
+      <div id="preview-headline" style="color:#cbd5e1;font-size:.85rem;line-height:1.5;margin-bottom:10px"></div>
+      <div id="preview-checks" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div id="preview-note" style="color:#64748b;font-size:.72rem;line-height:1.5;margin-top:10px"></div>
+    </div>
+    <div id="request-result" style="display:none;padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:.9rem;line-height:1.5"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" id="cancel-request-btn">Cancel</button>
+      <button class="btn btn-primary" id="submit-request-btn">Submit Request</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', loadAbsences);
+
+async function loadAbsences() {
+  try {
+    const [absences, entitlement] = await Promise.allSettled([
+      Wren.api('/api/absence/my'),
+      Wren.api('/api/absence/entitlement/my'),
+    ]);
+
+    // Holiday balance from entitlement endpoint
+    if (entitlement.status === 'fulfilled' && entitlement.value) {
+      const e = entitlement.value;
+      document.getElementById('ent-total').textContent = (e.entitlement_days || 28) + ' days';
+      document.getElementById('ent-used').textContent = (e.taken_days || 0) + ' days';
+      document.getElementById('ent-upcoming').textContent = (e.awaiting_approval_days || 0) + ' days';
+      document.getElementById('ent-remaining').textContent = (e.remaining_days ?? Math.max(0, (e.entitlement_days || 28) - (e.taken_days || 0))) + ' days';
+    }
+
+    // Absence list
+    const el = document.getElementById('absence-list');
+    if (absences.status === 'fulfilled' && absences.value?.length) {
+      const list = absences.value;
+      el.innerHTML = list.map(a => {
+        const status = a.status || 'pending';
+        const cls = status === 'approved' ? 'badge-green' : status === 'declined' ? 'badge-danger' : 'badge-orange';
+        return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-weight:600;color:#f1f5f9;text-transform:capitalize">${a.request_type || 'leave'}</div>
+            <div style="color:#94a3b8;font-size:.875rem">${fmt(a.start_date)} — ${fmt(a.end_date)}</div>
+            ${a.notes ? `<div style="color:#64748b;font-size:.8rem;margin-top:4px">${escHtml(a.notes)}</div>` : ''}
+            ${a.ai_decision_reason ? `<div style="color:#64748b;font-size:.8rem;margin-top:2px;font-style:italic">${escHtml(a.ai_decision_reason)}</div>` : ''}
+          </div>
+          <span class="badge ${cls}">${status}</span>
+        </div>`;
+      }).join('');
+    } else {
+      el.innerHTML = '<div class="card" style="color:#94a3b8;text-align:center;padding:32px">No absence records yet.</div>';
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function daysBetween(d1, d2) {
+  if (!d1 || !d2) return 0;
+  return Math.round((new Date(d2) - new Date(d1)) / 86400000) + 1;
+}
+function fmt(d) { return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—'; }
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.getElementById('new-request-btn').addEventListener('click', () => {
+  document.getElementById('request-result').style.display = 'none';
+  document.getElementById('preview-panel').style.display = 'none';
+  document.getElementById('submit-request-btn').style.display = '';
+  document.getElementById('new-request-modal').style.display = 'block';
+});
+document.getElementById('cancel-request-btn').addEventListener('click', () => {
+  document.getElementById('new-request-modal').style.display = 'none';
+});
+document.getElementById('new-request-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+});
+// ── Approval-likelihood preview (transparency, 2026-07-14) ──
+let previewTimer = null, previewSeq = 0;
+function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(runPreview, 400); }
+['req-type', 'req-start', 'req-end'].forEach(id =>
+  document.getElementById(id).addEventListener('change', schedulePreview));
+
+async function runPreview() {
+  const type = document.getElementById('req-type').value;
+  const start = document.getElementById('req-start').value;
+  const end = document.getElementById('req-end').value;
+  const panel = document.getElementById('preview-panel');
+  if (!start || !end) { panel.style.display = 'none'; return; }
+  const seq = ++previewSeq;
+  panel.style.display = 'block';
+  document.getElementById('preview-headline').textContent = 'Checking…';
+  try {
+    const p = await Wren.api('/api/absence/preview', {
+      method: 'POST',
+      body: { request_type: type, start_date: start, end_date: end }
+    });
+    if (seq !== previewSeq) return; // stale response
+    const colours = { blocked: '#ef4444', low: '#f59e0b', medium: '#f59e0b', high: '#22c55e' };
+    const c = colours[p.band] || '#94a3b8';
+    document.getElementById('preview-percent').textContent = p.band === 'blocked' ? 'Blocked' : p.percent + '%';
+    document.getElementById('preview-percent').style.color = c;
+    const bar = document.getElementById('preview-bar');
+    bar.style.width = (p.band === 'blocked' ? 100 : p.percent) + '%';
+    bar.style.background = c;
+    document.getElementById('preview-headline').textContent = p.headline;
+    const icons = { pass: '✓', flag: '⚠', review: '⏳', fail: '✗' };
+    const iconColours = { pass: '#22c55e', flag: '#f59e0b', review: '#f59e0b', fail: '#ef4444' };
+    document.getElementById('preview-checks').innerHTML = (p.checks || []).map(ch => `
+      <div style="display:flex;gap:8px;font-size:.8rem;line-height:1.45">
+        <span style="color:${iconColours[ch.status] || '#94a3b8'};flex-shrink:0;width:14px">${icons[ch.status] || '·'}</span>
+        <span style="color:#94a3b8"><strong style="color:#cbd5e1">${escHtml(ch.label)}</strong>
+          ${ch.points && ch.points !== '—' ? `<span style="color:${iconColours[ch.status] || '#94a3b8'}"> (${escHtml(ch.points)})</span>` : ''}
+          — ${escHtml(ch.detail)}</span>
+      </div>`).join('');
+    document.getElementById('preview-note').textContent = p.note || '';
+  } catch (err) {
+    if (seq !== previewSeq) return;
+    panel.style.display = 'none';
+  }
+}
+
+document.getElementById('submit-request-btn').addEventListener('click', async () => {
+  const type = document.getElementById('req-type').value;
+  const start = document.getElementById('req-start').value;
+  const end = document.getElementById('req-end').value;
+  const notes = document.getElementById('req-notes').value;
+  if (!start || !end) { Wren.toast('Please select start and end dates', 'error'); return; }
+  const resultEl = document.getElementById('request-result');
+  resultEl.style.display = 'none';
+  try {
+    const data = await Wren.api('/api/absence', {
+      method: 'POST',
+      body: { request_type: type, start_date: start, end_date: end, notes }
+    });
+    const decision = data.ai_decision;
+    const decisionMessages = {
+      auto_approve:          { text: '✓ Your leave is approved. Calendar updated.',                                          bg: '#14532d', color: '#22c55e' },
+      conditional_approve:   { text: '✓ Approved — your manager will discuss this at your next supervision.',               bg: '#14532d', color: '#22c55e' },
+      manual_review:         { text: '⏳ Your request needs manager review. They\'ll respond within 2 working days.',        bg: '#451a03', color: '#f59e0b' },
+      decline_clash:         { text: '✗ Not possible — too many of your room would be off. Please pick different dates.',    bg: '#450a0a', color: '#ef4444' },
+      decline_no_entitlement:{ text: `✗ You don't have enough leave days remaining. ${data.ai_reason?.match(/Only ([\d.]+)/)?.[1] || '0'} days available.`, bg: '#450a0a', color: '#ef4444' },
+      decline_notice_period: { text: '✗ Less than 2 days notice. Please contact your manager directly.',                    bg: '#450a0a', color: '#ef4444' },
+    };
+    const msg = decisionMessages[decision] || { text: data.ai_reason || 'Request submitted.', bg: '#1e293b', color: '#f1f5f9' };
+    resultEl.style.cssText = `display:block;padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:.9rem;line-height:1.5;background:${msg.bg};color:${msg.color};border:1px solid ${msg.color}40`;
+    resultEl.textContent = msg.text;
+    document.getElementById('submit-request-btn').style.display = 'none';
+    loadAbsences();
+  } catch (err) {
+    Wren.toast(err.error || 'Could not submit request', 'error');
+  }
+});
+</script>
+</body>
+</html>

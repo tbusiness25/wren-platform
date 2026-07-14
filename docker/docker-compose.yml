@@ -1,0 +1,385 @@
+services:
+  # ── Demo EYFS + Demo Admin (unified) ─────────────────────────────────────────
+  # Serves: ey.getwren.co.uk (port 80) + admin.getwren.co.uk (port 83)
+  # Hostname dispatch in server-unified.js: admin.* → admin portal, else → learning
+  wren-eyfs:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EDITION: eyfs
+    image: wren-eyfs:latest
+    container_name: wren-eyfs
+    restart: unless-stopped
+    command: node editions/eyfs/server-unified.js
+    env_file: ../editions/eyfs/.env
+    environment:
+      - PG_HOST=wren-postgres
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - ../data/eyfs:/app/data
+      - ../data/eyfs/uploads:/app/uploads
+      - ../public:/app/public
+      - ../shared:/app/public/_shared
+    networks:
+      - wren-net
+
+  # ── Children's Corner — REAL customer instance (Toby's colleague's nursery) ──
+  # 4-portal ht image, own schema `childrenscorner`, INSTANCE_SLUG=cc →
+  # cc-admin/cc-hr/cc-parents.getwren.co.uk = portals, childrenscorner.getwren.co.uk
+  # = learning. First-run setup wizard; Ollama AI (sovereign). NOT a demo. Host :8197.
+  # (Converted from the 2-portal eyfs image 2026-07-07, while still empty.)
+  wren-childrenscorner:
+    image: wren-ht:latest
+    container_name: wren-childrenscorner
+    restart: unless-stopped
+    command: node editions/ht/server-unified.js
+    env_file: ../editions/ht/.env
+    environment:
+      - PG_HOST=wren-postgres
+      - PG_SCHEMA=childrenscorner
+      - INSTANCE_SLUG=cc
+      # CC is a NURSERY on the school image — force the EYFS setup wizard (2026-07-09)
+      - WREN_EDITION_FAMILY=eyfs
+      - DEMO_MODE=false
+      - AI_DEMO_MODE=false
+      - AI_PROVIDER=ollama
+      - NURSERY_NAME=Children's Corner
+    ports:
+      - "127.0.0.1:8197:3000"
+      - "100.126.215.7:8197:3000"
+    volumes:
+      - ../public:/app/public
+      - ../shared:/app/public/_shared
+      - ../src:/app/src:ro
+      - ../scripts:/app/scripts:ro
+      - ../editions/ht/server-unified.js:/app/editions/ht/server-unified.js:ro
+      - ../editions/admin/public:/app/editions/admin/public:ro
+      - ../editions/hr/public:/app/editions/hr/public:ro
+      - ../editions/parents/public:/app/editions/parents/public:ro
+      - ../editions/primary/public:/app/editions/primary/public:ro
+      - ../editions/eyfs/public:/app/editions/eyfs/public:ro
+      - ../data/childrenscorner:/app/data
+      - ../data/childrenscorner/uploads:/app/uploads
+    networks:
+      - wren-net
+
+  # ── HTPS — REAL customer (Toby's school colleague, EYFS reception+nursery only) ──
+  # 4-portal ht image, own schema `htps`, INSTANCE_SLUG=htps → htps-admin/htps-hr/
+  # htps-parents.getwren.co.uk = portals, htps.getwren.co.uk = learning. Setup wizard
+  # ready; Ollama AI (sovereign); NOT a demo (ALLOW_WIPE off). Host :8198.
+  wren-htps:
+    image: wren-ht:latest
+    container_name: wren-htps
+    restart: unless-stopped
+    command: node editions/ht/server-unified.js
+    env_file: ../editions/ht/.env
+    environment:
+      - PG_HOST=wren-postgres
+      - PG_SCHEMA=htps
+      - INSTANCE_SLUG=htps
+      - DEMO_MODE=false
+      - AI_DEMO_MODE=false
+      - AI_PROVIDER=ollama
+      - NURSERY_NAME=HTPS
+    ports:
+      - "127.0.0.1:8198:3000"
+      - "100.126.215.7:8198:3000"
+    volumes:
+      - ../public:/app/public
+      - ../shared:/app/public/_shared
+      - ../src:/app/src:ro
+      - ../scripts:/app/scripts:ro
+      - ../editions/ht/server-unified.js:/app/editions/ht/server-unified.js:ro
+      - ../editions/admin/public:/app/editions/admin/public:ro
+      - ../editions/hr/public:/app/editions/hr/public:ro
+      - ../editions/parents/public:/app/editions/parents/public:ro
+      - ../editions/primary/public:/app/editions/primary/public:ro
+      - ../editions/eyfs/public:/app/editions/eyfs/public:ro
+      - ../data/htps:/app/data
+      - ../data/htps/uploads:/app/uploads
+    networks:
+      - wren-net
+
+  # ── Haven — care-home edition DEMO (paid arm; schema haven_demo) ──
+  # Reuses the wren-eyfs image (same node_modules); Haven code is bind-mounted
+  # dev-style (like wren-ladn-dev). Single portal on host :8199.
+  # NOT the retired legacy haven-* stack — that stays dead.
+  wren-haven:
+    image: wren-eyfs:latest
+    container_name: wren-haven
+    restart: unless-stopped
+    command: node editions/haven/server.js
+    env_file: ../editions/haven/.env
+    environment:
+      - PG_HOST=wren-postgres
+      - PG_SCHEMA=haven_demo
+    ports:
+      - "127.0.0.1:8199:3000"
+      - "100.126.215.7:8199:3000"
+    volumes:
+      - ../editions/haven:/app/editions/haven:ro
+      - ../src:/app/src:ro
+      - ../scripts:/app/scripts:ro
+      - ../public:/app/public
+      - ../shared:/app/public/_shared
+      - ../data/haven:/app/data
+    networks:
+      - wren-net
+
+  # ── Demo Primary — 4-portal unified (admin/HR/parents/learning) ──
+  # Host dispatch: HTadmin.*→admin, HThr.*→hr, HTparents.*→parents, else→learning
+  wren-primary:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EDITION: primary
+    image: wren-primary:latest
+    container_name: wren-primary
+    restart: unless-stopped
+    command: node editions/primary/server-unified.js
+    env_file: ../editions/primary/.env
+    environment:
+      - PG_HOST=wren-postgres
+      - ALLOW_WIPE=true          # HTPS test portals: lets colleagues reset (System → Danger zone)
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - ../public:/app/public
+      - ../shared:/app/public/_shared
+      - ../editions/primary/server-unified.js:/app/editions/primary/server-unified.js:ro  # durable htps-* dispatch
+      - ../editions/admin/public:/app/editions/admin/public:ro
+      - ../editions/hr/public:/app/editions/hr/public:ro
+      - ../editions/parents/public:/app/editions/parents/public:ro
+    networks:
+      - wren-net
+
+  # ── Demo Secondary ────────────────────────────────────────────────────────────
+  wren-secondary:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EDITION: secondary
+    image: wren-secondary:latest
+    container_name: wren-secondary
+    restart: unless-stopped
+    env_file: ../editions/secondary/.env
+    environment:
+      - PG_HOST=wren-postgres
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - ../public:/app/public
+      - ../shared:/app/public/_shared
+    networks:
+      - wren-net
+
+  # ── HT School Test Instance — 4-portal unified ──────────────────────────────
+  # Serves HT colleagues testing Wren. Combined Primary+EYFS context.
+  # Host dispatch: ht-roost.*→admin, ht-seed.*→hr, ht-nest.*→parents, ht-egg.*→learning
+  # CF tunnel: ht-egg/ht-seed/ht-roost/ht-nest.getwren.co.uk → nginx port 89 → :8196
+  # ALLOW_WIPE=true: enables "Wipe & Reset Demo Data" in admin danger zone
+  wren-ht:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EDITION: ht
+    image: wren-ht:latest
+    container_name: wren-ht
+    restart: unless-stopped
+    command: node editions/ht/server-unified.js
+    env_file: ../editions/ht/.env
+    environment:
+      - PG_HOST=wren-postgres
+      - ALLOW_WIPE=true
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - ../public:/app/public
+      - ../shared:/app/public/_shared
+      - ../editions/ht/server-unified.js:/app/editions/ht/server-unified.js:ro
+      - ../editions/admin/public:/app/editions/admin/public:ro
+      - ../editions/hr/public:/app/editions/hr/public:ro
+      - ../editions/parents/public:/app/editions/parents/public:ro
+      - ../editions/primary/public:/app/editions/primary/public:ro
+      - ../data/ht:/app/data
+      - ../data/ht/uploads:/app/uploads
+    networks:
+      - wren-net
+
+  # ── LADN Production — unified (EY learning + Admin + HR + Parents) ────────────
+  # Serves all *.littleangelsealing.co.uk domains on a single container.
+  # Hostname dispatch in server-unified.js:
+  #   admin.*   → admin portal  (was wren-ladn-admin, nginx port 85)
+  #   hr.*      → HR portal     (was wren-hr,         nginx port 87)
+  #   parents.* → parents portal(was wren-parents,     nginx port 86)
+  #   ey.*      → learning portal (was wren-ladn,     nginx port 84)
+  wren-ladn:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EDITION: ladn
+    image: wren-ladn:latest
+    container_name: wren-ladn
+    restart: unless-stopped
+    command: node editions/ladn/server-unified.js
+    env_file:
+      - ../editions/ladn/.env
+      - ../editions/ladn-admin/.env
+      - ../editions/hr/.env
+      - ../editions/parents/.env
+    environment:
+      - PG_HOST=wren-postgres
+      - WREN_EDITION=ladn
+      # Prod-only go-live gates (2026-07-09): staff email gateway sends for real,
+      # planner reminders ping Telegram. Dev (wren-ladn-dev) stays dry-run.
+      - EMAIL_GATEWAY_LIVE=on
+      - PLANNER_TELEGRAM=on
+    volumes:
+      - ../data/ladn:/app/data
+      - ../data/ladn/uploads:/app/uploads
+      - /home/toby/.config/rclone:/root/.config/rclone:rw
+      - /home/toby/secrets:/home/toby/secrets:ro
+      - ../data/parents-resources:/app/parents-resources:ro
+      - /home/toby/wren/scripts:/app/scripts:ro
+      - /home/toby/wren-backups:/var/backups/wren:ro
+      - /var/run/clamav:/var/run/clamav:ro
+      - /var/log/clamav:/var/log/clamav:ro
+      # Website Builder (2026-07-12): live public-site dir (served ro by the
+      # nursery-website nginx container) so /api/website-builder can publish pages.
+      - /opt/site-manager/data/sites/www:/app/website-live
+    networks:
+      - wren-net
+      - mqtt-net
+      - qdrant-net   # apprentice ("Nestling") RAG → qdrant-work 'apprentice' collection
+
+  # ── Insights stats service (anomaly detection + forecasting) ─────────────────
+  wren-insights-stats:
+    build:
+      context: ../services/insights-stats
+      dockerfile: Dockerfile
+    image: wren-insights-stats:latest
+    container_name: wren-insights-stats
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      - PG_HOST=wren-postgres
+      - PG_PORT=5432
+      - PG_DB=wren
+      - PG_USER=wren
+      - PG_PASSWORD=${PG_PASSWORD}
+    networks:
+      - wren-net
+
+  # ── FET timetable solver service ──────────────────────────────────────────────
+  wren-fet-service:
+    build:
+      context: ../services/fet
+      dockerfile: Dockerfile
+    image: wren-fet-service:latest
+    container_name: wren-fet-service
+    restart: unless-stopped
+    env_file: ../editions/eyfs/.env
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      - PORT=3030
+    networks:
+      - wren-net
+
+  # ── Whisper transcription service ─────────────────────────────────────────────
+  wren-whisper:
+    build:
+      context: /home/toby/docker-services/whisper-service
+      dockerfile: Dockerfile
+    image: wren-whisper:latest
+    container_name: wren-whisper
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      - wren-net
+
+  # ── n8n workflow backend (per-school, Wren-managed) ──────────────────────────
+  wren-n8n:
+    image: n8nio/n8n:latest
+    container_name: wren-n8n
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/London
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_SECURE_COOKIE=false
+      - N8N_RUNNERS_ENABLED=false
+      - N8N_SKIP_WEBHOOK_BASIC_AUTH=true
+      - N8N_PROXY_HOPS=1
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_CORS_ORIGINS=*
+      - N8N_USER_MANAGEMENT_DISABLED=true
+      - N8N_ENCRYPTION_KEY=${WREN_N8N_ENCRYPTION_KEY:-changeme_set_in_env}
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=wren-postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=wren
+      - DB_POSTGRESDB_SCHEMA=n8n_wren
+      - DB_POSTGRESDB_USER=wren
+      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD}
+      - WEBHOOK_URL=${WREN_N8N_WEBHOOK_URL:-http://localhost:5678/}
+    volumes:
+      - wren-n8n-data:/home/node/.n8n
+    networks:
+      - wren-net
+
+  # ── Nginx reverse proxy ───────────────────────────────────────────────────────
+  wren-nginx:
+    image: nginx:alpine
+    container_name: wren-nginx
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    ports:
+      # CE Control 1: dual-bind to localhost (cloudflared) + Tailscale (direct access)
+      - "127.0.0.1:8192:80"        # demo-eyfs — cloudflared-getwren
+      - "100.126.215.7:8192:80"    # demo-eyfs — Tailscale
+      - "127.0.0.1:8193:81"        # demo-primary — cloudflared-getwren
+      - "100.126.215.7:8193:81"    # demo-primary — Tailscale
+      - "127.0.0.1:8194:82"        # demo-secondary — cloudflared-getwren
+      - "100.126.215.7:8194:82"    # demo-secondary — Tailscale
+      - "127.0.0.1:8195:83"        # demo-admin — now served by wren-eyfs
+      - "100.126.215.7:8195:83"    # demo-admin — Tailscale
+      - "127.0.0.1:8196:89"        # ht-school — cloudflared-getwren (CF tunnel)
+      - "100.126.215.7:8196:89"    # ht-school — Tailscale direct
+      - "127.0.0.1:8092:84"        # ladn production (learning) — cloudflared-sites
+      - "100.126.215.7:8092:84"    # ladn production — Tailscale
+      - "127.0.0.1:3005:85"        # ladn admin — cloudflared-sites
+      - "100.126.215.7:3005:85"    # ladn admin — Tailscale
+      - "127.0.0.1:8088:86"        # ladn parents portal — cloudflared-sites
+      - "100.126.215.7:8088:86"    # ladn parents portal — Tailscale
+      - "127.0.0.1:8091:87"        # ladn hr portal — cloudflared-sites
+      - "100.126.215.7:8091:87"    # ladn hr portal — Tailscale
+      - "100.126.215.7:5679:88"    # wren-n8n — Tailscale only (manager-only access)
+    volumes:
+      - ./nginx:/etc/nginx/conf.d:ro
+    networks:
+      - wren-net
+
+volumes:
+  wren-n8n-data:
+
+networks:
+  wren-net:
+    external: true
+    name: wren-net
+  mqtt-net:
+    external: true
+    name: mqtt_mqtt-net
+  qdrant-net:
+    external: true
+    name: qdrant-work_default

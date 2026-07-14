@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Drafts">
+  <meta name="wren-app-chat"  content="on">
+  <title>Drafts · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-drafts-page {
+      padding: 12px 12px env(safe-area-inset-bottom, 16px);
+    }
+
+    /* Back button injected into topbar */
+    #ey-drafts-back {
+      width: 44px; height: 44px;
+      background: transparent; border: none;
+      color: var(--c-text); cursor: pointer;
+      border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #ey-drafts-back:hover { background: rgba(255,255,255,0.06); }
+
+    /* Search + filter row */
+    #drafts-filters {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .drafts-search-input {
+      flex: 1;
+      height: 40px;
+      padding: 0 12px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text);
+      font-size: .88rem;
+      outline: none;
+    }
+    .drafts-search-input:focus { border-color: var(--c-blue); }
+    .drafts-filter-select {
+      height: 40px;
+      padding: 0 10px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text);
+      font-size: .85rem;
+      cursor: pointer;
+      outline: none;
+      min-width: 120px;
+    }
+    .drafts-filter-select:focus { border-color: var(--c-blue); }
+
+    /* Draft card */
+    .ey-draft-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+
+    .ey-draft-children {
+      font-size: .82rem;
+      font-weight: 700;
+      color: var(--c-blue);
+      margin-bottom: 6px;
+    }
+
+    .ey-draft-text {
+      font-size: .9rem;
+      color: var(--c-text);
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 10px;
+      white-space: pre-wrap;
+    }
+
+    .ey-draft-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .ey-draft-ts {
+      font-size: .78rem;
+      color: var(--c-muted);
+    }
+
+    .ey-draft-continue-btn {
+      height: 36px;
+      padding: 0 18px;
+      background: var(--c-blue);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-size: .88rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s;
+      flex-shrink: 0;
+    }
+    .ey-draft-continue-btn:hover { opacity: .88; }
+
+    .ey-draft-discard-btn {
+      height: 36px;
+      padding: 0 14px;
+      background: transparent;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-red);
+      font-size: .85rem;
+      cursor: pointer;
+      transition: border-color .15s;
+      flex-shrink: 0;
+    }
+    .ey-draft-discard-btn:hover { border-color: var(--c-red); }
+
+    /* Empty state */
+    .ey-drafts-empty {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--c-muted);
+    }
+    .ey-drafts-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .ey-drafts-empty-title { font-size: 1rem; font-weight: 700; color: var(--c-text); margin-bottom: 6px; }
+    .ey-drafts-empty-msg { font-size: .88rem; }
+
+    .ey-drafts-section-label {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--c-muted);
+      margin-bottom: 8px;
+      padding: 0 2px;
+    }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-drafts-page">
+  <div id="drafts-filters">
+    <input type="text" class="drafts-search-input" id="drafts-search" placeholder="Search drafts...">
+    <select class="drafts-filter-select" id="filter-child">
+      <option value="">All children</option>
+    </select>
+    <select class="drafts-filter-select" id="filter-author">
+      <option value="">All authors</option>
+    </select>
+  </div>
+  <div id="ey-drafts-content">
+    <div class="app-skeleton" style="height:96px;border-radius:14px;margin-bottom:10px"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script src="/js/wren-obs-outbox.js?v=20260617" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var DRAFT_KEY = 'eyObservationDraft';
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ── Inject back button ─────────────────────────────────────────────────────── */
+  function _injectBack() {
+    var topbar   = document.getElementById('wren-app-topbar');
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (!topbar || !hamburger) return;
+
+    var btn = document.createElement('button');
+    btn.id   = 'ey-drafts-back';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Back to More');
+    btn.innerHTML =
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+      '     stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+    btn.addEventListener('click', function () {
+      if (history.length > 1) history.back();
+      else location.href = '/ey/more';
+    });
+    hamburger.parentNode.insertBefore(btn, hamburger);
+    hamburger.style.display = 'none';
+  }
+
+  /* ── Format timestamp ───────────────────────────────────────────────────────── */
+  function _relTime(ts) {
+    var diff = Date.now() - ts;
+    var mins = Math.floor(diff / 60000);
+    if (mins < 1)   return 'just now';
+    if (mins < 60)  return mins + 'm ago';
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24)   return hrs + 'h ago';
+    var days = Math.floor(hrs / 24);
+    return days + 'd ago';
+  }
+
+  /* ── Discard draft ──────────────────────────────────────────────────────────── */
+  function _discard() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+    _render();
+  }
+
+  /* ── Build the local-draft section HTML ─────────────────────────────────────── */
+  function _draftSectionHtml() {
+    var draft = null;
+    try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (_) {}
+    var hasDraft = draft && draft.text && draft.text.trim();
+    if (!hasDraft) return '';
+
+    var childLabel = 'No child selected';
+    if (draft.childIds && draft.childIds.length) {
+      childLabel = draft.childIds.length + ' child' + (draft.childIds.length > 1 ? 'ren' : '') + ' selected';
+    }
+    var preview = _esc(draft.text || '');
+    var ts = draft.ts ? _relTime(draft.ts) : '';
+
+    return '<div class="ey-drafts-section-label">Saved draft</div>' +
+      '<div class="ey-draft-card">' +
+      '  <div class="ey-draft-children">' + childLabel + '</div>' +
+      '  <div class="ey-draft-text">' + preview + '</div>' +
+      '  <div class="ey-draft-meta">' +
+      '    <span class="ey-draft-ts">' + (ts ? 'Saved ' + ts : '') + '</span>' +
+      '    <div style="display:flex;gap:8px">' +
+      '      <button class="ey-draft-discard-btn" id="ey-draft-discard" type="button">Discard</button>' +
+      '      <button class="ey-draft-continue-btn" id="ey-draft-continue" type="button">Continue ›</button>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>';
+  }
+
+  /* ── Filter state ───────────────────────────────────────────────────────────── */
+  var _searchText = '';
+  var _filterChild = '';
+  var _filterAuthor = '';
+  var _allEntries = [];
+
+  /* ── Build the outbox section HTML (drafts + pending-sync) ──────────────────── */
+  function _pendingSectionHtml(entries) {
+    if (!entries || !entries.length) return '';
+
+    var drafts  = entries.filter(function(e) { return e.status === 'draft'; });
+    var pending = entries.filter(function(e) { return e.status !== 'draft'; });
+
+    function _entryHtml(e, isDraft) {
+      var label   = e.child_label ? _esc(e.child_label) : 'Observation';
+      var txt     = _esc(((e.obs && e.obs.observation_text) || '').slice(0, 160));
+      var ts      = e.created_at ? _relTime(e.created_at) : '';
+      var nPhoto  = (e.photo_blobs && e.photo_blobs.length) || 0;
+      var failed  = e.status === 'failed';
+      var syncing = e.status === 'syncing';
+      var statusTxt = isDraft  ? '📝 Saved draft — tap Submit to send'
+                    : failed   ? '⚠ Failed' + (e.retries ? ' (' + e.retries + ' tries)' : '')
+                    : syncing  ? '🔄 Syncing…'
+                    :            '⏳ Waiting to sync';
+      var statusCol = failed ? 'var(--c-red)' : 'var(--c-muted)';
+      var actionLabel = isDraft ? 'Submit now' : 'Retry now';
+      return '<div class="ey-draft-card">' +
+        '  <div class="ey-draft-children">' + label +
+             (nPhoto ? ' · ' + nPhoto + ' photo' + (nPhoto > 1 ? 's' : '') : '') + '</div>' +
+        '  <div class="ey-draft-text">' + txt + '</div>' +
+        '  <div class="ey-draft-meta">' +
+        '    <span class="ey-draft-ts" style="color:' + statusCol + '">' + statusTxt +
+             (!isDraft && ts ? ' · ' + ts : (ts ? ' · ' + ts : '')) + '</span>' +
+        '    <div style="display:flex;gap:8px">' +
+        '      <button class="ey-draft-discard-btn ey-pending-remove" type="button" data-uuid="' + _esc(e.uuid) + '">Remove</button>' +
+        '      <button class="ey-draft-continue-btn ey-pending-retry" type="button" data-uuid="' + _esc(e.uuid) + '">' + actionLabel + '</button>' +
+        '    </div>' +
+        '  </div>' +
+        '</div>';
+    }
+
+    var html = '';
+    if (drafts.length) {
+      var sorted = drafts.sort(function(a,b){ return (a.created_at||0) - (b.created_at||0); });
+      html += '<div class="ey-drafts-section-label" style="margin-top:18px">Saved drafts</div>';
+      html += sorted.map(function(e) { return _entryHtml(e, true); }).join('');
+    }
+    if (pending.length) {
+      var sortedP = pending.sort(function(a,b){ return (a.created_at||0) - (b.created_at||0); });
+      html += '<div class="ey-drafts-section-label" style="margin-top:18px">Pending sync</div>';
+      html += sortedP.map(function(e) { return _entryHtml(e, false); }).join('');
+    }
+    return html;
+  }
+
+  /* ── Apply filters ──────────────────────────────────────────────────────────── */
+  function _applyFilters(entries) {
+    return entries.filter(function(e) {
+      if (_searchText) {
+        var txt = ((e.obs && e.obs.observation_text) || '').toLowerCase();
+        var label = (e.child_label || '').toLowerCase();
+        if (txt.indexOf(_searchText) === -1 && label.indexOf(_searchText) === -1) return false;
+      }
+      if (_filterChild && e.child_label !== _filterChild) return false;
+      if (_filterAuthor && e.author_name !== _filterAuthor) return false;
+      return true;
+    });
+  }
+
+  /* ── Build filter dropdowns ─────────────────────────────────────────────────── */
+  function _buildFilters(entries) {
+    var children = {}, authors = {};
+    entries.forEach(function(e) {
+      if (e.child_label) children[e.child_label] = true;
+      if (e.author_name) authors[e.author_name] = true;
+    });
+    var childSel = document.getElementById('filter-child');
+    var authSel = document.getElementById('filter-author');
+    if (childSel) {
+      childSel.innerHTML = '<option value="">All children</option>' +
+        Object.keys(children).sort().map(function(c) {
+          return '<option value="' + _esc(c) + '">' + _esc(c) + '</option>';
+        }).join('');
+      childSel.value = _filterChild;
+    }
+    if (authSel) {
+      authSel.innerHTML = '<option value="">All authors</option>' +
+        Object.keys(authors).sort().map(function(a) {
+          return '<option value="' + _esc(a) + '">' + _esc(a) + '</option>';
+        }).join('');
+      authSel.value = _filterAuthor;
+    }
+  }
+
+  /* ── Render (combines local draft + outbox queue) ───────────────────────────── */
+  function _render() {
+    var container = document.getElementById('ey-drafts-content');
+    if (!container) return;
+
+    var listPromise = (window.WrenObsOutbox && WrenObsOutbox.list)
+      ? WrenObsOutbox.list().catch(function () { return []; })
+      : Promise.resolve([]);
+
+    listPromise.then(function (entries) {
+      _allEntries = entries;
+      _buildFilters(entries);
+      var filtered = _applyFilters(entries);
+      var draftHtml   = _draftSectionHtml();
+      var pendingHtml = _pendingSectionHtml(filtered);
+
+      if (!draftHtml && !pendingHtml) {
+        container.innerHTML =
+          '<div class="ey-drafts-empty">' +
+          '  <div class="ey-drafts-empty-icon">📝</div>' +
+          '  <div class="ey-drafts-empty-title">No drafts</div>' +
+          '  <div class="ey-drafts-empty-msg">Start an observation — it saves automatically as you type. Offline observations appear here until they sync.</div>' +
+          '</div>';
+        return;
+      }
+
+      container.innerHTML = draftHtml + pendingHtml;
+
+      var disc = document.getElementById('ey-draft-discard');
+      if (disc) disc.addEventListener('click', function () {
+        if (confirm('Discard this draft?')) _discard();
+      });
+      var cont = document.getElementById('ey-draft-continue');
+      if (cont) cont.addEventListener('click', function () {
+        if (window.Wren) Wren.navigate('/ey/observation/new');
+        else location.href = '/ey/observation/new';
+      });
+
+      container.querySelectorAll('.ey-pending-retry').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (!window.WrenObsOutbox) return;
+          btn.textContent = 'Syncing…'; btn.disabled = true;
+          WrenObsOutbox.retryNow(btn.dataset.uuid).then(function () { _render(); });
+        });
+      });
+      container.querySelectorAll('.ey-pending-remove').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (!window.WrenObsOutbox) return;
+          if (!confirm('Remove this offline observation? It will NOT be saved.')) return;
+          WrenObsOutbox.remove(btn.dataset.uuid).then(function () { _render(); });
+        });
+      });
+    });
+  }
+
+  /* ── Boot ───────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function () {
+    _injectBack();
+    _render();
+    window.addEventListener('wren:outbox-changed', _render);
+    window.addEventListener('wren:outbox-synced',  _render);
+
+    var searchInp = document.getElementById('drafts-search');
+    var childSel = document.getElementById('filter-child');
+    var authSel = document.getElementById('filter-author');
+    if (searchInp) searchInp.addEventListener('input', function() {
+      _searchText = searchInp.value.toLowerCase().trim();
+      _render();
+    });
+    if (childSel) childSel.addEventListener('change', function() {
+      _filterChild = childSel.value;
+      _render();
+    });
+    if (authSel) authSel.addEventListener('change', function() {
+      _filterAuthor = authSel.value;
+      _render();
+    });
+  });
+}());
+</script>
+</body>
+</html>

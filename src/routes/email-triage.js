@@ -172,7 +172,7 @@ router.post('/:id/reclassify', authenticate, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const em = rows[0];
 
-    const prompt = `You are an email classifier for Nursery Manager, manager of Your Nursery in Ealing, West London.
+    const prompt = `You are an email classifier for Toby Jones, manager of Little Angels Day Nursery in Ealing, West London.
 Classify the incoming email. Return ONLY valid JSON with these exact fields:
 {"category":"parent|supplier|council|staff|newsletter|spam|personal|transactional|other","importance":3,"sender_type":"human|automated|mixed","summary":"one sentence description","suggested_action":"reply-now|reply-soon|fyi|archive|unsubscribe|spam-report","confidence":0.85,"reasoning":"brief why"}
 Importance: 1=spam/auto, 2=info, 3=read, 4=reply within 24h, 5=urgent/safety.

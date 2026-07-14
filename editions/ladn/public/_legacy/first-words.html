@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>50 First Words — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .word-bubble{display:inline-flex;align-items:center;gap:6px;background:#4a9abf22;border:1px solid #4a9abf44;color:#4a9abf;padding:6px 12px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;transition:.15s;margin:4px}
+    .word-bubble:hover{background:#4a9abf33;border-color:#4a9abf}
+    .child-word-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:16px;margin-bottom:12px}
+    .progress-ring{display:flex;align-items:center;gap:12px}
+    .progress-bar{height:8px;background:#2d3748;border-radius:4px;flex:1}
+    .progress-fill{height:8px;border-radius:4px;background:linear-gradient(90deg,#4a9abf,#22c55e);transition:.3s}
+    .modal-overlay{position:fixed;inset:0;background:#0008;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+    .modal{background:#1e293b;border:1px solid #2d3748;border-radius:16px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+    .modal-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px}
+    .filter-chip{padding:4px 12px;border-radius:16px;font-size:12px;background:#1e293b;border:1px solid #2d3748;color:#94a3b8;cursor:pointer;transition:.15s}
+    .filter-chip.active{background:#4a9abf22;border-color:#4a9abf;color:#4a9abf}
+    .word-date{font-size:10px;color:#475569;margin-top:2px}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">50 First Words</div>
+      <div class="page-subtitle">Baby Room vocabulary milestones</div>
+    </div>
+    <button class="btn btn-primary" id="btn-add-word">+ Add Word</button>
+  </div>
+
+  <!-- Child filter chips -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px" id="child-chips"></div>
+
+  <div id="words-area"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<!-- ADD WORD MODAL -->
+<div id="word-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-title" id="word-modal-title">Record a First Word</div>
+    <input type="hidden" id="w-id">
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Child *</div>
+      <select class="form-control" id="w-child"></select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Word *</div>
+        <input class="form-control" id="w-word" placeholder="e.g. mama, duck, more..." autocapitalize="none">
+      </div>
+      <div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Date Heard</div>
+        <input type="date" class="form-control" id="w-date">
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Context / Story</div>
+      <textarea class="form-control" id="w-context" rows="2" placeholder="How was it said? What was happening? Any funny details!"></textarea>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="w-share" checked>
+        <span style="font-size:13px;color:#f1f5f9">Share with parents via parents portal</span>
+      </label>
+    </div>
+    <div id="word-count-row" style="display:none;margin-bottom:10px;padding:10px;background:#0f172a;border-radius:8px">
+      <div style="font-size:12px;color:#94a3b8" id="word-count-text"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-secondary" id="btn-word-cancel">Cancel</button>
+      <button class="btn btn-primary" id="btn-word-save">Record Word</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const GOAL = 50;
+let allWords = [], children = [], selectedChild = null;
+
+async function init() {
+  const [w, c] = await Promise.all([
+    Wren.api('/api/first-words').catch(() => []),
+    Wren.api('/api/children').catch(() => [])
+  ]);
+  allWords = w || [];
+  // Filter to baby room children only (room_id=1)
+  children = (c || []).filter(ch => ch.room_id === 1 || !ch.room_id);
+  renderChips();
+  renderWords();
+}
+
+function renderChips() {
+  const row = document.getElementById('child-chips');
+  // Count words per child
+  const counts = {};
+  allWords.forEach(w => { counts[w.child_id] = (counts[w.child_id] || 0) + 1; });
+
+  // All chip
+  const allChip = document.createElement('span');
+  allChip.className = 'filter-chip' + (selectedChild === null ? ' active' : '');
+  allChip.textContent = 'All Children';
+  allChip.onclick = () => { selectedChild = null; renderChips(); renderWords(); };
+  row.innerHTML = '';
+  row.appendChild(allChip);
+
+  children.forEach(c => {
+    const cnt = counts[c.id] || 0;
+    const chip = document.createElement('span');
+    chip.className = 'filter-chip' + (selectedChild === c.id ? ' active' : '');
+    chip.textContent = `${c.first_name} (${cnt}/${GOAL})`;
+    chip.onclick = () => { selectedChild = c.id; renderChips(); renderWords(); };
+    row.appendChild(chip);
+  });
+}
+
+function renderWords() {
+  const area = document.getElementById('words-area');
+  if (selectedChild !== null) {
+    // Single child view
+    const child = children.find(c => c.id === selectedChild);
+    const words = allWords.filter(w => w.child_id === selectedChild);
+    area.innerHTML = renderChildWords(child, words);
+  } else {
+    // All children
+    if (!children.length) {
+      area.innerHTML = '<div class="empty-state">No children in the Baby Room.</div>';
+      return;
+    }
+    area.innerHTML = children.map(c => {
+      const words = allWords.filter(w => w.child_id === c.id);
+      return renderChildWords(c, words);
+    }).join('');
+  }
+}
+
+function renderChildWords(child, words) {
+  if (!child) return '';
+  const pct = Math.min(100, Math.round(words.length / GOAL * 100));
+  const milestones = [10, 20, 30, 50];
+  const reached = milestones.filter(m => words.length >= m);
+  return `<div class="child-word-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div>
+        <div style="font-weight:700;font-size:16px;color:#f1f5f9">${child.first_name} ${child.last_name}</div>
+        <div style="font-size:12px;color:#94a3b8">${words.length} of ${GOAL} words</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        ${reached.map(m => `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:#22c55e22;color:#22c55e">${m} words ★</span>`).join('')}
+        <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px" data-action="add-for-child" data-id="${child.id}">+ Word</button>
+      </div>
+    </div>
+    <div class="progress-ring" style="margin-bottom:12px">
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div style="font-size:13px;font-weight:700;color:#4a9abf;flex-shrink:0">${pct}%</div>
+    </div>
+    ${words.length ? `<div style="display:flex;flex-wrap:wrap">${words.map(w => `
+      <div class="word-bubble" data-action="view-word" data-id="${w.id}">
+        ${w.word}
+        <div class="word-date">${new Date(w.date_observed).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>
+      </div>`).join('')}
+    </div>` : `<div style="color:#475569;font-size:13px;text-align:center;padding:16px">
+      No words recorded yet. Be the first to catch one! 🎉
+    </div>`}
+  </div>`;
+}
+
+function viewWord(id) {
+  const w = allWords.find(x => x.id === id);
+  if (!w) return;
+  const child = children.find(c => c.id === w.child_id);
+  // Show in a modal-like toast — for now open edit modal
+  document.getElementById('w-id').value = w.id;
+  document.getElementById('word-modal-title').textContent = `"${w.word}"`;
+  document.getElementById('w-child').value = w.child_id;
+  document.getElementById('w-word').value = w.word;
+  document.getElementById('w-date').value = w.date_observed ? w.date_observed.split('T')[0] : '';
+  document.getElementById('w-context').value = w.context || '';
+  document.getElementById('w-share').checked = w.shared_with_parents !== false;
+  document.getElementById('word-count-row').style.display = 'none';
+  document.getElementById('word-modal').style.display = 'flex';
+}
+
+function openAddModal() {
+  document.getElementById('w-id').value = '';
+  document.getElementById('word-modal-title').textContent = 'Record a First Word';
+  document.getElementById('w-child').innerHTML = '<option value="">Select child...</option>' +
+    children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('');
+  if (selectedChild) document.getElementById('w-child').value = selectedChild;
+  document.getElementById('w-word').value = '';
+  document.getElementById('w-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('w-context').value = '';
+  document.getElementById('w-share').checked = true;
+  document.getElementById('word-count-row').style.display = 'none';
+  onChildChange();
+  document.getElementById('word-modal').style.display = 'flex';
+}
+
+function openAddForChild(childId) {
+  openAddModal();
+  document.getElementById('w-child').value = childId;
+  onChildChange();
+}
+
+function onChildChange() {
+  const childId = parseInt(document.getElementById('w-child').value);
+  if (!childId) { document.getElementById('word-count-row').style.display = 'none'; return; }
+  const count = allWords.filter(w => w.child_id === childId).length;
+  const row = document.getElementById('word-count-row');
+  const txt = document.getElementById('word-count-text');
+  row.style.display = '';
+  if (count >= GOAL) {
+    txt.innerHTML = `🏆 <span style="color:#22c55e">Goal reached! ${count} words recorded.</span>`;
+  } else {
+    txt.innerHTML = `${count} words so far · <span style="color:#4a9abf">${GOAL - count} to go to reach ${GOAL}</span>`;
+  }
+}
+
+async function saveWord() {
+  const id = document.getElementById('w-id').value;
+  const childId = document.getElementById('w-child').value;
+  const word = document.getElementById('w-word').value.trim();
+  if (!word) return Wren.toast('Word required', 'error');
+
+  if (id) {
+    // Edit existing
+    try {
+      await Wren.api('/api/first-words/' + id, { method: 'PUT', body: JSON.stringify({
+        context: document.getElementById('w-context').value || null,
+        shared_with_parents: document.getElementById('w-share').checked
+      })});
+      Wren.toast('Updated');
+    } catch(e) { Wren.toast('Error: ' + e.message, 'error'); return; }
+  } else {
+    if (!childId) return Wren.toast('Please select a child', 'error');
+    try {
+      await Wren.api('/api/first-words', { method: 'POST', body: JSON.stringify({
+        child_id: parseInt(childId),
+        word,
+        date_observed: document.getElementById('w-date').value,
+        context: document.getElementById('w-context').value || null,
+        shared_with_parents: document.getElementById('w-share').checked
+      })});
+      Wren.toast(`"${word}" recorded! 🎉`);
+    } catch(e) {
+      if (e.error?.includes('already recorded')) return Wren.toast(`"${word}" is already recorded for this child`, 'error');
+      Wren.toast('Error: ' + e.message, 'error');
+      return;
+    }
+  }
+
+  document.getElementById('word-modal').style.display = 'none';
+  allWords = await Wren.api('/api/first-words').catch(() => []);
+  renderChips();
+  renderWords();
+}
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('btn-add-word').addEventListener('click', openAddModal);
+  document.getElementById('btn-word-cancel').addEventListener('click', function() {
+    document.getElementById('word-modal').style.display = 'none';
+  });
+  document.getElementById('btn-word-save').addEventListener('click', saveWord);
+  document.getElementById('w-child').addEventListener('change', onChildChange);
+  document.getElementById('words-area').addEventListener('click', function(e) {
+    const addBtn = e.target.closest('[data-action="add-for-child"]');
+    if (addBtn) { openAddForChild(parseInt(addBtn.dataset.id)); return; }
+    const bubble = e.target.closest('[data-action="view-word"]');
+    if (bubble) viewWord(parseInt(bubble.dataset.id));
+  });
+  init();
+});
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

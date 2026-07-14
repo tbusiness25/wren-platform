@@ -84,14 +84,17 @@ router.get('/:id/acknowledgments', async (req, res) => {
   if (!MANAGER_ROLES.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
   const db = getPool();
   try {
+    const { rows: pol } = await db.query('SELECT version FROM policies WHERE id = $1', [req.params.id]);
+    const version = pol[0]?.version;
     const { rows } = await db.query(`
-      SELECT s.id, s.name, s.role, pa.acknowledged_at
+      SELECT s.id, (s.first_name || ' ' || s.last_name) AS name, s.role, pa.acknowledged_at,
+        (pa.id IS NOT NULL) AS signed_current_version
       FROM staff s
       LEFT JOIN policy_acknowledgments pa
-        ON pa.staff_id = s.id AND pa.policy_id = $1
+        ON pa.staff_id = s.id AND pa.policy_id = $1 AND pa.policy_version = $2
       WHERE s.is_active = true
-      ORDER BY pa.acknowledged_at NULLS LAST, s.name`,
-      [req.params.id]);
+      ORDER BY pa.acknowledged_at NULLS LAST, s.first_name, s.last_name`,
+      [req.params.id, version]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -133,6 +136,25 @@ router.patch('/:id', async (req, res) => {
       WHERE id = $6 RETURNING *`,
       [title, content, category, required_roles, is_active, req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
+
+    // Version bump = re-issue for signing: notify every active staff member whose
+    // role the policy applies to (2026-07-14 — EYFS-change re-sign flow).
+    if (bump_version) {
+      const p = rows[0];
+      try {
+        await db.query(`
+          INSERT INTO notifications (recipient_type, recipient_id, category, title, body, link, related_table, related_id, priority)
+          SELECT 'staff', s.id, 'policy',
+            $1, $2, '/policies.html', 'policies', $3, 'high'
+          FROM staff s
+          WHERE s.is_active = true AND s.role = ANY($4::text[])`,
+          [`✍️ Policy updated — please re-sign: ${p.title}`,
+           `"${p.title}" has been updated to version ${p.version}. Please read the new version and sign to confirm. Your previous signature no longer covers this version.`,
+           p.id, p.required_roles || []]);
+      } catch (e) {
+        console.error('policies re-sign notify:', e.message);
+      }
+    }
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

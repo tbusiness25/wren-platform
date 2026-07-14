@@ -10,6 +10,23 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { getPool } = require('../db/pool');
+const { notify } = require('../services/notification-dispatcher');
+
+// Reminder audit table (idempotent; runs once at module load, after requires).
+(async () => {
+  try {
+    await getPool().query(`
+      CREATE TABLE IF NOT EXISTS funding_declaration_reminders (
+        child_id int NOT NULL,
+        term_id int NOT NULL,
+        sent_at timestamptz NOT NULL DEFAULT NOW(),
+        sent_by int NOT NULL,
+        PRIMARY KEY (child_id, term_id)
+      )`);
+  } catch (e) {
+    console.error('[funding-declarations] reminder table init error:', e.message);
+  }
+})();
 
 // Dual auth: staff tokens (integer id) OR parent tokens (aud=parents, child_id).
 router.use((req, res, next) => {
@@ -25,7 +42,6 @@ router.use((req, res, next) => {
   }
 });
 
-// Parents may only touch their own child; staff may touch any.
 function childGuard(req, res, next) {
   if (!req.isParent) return next();
   const cid = parseInt(req.params.childId);
@@ -77,7 +93,7 @@ router.get('/template', (req, res) => {
         fields: [
           { key: 'accurate', label: 'The information I have given is true and accurate.', type: 'checkbox', required: true },
           { key: 'notify_changes', label: 'I will notify the setting of any change in my circumstances.', type: 'checkbox', required: true },
-          { key: 'claim_consent', label: 'I authorise Your Nursery to claim funding from Ealing Council on my behalf.', type: 'checkbox', required: true },
+          { key: 'claim_consent', label: 'I authorise Little Angels Day Nursery to claim funding from Ealing Council on my behalf.', type: 'checkbox', required: true },
           { key: 'data_sharing', label: 'I understand my data is shared with the local authority and DfE/ESFA for funding and audit (UK GDPR — legal obligation / public task).', type: 'checkbox', required: true },
           { key: 'extras_understood', label: 'I understand consumables/extras are charged separately and itemised.', type: 'checkbox', required: true },
         ],
@@ -92,6 +108,52 @@ router.get('/template', (req, res) => {
 });
 
 // ── POST /:childId/sign ───────────────────────────────────────────────────────
+// ── POST /:childId/remind — send reminder to parents (manager only) ──
+router.post('/:childId/remind', childGuard, async (req, res) => {
+  // Only managers can trigger reminders
+  if (!['manager','deputy_manager'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Insufficient role' });
+  }
+  const childId = parseInt(req.params.childId);
+  try {
+    const db = getPool();
+    // Determine term (current if not provided)
+    let termId = null;
+    const { rows: tRows } = await db.query(
+      `SELECT id FROM funding_terms
+       ORDER BY (is_current IS TRUE) DESC, (CURRENT_DATE BETWEEN start_date AND end_date) DESC, start_date DESC LIMIT 1`
+    );
+    if (tRows.length) termId = tRows[0].id;
+    if (!termId) return res.status(400).json({ error: 'No funding term configured' });
+
+    // Insert or update reminder record
+    await db.query(
+      `INSERT INTO funding_declaration_reminders (child_id, term_id, sent_by)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (child_id, term_id) DO UPDATE SET sent_at=NOW(), sent_by=$3`,
+      [childId, termId, req.user.id]
+    );
+
+    // Fetch child name for the parent-facing message
+    const { rows: cRows } = await db.query(
+      `SELECT first_name, last_name FROM children WHERE id=$1`, [childId]
+    );
+    const childName = cRows.length ? `${cRows[0].first_name} ${cRows[0].last_name}` : `Child #${childId}`;
+
+    // In-app notification to the PARENT (house rule: parents get Wren-portal
+    // notifications, never direct email). recipient_id = child_id, as in attendance.js.
+    await db.query(
+      `INSERT INTO notifications (recipient_type, recipient_id, category, title, body, priority)
+       VALUES ('parent', $1, 'funding', $2, $3, 'high')`,
+      [childId, 'Funding declaration needed',
+       `Please sign ${childName}'s funding declaration in the Funding section of the parent portal — the nursery needs it to claim your funded hours from Ealing Council.`]
+    ).catch(() => {});
+    res.json({ ok: true, child_id: childId, term_id: termId });
+  } catch (e) {
+    console.error('[funding-declarations] remind error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 router.post('/:childId/sign', childGuard, async (req, res) => {
   const { payload, signed_name, term_id } = req.body || {};
   if (!payload || typeof payload !== 'object' || !signed_name) {
@@ -125,6 +187,19 @@ router.post('/:childId/sign', childGuard, async (req, res) => {
       [req.params.childId, term, JSON.stringify(payload), String(signed_name).slice(0, 200),
        req.ip, String(req.headers['user-agent'] || '').slice(0, 300), sha]);
     res.status(201).json({ ok: true, id: rows[0].id, signed_at: rows[0].signed_at, sha256: sha });
+    // Alert managers that a funding declaration has been signed (fire-and-forget).
+    try {
+      const { rows: [c] } = await db.query(
+        'SELECT first_name, last_name FROM children WHERE id=$1', [req.params.childId]);
+      const childName = c ? `${c.first_name} ${c.last_name}` : `Child #${req.params.childId}`;
+      const { rows: [t2] } = await db.query('SELECT name FROM funding_terms WHERE id=$1', [term]);
+      notify('funding_declaration_signed', 'all-managers', null,
+        `Funding declaration signed — ${childName}`,
+        `${String(signed_name).slice(0, 100)} signed the parental declaration for ${childName} (${t2 ? t2.name : 'term ' + term}). Ready to review for the funding claim.`,
+        { priority: 'high', relatedTable: 'funding_declarations', relatedId: rows[0].id, link: '/funding.html' });
+    } catch (ne) {
+      console.error('[funding-declarations] notify error (sign saved OK):', ne.message);
+    }
   } catch (e) {
     console.error('[funding-declarations] sign error:', e.message);
     res.status(500).json({ error: e.message });
@@ -167,7 +242,7 @@ td.k{width:40%;color:#555;text-transform:capitalize}.sig{margin-top:28px;border-
 ${section('Child details', p.child)}${section('Parent / carer', p.parent)}${section('Entitlement claimed', p.entitlement)}${section('Declarations', p.declarations)}
 <div class="sig">Signed (typed name as electronic signature): <b>${esc(d.signed_name)}</b></div>
 <div class="legal">This typed-name signature constitutes an electronic signature under the Electronic Communications Act 2000.
-Record sha256: ${esc(d.sha256)} · IP: ${esc(d.ip)} · Your Nursery, 1A Example Lane, London W13 9LU.</div>
+Record sha256: ${esc(d.sha256)} · IP: ${esc(d.ip)} · Little Angels Day Nursery, 1A Dudley Gardens, London W13 9LU.</div>
 <button class="noprint" onclick="window.print()" style="margin-top:20px">Print</button>
 </body></html>`);
   } catch (e) {

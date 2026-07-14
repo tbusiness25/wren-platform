@@ -19,7 +19,7 @@ async function sendTelegram(text) {
 }
 
 // DND ("do not disturb") — settings key 'dnd' = 'on'|'off'. When ON: James offers
-// the deputy (deputy, baby room) instead of Toby, and manager Telegram pings are
+// Ayla (deputy, baby room) instead of Toby, and manager Telegram pings are
 // suppressed (except urgent/safeguarding). Toggled from Roost → System. 2026-07-08.
 async function getDnd(db) {
   try {

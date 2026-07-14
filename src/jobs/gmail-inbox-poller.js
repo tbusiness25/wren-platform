@@ -32,7 +32,7 @@ function isNoReplySender(email) {
 // ── Local-Ollama classification + A/B/C draft generation ──────────────────────
 async function classifyAndDraft(msg) {
   const body = (msg.bodyText || msg.snippet || '').replace(/\s+/g, ' ').slice(0, 1200);
-  const prompt = `You are the inbox assistant for Nursery Manager, manager of Your Nursery, a small nursery in Ealing, West London. An email has arrived. Classify it and propose three short reply options the manager could send.
+  const prompt = `You are the inbox assistant for Toby Jones, manager of Little Angels Day Nursery, a small nursery in Ealing, West London. An email has arrived. Classify it and propose three short reply options the manager could send.
 
 From: ${msg.fromName || ''} <${msg.fromEmail || ''}>
 Subject: ${msg.subject || '(no subject)'}
@@ -41,7 +41,7 @@ Body: ${body}
 Return ONLY valid JSON in exactly this shape (no prose, no markdown):
 {"category":"parent|enquiry|supplier|council|staff|newsletter|spam|personal|transactional|other","importance":3,"needs_reply":true,"summary":"one sentence","suggested_action":"reply-now|reply-soon|fyi|archive|unsubscribe|spam-report","replies":[{"label":"Brief & warm","text":"full reply text option A"},{"label":"Detailed","text":"full reply text option B"},{"label":"Holding reply","text":"full reply text option C"}]}
 
-Rules: importance 1=spam/auto … 5=urgent/safety. Each reply is a complete, polite UK-English email body the manager could send as-is, signed "Your Nursery". Keep replies concise. If no reply is needed set needs_reply=false but still provide replies.`;
+Rules: importance 1=spam/auto … 5=urgent/safety. Each reply is a complete, polite UK-English email body the manager could send as-is, signed "Little Angels Day Nursery". Keep replies concise. If no reply is needed set needs_reply=false but still provide replies.`;
 
   const resp = await fetch(`${OLLAMA_HOST}/api/generate`, {
     method: 'POST',

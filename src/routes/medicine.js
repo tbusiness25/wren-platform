@@ -144,6 +144,74 @@ router.get('/export', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /bulk-export — combined printable HTML of filtered medicine records
+router.get('/bulk-export', async (req, res) => {
+  if (!(await hasCapability(req.user, 'medicine_signoff'))) return res.status(403).json({ error: 'Medicine sign-off capability required' });
+  const { from, to, child_id } = req.query;
+  try {
+    const db = getPool();
+    let q = `
+      SELECT m.*, c.first_name||' '||c.last_name as child_name, c.date_of_birth,
+             s.first_name||' '||s.last_name as given_by_name,
+             sm.first_name||' '||sm.last_name as manager_name
+      FROM medicine_records m
+      JOIN children c ON c.id=m.child_id
+      LEFT JOIN staff s ON s.id=m.staff_id
+      LEFT JOIN staff sm ON sm.id=m.manager_signed_by
+      WHERE 1=1
+    `;
+    const params = [];
+    if (from) { params.push(from); q += ` AND m.created_at >= $${params.length}::date`; }
+    if (to) { params.push(to); q += ` AND m.created_at < ($${params.length}::date + INTERVAL '1 day')`; }
+    if (child_id) { params.push(child_id); q += ` AND m.child_id = $${params.length}`; }
+    q += ' ORDER BY m.created_at ASC';
+    const { rows } = await db.query(q, params);
+
+    // Generate combined printable HTML
+    const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fmt = d => d ? new Date(d).toLocaleString('en-GB', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+    const title = `Medicine Records ${from||''} ${to||''} ${child_id?'(filtered)':''}`.trim();
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>${esc(title)}</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:20px auto;padding:20px;background:#f8fafc}
+h1{font-size:22px;margin-bottom:6px;color:#0f172a}
+.meta{font-size:13px;color:#64748b;margin-bottom:20px}
+.record{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:12px;page-break-inside:avoid}
+.record-header{font-weight:600;font-size:16px;margin-bottom:8px;color:#0f172a}
+.field{display:grid;grid-template-columns:140px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
+.field:last-child{border:none}
+.field-label{color:#64748b;font-weight:500}
+.field-value{color:#0f172a}
+.signed{color:#22c55e;font-weight:600}
+.unsigned{color:#f59e0b;font-weight:600}
+@media print{body{background:#fff;margin:0}}
+</style>
+</head><body>
+<h1>${esc(title)}</h1>
+<div class="meta">Generated ${new Date().toLocaleString('en-GB')} | ${rows.length} record(s)</div>
+${rows.length === 0 ? '<p style="color:#64748b">No medicine records found for the selected filters.</p>' :
+  rows.map((m, i) => `<div class="record">
+  <div class="record-header">#${i+1} — ${esc(m.child_name)} — ${esc(m.medicine_name)}</div>
+  <div class="field"><span class="field-label">Child</span><span class="field-value">${esc(m.child_name)} (DOB: ${fmt(m.date_of_birth)})</span></div>
+  <div class="field"><span class="field-label">Medicine</span><span class="field-value">${esc(m.medicine_name)}</span></div>
+  <div class="field"><span class="field-label">Dose</span><span class="field-value">${esc(m.dose || '—')}</span></div>
+  <div class="field"><span class="field-label">Time given</span><span class="field-value">${fmt(m.time_given || m.created_at)}</span></div>
+  <div class="field"><span class="field-label">Given by</span><span class="field-value">${esc(m.given_by_name || '—')}</span></div>
+  <div class="field"><span class="field-label">Parent consent</span><span class="field-value">${m.parent_consent ? 'Yes' : 'No'}${m.consent_method ? ' ('+esc(m.consent_method)+')' : ''}</span></div>
+  ${m.temperature ? `<div class="field"><span class="field-label">Temperature</span><span class="field-value">${esc(m.temperature)}°C</span></div>` : ''}
+  ${m.notes ? `<div class="field"><span class="field-label">Notes</span><span class="field-value">${esc(m.notes)}</span></div>` : ''}
+  <div class="field"><span class="field-label">Manager sign-off</span><span class="field-value ${m.manager_sign_off_at ? 'signed' : 'unsigned'}">${m.manager_sign_off_at ? '✓ Signed by '+esc(m.manager_name)+' at '+fmt(m.manager_sign_off_at) : 'Awaiting sign-off'}</span></div>
+</div>`).join('')}
+</body></html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="medicine-records-${from||'all'}-${to||'all'}.html"`);
+    res.send(html);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /parent-consents — staff view pending parent medicine consents
 router.get('/parent-consents', async (req, res) => {
   try {

@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Doorbell — Little Angels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f172a;
+      color: #f1f5f9;
+      font-family: system-ui, Arial, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid #2d3748;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header img { height: 40px; }
+    .header-text { flex: 1; }
+    .header-text h1 { font-size: 1rem; color: #f1f5f9; }
+    .header-text .sub { font-size: 0.8rem; color: #94a3b8; }
+    #status-badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: #ef4444;
+      color: #fff;
+      animation: pulse 1.5s infinite;
+    }
+    #status-badge.connecting { background: #f59e0b; animation: none; }
+    #status-badge.connected  { background: #22c55e; animation: none; }
+    #status-badge.resolved   { background: #4a9abf; animation: none; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+
+    #video-container {
+      flex: 1;
+      position: relative;
+      background: #000;
+      min-height: 220px;
+    }
+    #stream-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #snapshot-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #no-stream-msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+    .claimed-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 1rem;
+      color: #f1f5f9;
+      text-align: center;
+      padding: 16px;
+    }
+
+    #controls {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .btn {
+      width: 100%;
+      padding: 18px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      min-height: 64px;
+      touch-action: manipulation;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn-answer  { background: #22c55e; color: #0f172a; }
+    .btn-hangup  { background: #ef4444; color: #fff; }
+    .btn-release { background: #e07820; color: #fff; }
+    .btn-dismiss { background: #2d3748; color: #f1f5f9; border: 1px solid #4a5568; }
+
+    #mic-level {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      color: #94a3b8;
+      font-size: 0.8rem;
+    }
+    #mic-level.visible { display: flex; }
+    .mic-bars { display: flex; gap: 2px; align-items: flex-end; height: 20px; }
+    .mic-bar { width: 4px; background: #22c55e; border-radius: 2px; transition: height 0.1s; }
+
+    .door-released-banner {
+      background: #22c55e;
+      color: #0f172a;
+      text-align: center;
+      padding: 10px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border-radius: 8px;
+    }
+
+    #resolve-form {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #resolve-form.visible { display: flex; }
+    #resolve-form label { font-size: 0.85rem; color: #94a3b8; }
+    #resolve-form select, #resolve-form textarea {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      color: #f1f5f9;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.9rem;
+      width: 100%;
+    }
+    #resolve-form textarea { min-height: 72px; resize: vertical; }
+    .btn-save { background: #4a9abf; color: #fff; }
+
+    .alert { padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; }
+    .alert-warn { background: #f59e0b22; border: 1px solid #f59e0b; color: #f59e0b; }
+    .alert-info { background: #4a9abf22; border: 1px solid #4a9abf; color: #4a9abf; }
+  </style>
+</head>
+<body>
+<header>
+  <img src="/img/logo.png" alt="Little Angels" onerror="this.style.display='none'">
+  <div class="header-text">
+    <h1>Front Door</h1>
+    <div class="sub" id="event-time">Loading…</div>
+  </div>
+  <div id="status-badge">RINGING</div>
+</header>
+
+<div id="video-container">
+  <video id="stream-video" autoplay playsinline muted style="display:none"></video>
+  <img id="snapshot-img" alt="Doorbell snapshot" style="display:none">
+  <div id="no-stream-msg">
+    <div style="font-size:2rem">📷</div>
+    <div>Loading video stream…</div>
+  </div>
+  <div id="claimed-overlay" class="claimed-overlay" style="display:none">
+    <div style="font-size:1.5rem">📞</div>
+    <div id="claimed-by-msg">Being answered by another staff member</div>
+  </div>
+</div>
+
+<div id="controls">
+  <div id="mic-level">
+    <span>Mic:</span>
+    <div class="mic-bars">
+      <div class="mic-bar" id="bar1" style="height:6px"></div>
+      <div class="mic-bar" id="bar2" style="height:6px"></div>
+      <div class="mic-bar" id="bar3" style="height:6px"></div>
+      <div class="mic-bar" id="bar4" style="height:6px"></div>
+      <div class="mic-bar" id="bar5" style="height:6px"></div>
+    </div>
+    <span id="audio-mode-label">Listening (Phase 1)</span>
+  </div>
+
+  <button class="btn btn-answer" id="btn-answer">📞 ANSWER</button>
+  <button class="btn btn-hangup" id="btn-hangup" style="display:none">📵 HANG UP</button>
+  <div id="door-released-banner" class="door-released-banner" style="display:none"></div>
+  <button class="btn btn-release" id="btn-release">🚪 OPEN DOOR</button>
+  <button class="btn btn-dismiss" id="btn-dismiss">✕ DISMISS</button>
+
+  <div id="resolve-form">
+    <label>Outcome</label>
+    <select id="resolution">
+      <option value="">— select —</option>
+      <option value="admitted">Admitted</option>
+      <option value="declined">Declined entry</option>
+      <option value="wrong_address">Wrong address</option>
+      <option value="no_answer">Visitor left (no answer)</option>
+      <option value="missed">Missed — no staff available</option>
+    </select>
+    <label>Notes (optional)</label>
+    <textarea id="notes" placeholder="e.g. Parent delivery, parcel left at reception…"></textarea>
+    <button class="btn btn-save" id="btn-save">Save &amp; Close</button>
+  </div>
+
+  <div class="alert alert-warn" id="ha-warn" style="display:none">
+    ⚠️ HA_LADN_TOKEN not configured — door release unavailable. See Admin › HA Integration.
+  </div>
+</div>
+
+<script>
+(function () {
+  const token = localStorage.getItem('wren_token') || sessionStorage.getItem('wren_token');
+  if (!token) { location.href = '/login.html?next=' + encodeURIComponent(location.href); return; }
+
+  const eventId = location.pathname.match(/\/intercom\/answer\/(\d+)/)?.[1]
+               || location.pathname.match(/\/intercom-answer\.html\?.*id=(\d+)/) ?
+                  new URLSearchParams(location.search).get('id') : null
+               || new URLSearchParams(location.search).get('id');
+
+  if (!eventId) { document.body.innerHTML = '<div style="padding:32px;color:#ef4444">No event ID</div>'; return; }
+
+  let peerConn = null;
+  let wsSignal = null;
+  let audioStream = null;
+  let answered = false;
+  let micAnalyser = null;
+  let micAnimFrame = null;
+
+  // Load event details
+  async function loadEvent() {
+    try {
+      const r = await fetch(`/api/intercom/events/${eventId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error(await r.text());
+      const ev = await r.json();
+      document.getElementById('event-time').textContent =
+        'Rang ' + new Date(ev.triggered_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+      if (ev.snapshot_url) {
+        const img = document.getElementById('snapshot-img');
+        img.src = ev.snapshot_url + '?t=' + Date.now();
+        img.style.display = 'block';
+        document.getElementById('no-stream-msg').style.display = 'none';
+      }
+
+      if (ev.answered_by_staff_id) {
+        const badge = document.getElementById('status-badge');
+        badge.textContent = 'ANSWERED';
+        badge.className = 'connected';
+        document.getElementById('claimed-overlay').style.display = 'flex';
+        document.getElementById('claimed-by-msg').textContent =
+          `Being answered by ${ev.answered_by_name || 'another staff member'}`;
+        document.getElementById('btn-answer').disabled = true;
+      }
+
+      if (ev.door_released) {
+        showDoorReleasedBanner(ev.released_by_name || 'a staff member');
+        document.getElementById('btn-release').disabled = true;
+      }
+
+      if (ev.resolution) {
+        showResolved();
+      }
+    } catch (e) {
+      console.warn('loadEvent:', e.message);
+    }
+  }
+
+  // Connect WebRTC via go2rtc WebSocket proxy
+  function startStream() {
+    const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') +
+                  `://${location.host}/intercom-ws/answer/${eventId}?token=${encodeURIComponent(token)}`;
+
+    const badge = document.getElementById('status-badge');
+    badge.textContent = 'CONNECTING';
+    badge.className = 'connecting';
+
+    wsSignal = new WebSocket(wsUrl);
+    peerConn = new RTCPeerConnection({ iceServers: [] }); // LAN only — no TURN needed
+
+    // Add audio transceiver (receive-only for Phase 1, send+receive for Phase 2)
+    peerConn.addTransceiver('audio', { direction: 'recvonly' }); // Phase 1: receive only
+    peerConn.addTransceiver('video', { direction: 'recvonly' });
+
+    peerConn.ontrack = (ev) => {
+      const video = document.getElementById('stream-video');
+      const img = document.getElementById('snapshot-img');
+      if (!video.srcObject) {
+        video.srcObject = new MediaStream();
+        img.style.display = 'none';
+        document.getElementById('no-stream-msg').style.display = 'none';
+        video.style.display = 'block';
+      }
+      video.srcObject.addTrack(ev.track);
+    };
+
+    peerConn.onicecandidate = (ev) => {
+      if (wsSignal.readyState === WebSocket.OPEN && ev.candidate) {
+        wsSignal.send(JSON.stringify({ type: 'candidate', candidate: ev.candidate }));
+      }
+    };
+
+    peerConn.onconnectionstatechange = () => {
+      const state = peerConn.connectionState;
+      console.log('RTCPeerConnection state:', state);
+      if (state === 'connected') {
+        badge.textContent = 'LIVE';
+        badge.className = 'connected';
+      } else if (state === 'failed' || state === 'disconnected') {
+        badge.textContent = 'RECONNECTING';
+        badge.className = 'connecting';
+      }
+    };
+
+    wsSignal.onopen = async () => {
+      // go2rtc expects us to create an offer
+      try {
+        const offer = await peerConn.createOffer();
+        await peerConn.setLocalDescription(offer);
+        wsSignal.send(JSON.stringify(peerConn.localDescription));
+      } catch (e) {
+        console.error('WebRTC offer error:', e);
+      }
+    };
+
+    wsSignal.onmessage = async (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'answer') {
+          await peerConn.setRemoteDescription(new RTCSessionDescription(msg));
+        } else if (msg.type === 'offer') {
+          await peerConn.setRemoteDescription(new RTCSessionDescription(msg));
+          const answer = await peerConn.createAnswer();
+          await peerConn.setLocalDescription(answer);
+          wsSignal.send(JSON.stringify(peerConn.localDescription));
+        } else if (msg.type === 'candidate' && msg.candidate) {
+          await peerConn.addIceCandidate(new RTCIceCandidate(msg.candidate));
+        }
+      } catch (e) {
+        console.warn('WS message error:', e);
+      }
+    };
+
+    wsSignal.onerror = () => {
+      badge.textContent = 'STREAM ERROR';
+      badge.className = '';
+    };
+
+    wsSignal.onclose = () => {
+      if (!answered) return; // normal
+      badge.textContent = 'STREAM ENDED';
+      badge.className = '';
+    };
+  }
+
+  async function onAnswer() {
+    try {
+      const r = await fetch(`/api/intercom/events/${eventId}/answer`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await r.json();
+      if (!r.ok && r.status === 409) {
+        // Claimed by someone else
+        document.getElementById('claimed-overlay').style.display = 'flex';
+        document.getElementById('claimed-by-msg').textContent =
+          `Being answered by ${data.event?.answered_by_name || 'another staff member'}`;
+        document.getElementById('btn-answer').disabled = true;
+        return;
+      }
+      answered = true;
+      document.getElementById('btn-answer').style.display = 'none';
+      document.getElementById('btn-hangup').style.display = 'block';
+      document.getElementById('status-badge').textContent = 'ANSWERING';
+      document.getElementById('status-badge').className = 'connected';
+      document.getElementById('mic-level').classList.add('visible');
+
+      // Phase 2: attempt bidirectional audio (may not work with all VTO firmware)
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStream.getAudioTracks().forEach(t => {
+          const sender = peerConn?.getSenders().find(s => !s.track);
+          if (sender) sender.replaceTrack(t).catch(() => {});
+          else peerConn?.addTrack(t, audioStream);
+        });
+        document.getElementById('audio-mode-label').textContent = 'Two-way audio';
+        startMicMeter(audioStream);
+      } catch {
+        document.getElementById('audio-mode-label').textContent = 'Listen-only (Phase 1)';
+      }
+    } catch (e) {
+      alert('Failed to answer: ' + e.message);
+    }
+  }
+
+  function onHangup() {
+    if (audioStream) { audioStream.getTracks().forEach(t => t.stop()); audioStream = null; }
+    if (peerConn) { peerConn.close(); peerConn = null; }
+    if (wsSignal) { wsSignal.close(); wsSignal = null; }
+    if (micAnimFrame) { cancelAnimationFrame(micAnimFrame); micAnimFrame = null; }
+    document.getElementById('btn-hangup').style.display = 'none';
+    document.getElementById('btn-answer').style.display = 'block';
+    document.getElementById('btn-answer').disabled = true;
+    document.getElementById('btn-answer').textContent = 'Call ended';
+    document.getElementById('mic-level').classList.remove('visible');
+  }
+
+  async function onRelease() {
+    if (!confirm('Open the front door?')) return;
+    document.getElementById('btn-release').disabled = true;
+    try {
+      const r = await fetch(`/api/intercom/events/${eventId}/release-door`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        document.getElementById('btn-release').disabled = false;
+        alert(data.message || data.error || 'Door release failed');
+        if (data.error && data.error.includes('HA_LADN_TOKEN')) {
+          document.getElementById('ha-warn').style.display = 'block';
+        }
+        return;
+      }
+      showDoorReleasedBanner('you');
+    } catch (e) {
+      document.getElementById('btn-release').disabled = false;
+      alert('Error: ' + e.message);
+    }
+  }
+
+  function showDoorReleasedBanner(name) {
+    const b = document.getElementById('door-released-banner');
+    b.textContent = `🔓 Door released by ${name}`;
+    b.style.display = 'block';
+    document.getElementById('btn-release').disabled = true;
+  }
+
+  function onDismiss() {
+    document.getElementById('resolve-form').classList.add('visible');
+    document.getElementById('btn-dismiss').style.display = 'none';
+    document.getElementById('btn-answer').style.display = 'none';
+    document.getElementById('btn-release').style.display = 'none';
+    document.getElementById('btn-hangup').style.display = 'none';
+  }
+
+  async function onSave() {
+    const resolution = document.getElementById('resolution').value;
+    if (!resolution) { alert('Please select an outcome'); return; }
+    const notes = document.getElementById('notes').value;
+    try {
+      await fetch(`/api/intercom/events/${eventId}/resolve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolution, notes })
+      });
+      showResolved();
+    } catch (e) { alert('Save failed: ' + e.message); }
+  }
+
+  function showResolved() {
+    document.getElementById('resolve-form').classList.remove('visible');
+    document.getElementById('status-badge').textContent = 'RESOLVED';
+    document.getElementById('status-badge').className = 'resolved';
+    document.getElementById('controls').innerHTML = `
+      <div class="alert alert-info">Event resolved. You can close this page.</div>
+      <button class="btn btn-dismiss" data-action="back-to-app">← Back to app</button>
+    `;
+  }
+
+  function startMicMeter(stream) {
+    try {
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      micAnalyser = ctx.createAnalyser();
+      micAnalyser.fftSize = 256;
+      src.connect(micAnalyser);
+      const bars = ['bar1','bar2','bar3','bar4','bar5'].map(id => document.getElementById(id));
+      const data = new Uint8Array(micAnalyser.frequencyBinCount);
+      function draw() {
+        micAnimFrame = requestAnimationFrame(draw);
+        micAnalyser.getByteFrequencyData(data);
+        const avg = data.slice(0, 30).reduce((a, b) => a + b, 0) / 30;
+        bars.forEach((b, i) => {
+          b.style.height = Math.max(4, (avg / 255) * 20 * (0.4 + i * 0.15)) + 'px';
+        });
+      }
+      draw();
+    } catch {}
+  }
+
+  // Init
+  document.getElementById('btn-answer').addEventListener('click', onAnswer);
+  document.getElementById('btn-hangup').addEventListener('click', onHangup);
+  document.getElementById('btn-release').addEventListener('click', onRelease);
+  document.getElementById('btn-dismiss').addEventListener('click', onDismiss);
+  document.getElementById('btn-save').addEventListener('click', onSave);
+  document.getElementById('controls').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="back-to-app"]');
+    if (btn) location.href = '/app.html';
+  });
+  loadEvent();
+  startStream();
+})();
+</script>
+</body>
+</html>

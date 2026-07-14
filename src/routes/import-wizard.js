@@ -307,7 +307,7 @@ async function runImport(client, job, dataRows, headers) {
         }
 
       } else if (entity === 'staff') {
-        // ABSOLUTE RULE: never touch id=1 (Nursery Manager) — see CLAUDE.md
+        // ABSOLUTE RULE: never touch id=1 (Toby Jones) — see CLAUDE.md
         const { rows: ex } = await client.query(
           'SELECT id FROM staff WHERE lower(email)=lower($1) AND id != 1',
           [row.email || '___no_match___']);

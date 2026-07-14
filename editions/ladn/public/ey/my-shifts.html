@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="My Shifts">
+  <meta name="wren-app-chat"  content="on">
+  <title>My Shifts · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-shifts-page { padding: 12px 12px env(safe-area-inset-bottom, 16px); }
+    .ms-banner {
+      background: rgba(74,154,191,.12); border: 1px solid rgba(74,154,191,.3);
+      border-radius: 14px; padding: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 14px;
+    }
+    .ms-banner .emoji { font-size: 2rem; }
+    .ms-banner .lbl { font-size: 11px; color: #4a9abf; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    .ms-banner .big { font-size: 17px; font-weight: 800; color: var(--c-text); }
+    .ms-banner .sub { font-size: 13px; color: var(--c-text-dim, #94a3b8); }
+
+    .ms-section-title {
+      font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+      margin: 20px 0 10px; color: var(--c-text-dim, #94a3b8);
+    }
+    .ms-section-title.open { color: #e07820; }
+
+    .ms-card {
+      background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+      padding: 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .ms-card.is-today { border-color: #4a9abf; background: rgba(74,154,191,.08); }
+    .ms-card.open { border-color: rgba(224,120,32,.45); }
+    .ms-date { text-align: center; min-width: 50px; }
+    .ms-date .d { font-size: 11px; font-weight: 700; color: var(--c-text-dim, #94a3b8); text-transform: uppercase; }
+    .ms-date .n { font-size: 24px; font-weight: 800; color: var(--c-text); line-height: 1; }
+    .ms-date .m { font-size: 11px; color: var(--c-text-dim, #64748b); }
+    .ms-info { flex: 1; min-width: 150px; }
+    .ms-times { font-size: 17px; font-weight: 800; color: #4a9abf; }
+    .ms-room { font-size: 12px; color: var(--c-text-dim, #94a3b8); margin-top: 2px; }
+    .ms-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ms-btn { border: none; border-radius: 10px; font-size: 14px; font-weight: 700; padding: 11px 18px; cursor: pointer; min-height: 44px; min-width: 92px; }
+    .ms-accept { background: #22c55e; color: #06281a; }
+    .ms-decline { background: rgba(239,68,68,.15); color: #ef4444; border: 1px solid rgba(239,68,68,.4); }
+    .ms-claim { background: #e07820; color: #1a0e02; }
+    .ms-pill { font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 9px; text-transform: uppercase; letter-spacing: .04em; align-self: center; }
+    .ms-pill.accepted { background: rgba(34,197,94,.18); color: #22c55e; }
+    .ms-pill.declined { background: rgba(239,68,68,.18); color: #ef4444; }
+    .ms-empty { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 36px 20px; text-align: center; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-shifts-page">
+  <div id="ms-next"></div>
+  <div id="ms-open"></div>
+  <div class="ms-section-title">Upcoming shifts</div>
+  <div id="ms-list"><div style="color:var(--c-text-dim,#64748b);padding:16px 0">Loading…</div></div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704"></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  var DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function fmtTime(t){ return t ? String(t).substring(0,5) : '—'; }
+  function dateOf(s){ return new Date((typeof s === 'string' ? s.split('T')[0] : s) + 'T00:00:00'); }
+
+  async function loadAll(){
+    await loadMine();
+    await loadOpen();
+  }
+
+  async function loadMine(){
+    var list = document.getElementById('ms-list');
+    var next = document.getElementById('ms-next');
+    var shifts = [];
+    try { shifts = await Wren.api('/api/rota/my') || []; }
+    catch (e) { list.innerHTML = '<div class="ms-empty" style="color:#ef4444">Could not load shifts: ' + e.message + '</div>'; return; }
+
+    if (!shifts.length) {
+      next.innerHTML = '';
+      list.innerHTML = '<div class="ms-empty"><div style="font-size:2.2rem;margin-bottom:10px">📅</div>'
+        + '<div style="font-weight:700;color:var(--c-text)">No shifts scheduled</div>'
+        + '<div style="color:var(--c-text-dim,#64748b);font-size:13px;margin-top:4px">Nothing published for the next 14 days.</div></div>';
+      return;
+    }
+
+    var today = new Date(); today.setHours(0,0,0,0);
+    var upcoming = shifts.filter(function(s){ return dateOf(s.shift_date) >= today; });
+    var n = upcoming[0];
+    if (n) {
+      var d = dateOf(n.shift_date);
+      var isToday = d.getTime() === today.getTime();
+      next.innerHTML = '<div class="ms-banner"><div class="emoji">⏰</div><div>'
+        + '<div class="lbl">' + (isToday ? 'Today' : 'Next shift') + '</div>'
+        + '<div class="big">' + DAYS[d.getDay()] + ' — ' + fmtTime(n.planned_start) + ' – ' + fmtTime(n.planned_end) + '</div>'
+        + '<div class="sub">' + (n.room_name || 'Room not specified') + '</div></div></div>';
+    } else { next.innerHTML = ''; }
+
+    list.innerHTML = shifts.map(function(s){
+      var d = dateOf(s.shift_date);
+      var isToday = d.getTime() === today.getTime();
+      return '<div class="ms-card' + (isToday ? ' is-today' : '') + '">'
+        + '<div class="ms-date"><div class="d">' + DAYS[d.getDay()].substring(0,3) + '</div>'
+        + '<div class="n">' + d.getDate() + '</div><div class="m">' + MONTHS[d.getMonth()] + '</div></div>'
+        + '<div class="ms-info"><div class="ms-times">' + fmtTime(s.planned_start) + ' – ' + fmtTime(s.planned_end) + '</div>'
+        + '<div class="ms-room">' + (s.label ? s.label + ' · ' : '') + (s.room_name || 'Room not specified') + '</div></div>'
+        + actions(s) + '</div>';
+    }).join('');
+  }
+
+  function actions(s){
+    if (!s || !s.id) return '';
+    if (s.acceptance === 'pending') {
+      return '<div class="ms-actions">'
+        + '<button class="ms-btn ms-accept" data-action="accept" data-shift="' + s.id + '">Accept</button>'
+        + '<button class="ms-btn ms-decline" data-action="decline" data-shift="' + s.id + '">Decline</button></div>';
+    }
+    if (s.acceptance === 'accepted') return '<span class="ms-pill accepted">Accepted</span>';
+    if (s.acceptance === 'declined') return '<span class="ms-pill declined">Declined</span>';
+    return '';
+  }
+
+  async function loadOpen(){
+    var area = document.getElementById('ms-open');
+    var open = [];
+    try { open = await Wren.api('/api/rota/open') || []; } catch (e) { area.innerHTML = ''; return; }
+    if (!open.length) { area.innerHTML = ''; return; }
+    area.innerHTML = '<div class="ms-section-title open">📣 Open shifts you can claim</div>' + open.map(function(s){
+      var d = dateOf(s.shift_date);
+      return '<div class="ms-card open">'
+        + '<div class="ms-date"><div class="d">' + DAYS[d.getDay()].substring(0,3) + '</div>'
+        + '<div class="n">' + d.getDate() + '</div><div class="m">' + MONTHS[d.getMonth()] + '</div></div>'
+        + '<div class="ms-info"><div class="ms-times">' + fmtTime(s.planned_start) + ' – ' + fmtTime(s.planned_end) + '</div>'
+        + '<div class="ms-room">' + (s.label ? s.label + ' · ' : '') + (s.room_name || 'Any room') + '</div></div>'
+        + '<button class="ms-btn ms-claim" data-action="claim" data-shift="' + s.id + '">Claim</button></div>';
+    }).join('');
+  }
+
+  async function onAction(e){
+    var btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    var id = btn.dataset.shift, action = btn.dataset.action;
+    btn.disabled = true;
+    try {
+      if (action === 'accept' || action === 'decline') {
+        await Wren.api('/api/rota/shift/' + id + '/respond', { method:'POST', body:{ accept: action === 'accept' } });
+      } else if (action === 'claim') {
+        await Wren.api('/api/rota/shift/' + id + '/claim', { method:'POST', body:{} });
+      }
+      loadAll();
+    } catch (err) {
+      btn.disabled = false;
+      var m = String(err.message || '');
+      alert(m.indexOf('already_claimed') >= 0 ? 'Sorry — that shift was just claimed by someone else.'
+          : m.indexOf('already_scheduled') >= 0 ? 'You already have a shift that day.'
+          : 'Could not complete that action: ' + m);
+    }
+  }
+
+  document.addEventListener('wren:ready', function () {
+    document.body.addEventListener('click', onAction);
+    loadAll();
+  });
+}());
+</script>
+</body>
+</html>

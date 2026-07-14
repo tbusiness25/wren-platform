@@ -125,7 +125,7 @@ router.get('/xero/connect', async (req, res) => {
 router.get('/xero/callback', async (req, res) => {
   try {
     const xero = await getXeroClient();
-    const fullUrl = `${process.env.XERO_REDIRECT_URI || 'https://admin.example-nursery.co.uk/api/finance/xero/callback'}?${new URLSearchParams(req.query)}`;
+    const fullUrl = `${process.env.XERO_REDIRECT_URI || 'https://admin.littleangelsealing.co.uk/api/finance/xero/callback'}?${new URLSearchParams(req.query)}`;
     const tokenSet = await xero.apiCallback(fullUrl);
 
     xero.setTokenSet(tokenSet);
@@ -184,7 +184,7 @@ async function getXeroClient() {
     _xeroClient = new XeroClient({
       clientId:     process.env.XERO_CLIENT_ID,
       clientSecret: process.env.XERO_CLIENT_SECRET,
-      redirectUris: [process.env.XERO_REDIRECT_URI || 'https://admin.example-nursery.co.uk/api/finance/xero/callback'],
+      redirectUris: [process.env.XERO_REDIRECT_URI || 'https://admin.littleangelsealing.co.uk/api/finance/xero/callback'],
       // 2026-07-06: the Wren app was created after Xero's 2 March 2026 cutover, so it
       // only has the NEW GRANULAR scopes — the old broad scopes
       // (accounting.transactions.read / accounting.reports.read) do not exist for it

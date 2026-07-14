@@ -174,7 +174,7 @@ router.post('/enquiries/:id/reply', async (req, res) => {
         message: 'Staff can only email parents of enrolled children' });
     }
 
-    const subject = `Your Nursery — your enquiry`;
+    const subject = `Little Angels Day Nursery — your enquiry`;
     const html = `<div style="font-family:system-ui,Arial,sans-serif;line-height:1.6">${String(body).replace(/\n/g, '<br>')}</div>`;
     let sent = false, info = '';
     try {
@@ -385,7 +385,7 @@ router.post('/emails/:id/send-draft', async (req, res) => {
         message: 'Staff can only email parents of enrolled children' });
     }
 
-    let subject = row.subject || 'Your Nursery';
+    let subject = row.subject || 'Little Angels Day Nursery';
     if (isInbound && !/^re:/i.test(subject)) subject = 'Re: ' + subject;
     const html = `<div style="font-family:system-ui,Arial,sans-serif;line-height:1.6">${String(bodyText).replace(/\n/g, '<br>')}</div>`;
 

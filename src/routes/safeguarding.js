@@ -458,7 +458,7 @@ router.get('/:id/lado-data', authenticate, async (req, res) => {
       subject: subject || null,
       referrer,
       org: {
-        name: S.nursery_name || 'Your Nursery',
+        name: S.nursery_name || 'Little Angels Day Nursery',
         address: S.address || S.nursery_address || '',
         phone: S.phone || S.nursery_phone || '',
         email: S.contact_email || '',

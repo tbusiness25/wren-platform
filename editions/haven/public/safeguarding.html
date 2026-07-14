@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Safeguarding</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+</head>
+<body>
+<template id="page">
+  <div class="hv-actions-bar">
+    <div><h1 class="hv-page-title">Safeguarding</h1>
+      <p class="hv-page-sub" style="margin-bottom:0">Adult safeguarding concerns (Care Act 2014)</p></div>
+    <button class="hv-btn" id="addBtn">Raise concern</button>
+  </div>
+  <div class="hv-card"><table class="hv-table"><thead><tr>
+    <th>Raised</th><th>Resident</th><th>Type</th><th>Description</th><th>Referrals</th><th>Status</th><th></th>
+  </tr></thead><tbody id="rows"></tbody></table></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+let RESIDENTS = [];
+if (Haven.guard()) { Haven.shell('safeguarding'); Haven.gateBtn('addBtn', 'senior_write'); load(); }
+async function load() {
+  try {
+    const [rows, residents] = await Promise.all([
+      Haven.api('/api/haven/safeguarding'),
+      Haven.api('/api/haven/residents'),
+    ]);
+    RESIDENTS = residents;
+    document.getElementById('rows').innerHTML = rows.map(c => `
+      <tr><td>${Haven.fmtDateTime(c.raised_at)}</td>
+      <td>${c.first_name ? Haven.esc(c.first_name + ' ' + c.last_name) : '—'}</td>
+      <td>${Haven.badge(c.concern_type, 'amber')}</td>
+      <td style="max-width:340px">${Haven.esc(c.description)}
+        ${c.immediate_action ? `<div class="hv-note-meta">Immediate action: ${Haven.esc(c.immediate_action)}</div>` : ''}
+        ${c.outcome ? `<div class="hv-note-meta">Outcome: ${Haven.esc(c.outcome)}</div>` : ''}</td>
+      <td>${c.referred_to_la ? Haven.badge('LA referred' + (c.la_reference ? ' ' + c.la_reference : ''), 'accent') : ''}
+          ${c.police_informed ? Haven.badge('Police', 'red') : ''} ${c.cqc_notified ? Haven.badge('CQC', 'amber') : ''}</td>
+      <td>${Haven.badge(c.status, c.status === 'closed' ? 'closed' : 'open')}</td>
+      <td>${c.status !== 'closed' && Haven.can('senior_write') ? `<button class="hv-btn small secondary" onclick="updateConcern(${c.id})">Update</button>` : ''}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="hv-empty">No safeguarding concerns</td></tr>';
+  } catch (e) { Haven.toast(e.message, true); }
+}
+function updateConcern(id) {
+  Haven.modal('Update concern', `
+    <div class="hv-field"><label>Status</label><select name="status">
+      <option>open</option><option>referred</option><option>under_investigation</option><option>closed</option></select></div>
+    <div class="hv-field"><label>Outcome</label><textarea name="outcome"></textarea></div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label><input type="checkbox" name="referred_to_la" style="width:auto;margin-right:8px">Referred to local authority</label></div>
+      <div class="hv-field"><label>LA reference</label><input name="la_reference"></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label><input type="checkbox" name="police_informed" style="width:auto;margin-right:8px">Police informed</label></div>
+      <div class="hv-field"><label><input type="checkbox" name="cqc_notified" style="width:auto;margin-right:8px">CQC notified</label></div>
+    </div>`,
+    async fd => {
+      await Haven.api(`/api/haven/safeguarding/${id}`, { method: 'PATCH', body: fd });
+      Haven.toast('Concern updated'); load();
+    }, 'Update');
+}
+document.addEventListener('click', e => {
+  if (e.target.id !== 'addBtn') return;
+  Haven.modal('Raise safeguarding concern', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Resident</label><select name="resident_id">
+        <option value="">— not resident-specific —</option>
+        ${RESIDENTS.map(r => `<option value="${r.id}">${Haven.esc(r.first_name + ' ' + r.last_name)}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>Type *</label><select name="concern_type">
+        ${['physical','emotional','financial','neglect','sexual','discriminatory','organisational','domestic','modern_slavery','self_neglect'].map(t => `<option>${t}</option>`).join('')}</select></div>
+    </div>
+    <div class="hv-field"><label>Description *</label><textarea name="description" required></textarea></div>
+    <div class="hv-field"><label>Immediate action taken</label><textarea name="immediate_action"></textarea></div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label><input type="checkbox" name="referred_to_la" style="width:auto;margin-right:8px">Referred to LA safeguarding team</label></div>
+      <div class="hv-field"><label><input type="checkbox" name="police_informed" style="width:auto;margin-right:8px">Police informed</label></div>
+    </div>`,
+    async fd => {
+      await Haven.api('/api/haven/safeguarding', { method: 'POST', body: fd });
+      Haven.toast('Concern raised'); load();
+    }, 'Raise concern');
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="journey">
+  <meta name="wren-app-title" content="All Observations">
+  <meta name="wren-app-chat"  content="on">
+  <title>All Observations · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-journey-page { padding: 0 0 env(safe-area-inset-bottom, 16px); }
+
+    /* Filter row — reuses ey-chip look from home */
+    #ey-journey-filters {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: var(--c-navy-mid);
+      border-bottom: 1px solid var(--c-border);
+      flex-wrap: wrap;
+    }
+    #ey-journey-room-chips { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+    .ey-chip {
+      height: 34px; padding: 0 14px; border-radius: 17px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      color: var(--c-muted); font-size: .84rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .ey-chip.active { background: var(--c-blue); border-color: var(--c-blue); color: #fff; }
+    .ey-chip:not(.active):hover { background: rgba(74,154,191,0.12); border-color: var(--c-blue); color: var(--c-text); }
+
+    /* Timeline */
+    #ey-journey-list { padding: 8px 12px; }
+    .ey-journey-item {
+      display: flex; gap: 12px; padding: 12px 4px;
+      border-bottom: 1px solid var(--c-border);
+      cursor: pointer; transition: background .15s;
+      border-radius: 8px;
+    }
+    .ey-journey-item:hover { background: rgba(255,255,255,0.03); }
+    .ey-journey-item:last-child { border-bottom: none; }
+
+    .ey-journey-avatar {
+      width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.05rem; font-weight: 700; color: #fff; overflow: hidden;
+    }
+    .ey-journey-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+    .ey-journey-body { flex: 1; min-width: 0; }
+    .ey-journey-head {
+      display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; flex-wrap: wrap;
+    }
+    .ey-journey-name { font-size: .9rem; font-weight: 700; color: var(--c-text); }
+    .ey-journey-date { font-size: .74rem; color: var(--c-muted); }
+    .ey-journey-text {
+      font-size: .86rem; color: var(--c-text); line-height: 1.4;
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .ey-journey-areas { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+    .ey-journey-area {
+      font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 6px;
+      background: rgba(74,154,191,0.18); color: var(--c-blue);
+    }
+    .ey-journey-shared {
+      font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 6px;
+      background: rgba(34,197,94,0.18); color: var(--c-green, #22c55e);
+    }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-journey-page">
+
+  <!-- Room filter chips -->
+  <div id="ey-journey-filters" role="toolbar" aria-label="Filter learning journey">
+    <div id="ey-journey-room-chips" role="group" aria-label="Filter by room">
+      <button class="ey-chip active" data-room=""  aria-pressed="true">All children</button>
+      <button class="ey-chip" data-room="1" aria-pressed="false">Baby Room</button>
+      <button class="ey-chip" data-room="2" aria-pressed="false">Pre-school</button>
+    </div>
+  </div>
+
+  <!-- Timeline — populated by JS -->
+  <div id="ey-journey-list" role="list" aria-label="Learning journey" aria-live="polite"></div>
+
+</div><!-- #ey-journey-page -->
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var _all = [];
+  var _roomFilter = '';
+  var _childScope = null;   // optional ?child=:id
+
+  var AVATAR_COLORS = [
+    '#4a9abf','#e07820','#22c55e','#a855f7','#ef4444',
+    '#06b6d4','#f59e0b','#10b981','#ec4899','#3b82f6'
+  ];
+  function _color(name) { return AVATAR_COLORS[(name || 'A').charCodeAt(0) % AVATAR_COLORS.length]; }
+
+  function _e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _fmtDate(s) {
+    if (!s) return '';
+    var d = new Date(s);
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function _render() {
+    var list = document.getElementById('ey-journey-list');
+    if (!list) return;
+
+    var rows = _all.filter(function (o) {
+      if (!_roomFilter) return true;
+      return String(o.room_id) === _roomFilter;
+    });
+
+    if (!rows.length) {
+      list.innerHTML =
+        '<div class="app-empty-state">' +
+        '  <div class="app-empty-state-icon">🌱</div>' +
+        '  <div class="app-empty-state-title">No observations yet</div>' +
+        '  <div class="app-empty-state-msg">Tap the ＋ to record the first observation.</div>' +
+        '</div>';
+      return;
+    }
+
+    list.innerHTML = rows.map(function (o) {
+      var name = o.child_name || ((o.first_name || '') + ' ' + (o.last_name || '')).trim() || 'Child';
+      var init = (name || '?').charAt(0).toUpperCase();
+      var col  = _color(init);
+      var avatar = o.photo_url
+        ? '<div class="ey-journey-avatar"><img src="' + _e(o.photo_url) + '" alt="' + _e(name) + '" loading="lazy"></div>'
+        : '<div class="ey-journey-avatar" style="background:' + col + '" aria-hidden="true">' + _e(init) + '</div>';
+
+      var areas = '';
+      if (Array.isArray(o.eyfs_areas) && o.eyfs_areas.length) {
+        areas = '<div class="ey-journey-areas">' +
+          o.eyfs_areas.slice(0, 4).map(function (a) {
+            return '<span class="ey-journey-area">' + _e(a) + '</span>';
+          }).join('') + '</div>';
+      }
+
+      var shared = (o.is_shared_with_parents || o.shared_with_parents)
+        ? '<span class="ey-journey-shared">Shared</span>' : '';
+
+      var text = o.observation_text || o.title || '';
+
+      return '<div class="ey-journey-item" role="listitem" data-id="' + _e(o.id) + '">' +
+               avatar +
+               '<div class="ey-journey-body">' +
+                 '<div class="ey-journey-head">' +
+                   '<span class="ey-journey-name">' + _e(name) + '</span>' +
+                   '<span class="ey-journey-date">' + _e(_fmtDate(o.obs_date || o.created_at)) + '</span>' +
+                   shared +
+                 '</div>' +
+                 '<div class="ey-journey-text">' + _e(text) + '</div>' +
+                 areas +
+               '</div>' +
+             '</div>';
+    }).join('');
+
+    list.querySelectorAll('.ey-journey-item').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var id = item.dataset.id;
+        if (id) Wren.navigate('/ey/observation/' + id);
+      });
+    });
+  }
+
+  function _initChips() {
+    document.querySelectorAll('#ey-journey-room-chips .ey-chip').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        _roomFilter = btn.dataset.room;
+        document.querySelectorAll('#ey-journey-room-chips .ey-chip').forEach(function (b) {
+          var a = b.dataset.room === _roomFilter;
+          b.classList.toggle('active', a);
+          b.setAttribute('aria-pressed', String(a));
+        });
+        _render();
+      });
+    });
+  }
+
+  function _load() {
+    var list = document.getElementById('ey-journey-list');
+    if (list) {
+      list.innerHTML = '<div class="app-skeleton" style="height:72px;margin:10px 0;border-radius:10px"></div>'.repeat(5);
+    }
+
+    var params = new URLSearchParams(location.search);
+    _childScope = parseInt(params.get('child') || '0', 10) || null;
+
+    var url = _childScope
+      ? '/api/observations?child_id=' + _childScope + '&limit=100'
+      : '/api/observations/recent?limit=60';
+
+    Wren.api(url).then(function (data) {
+      _all = Array.isArray(data) ? data : (data && data.rows ? data.rows : []);
+      // Hide the room filter when scoped to a single child.
+      if (_childScope) {
+        var f = document.getElementById('ey-journey-filters');
+        if (f) f.hidden = true;
+      }
+      _render();
+    }).catch(function () {
+      if (list) list.innerHTML =
+        '<div class="app-empty-state"><div class="app-empty-state-icon">⚠️</div>' +
+        '<div class="app-empty-state-title">Could not load journey</div>' +
+        '<div class="app-empty-state-msg">Please try again.</div></div>';
+      if (window.Wren) Wren.toast('Could not load learning journey', 'error');
+    });
+  }
+
+  document.addEventListener('wren:ready', function () {
+    _initChips();
+    _load();
+  });
+
+}());
+</script>
+</body>
+</html>

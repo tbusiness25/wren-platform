@@ -881,7 +881,7 @@ router.post('/ask', requireRole('manager'), async (req, res) => {
 
     const grounding = historyRag.buildGroundingBlock(chunks);
     const prompt = [
-      'You are a sovereign, on-premises operations analyst for Your Nursery (Ealing, UK).',
+      'You are a sovereign, on-premises operations analyst for Little Angels Day Nursery (Ealing, UK).',
       'Answer the manager\'s question using ONLY the COMPUTED METRICS and RETRIEVED HISTORY PASSAGES below.',
       'The COMPUTED METRICS are exact figures — quote them; never invent or round-trip new numbers from assumptions.',
       'The RETRIEVED HISTORY PASSAGES may contain markdown tables (e.g. by-month, by-year, by-weekday, seasonality, per-staff) — read them in full and use them; do NOT claim a breakdown is missing if a relevant table is present in the passages.',

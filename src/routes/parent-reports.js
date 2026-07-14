@@ -237,7 +237,7 @@ router.post('/generate', async (req, res) => {
     let prompt;
     if (report_type === '2-year check') {
       // Statutory EYFS "progress check at age two" — focuses on the 3 PRIME areas only.
-      prompt = `You are writing the statutory EYFS Progress Check at Age Two for ${name} ${child.last_name}, aged ${ageStr}, in the ${child.room_name} at Your Nursery, Ealing.
+      prompt = `You are writing the statutory EYFS Progress Check at Age Two for ${name} ${child.last_name}, aged ${ageStr}, in the ${child.room_name} at Little Angels Day Nursery, Ealing.
 
 Key observations from ${period.start} to ${period.end}:
 ${obsText}
@@ -255,7 +255,7 @@ Write a warm, professional written summary in UK English for the child's parents
 
 Target 250–350 words total. Quote specific observations where possible. Note this is a shared review between practitioners and parents. Warm but professional tone — this goes to parents.`;
     } else {
-      prompt = `You are writing a ${report_type} parent report for ${name} ${child.last_name}, aged ${ageStr}, in the ${child.room_name} at Your Nursery, Ealing.
+      prompt = `You are writing a ${report_type} parent report for ${name} ${child.last_name}, aged ${ageStr}, in the ${child.room_name} at Little Angels Day Nursery, Ealing.
 
 Key observations from ${period.start} to ${period.end}:
 ${obsText}
@@ -486,9 +486,9 @@ router.post('/:id/send', async (req, res) => {
       doc.on('error', reject);
 
       doc.fontSize(18).font('Helvetica-Bold')
-         .text('Your Nursery', { align: 'center' });
+         .text('Little Angels Day Nursery', { align: 'center' });
       doc.fontSize(11).font('Helvetica')
-         .text('1A Example Lane, Ealing, W13 9LU', { align: 'center' });
+         .text('1A Dudley Gardens, Ealing, W13 9LU', { align: 'center' });
       doc.moveDown();
       doc.fontSize(14).font('Helvetica-Bold')
          .text(`${report.report_type} — ${childName}`, { align: 'center' });
@@ -506,10 +506,10 @@ router.post('/:id/send', async (req, res) => {
         auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
       });
       await transporter.sendMail({
-        from: process.env.SMTP_FROM || 'wren@example-nursery.co.uk',
+        from: process.env.SMTP_FROM || 'wren@littleangelsealing.co.uk',
         to: parentEmails.join(','),
-        subject: `${childName}'s ${report.report_type} — Your Nursery`,
-        text: `Dear Parent/Carer,\n\nPlease find ${childName}'s ${report.report_type} attached.\n\nWarm regards,\nYour Nursery`,
+        subject: `${childName}'s ${report.report_type} — Little Angels`,
+        text: `Dear Parent/Carer,\n\nPlease find ${childName}'s ${report.report_type} attached.\n\nWarm regards,\nLittle Angels Day Nursery`,
         attachments: [{ filename: `${childName}-report.pdf`, content: pdfBuf, contentType: 'application/pdf' }],
       });
       await db.query(`UPDATE parent_reports SET status='sent', sent_at=NOW() WHERE id=$1`, [req.params.id]);
@@ -858,7 +858,7 @@ router.post('/generate-from-checklist', async (req, res) => {
     }
 
     const is2yr = report_type === '2-year check';
-    const prompt = `You are writing a ${is2yr ? 'statutory EYFS Progress Check at Age Two' : report_type + ' parent report'} for ${name} ${child.last_name}, aged ${ageStr}, in the ${child.room_name} at Your Nursery, Ealing.
+    const prompt = `You are writing a ${is2yr ? 'statutory EYFS Progress Check at Age Two' : report_type + ' parent report'} for ${name} ${child.last_name}, aged ${ageStr}, in the ${child.room_name} at Little Angels Day Nursery, Ealing.
 
 The practitioner has confirmed ${name} is demonstrating the following (Birth to 5 Matters statements, grouped by EYFS area). THESE ARE YOUR SOURCE MATERIAL — every claim in the report must trace back to one of these, the CoEL judgements, or the practitioner's note. Do not invent achievements.
 

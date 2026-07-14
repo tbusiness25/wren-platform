@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="ladn">
+<title>Messages — Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.msg-layout { display: grid; grid-template-columns: 340px 1fr; gap: 0; height: calc(100vh - var(--topbar-h)); overflow: hidden; }
+.msg-list { border-right: 1px solid var(--c-border); overflow-y: auto; background: var(--c-surface); }
+.msg-list-header { padding: 16px 20px; border-bottom: 1px solid var(--c-border); display: flex; align-items: center; justify-content: space-between; }
+.msg-list-header h2 { font-size: 1rem; font-weight: 700; }
+.msg-tabs { display: flex; gap: 4px; padding: 12px 16px; border-bottom: 1px solid var(--c-border); }
+.msg-tab { padding: 5px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; border: none; cursor: pointer; background: transparent; color: var(--c-muted); }
+.msg-tab.active { background: var(--c-blue); color: white; }
+.msg-item { padding: 14px 18px; border-bottom: 1px solid var(--c-border); cursor: pointer; transition: background 0.15s; }
+.msg-item:hover { background: var(--c-hover); }
+.msg-item.active { background: rgba(74,154,191,0.08); border-left: 3px solid var(--c-blue); }
+.msg-item.unread .msg-from { font-weight: 700; }
+.msg-from { font-size: 0.88rem; font-weight: 500; color: var(--c-text); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg-subject { font-size: 0.82rem; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.msg-time { font-size: 0.75rem; color: var(--c-muted); }
+.msg-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 100px; font-weight: 600; }
+.badge-pending { background: rgba(224,120,32,0.15); color: var(--c-orange); }
+.badge-sent { background: rgba(45,122,79,0.15); color: #3da066; }
+.badge-skipped { background: rgba(136,150,168,0.15); color: var(--c-muted); }
+.msg-detail { padding: 32px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+.msg-detail-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--c-muted); gap: 12px; }
+.msg-detail-empty .icon { font-size: 3rem; opacity: 0.3; }
+.msg-header { display: flex; flex-direction: column; gap: 8px; padding-bottom: 20px; border-bottom: 1px solid var(--c-border); }
+.msg-header h3 { font-size: 1.1rem; font-weight: 700; }
+.msg-header-meta { display: flex; gap: 16px; font-size: 0.85rem; color: var(--c-muted); }
+.msg-body { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 20px; font-size: 0.9rem; line-height: 1.7; white-space: pre-wrap; }
+.msg-draft { background: rgba(74,154,191,0.05); border: 1px solid rgba(74,154,191,0.25); border-radius: 10px; padding: 20px; }
+.msg-draft h4 { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--c-blue); margin-bottom: 12px; }
+.msg-draft-text { font-size: 0.9rem; line-height: 1.7; color: var(--c-text); white-space: pre-wrap; }
+.msg-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.msg-send-area { display: none; flex-direction: column; gap: 10px; }
+.msg-send-area.open { display: flex; }
+.msg-send-area textarea { width: 100%; min-height: 120px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 12px; font-family: inherit; font-size: 0.9rem; color: var(--c-text); resize: vertical; }
+.msg-sent-note { font-size: 0.85rem; color: #3da066; display: flex; align-items: center; gap: 8px; }
+.empty-list { text-align: center; padding: 48px 20px; color: var(--c-muted); font-size: 0.88rem; }
+</style>
+</head>
+<body>
+<div class="wren-content">
+<div class="msg-layout">
+  <div class="msg-list">
+    <div class="msg-list-header">
+      <h2>📧 Messages</h2>
+      <span id="msg-count" class="badge badge-pending" style="display:none"></span>
+    </div>
+    <div class="msg-tabs">
+      <button class="msg-tab active" onclick="switchTab(this,'all')">All</button>
+      <button class="msg-tab" onclick="switchTab(this,'pending')">Pending</button>
+      <button class="msg-tab" onclick="switchTab(this,'sent')">Sent</button>
+    </div>
+    <div id="msg-list-body">
+      <div class="empty-list">Loading...</div>
+    </div>
+  </div>
+  <div class="msg-detail" id="msg-detail">
+    <div class="msg-detail-empty">
+      <div class="icon">📬</div>
+      <p>Select a message to view</p>
+      <p style="font-size:0.8rem">Emails to hello@littleangelsealing.co.uk appear here with AI-drafted replies. Reply via Telegram or here.</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+let allMessages = [], currentTab = 'all', currentId = null;
+
+async function loadMessages() {
+  try {
+    const data = await Wren.api('/api/messages/email-log');
+    allMessages = data || [];
+    const pending = allMessages.filter(m => m.status === 'pending').length;
+    const countEl = document.getElementById('msg-count');
+    if (pending > 0) { countEl.textContent = pending + ' pending'; countEl.style.display = ''; }
+    renderList();
+  } catch(e) {
+    document.getElementById('msg-list-body').innerHTML = '<div class="empty-list">Failed to load messages</div>';
+  }
+}
+
+function switchTab(btn, tab) {
+  document.querySelectorAll('.msg-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentTab = tab;
+  renderList();
+}
+
+function renderList() {
+  const filtered = currentTab === 'all' ? allMessages :
+    allMessages.filter(m => m.status === currentTab);
+  const el = document.getElementById('msg-list-body');
+  if (!filtered.length) { el.innerHTML = '<div class="empty-list">No messages</div>'; return; }
+  el.innerHTML = filtered.map(m => `
+    <div class="msg-item ${m.status === 'pending' ? 'unread' : ''} ${m.id === currentId ? 'active' : ''}" onclick="showMessage(${m.id})">
+      <div class="msg-meta">
+        <span class="msg-from">${escHtml(m.sender_name || m.sender_email || 'Unknown')}</span>
+        <span class="msg-time">${timeAgo(m.created_at)}</span>
+      </div>
+      <div class="msg-subject">${escHtml(m.subject || '(no subject)')}</div>
+      <div style="margin-top:4px">
+        <span class="msg-badge badge-${m.status || 'pending'}">${m.status || 'pending'}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function showMessage(id) {
+  currentId = id;
+  renderList();
+  const m = allMessages.find(x => x.id === id);
+  if (!m) return;
+  const detail = document.getElementById('msg-detail');
+  detail.innerHTML = `
+    <div class="msg-header">
+      <h3>${escHtml(m.subject || '(no subject)')}</h3>
+      <div class="msg-header-meta">
+        <span>From: ${escHtml(m.sender_name ? m.sender_name + ' &lt;' + m.sender_email + '&gt;' : m.sender_email || '?')}</span>
+        <span>${new Date(m.created_at).toLocaleString('en-GB')}</span>
+      </div>
+    </div>
+    <div class="msg-body">${escHtml(m.email_body || m.body || '(no body)')}</div>
+    ${m.draft_reply ? `
+    <div class="msg-draft">
+      <h4>🤖 AI Draft Reply</h4>
+      <div class="msg-draft-text">${escHtml(m.draft_reply)}</div>
+    </div>` : ''}
+    ${m.status === 'pending' ? `
+    <div class="msg-actions">
+      <button class="btn btn-primary btn-sm" onclick="sendDraft(${m.id})">✅ Send draft</button>
+      <button class="btn btn-secondary btn-sm" onclick="toggleCustom(${m.id})">✏️ Write own reply</button>
+      <button class="btn btn-ghost btn-sm" onclick="skipMessage(${m.id})">❌ Skip</button>
+    </div>
+    <div class="msg-send-area" id="custom-${m.id}">
+      <textarea id="custom-text-${m.id}" placeholder="Write your reply...">${escHtml(m.draft_reply || '')}</textarea>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="sendCustom(${m.id})">Send reply</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleCustom(${m.id})">Cancel</button>
+      </div>
+    </div>` : `
+    <div class="msg-sent-note">
+      ${m.status === 'sent' ? '✅ Reply sent' : '❌ Skipped'} · ${m.decision_at ? new Date(m.decision_at).toLocaleString('en-GB') : ''}
+      ${m.sent_reply ? '<br><small style="color:var(--c-muted)">' + escHtml(m.sent_reply.substring(0,200)) + '...</small>' : ''}
+    </div>`}
+  `;
+}
+
+function toggleCustom(id) {
+  const el = document.getElementById('custom-' + id);
+  el.classList.toggle('open');
+}
+
+async function sendDraft(id) {
+  const m = allMessages.find(x => x.id === id);
+  if (!confirm('Send the AI draft reply to ' + (m?.sender_email || 'sender') + '?')) return;
+  try {
+    await Wren.api('/api/messages/send-reply', { method: 'POST', body: { id, use_draft: true }});
+    Wren.toast('Reply sent ✓', 'success');
+    await loadMessages();
+    showMessage(id);
+  } catch(e) { Wren.toast('Failed to send: ' + (e.error || e.message), 'error'); }
+}
+
+async function sendCustom(id) {
+  const text = document.getElementById('custom-text-' + id)?.value;
+  if (!text?.trim()) { Wren.toast('Write your reply first', 'warning'); return; }
+  try {
+    await Wren.api('/api/messages/send-reply', { method: 'POST', body: { id, custom_text: text }});
+    Wren.toast('Reply sent ✓', 'success');
+    await loadMessages();
+    showMessage(id);
+  } catch(e) { Wren.toast('Failed: ' + (e.error || e.message), 'error'); }
+}
+
+async function skipMessage(id) {
+  try {
+    await Wren.api('/api/messages/skip', { method: 'POST', body: { id }});
+    Wren.toast('Skipped', 'info');
+    await loadMessages();
+  } catch(e) { Wren.toast('Failed', 'error'); }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return d.toLocaleDateString('en-GB', {day:'numeric',month:'short'});
+}
+
+document.addEventListener('DOMContentLoaded', () => loadMessages());
+setInterval(loadMessages, 60000);
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

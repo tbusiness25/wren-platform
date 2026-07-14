@@ -9,7 +9,7 @@ const http         = require('http');
 const crypto       = require('crypto');
 const { getPool }  = require('../db/pool');
 
-const USER_AGENT = 'Wren-Regulatory-Watcher/1.0 (operator: toby@example-nursery.co.uk)';
+const USER_AGENT = 'Wren-Regulatory-Watcher/1.0 (operator: toby@littleangelsealing.co.uk)';
 const MAX_REQ_PER_MIN = 10;
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────

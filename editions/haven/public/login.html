@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Sign in</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+<style>
+  .staff-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px,1fr)); gap: 10px; margin: 20px 0; }
+  .staff-tile { background: #10161f; border: 1px solid var(--h-border); border-radius: 12px;
+    padding: 14px 8px; cursor: pointer; text-align: center; transition: border-color .15s; }
+  .staff-tile:hover, .staff-tile.selected { border-color: var(--h-accent); }
+  .staff-tile .init { width: 44px; height: 44px; border-radius: 50%; background: rgba(111,179,168,.18);
+    color: var(--h-accent); font-weight: 700; display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 8px; font-size: 1.05rem; }
+  .staff-tile .nm { font-size: .82rem; }
+  .staff-tile .rl { font-size: .68rem; color: var(--h-muted); }
+  #pin { text-align: center; letter-spacing: .5em; font-size: 1.4rem; }
+</style>
+</head>
+<body>
+<div class="hv-login-wrap">
+  <div class="hv-login">
+    <div class="hv-logo" style="font-size:2.2rem">Ha<span>v</span>en</div>
+    <div class="hv-tagline" style="padding-bottom:8px">Digital care records</div>
+    <p style="background:rgba(224,180,92,.14);color:var(--h-amber);border-radius:10px;padding:8px 12px;font-size:.82rem;margin-bottom:10px">Demo environment — sample data only, no real residents. All demo PINs are <b>1234</b>.</p>
+    <p style="color:var(--h-muted);font-size:.88rem;margin-bottom:6px">Select your name, then enter your PIN.</p>
+    <div class="staff-grid" id="staffGrid"><div class="hv-empty">Loading staff…</div></div>
+    <div class="hv-field"><input type="password" id="pin" inputmode="numeric" maxlength="6" placeholder="••••" autocomplete="off"></div>
+    <button class="hv-btn" style="width:100%" id="loginBtn">Sign in</button>
+    <p id="err" style="color:var(--h-red);font-size:.85rem;margin-top:10px"></p>
+  </div>
+</div>
+<script src="/js/haven.js"></script>
+<script>
+let selectedId = null;
+async function loadStaff() {
+  try {
+    const res = await fetch('/api/auth/staff-list');
+    const staff = await res.json();
+    const grid = document.getElementById('staffGrid');
+    grid.innerHTML = staff.map(s => `
+      <div class="staff-tile" data-id="${s.id}">
+        <div class="init">${Haven.esc(s.initials || '?')}</div>
+        <div class="nm">${Haven.esc(s.first_name)} ${Haven.esc((s.last_name||'')[0] || '')}.</div>
+        <div class="rl">${Haven.esc((s.role||'').replace(/_/g,' '))}</div>
+      </div>`).join('') || '<div class="hv-empty">No staff found</div>';
+    grid.querySelectorAll('.staff-tile').forEach(t => t.addEventListener('click', () => {
+      grid.querySelectorAll('.staff-tile').forEach(x => x.classList.remove('selected'));
+      t.classList.add('selected');
+      selectedId = Number(t.dataset.id);
+      document.getElementById('pin').focus();
+    }));
+  } catch (e) {
+    document.getElementById('staffGrid').innerHTML = '<div class="hv-empty">Could not load staff list</div>';
+  }
+}
+async function doLogin() {
+  const pin = document.getElementById('pin').value;
+  const err = document.getElementById('err');
+  err.textContent = '';
+  if (!selectedId) { err.textContent = 'Select your name first.'; return; }
+  if (!pin) { err.textContent = 'Enter your PIN.'; return; }
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staff_id: selectedId, pin })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    sessionStorage.setItem('haven_token', data.token);
+    sessionStorage.setItem('haven_user', JSON.stringify(data.staff));
+    location.href = '/';
+  } catch (e) { err.textContent = e.message; }
+}
+document.getElementById('loginBtn').addEventListener('click', doLogin);
+document.getElementById('pin').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+loadStaff();
+</script>
+</body>
+</html>

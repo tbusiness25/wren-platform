@@ -274,7 +274,7 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Setting / School Name</label>
-              <input type="text" class="form-control" id="brand-name" placeholder="e.g. Your Nursery"
+              <input type="text" class="form-control" id="brand-name" placeholder="e.g. Little Angels Day Nursery"
                 value="${esc(branding.setting_name||'')}">
             </div>
           </div>

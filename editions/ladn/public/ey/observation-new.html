@@ -1,0 +1,2534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"          content="ladn">
+  <meta name="wren-app-page"         content="observation-new">
+  <meta name="wren-app-title"        content="New Observation">
+  <meta name="wren-app-chat"         content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>New Observation · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* ── Form page layout ──────────────────────────────────────────────────────── */
+    #obs-page {
+      /* Clearance for the fixed EyLog action bar + floating voice-capture mic so
+         neither covers the visibility checkboxes at the end of the form. */
+      padding: 0 0 calc(130px + env(safe-area-inset-bottom, 0));
+    }
+
+    /* ── Topbar overrides (close left, save right) ─────────────────────────────── */
+    #obs-topbar-close {
+      width: 44px; height: 44px;
+      background: transparent; border: none;
+      color: var(--c-muted); font-size: 1.1rem;
+      cursor: pointer; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    #obs-topbar-close:hover { background: rgba(255,255,255,0.06); color: var(--c-text); }
+
+    #obs-topbar-save {
+      height: 36px; padding: 0 16px;
+      background: var(--c-blue); border: none; border-radius: 10px;
+      color: #fff; font-size: .9rem; font-weight: 700;
+      cursor: pointer; flex-shrink: 0;
+      transition: opacity .15s;
+    }
+    #obs-topbar-save:hover   { opacity: .88; }
+    #obs-topbar-save:disabled { opacity: .45; cursor: default; }
+
+    #obs-topbar-draft {
+      height: 36px; padding: 0 12px;
+      background: transparent;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-muted); font-size: .85rem; font-weight: 600;
+      cursor: pointer; flex-shrink: 0;
+      transition: border-color .15s, color .15s;
+    }
+    #obs-topbar-draft:hover   { border-color: var(--c-blue); color: var(--c-text); }
+    #obs-topbar-draft:disabled { opacity: .4; cursor: default; }
+
+    #obs-draft-status a {
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-color: rgba(148,163,184,0.4);
+      cursor: pointer;
+    }
+
+    /* ── Scrollable form body ──────────────────────────────────────────────────── */
+    #obs-form-body {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0 0 40px;
+    }
+
+    /* ── Section groups ────────────────────────────────────────────────────────── */
+    .obs-section {
+      padding: 14px 16px 0;
+    }
+    .obs-label {
+      font-size: .78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--c-muted);
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    /* ── Child chip picker ─────────────────────────────────────────────────────── */
+    #obs-child-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      min-height: 44px;
+    }
+    .obs-child-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 34px;
+      padding: 0 12px;
+      background: rgba(74,154,191,0.15);
+      border: 1px solid var(--c-blue);
+      border-radius: 17px;
+      color: var(--c-blue);
+      font-size: .85rem;
+      font-weight: 600;
+    }
+    .obs-child-chip-remove {
+      background: transparent; border: none;
+      color: var(--c-blue); cursor: pointer;
+      font-size: .85rem; padding: 0;
+      line-height: 1; display: flex; align-items: center;
+    }
+    .obs-child-chip-remove:hover { color: var(--c-red); }
+    #obs-child-add-btn {
+      height: 34px; width: 34px;
+      border-radius: 17px;
+      background: var(--c-surface);
+      border: 1px dashed var(--c-muted);
+      color: var(--c-muted); font-size: 1.1rem;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: border-color .15s, color .15s;
+    }
+    #obs-child-add-btn:hover { border-color: var(--c-blue); color: var(--c-blue); }
+
+    /* ── Date/time row ─────────────────────────────────────────────────────────── */
+    #obs-datetime-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .obs-input {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      color: var(--c-text);
+      font-size: .9rem;
+      padding: 0 10px;
+      height: 40px;
+      outline: none;
+    }
+    .obs-input:focus { border-color: var(--c-blue); }
+    /* Obs date stepper */
+    #obs-date-stepper { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px;
+      background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; }
+    #obs-date-stepper button { min-width: 40px; min-height: 40px; background: none; border: none;
+      color: var(--c-text); cursor: pointer; padding: 0 6px; border-radius: 8px; transition: background .15s; }
+    #obs-date-stepper button:hover { background: rgba(255,255,255,0.06); }
+    #obs-date-prev, #obs-date-next { font-size: 1.2rem; line-height: 1; }
+    #obs-date-label { flex: 1; font-size: .82rem; font-weight: 700; text-align: center; }
+    #obs-date-stepper button:disabled { opacity: .3; cursor: default; }
+    #obs-date { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+    #obs-time { width: 90px; }
+
+    /* ── Textarea ──────────────────────────────────────────────────────────────── */
+    #obs-text {
+      width: 100%; box-sizing: border-box;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text);
+      font-size: .92rem;
+      line-height: 1.55;
+      padding: 12px;
+      resize: vertical;
+      min-height: 140px;
+      outline: none;
+      font-family: system-ui, Arial, sans-serif;
+    }
+    #obs-text:focus { border-color: var(--c-blue); }
+    #obs-text::placeholder { color: var(--c-muted); }
+    #obs-draft-status {
+      font-size: .73rem;
+      color: var(--c-muted);
+      margin-top: 4px;
+      min-height: 16px;
+      display: block;
+    }
+
+    /* ── Rich input row (Voice / Photo / Link) ─────────────────────────────────── */
+    #obs-rich-row {
+      display: flex;
+      gap: 8px;
+    }
+    .obs-rich-btn {
+      display: flex; align-items: center; gap: 6px;
+      height: 40px; padding: 0 14px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text); font-size: .85rem;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .obs-rich-btn:hover { border-color: var(--c-blue); background: rgba(74,154,191,0.08); }
+
+    /* ── Photo strip ───────────────────────────────────────────────────────────── */
+    #obs-photo-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 4px;
+    }
+    #obs-photo-strip:empty { display: none; }
+    .obs-photo-thumb {
+      width: 72px; height: 72px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid var(--c-border);
+      flex-shrink: 0;
+      cursor: pointer;
+      position: relative;
+    }
+    .obs-photo-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .obs-photo-remove {
+      position: absolute; top: -6px; right: -6px;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--c-red); border: none;
+      color: #fff; font-size: .65rem;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+    }
+    .obs-photo-uploading {
+      width: 72px; height: 72px;
+      border-radius: 8px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--c-muted); font-size: .75rem;
+      flex-shrink: 0;
+    }
+
+    /* ── Framework selector ────────────────────────────────────────────────────── */
+    #obs-framework-btn {
+      display: flex; align-items: center; gap: 8px;
+      height: 40px; padding: 0 14px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text); font-size: .88rem;
+      cursor: pointer; width: 100%; text-align: left;
+      transition: border-color .15s;
+    }
+    #obs-framework-btn:hover { border-color: var(--c-blue); }
+    #obs-framework-name { flex: 1; font-weight: 600; }
+    #obs-framework-status { font-size: .78rem; color: var(--c-muted); }
+
+    /* ── Tag chips ─────────────────────────────────────────────────────────────── */
+    #obs-tags-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .obs-tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 28px; padding: 0 10px;
+      background: rgba(91,143,255,0.14);
+      border: 1px solid transparent;
+      border-radius: 14px;
+      color: var(--c-blue);
+      font-size: .78rem; font-weight: 600;
+    }
+    .obs-tag-chip-remove {
+      background: transparent; border: none;
+      color: var(--c-blue); cursor: pointer;
+      font-size: .75rem; padding: 0; line-height: 1;
+    }
+    .obs-tag-chip-remove:hover { color: var(--c-red); }
+    #obs-tags-add-btn {
+      height: 28px; padding: 0 10px;
+      background: var(--c-surface);
+      border: 1px dashed var(--c-muted);
+      border-radius: 14px;
+      color: var(--c-muted); font-size: .78rem;
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    #obs-tags-add-btn:hover { border-color: var(--c-blue); color: var(--c-blue); }
+
+    /* ── Next steps textarea ───────────────────────────────────────────────────── */
+    #obs-next-steps {
+      width: 100%; box-sizing: border-box;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text);
+      font-size: .88rem;
+      line-height: 1.5;
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 72px;
+      outline: none;
+      font-family: system-ui, Arial, sans-serif;
+    }
+    #obs-next-steps:focus { border-color: var(--c-blue); }
+    #obs-next-steps::placeholder { color: var(--c-muted); }
+
+    /* ── Visibility checkboxes ─────────────────────────────────────────────────── */
+    .obs-check-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--c-border);
+      cursor: pointer;
+    }
+    .obs-check-row:last-child { border-bottom: none; }
+    .obs-check-row input[type="checkbox"] {
+      width: 18px; height: 18px;
+      accent-color: var(--c-blue);
+      cursor: pointer;
+    }
+    .obs-check-label {
+      font-size: .9rem;
+      color: var(--c-text);
+      flex: 1;
+    }
+    .obs-check-desc {
+      font-size: .78rem;
+      color: var(--c-muted);
+    }
+
+    /* ── Child picker drawer ───────────────────────────────────────────────────── */
+    #obs-child-drawer-backdrop {
+      position: fixed; inset: 0; z-index: 400;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    #obs-child-drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+    #obs-child-drawer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 401;
+      background: var(--c-navy-mid, #0f172a);
+      border-radius: 20px 20px 0 0;
+      max-height: 75vh;
+      display: flex; flex-direction: column;
+      transform: translateY(100%);
+      transition: transform .25s cubic-bezier(.32,.72,0,1);
+    }
+    #obs-child-drawer.open { transform: translateY(0); }
+    #obs-child-drawer-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 16px 10px;
+      border-bottom: 1px solid var(--c-border);
+      flex-shrink: 0;
+    }
+    #obs-child-drawer-title { font-size: 1rem; font-weight: 700; color: var(--c-text); }
+    #obs-child-drawer-close {
+      width: 36px; height: 36px;
+      background: transparent; border: none;
+      color: var(--c-muted); font-size: 1rem;
+      cursor: pointer; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #obs-child-drawer-close:hover { background: rgba(255,255,255,0.06); color: var(--c-text); }
+    #obs-child-drawer-search {
+      margin: 10px 16px;
+      height: 38px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      color: var(--c-text); font-size: .88rem;
+      padding: 0 12px; outline: none;
+      flex-shrink: 0;
+    }
+    #obs-child-drawer-search:focus { border-color: var(--c-blue); }
+    #obs-child-drawer-grid {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 8px 12px 20px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      flex: 1;
+    }
+    @media (min-width: 480px) { #obs-child-drawer-grid { grid-template-columns: repeat(5, 1fr); } }
+    .obs-drawer-child-card {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 4px;
+      padding: 8px 4px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background .12s, border-color .12s;
+    }
+    .obs-drawer-child-card:hover  { border-color: var(--c-blue); background: rgba(74,154,191,0.08); }
+    .obs-drawer-child-card.selected { background: rgba(74,154,191,0.18); border-color: var(--c-blue); }
+    .obs-drawer-child-avatar {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; font-weight: 700; color: #fff;
+    }
+    .obs-drawer-child-name {
+      font-size: .72rem; font-weight: 600;
+      color: var(--c-text); text-align: center;
+      overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; width: 100%; padding: 0 2px;
+    }
+
+    /* ── Tag picker drawer ─────────────────────────────────────────────────────── */
+    #obs-tag-drawer-backdrop {
+      position: fixed; inset: 0; z-index: 400;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    #obs-tag-drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+    #obs-tag-drawer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 401;
+      background: var(--c-navy-mid, #0f172a);
+      border-radius: 20px 20px 0 0;
+      max-height: 80vh;
+      display: flex; flex-direction: column;
+      transform: translateY(100%);
+      transition: transform .25s cubic-bezier(.32,.72,0,1);
+    }
+    #obs-tag-drawer.open { transform: translateY(0); }
+    #obs-tag-drawer-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 16px 10px;
+      border-bottom: 1px solid var(--c-border);
+      flex-shrink: 0;
+    }
+    #obs-tag-drawer-title { font-size: 1rem; font-weight: 700; color: var(--c-text); }
+    #obs-tag-drawer-close {
+      width: 36px; height: 36px;
+      background: transparent; border: none;
+      color: var(--c-muted); font-size: 1rem;
+      cursor: pointer; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #obs-tag-drawer-close:hover { background: rgba(255,255,255,0.06); color: var(--c-text); }
+    #obs-tag-search {
+      margin: 10px 16px;
+      height: 38px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      color: var(--c-text); font-size: .88rem;
+      padding: 0 12px; outline: none;
+      flex-shrink: 0;
+    }
+    #obs-tag-search:focus { border-color: var(--c-blue); }
+    #obs-tag-list {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 4px 0 20px;
+      flex: 1;
+    }
+    .obs-tag-area-heading {
+      font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--c-muted);
+      padding: 10px 16px 4px;
+    }
+    .obs-tag-stmt {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 16px;
+      border-bottom: 1px solid rgba(45,55,72,0.6);
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .obs-tag-stmt:hover { background: rgba(255,255,255,0.04); }
+    .obs-tag-stmt.selected { background: rgba(74,154,191,0.10); }
+    .obs-tag-stmt-check {
+      width: 18px; height: 18px;
+      border-radius: 4px;
+      border: 2px solid var(--c-border);
+      background: transparent;
+      flex-shrink: 0; margin-top: 2px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .7rem; color: #fff;
+      transition: background .12s, border-color .12s;
+    }
+    .obs-tag-stmt.selected .obs-tag-stmt-check {
+      background: var(--c-blue); border-color: var(--c-blue);
+    }
+    .obs-tag-stmt-body { flex: 1; }
+    .obs-tag-stmt-text { font-size: .84rem; color: var(--c-text); line-height: 1.4; }
+    .obs-tag-stmt-meta { font-size: .72rem; color: var(--c-muted); margin-top: 2px; }
+    #obs-tag-drawer-done {
+      margin: 12px 16px 20px;
+      height: 44px;
+      background: var(--c-blue); border: none; border-radius: 10px;
+      color: #fff; font-size: .95rem; font-weight: 700;
+      cursor: pointer; flex-shrink: 0;
+      transition: opacity .15s;
+    }
+    #obs-tag-drawer-done:hover { opacity: .88; }
+
+    /* ── Error inline ──────────────────────────────────────────────────────────── */
+    #obs-error {
+      margin: 12px 16px 0;
+      padding: 10px 14px;
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      color: var(--c-red, #ef4444);
+      font-size: .85rem;
+    }
+    #obs-error[hidden] { display: none; }
+
+    /* ── Divider ───────────────────────────────────────────────────────────────── */
+    .obs-divider {
+      height: 1px;
+      background: var(--c-border);
+      margin: 16px 16px 0;
+    }
+
+    /* ── Hidden file inputs ────────────────────────────────────────────────────── */
+    #obs-photo-input, #obs-gallery-input, #obs-video-input { display: none; }
+    /* Video thumbs share the photo-thumb frame */
+    video.obs-photo-thumb { background: #000; }
+    .obs-video-badge {
+      position: absolute; bottom: 2px; right: 2px;
+      font-size: .6rem; background: rgba(0,0,0,0.65); color: #fff;
+      border-radius: 4px; padding: 1px 4px; pointer-events: none;
+    }
+
+    /* ── EyLog card-grid composer (2026-07-03 round 2) ─────────────────────────
+       Staff have 10 years of EyLog muscle memory: the composer is a grid of
+       "sticky note" cards (Media / Observation / Analysis / Next steps /
+       Additional Comments / B5M Assessment). Tap a card → its editor opens
+       below the grid. Bottom bar mirrors EyLog: Publish · Gallery · Camera ·
+       Video · Save as. Wren dark theme, EyLog flow. */
+    #obs-card-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px; padding: 14px 16px 4px;
+    }
+    .obs-card {
+      position: relative;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      min-height: 120px;
+      padding: 12px;
+      cursor: pointer;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color .15s, background .15s;
+      text-align: left;
+    }
+    .obs-card:active { background: rgba(74,154,191,0.10); }
+    .obs-card.filled { border-color: var(--c-blue); }
+    .obs-card-head {
+      display: flex; align-items: center; gap: 7px;
+      border-bottom: 1px solid var(--c-border);
+      padding-bottom: 7px;
+    }
+    .obs-card-icon { font-size: 1rem; }
+    .obs-card-title {
+      flex: 1; font-size: .8rem; font-weight: 700; color: var(--c-text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .obs-card-edit { font-size: .8rem; color: var(--c-muted); }
+    .obs-card.filled .obs-card-edit { color: var(--c-blue); }
+    .obs-card-body {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 4px;
+      color: var(--c-muted); font-size: .8rem; text-align: center;
+    }
+    .obs-card-plus {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 1.5px solid var(--c-muted);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; line-height: 1;
+    }
+    .obs-card.filled .obs-card-plus { display: none; }
+    .obs-card-preview {
+      display: none;
+      color: var(--c-text); font-size: .76rem; line-height: 1.35;
+      text-align: left; width: 100%;
+      overflow: hidden; display: none;
+      -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+    }
+    .obs-card.filled .obs-card-preview { display: -webkit-box; }
+    .obs-card.filled .obs-card-hint { display: none; }
+    .obs-card-count {
+      position: absolute; top: 8px; right: 10px;
+      min-width: 20px; height: 20px; padding: 0 6px;
+      background: var(--c-blue); color: #fff; border-radius: 10px;
+      font-size: .7rem; font-weight: 700;
+      display: none; align-items: center; justify-content: center;
+    }
+    .obs-card.filled .obs-card-count { display: inline-flex; }
+
+    /* Editors (open under the grid when a card is tapped) */
+    .obs-editor { display: none; }
+    .obs-editor.open { display: block; }
+    .obs-editor textarea {
+      width: 100%; box-sizing: border-box;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text);
+      font-size: .9rem;
+      line-height: 1.5;
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 96px;
+      outline: none;
+      font-family: system-ui, Arial, sans-serif;
+    }
+    .obs-editor textarea:focus { border-color: var(--c-blue); }
+    .obs-editor textarea::placeholder { color: var(--c-muted); }
+
+    /* Quick framework tag chips (EyLog top bar: CoEL | EYFS | Tags ▾) */
+    #obs-fw-quick-row {
+      display: flex; gap: 8px; align-items: center;
+      padding: 10px 16px 0;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+    }
+    .obs-fw-quick {
+      flex: 0 0 auto; height: 32px; padding: 0 14px; border-radius: 16px;
+      background: transparent; border: 1px solid var(--c-border);
+      color: var(--c-text); font-size: .8rem; font-weight: 700;
+      cursor: pointer; transition: border-color .12s, background .12s;
+    }
+    .obs-fw-quick:hover { border-color: var(--c-blue); }
+
+    /* EyLog-style bottom action bar: Publish · Gallery · Camera · Video · Save as */
+    #obs-actionbar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+      display: flex; align-items: stretch; gap: 6px;
+      padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0));
+      background: var(--c-navy-mid, #0f172a);
+      border-top: 1px solid var(--c-border);
+    }
+    .obs-ab-btn {
+      flex: 0 0 auto; min-width: 56px; min-height: 52px;
+      background: transparent; border: none; border-radius: 10px;
+      color: var(--c-muted); cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+      font-size: .6rem; font-weight: 700; letter-spacing: .04em;
+    }
+    .obs-ab-btn span.ico { font-size: 1.25rem; line-height: 1; }
+    .obs-ab-btn:active { background: rgba(255,255,255,0.06); }
+    #obs-ab-publish {
+      flex: 1.4; background: var(--c-blue); color: #fff;
+      border-radius: 12px; font-size: .82rem; font-weight: 700;
+      flex-direction: row; gap: 8px;
+    }
+    /* Publish + Save-as live in the action bar but keep the topbar ids so the
+       existing save/draft JS drives them — override the old topbar styling. */
+    #obs-actionbar #obs-topbar-save {
+      flex: 1.4; height: auto; min-height: 52px; padding: 0 10px;
+      background: var(--c-blue); color: #fff; border: none; border-radius: 12px;
+      font-size: .85rem; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    #obs-actionbar #obs-topbar-save:disabled { opacity: .5; }
+    #obs-actionbar #obs-topbar-draft {
+      flex: 1; height: auto; min-height: 52px; padding: 0 8px;
+      background: transparent; border: 1px solid var(--c-border); border-radius: 12px;
+      color: var(--c-text); font-size: .74rem; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+
+    /* ── Draft with Wren (Twinkl-Ari) ────────────────────────────────── */
+    #dw-panel { display: none; margin-top: 12px; }
+    #dw-panel.visible { display: block; }
+    #dw-panel-inner {
+      background: rgba(91,143,255,0.06);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      padding: 0;
+    }
+    #dw-tabs { display: flex; border-bottom: 1px solid var(--c-border); }
+    .dw-tab {
+      flex: 1; height: 40px; border: none;
+      background: transparent; color: var(--c-muted);
+      font-size: .82rem; font-weight: 600;
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: color .12s, border-color .12s;
+    }
+    .dw-tab:hover { color: var(--c-text); }
+    .dw-tab.active { color: var(--c-blue); border-bottom-color: var(--c-blue); background: rgba(74,154,191,0.06); }
+    .dw-tab-body { display: none; padding: 12px 14px; }
+    .dw-tab-body.active { display: block; }
+    .dw-tab-body textarea {
+      width: 100%; box-sizing: border-box;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 8px; color: var(--c-text); font-size: .88rem;
+      line-height: 1.55; padding: 10px 12px; resize: vertical;
+      outline: none; font-family: system-ui, Arial, sans-serif;
+      min-height: 80px;
+    }
+    .dw-tab-body textarea:focus { border-color: var(--c-blue); }
+    .dw-stmt-group { margin-bottom: 14px; }
+    .dw-stmt-group-title {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--c-muted); padding: 6px 0 2px;
+    }
+    .dw-stmt-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 10px; border-radius: 8px; cursor: pointer; margin: 2px 0;
+      transition: background .1s;
+    }
+    .dw-stmt-item:hover { background: rgba(255,255,255,0.04); }
+    .dw-stmt-item.checked { background: rgba(74,154,191,0.10); }
+    .dw-stmt-item input[type=checkbox] {
+      width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0;
+      accent-color: var(--c-blue);
+    }
+    .dw-stmt-text { font-size: .83rem; color: var(--c-text); line-height: 1.35; }
+    .dw-stmt-meta { font-size: .7rem; color: var(--c-muted); margin-top: 1px; }
+    .dw-stmt-why { font-size: .72rem; color: var(--c-blue); margin-top: 2px; font-style: italic; }
+    .dw-age-chip {
+      display: inline-block; font-size: .65rem; font-weight: 600;
+      background: rgba(224,120,32,0.15); color: var(--c-orange, #e07820);
+      padding: 1px 6px; border-radius: 6px; margin-left: 6px;
+    }
+    .dw-coel-card {
+      border: 1px solid var(--c-border); border-radius: 10px;
+      padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .dw-coel-card:hover { border-color: var(--c-blue); }
+    .dw-coel-card.checked { border-color: var(--c-blue); background: rgba(74,154,191,0.08); }
+    .dw-coel-title { font-weight: 700; font-size: .85rem; color: var(--c-text); }
+    .dw-coel-pills { display: flex; gap: 6px; margin-top: 6px; }
+    .dw-coel-pill {
+      height: 28px; padding: 0 10px; border-radius: 14px;
+      border: 1px solid var(--c-border); background: transparent;
+      color: var(--c-muted); font-size: .75rem; font-weight: 600;
+      cursor: pointer; transition: background .12s, color .12s, border-color .12s;
+    }
+    .dw-coel-pill:hover { border-color: var(--c-blue); }
+    .dw-coel-pill.sel { background: var(--c-blue); color: #fff; border-color: var(--c-blue); }
+    #dw-load {
+      display: flex; align-items: center; gap: 10px;
+      font-size: .85rem; color: var(--c-muted); padding: 20px 0; justify-content: center;
+    }
+    .dw-spinner {
+      width: 20px; height: 20px; border: 2px solid var(--c-border);
+      border-top-color: var(--c-blue); border-radius: 50%;
+      animation: dw-spin .6s linear infinite; flex-shrink: 0;
+    }
+    @keyframes dw-spin { to { transform: rotate(360deg); } }
+    #dw-actions { padding: 10px 14px 14px; display: flex; gap: 8px; border-top: 1px solid var(--c-border); }
+    .dw-btn {
+      height: 38px; padding: 0 16px; border-radius: 10px;
+      font-size: .88rem; font-weight: 600; cursor: pointer;
+      border: 1px solid transparent; transition: background .12s;
+    }
+    .dw-btn-primary { background: var(--c-blue); color: #fff; border-color: var(--c-blue); }
+    .dw-btn-primary:hover { opacity: .88; }
+    .dw-btn-primary:disabled { opacity: .4; cursor: default; }
+    .dw-btn-ghost { background: transparent; color: var(--c-muted); border-color: var(--c-border); }
+    .dw-btn-ghost:hover { border-color: var(--c-blue); color: var(--c-blue); }
+    .dw-btn-copy { background: transparent; color: var(--c-blue); border-color: var(--c-blue); }
+    .dw-btn-copy:hover { background: rgba(74,154,191,0.10); }
+    .dw-section-label {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--c-muted); padding: 10px 0 2px;
+    }
+    #dw-regenerate {
+      height: 32px; padding: 0 12px; border-radius: 8px;
+      background: transparent; border: 1px solid var(--c-border);
+      color: var(--c-muted); font-size: .78rem; cursor: pointer;
+      position: absolute; top: 8px; right: 8px; transition: color .12s;
+    }
+    #dw-regenerate:hover { color: var(--c-blue); border-color: var(--c-blue); }
+    .dw-tab-body { position: relative; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="obs-page">
+
+  <!-- Error bar -->
+  <div id="obs-error" hidden role="alert" aria-live="assertive"></div>
+
+  <!-- Form body -->
+  <div id="obs-form-body">
+
+    <!-- Children -->
+    <div class="obs-section">
+      <label class="obs-label" for="obs-child-row">Child(ren)</label>
+      <div id="obs-child-row" role="list" aria-label="Selected children">
+        <button id="obs-child-add-btn" type="button" aria-label="Add child" title="Add child">+</button>
+      </div>
+    </div>
+
+    <div class="obs-divider"></div>
+
+    <!-- Date / Time -->
+    <div class="obs-section">
+      <div id="obs-datetime-row">
+        <div id="obs-date-stepper" role="group" aria-label="Observation date">
+          <button id="obs-date-prev" type="button" aria-label="Previous day">‹</button>
+          <button id="obs-date-label" type="button" aria-label="Change date">Today</button>
+          <button id="obs-date-next" type="button" aria-label="Next day">›</button>
+          <input type="date" id="obs-date" aria-hidden="true" tabindex="-1">
+        </div>
+        <select id="obs-time" class="obs-input" aria-label="Observation time"></select>
+      </div>
+    </div>
+
+    <div class="obs-divider"></div>
+
+    <!-- Quick framework tag chips — EyLog top bar: CoEL | EYFS | Tags ▾ -->
+    <div id="obs-fw-quick-row" role="group" aria-label="Framework tags">
+      <button class="obs-fw-quick" type="button" data-fw="coel">CoEL</button>
+      <button class="obs-fw-quick" type="button" data-fw="EYFS">EYFS</button>
+      <button class="obs-fw-quick" type="button" data-fw="B25">B25</button>
+      <button class="obs-fw-quick" type="button" data-fw="">Tags ▾</button>
+    </div>
+    <!-- Selected tag chips -->
+    <div class="obs-section" style="padding-top:8px">
+      <div id="obs-tags-row" role="list" aria-label="Framework tags">
+        <button id="obs-tags-add-btn" type="button" aria-label="Add framework tag" style="display:none">+ Add tag</button>
+      </div>
+    </div>
+
+    <!-- EyLog card grid: Media / Observation / Analysis / Next steps /
+         Additional Comments / Birth to 5 Matters. Tap a card → editor opens. -->
+    <div id="obs-card-grid">
+      <button type="button" class="obs-card" id="card-media" aria-label="Add media">
+        <span class="obs-card-count" id="card-media-count"></span>
+        <div class="obs-card-head"><span class="obs-card-icon" aria-hidden="true">📹</span><span class="obs-card-title">Media</span><span class="obs-card-edit" aria-hidden="true">＋</span></div>
+        <div class="obs-card-body"><div class="obs-card-plus" aria-hidden="true">＋</div><span class="obs-card-hint">Add Media</span><span class="obs-card-preview" id="card-media-preview"></span></div>
+      </button>
+      <button type="button" class="obs-card" id="card-obs" data-editor="ed-obs" aria-label="Add observation">
+        <div class="obs-card-head"><span class="obs-card-icon" aria-hidden="true">👁️</span><span class="obs-card-title">Observation <span style="color:var(--c-red)">*</span></span><span class="obs-card-edit" aria-hidden="true">✏️</span></div>
+        <div class="obs-card-body"><div class="obs-card-plus" aria-hidden="true">＋</div><span class="obs-card-hint">Add Observation (What happened)</span><span class="obs-card-preview" id="card-obs-preview"></span></div>
+      </button>
+      <button type="button" class="obs-card" id="card-analysis" data-editor="ed-analysis" aria-label="Add analysis">
+        <div class="obs-card-head"><span class="obs-card-icon" aria-hidden="true">🔍</span><span class="obs-card-title">Analysis</span><span class="obs-card-edit" aria-hidden="true">✏️</span></div>
+        <div class="obs-card-body"><div class="obs-card-plus" aria-hidden="true">＋</div><span class="obs-card-hint">Add Analysis</span><span class="obs-card-preview" id="card-analysis-preview"></span></div>
+      </button>
+      <button type="button" class="obs-card" id="card-next" data-editor="ed-next" aria-label="Add next steps">
+        <div class="obs-card-head"><span class="obs-card-icon" aria-hidden="true">👣</span><span class="obs-card-title">Next steps</span><span class="obs-card-edit" aria-hidden="true">✏️</span></div>
+        <div class="obs-card-body"><div class="obs-card-plus" aria-hidden="true">＋</div><span class="obs-card-hint">Add Next steps (What next)</span><span class="obs-card-preview" id="card-next-preview"></span></div>
+      </button>
+      <button type="button" class="obs-card" id="card-comments" data-editor="ed-comments" aria-label="Add additional comments">
+        <div class="obs-card-head"><span class="obs-card-icon" aria-hidden="true">📄</span><span class="obs-card-title">Additional Comm…</span><span class="obs-card-edit" aria-hidden="true">✏️</span></div>
+        <div class="obs-card-body"><div class="obs-card-plus" aria-hidden="true">＋</div><span class="obs-card-hint">Add Additional Comments</span><span class="obs-card-preview" id="card-comments-preview"></span></div>
+      </button>
+      <button type="button" class="obs-card" id="card-b5m" aria-label="Add Birth to 5 Matters assessment">
+        <span class="obs-card-count" id="card-b5m-count"></span>
+        <div class="obs-card-head"><span class="obs-card-icon" aria-hidden="true">📋</span><span class="obs-card-title">Birth to 5 Matters</span><span class="obs-card-edit" aria-hidden="true">✏️</span></div>
+        <div class="obs-card-body"><div class="obs-card-plus" aria-hidden="true">＋</div><span class="obs-card-hint">Add Birth to 5 Matters / Assessment</span><span class="obs-card-preview" id="card-b5m-preview"></span></div>
+      </button>
+    </div>
+
+    <!-- Photo strip -->
+    <div class="obs-section" id="obs-photo-section" hidden>
+      <div id="obs-photo-strip" role="list" aria-label="Attached photos"></div>
+    </div>
+
+    <!-- Editor: Observation (What happened) -->
+    <div class="obs-editor obs-section" id="ed-obs">
+      <label class="obs-label" for="obs-text">Observation <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--c-muted)">(what happened)</span></label>
+      <textarea id="obs-text" rows="5"
+        placeholder="What happened? What did you see and hear?"
+        aria-label="Observation text"
+        autocomplete="off" autocorrect="on" spellcheck="true"></textarea>
+      <span id="obs-draft-status" aria-live="polite"></span>
+      <!-- Draft with Wren -->
+      <button id="dw-open-btn" type="button" aria-label="Open Draft with Wren" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;background:transparent;border:1px solid var(--c-border);border-radius:10px;color:var(--c-blue);font-size:.85rem;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s;">
+        ✨ Draft with Wren
+      </button>
+    </div>
+
+    <!-- Draft with Wren panel (hidden until opened) -->
+    <div id="dw-panel" role="dialog" aria-label="Draft with Wren">
+      <div id="dw-panel-inner">
+        <!-- Loading state -->
+        <div id="dw-load" hidden>
+          <div class="dw-spinner"></div>
+          <span>Wren is thinking…</span>
+        </div>
+        <!-- Statement suggestions -->
+        <div id="dw-suggestions" hidden>
+          <!-- Populated dynamically -->
+        </div>
+        <!-- CoEL cards -->
+        <div id="dw-coel" hidden>
+          <div class="dw-section-label">Characteristics of Effective Learning (tick your level for each)</div>
+          <div id="dw-coel-list"></div>
+        </div>
+        <!-- Output tabs (appear after draft is generated) -->
+        <div id="dw-output" hidden>
+          <div id="dw-tabs">
+            <button class="dw-tab active" data-dw-tab="tab-obs">Polished</button>
+            <button class="dw-tab" data-dw-tab="tab-parent">Parent-friendly</button>
+            <button class="dw-tab" data-dw-tab="tab-next">Next steps</button>
+          </div>
+          <div class="dw-tab-body active" id="tab-obs">
+            <button id="dw-regenerate" type="button">⟳ Regenerate</button>
+            <textarea id="dw-out-obs" rows="4"></textarea>
+          </div>
+          <div class="dw-tab-body" id="tab-parent">
+            <button id="dw-regenerate-p" type="button" style="display:none;">⟳ Regenerate</button>
+            <textarea id="dw-out-parent" rows="4"></textarea>
+            <button class="dw-btn-copy" id="dw-copy-parent" type="button" style="margin-top:6px;height:30px;font-size:.75rem;">📋 Copy to parent message</button>
+          </div>
+          <div class="dw-tab-body" id="tab-next">
+            <button id="dw-regenerate-n" type="button" style="display:none;">⟳ Regenerate</button>
+            <textarea id="dw-out-next" rows="3"></textarea>
+          </div>
+        </div>
+        <!-- Actions -->
+        <div id="dw-actions" hidden>
+          <button class="dw-btn dw-btn-primary" id="dw-save-btn" type="button">💾 Save & close</button>
+          <button class="dw-btn dw-btn-ghost" id="dw-cancel-btn" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Editor: Analysis -->
+    <div class="obs-editor obs-section" id="ed-analysis">
+      <label class="obs-label" for="obs-analysis">Analysis <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--c-muted)">(optional)</span></label>
+      <textarea id="obs-analysis" rows="3"
+        placeholder="What does this tell you about the child's learning and development?"
+        aria-label="Analysis"></textarea>
+    </div>
+
+    <!-- Editor: Next steps -->
+    <div class="obs-editor obs-section" id="ed-next">
+      <label class="obs-label" for="obs-next-steps">Next steps <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--c-muted)">(what next — optional)</span></label>
+      <textarea id="obs-next-steps" rows="2"
+        placeholder="What would you like to plan next for this child?"
+        aria-label="Next steps"></textarea>
+    </div>
+
+    <!-- Editor: Additional comments -->
+    <div class="obs-editor obs-section" id="ed-comments">
+      <label class="obs-label" for="obs-comments">Additional comments <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--c-muted)">(optional)</span></label>
+      <textarea id="obs-comments" rows="2"
+        placeholder="Anything else worth noting (context, who was involved, parent voice…)"
+        aria-label="Additional comments"></textarea>
+    </div>
+
+    <div class="obs-divider"></div>
+
+    <!-- Visibility -->
+    <div class="obs-section">
+      <label class="obs-label">Visibility</label>
+      <div class="obs-check-row" style="opacity:.85">
+        <input type="checkbox" id="obs-share-parents" checked disabled aria-label="Shared with parents automatically" style="pointer-events:none">
+        <div>
+          <div class="obs-check-label">Shared with parents automatically</div>
+          <div class="obs-check-desc">All observations appear in the parents portal — unless marked Private (DSL only) below</div>
+        </div>
+      </div>
+      <label class="obs-check-row">
+        <input type="checkbox" id="obs-planned" aria-label="Planned activity">
+        <div>
+          <div class="obs-check-label">Planned activity</div>
+          <div class="obs-check-desc">This observation came from a planned/adult-led activity</div>
+        </div>
+      </label>
+      <label class="obs-check-row">
+        <input type="checkbox" id="obs-private" aria-label="Private DSL only">
+        <div>
+          <div class="obs-check-label">Private (DSL only)</div>
+          <div class="obs-check-desc">Safeguarding concern — restricted access</div>
+        </div>
+      </label>
+      <label class="obs-check-row">
+        <input type="checkbox" id="obs-termly" aria-label="Termly update">
+        <div>
+          <div class="obs-check-label">Termly Update &amp; Tracking</div>
+          <div class="obs-check-desc">This child's termly update (every 6–8 weeks) — clears their reminder</div>
+        </div>
+      </label>
+    </div>
+
+  </div><!-- #obs-form-body -->
+
+</div><!-- #obs-page -->
+
+<!-- EyLog-style bottom action bar: Publish · Gallery · Camera · Video · Save as.
+     Publish/Save-as reuse the topbar button ids so ALL existing save/draft logic
+     (disable states, "Saving…" text) works unchanged. -->
+<div id="obs-actionbar" role="toolbar" aria-label="Observation actions">
+  <button id="obs-topbar-save" type="button" style="height:auto" class="obs-ab-publish-native"></button>
+  <button class="obs-ab-btn" id="ab-gallery" type="button" aria-label="Add from gallery"><span class="ico" aria-hidden="true">🖼️</span>GALLERY</button>
+  <button class="obs-ab-btn" id="ab-camera" type="button" aria-label="Take photo"><span class="ico" aria-hidden="true">📷</span>CAMERA</button>
+  <button class="obs-ab-btn" id="ab-video" type="button" aria-label="Record video"><span class="ico" aria-hidden="true">🎥</span>VIDEO</button>
+  <button id="obs-topbar-draft" type="button" aria-label="Save as draft"></button>
+</div>
+
+<!-- Hidden file inputs for media. Gallery has NO capture attribute — capture="environment"
+     forces the camera app on Android (Samsung/Chrome) and blocks picking from the gallery. -->
+<input type="file" id="obs-gallery-input" accept="image/*,video/mp4,video/webm,video/quicktime,video/3gpp" multiple aria-hidden="true">
+<input type="file" id="obs-photo-input" accept="image/*" capture="environment" multiple aria-hidden="true">
+<input type="file" id="obs-video-input" accept="video/*" capture="environment" aria-hidden="true">
+
+<!-- ── Child picker drawer ── -->
+<div id="obs-child-drawer-backdrop" role="presentation"></div>
+<div id="obs-child-drawer" role="dialog" aria-modal="true" aria-label="Select children" aria-hidden="true">
+  <div id="obs-child-drawer-header">
+    <span id="obs-child-drawer-title">Select children</span>
+    <button id="obs-child-drawer-close" aria-label="Close">✕</button>
+  </div>
+  <input type="search" id="obs-child-drawer-search" placeholder="Search…" autocomplete="off" aria-label="Search children">
+  <div id="obs-child-drawer-grid" role="list" aria-label="Children"></div>
+</div>
+
+<!-- ── Tag picker drawer ── -->
+<div id="obs-tag-drawer-backdrop" role="presentation"></div>
+<div id="obs-tag-drawer" role="dialog" aria-modal="true" aria-label="Select framework tags" aria-hidden="true">
+  <div id="obs-tag-drawer-header">
+    <span id="obs-tag-drawer-title">Framework Tags</span>
+    <button id="obs-tag-drawer-close" aria-label="Close">✕</button>
+  </div>
+  <!-- Multi-framework picker: tag one observation against several frameworks at once -->
+  <div id="obs-tag-fw-row" role="tablist" aria-label="Framework" style="display:flex;gap:6px;overflow-x:auto;padding:8px 12px 4px;-webkit-overflow-scrolling:touch"></div>
+  <!-- EyLog-style: pick an age band first, then tick strands. Shown only when the framework has >1 band. -->
+  <div id="obs-tag-band-row" role="tablist" aria-label="Age band" style="display:none;gap:6px;overflow-x:auto;padding:0 12px 8px;-webkit-overflow-scrolling:touch"></div>
+  <input type="search" id="obs-tag-search" placeholder="Search statements…" autocomplete="off" aria-label="Search framework statements">
+  <div id="obs-tag-list" role="list" aria-label="Framework statements"></div>
+  <button id="obs-tag-drawer-done" type="button">Done</button>
+</div>
+
+<script src="/js/wren-core.js?v=20260704"      defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script src="/js/wren-voice.js?v=20260515"     defer></script>
+<script src="/js/wren-obs-outbox.js?v=20260617" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * State
+   * ──────────────────────────────────────────────────────────────────────────── */
+  var _children     = [];   // { id, first_name, last_name, room_id }
+  var _allChildren  = [];   // all fetched from API
+  var _photoUrls    = [];   // uploaded photo URLs (online path — unchanged)
+  /* Raw File objects kept for the offline outbox. Each: { file, url|null }.
+   * url is set once the online upload succeeds; null means "needs uploading on
+   * sync" (the upload failed because we're offline). Either way the File is
+   * preserved so the outbox can (re-)upload it later. */
+  var _photoFiles   = [];
+  var _tags         = [];   // { id, framework, area, aspect, statement_text } — across MANY frameworks
+  var _stmtCache    = {};   // framework param -> [statements]  (per-framework; fixes the old single-cache stale bug)
+  var _tagFw        = 'EYFS'; // framework currently shown in the tag drawer
+  /* LADN-relevant frameworks for the in-drawer multi-framework picker. label = chip text,
+   * param = value sent to /api/framework-statements (resolved by _FRAMEWORK_MAP server-side). */
+  var TAG_FRAMEWORKS = [
+    { label: 'EYFS',        param: 'EYFS'    },
+    { label: 'Dev Matters', param: 'CFE'     },
+    { label: 'B25',         param: 'B25'     },
+    { label: 'Leuven',      param: 'Leuven'  },
+    { label: 'Phonics',     param: 'Phonics' },
+    { label: 'SEND',        param: 'SEND'    },
+    { label: 'EYDJ (SEN)',  param: 'EYDJ'    },
+    { label: 'CoEL',        param: 'coel'    }
+  ];
+  var _tagBand = '';   // selected age band ('' = all). EyLog-style band-first picker.
+  var _FW_SHORT = { eyfs_statutory:'EYFS', development_matters:'DM', birth_to_5:'B25', leuven:'Leuven', phonics:'Phonics', send:'SEND', eydj:'EYDJ', coel:'CoEL' };
+  var _draftTimer   = null;
+  var _saving       = false;
+
+  /* Draft key prefix */
+  var DRAFT_KEY = 'eyObservationDraft';
+
+  /* HTML escape */
+  function _e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* Avatar colour */
+  var AVATAR_COLORS = [
+    '#4a9abf','#e07820','#22c55e','#a855f7','#ef4444',
+    '#06b6d4','#f59e0b','#10b981','#ec4899','#3b82f6'
+  ];
+  function _color(name) {
+    return AVATAR_COLORS[(name || 'A').charCodeAt(0) % AVATAR_COLORS.length];
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Topbar: inject ✕ close (left) and Save (right)
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _injectTopbarButtons() {
+    var topbar = document.getElementById('wren-app-topbar');
+    if (!topbar) return;
+
+    /* Close button replaces hamburger. Save/Draft moved to the EyLog-style
+       bottom action bar (2026-07-03 round 2) — same ids, same logic. */
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (hamburger) {
+      var closeBtn = document.createElement('button');
+      closeBtn.id = 'obs-topbar-close';
+      closeBtn.type = 'button';
+      closeBtn.setAttribute('aria-label', 'Discard and go back');
+      closeBtn.textContent = '✕';
+      closeBtn.addEventListener('click', _close);
+      hamburger.parentNode.insertBefore(closeBtn, hamburger);
+      hamburger.style.display = 'none';
+    }
+
+    var saveBtn = document.getElementById('obs-topbar-save');
+    if (saveBtn) {
+      saveBtn.innerHTML = '✔ Publish';
+      saveBtn.addEventListener('click', _save);
+    }
+    var draftBtn = document.getElementById('obs-topbar-draft');
+    if (draftBtn) {
+      draftBtn.innerHTML = '💾 Save as';
+      draftBtn.addEventListener('click', _saveDraftToOutbox);
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * EyLog card grid: tap a card → its editor opens under the grid (one at a
+   * time); cards show a live preview + filled state as you type.
+   * ──────────────────────────────────────────────────────────────────────────── */
+  var CARD_MAP = [
+    { card: 'card-obs',      editor: 'ed-obs',      input: 'obs-text' },
+    { card: 'card-analysis', editor: 'ed-analysis', input: 'obs-analysis' },
+    { card: 'card-next',     editor: 'ed-next',     input: 'obs-next-steps' },
+    { card: 'card-comments', editor: 'ed-comments', input: 'obs-comments' }
+  ];
+
+  function _openEditor(editorId, focus) {
+    document.querySelectorAll('.obs-editor.open').forEach(function(ed) {
+      if (ed.id !== editorId) ed.classList.remove('open');
+    });
+    var ed = document.getElementById(editorId);
+    if (!ed) return;
+    ed.classList.add('open');
+    var m = CARD_MAP.find(function(x) { return x.editor === editorId; });
+    if (m) {
+      var ta = document.getElementById(m.input);
+      if (ta && focus !== false) {
+        ed.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        requestAnimationFrame(function() { ta.focus(); });
+      }
+    }
+  }
+
+  function _updateCardPreview(m) {
+    var card = document.getElementById(m.card);
+    var prev = document.getElementById(m.card + '-preview');
+    var ta   = document.getElementById(m.input);
+    if (!card || !ta) return;
+    var v = (ta.value || '').trim();
+    card.classList.toggle('filled', !!v);
+    if (prev) prev.textContent = v.slice(0, 90);
+  }
+
+  function _updateMediaCard() {
+    var card  = document.getElementById('card-media');
+    var count = document.getElementById('card-media-count');
+    var prev  = document.getElementById('card-media-preview');
+    if (!card) return;
+    var n = _photoFiles.length;
+    card.classList.toggle('filled', n > 0);
+    if (count) count.textContent = String(n);
+    if (prev) prev.textContent = n ? (n + ' item' + (n === 1 ? '' : 's') + ' attached') : '';
+  }
+
+  function _updateB5mCard() {
+    var card  = document.getElementById('card-b5m');
+    var count = document.getElementById('card-b5m-count');
+    var prev  = document.getElementById('card-b5m-preview');
+    if (!card) return;
+    var n = _tags.length;
+    card.classList.toggle('filled', n > 0);
+    if (count) count.textContent = String(n);
+    if (prev) prev.textContent = n ? (n + ' statement' + (n === 1 ? '' : 's') + ' linked') : '';
+  }
+
+  /* Open the tag drawer preset to a framework (quick chips + B5M card). */
+  function _openTagDrawerFw(param) {
+    _openTagDrawer();
+    if (param) _selectTagFramework(param);
+  }
+
+  function _initCards() {
+    CARD_MAP.forEach(function(m) {
+      var card = document.getElementById(m.card);
+      var ta   = document.getElementById(m.input);
+      if (card) card.addEventListener('click', function() {
+        var ed = document.getElementById(m.editor);
+        if (ed && ed.classList.contains('open')) { ed.classList.remove('open'); return; }
+        _openEditor(m.editor, true);
+      });
+      if (ta) ta.addEventListener('input', function() { _updateCardPreview(m); });
+      _updateCardPreview(m);
+    });
+
+    var mediaCard = document.getElementById('card-media');
+    if (mediaCard) mediaCard.addEventListener('click', function() {
+      var input = document.getElementById('obs-gallery-input');
+      if (input) input.click();
+    });
+
+    var b5mCard = document.getElementById('card-b5m');
+    if (b5mCard) b5mCard.addEventListener('click', function() { _openTagDrawerFw('B25'); });
+
+    document.querySelectorAll('.obs-fw-quick').forEach(function(chip) {
+      chip.addEventListener('click', function() { _openTagDrawerFw(chip.dataset.fw); });
+    });
+
+    /* Action-bar media shortcuts (EyLog: GALLERY · CAMERA · VIDEO) */
+    [ ['ab-gallery', 'obs-gallery-input'],
+      ['ab-camera',  'obs-photo-input'],
+      ['ab-video',   'obs-video-input'] ].forEach(function(pair) {
+      var b = document.getElementById(pair[0]);
+      if (b) b.addEventListener('click', function() {
+        var i = document.getElementById(pair[1]);
+        if (i) i.click();
+      });
+    });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Close / back
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _close() {
+    if (history.length > 1) history.back();
+    else Wren.navigate('/ey/home');
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Date / time defaults
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function _initDateTime() {
+    var now = new Date();
+    var d = document.getElementById('obs-date');
+    var t = document.getElementById('obs-time');
+    var today = now.getFullYear() + '-' + _pad2(now.getMonth() + 1) + '-' + _pad2(now.getDate());
+
+    /* Date stepper — keep hidden input as source of truth */
+    if (d) {
+      d.max = today;
+      d.value = today;
+    }
+    (function() {
+      var _od = today;
+      function _fmt(str) {
+        var x = new Date(str + 'T00:00:00');
+        return x.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      }
+      function _shiftDay(str, delta) {
+        var x = new Date(str + 'T00:00:00'); x.setDate(x.getDate() + delta);
+        return x.toISOString().slice(0, 10);
+      }
+      function _setOd(val) {
+        if (val > today) val = today;
+        _od = val;
+        if (d) d.value = _od;
+        var lbl = document.getElementById('obs-date-label');
+        if (lbl) lbl.textContent = (_od === today) ? 'Today' : _fmt(_od);
+        var nb = document.getElementById('obs-date-next');
+        if (nb) nb.disabled = (_od >= today);
+      }
+      _setOd(today);
+      var prev = document.getElementById('obs-date-prev');
+      var next = document.getElementById('obs-date-next');
+      var lbl  = document.getElementById('obs-date-label');
+      if (prev) prev.addEventListener('click', function() { _setOd(_shiftDay(_od, -1)); });
+      if (next) next.addEventListener('click', function() { _setOd(_shiftDay(_od, 1)); });
+      if (lbl) lbl.addEventListener('click', function() {
+        if (d && d.showPicker) { try { d.showPicker(); return; } catch(e) {} }
+        if (d) d.click();
+      });
+      if (d) d.addEventListener('change', function() { _setOd(this.value || today); });
+    })();
+
+    /* Time is a dropdown of 5-minute slots, defaulting to nearest current slot */
+    if (t && t.tagName === 'SELECT') {
+      var nowMins  = now.getHours() * 60 + now.getMinutes();
+      var nearest  = Math.round(nowMins / 5) * 5;
+      if (nearest > 1435) nearest = 1435;   /* clamp to 23:55 */
+      var html = '';
+      var selectedVal = _pad2(Math.floor(nearest / 60)) + ':' + _pad2(nearest % 60);
+      for (var mins = 0; mins < 1440; mins += 5) {
+        var val = _pad2(Math.floor(mins / 60)) + ':' + _pad2(mins % 60);
+        html += '<option value="' + val + '"' + (val === selectedVal ? ' selected' : '') + '>' + val + '</option>';
+      }
+      t.innerHTML = html;
+      t.value = selectedVal;
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Draft auto-save (every 2 seconds while typing)
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _initDraft() {
+    var textarea = document.getElementById('obs-text');
+    var statusEl = document.getElementById('obs-draft-status');
+
+    /* Restore saved draft — text + tags + next steps + visibility flags */
+    try {
+      var saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      if (saved && (saved.text || (saved.tags && saved.tags.length) || saved.nextSteps || saved.analysis || saved.comments)) {
+        if (saved.text) { textarea.value = saved.text; _openEditor('ed-obs', false); }
+        var nsEl = document.getElementById('obs-next-steps');
+        if (nsEl && saved.nextSteps) nsEl.value = saved.nextSteps;
+        var anEl = document.getElementById('obs-analysis');
+        if (anEl && saved.analysis) anEl.value = saved.analysis;
+        var cmEl = document.getElementById('obs-comments');
+        if (cmEl && saved.comments) cmEl.value = saved.comments;
+        /* refresh all card previews/filled states from the restored values */
+        CARD_MAP.forEach(_updateCardPreview);
+        if (Array.isArray(saved.tags) && saved.tags.length) { _tags = saved.tags; _renderTagChips(); }
+        var shEl = document.getElementById('obs-share-parents'); if (shEl && saved.shared) shEl.checked = true;
+        var pvEl = document.getElementById('obs-private');       if (pvEl && saved.priv)   pvEl.checked = true;
+        if (statusEl) statusEl.textContent = 'Draft restored';
+      }
+    } catch (_) {}
+
+    function _scheduleDraft() {
+      clearTimeout(_draftTimer);
+      _draftTimer = setTimeout(function () {
+        _saveDraft();
+        if (statusEl) { statusEl.textContent = 'Draft saved'; }
+      }, 2000);
+    }
+    textarea.addEventListener('input', _scheduleDraft);
+    var nsEl2 = document.getElementById('obs-next-steps');
+    if (nsEl2) nsEl2.addEventListener('input', _scheduleDraft);
+    ['obs-analysis','obs-comments'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('input', _scheduleDraft);
+    });
+    ['obs-share-parents','obs-private'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', _saveDraft);
+    });
+  }
+
+  function _saveDraft() {
+    var text = (document.getElementById('obs-text') || {}).value || '';
+    var childIds = _children.map(function(c) { return c.id; });
+    var nextSteps = (document.getElementById('obs-next-steps') || {}).value || '';
+    var analysis  = (document.getElementById('obs-analysis') || {}).value || '';
+    var comments  = (document.getElementById('obs-comments') || {}).value || '';
+    var shared = !(document.getElementById('obs-private') || {}).checked; // share-all policy 2026-07-10
+    var priv   = !!(document.getElementById('obs-private') || {}).checked;
+    try {
+      /* Full-fidelity draft: text + framework tags + next steps + visibility flags
+       * (photos are File objects and can't be localStorage'd — re-attach on resume). */
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        text: text, childIds: childIds, nextSteps: nextSteps,
+        analysis: analysis, comments: comments,
+        tags: _tags, shared: shared, priv: priv, ts: Date.now()
+      }));
+    } catch (_) {}
+  }
+
+  /* Draft-restore hook: mark the card filled + refresh its preview (the card
+   * grid replaced the old collapsible "＋ Add" sections, 2026-07-03 round 2). */
+  function _expandAddable(kind) {
+    var m = CARD_MAP.find(function(x) { return x.input === 'obs-' + kind; });
+    if (m) _updateCardPreview(m);
+  }
+
+  function _clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Framework display
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _getActiveFramework() {
+    return localStorage.getItem('wrenActiveFramework') || 'EYFS';
+  }
+
+  function _renderFrameworkBtn() {
+    var fw = _getActiveFramework();
+    var nameEl   = document.getElementById('obs-framework-name');
+    var statusEl = document.getElementById('obs-framework-status');
+    if (nameEl)   nameEl.textContent   = fw;
+    if (statusEl) statusEl.textContent = 'Currently active';
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Child chip rendering
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _renderChildChips() {
+    var row = document.getElementById('obs-child-row');
+    if (!row) return;
+
+    /* Remove existing chips (keep the + button) */
+    row.querySelectorAll('.obs-child-chip').forEach(function(el) { el.remove(); });
+    var addBtn = document.getElementById('obs-child-add-btn');
+
+    _children.forEach(function(c) {
+      var chip = document.createElement('div');
+      chip.className = 'obs-child-chip';
+      chip.setAttribute('role', 'listitem');
+      chip.innerHTML =
+        '<span>' + _e(c.first_name) + '</span>' +
+        '<button class="obs-child-chip-remove" type="button" aria-label="Remove ' + _e(c.first_name) + '" data-id="' + c.id + '">×</button>';
+      chip.querySelector('.obs-child-chip-remove').addEventListener('click', function() {
+        _removeChild(c.id);
+      });
+      row.insertBefore(chip, addBtn);
+    });
+  }
+
+  function _removeChild(id) {
+    _children = _children.filter(function(c) { return c.id !== id; });
+    _renderChildChips();
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Child picker drawer
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _openChildDrawer() {
+    var backdrop = document.getElementById('obs-child-drawer-backdrop');
+    var drawer   = document.getElementById('obs-child-drawer');
+    if (backdrop) backdrop.classList.add('open');
+    if (drawer)   { drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false'); }
+    _renderChildDrawerGrid('');
+    var search = document.getElementById('obs-child-drawer-search');
+    if (search) { search.value = ''; requestAnimationFrame(function() { search.focus(); }); }
+  }
+
+  function _closeChildDrawer() {
+    var backdrop = document.getElementById('obs-child-drawer-backdrop');
+    var drawer   = document.getElementById('obs-child-drawer');
+    if (backdrop) backdrop.classList.remove('open');
+    if (drawer)   { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
+    document.getElementById('obs-child-add-btn').focus();
+  }
+
+  function _renderChildDrawerGrid(q) {
+    var grid = document.getElementById('obs-child-drawer-grid');
+    if (!grid) return;
+    var filtered = q
+      ? _allChildren.filter(function(c) {
+          var n = ((c.first_name || '') + ' ' + (c.last_name || '')).toLowerCase();
+          return n.indexOf(q.toLowerCase()) !== -1;
+        })
+      : _allChildren;
+
+    if (!filtered.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;color:var(--c-muted)">No children found</div>';
+      return;
+    }
+
+    var selectedIds = new Set(_children.map(function(c) { return c.id; }));
+
+    grid.innerHTML = filtered.map(function(c) {
+      var init  = (c.first_name || '?').charAt(0).toUpperCase();
+      var col   = _color(init);
+      var sel   = selectedIds.has(c.id);
+      return '<div class="obs-drawer-child-card' + (sel ? ' selected' : '') + '" role="listitem" data-id="' + c.id + '" tabindex="0" aria-label="' + _e(c.first_name + ' ' + c.last_name) + '" aria-selected="' + sel + '">' +
+             '  <div class="obs-drawer-child-avatar" style="background:' + col + '" aria-hidden="true">' + _e(init) + '</div>' +
+             '  <div class="obs-drawer-child-name" title="' + _e(c.first_name + ' ' + (c.last_name || '')) + '">' + _e(c.first_name) + '</div>' +
+             '</div>';
+    }).join('');
+
+    grid.querySelectorAll('.obs-drawer-child-card').forEach(function(card) {
+      function _toggle() {
+        var id = parseInt(card.dataset.id, 10);
+        var child = _allChildren.find(function(x) { return x.id === id; });
+        if (!child) return;
+        var idx = _children.findIndex(function(x) { return x.id === id; });
+        if (idx === -1) {
+          _children.push(child);
+        } else {
+          _children.splice(idx, 1);
+        }
+        _renderChildChips();
+        _renderChildDrawerGrid(document.getElementById('obs-child-drawer-search').value || '');
+      }
+      card.addEventListener('click', _toggle);
+      card.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggle(); }
+      });
+    });
+  }
+
+  function _initChildDrawer() {
+    var addBtn  = document.getElementById('obs-child-add-btn');
+    var backdrop = document.getElementById('obs-child-drawer-backdrop');
+    var close    = document.getElementById('obs-child-drawer-close');
+    var search   = document.getElementById('obs-child-drawer-search');
+
+    if (addBtn)   addBtn.addEventListener('click', _openChildDrawer);
+    if (backdrop) backdrop.addEventListener('click', _closeChildDrawer);
+    if (close)    close.addEventListener('click', _closeChildDrawer);
+    if (search)   search.addEventListener('input', function() {
+      _renderChildDrawerGrid(search.value.trim());
+    });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Photo upload
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _initPhotos() {
+    var strip      = document.getElementById('obs-photo-strip');
+    var section    = document.getElementById('obs-photo-section');
+
+    /* Three EyLog-style sources: gallery picker (no capture attr — Android needs
+     * this to offer the photo library), camera capture, video capture. All feed
+     * the same upload/outbox pipeline. Triggered from the bottom action bar and
+     * the Media card (wired in _initCards). */
+    [ 'obs-gallery-input', 'obs-photo-input', 'obs-video-input' ].forEach(function(inputId) {
+      var input = document.getElementById(inputId);
+      if (!input) return;
+      input.addEventListener('change', function() {
+        var files = Array.from(input.files || []);
+        if (!files.length) return;
+        files.forEach(function(f) {
+          var isVideo = /^video\//.test(f.type);
+          if (isVideo && f.size > 100 * 1024 * 1024) {
+            if (window.Wren) Wren.toast('Video too large (max 100MB)', 'error');
+            return;
+          }
+          if (!isVideo && f.size > 8 * 1024 * 1024) {
+            if (window.Wren) Wren.toast(f.name + ' is over 8MB — try a smaller photo', 'error');
+            return;
+          }
+          if (/^image\/hei[cf]$/.test(f.type)) {
+            if (window.Wren) Wren.toast('HEIC photos aren\'t supported yet — switch the camera to "Most compatible" (JPEG)', 'error', 5000);
+            return;
+          }
+          _uploadPhoto(f);
+        });
+        input.value = '';
+      });
+    });
+
+    function _uploadPhoto(file) {
+      if (section) section.hidden = false;
+
+      /* Track the raw File immediately so it survives even if the device is
+       * offline and the upload below fails — the outbox will (re-)upload it. */
+      var rec = { file: file, url: null };
+      _photoFiles.push(rec);
+      _updateMediaCard();
+      var localUrl = URL.createObjectURL(file);
+
+      /* placeholder */
+      var wrap = document.createElement('div');
+      wrap.className = 'obs-photo-uploading';
+      wrap.setAttribute('role', 'listitem');
+      wrap.setAttribute('aria-label', 'Uploading photo');
+      wrap.textContent = '⏳';
+      if (strip) strip.appendChild(wrap);
+
+      /* Build the final thumbnail (used for both online-success and offline). */
+      var isVideo = /^video\//.test(file.type);
+      function _renderThumb(queued) {
+        var thumbWrap = document.createElement('div');
+        thumbWrap.className = 'obs-photo-wrap';
+        thumbWrap.setAttribute('role', 'listitem');
+        var img;
+        if (isVideo) {
+          img = document.createElement('video');
+          img.className = 'obs-photo-thumb';
+          img.src = localUrl;
+          img.muted = true;
+          img.playsInline = true;
+          img.preload = 'metadata';
+          var badge = document.createElement('div');
+          badge.className = 'obs-video-badge';
+          badge.textContent = '▶';
+          thumbWrap.appendChild(badge);
+        } else {
+          img = document.createElement('img');
+          img.className = 'obs-photo-thumb';
+          img.src = localUrl;
+          img.alt = 'Observation photo';
+        }
+        if (queued) img.style.opacity = '0.6';
+        img.addEventListener('click', function() { window.open(localUrl, '_blank'); });
+        var removeBtn = document.createElement('button');
+        removeBtn.className = 'obs-photo-remove';
+        removeBtn.type = 'button';
+        removeBtn.setAttribute('aria-label', 'Remove photo');
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', function() {
+          if (rec.url) _photoUrls = _photoUrls.filter(function(u) { return u !== rec.url; });
+          _photoFiles = _photoFiles.filter(function(r) { return r !== rec; });
+          _updateMediaCard();
+          thumbWrap.remove();
+          if (!_photoFiles.length && section) section.hidden = true;
+        });
+        thumbWrap.appendChild(img);
+        thumbWrap.appendChild(removeBtn);
+        if (queued) {
+          var badge = document.createElement('div');
+          badge.textContent = '⏳';
+          badge.title = 'Will upload when back online';
+          badge.style.cssText = 'position:absolute;bottom:-4px;left:-4px;font-size:.7rem;background:var(--c-surface);border-radius:50%;padding:1px 3px;border:1px solid var(--c-border)';
+          thumbWrap.appendChild(badge);
+        }
+        if (strip && wrap.parentNode) { strip.replaceChild(thumbWrap, wrap); }
+        else if (strip) { strip.appendChild(thumbWrap); }
+      }
+
+      /* If clearly offline, skip the network attempt and just queue the file. */
+      if (!navigator.onLine) {
+        _renderThumb(true);
+        return;
+      }
+
+      var fd = new FormData();
+      fd.append('photos', file);
+      var token = sessionStorage.getItem('wrenToken') || '';
+      fetch('/api/observations/upload', {
+        method: 'POST',
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+        body: fd,
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Upload failed'); });
+        return r.json();
+      }).then(function(data) {
+        var url = data.urls && data.urls[0];
+        if (!url) throw new Error('No URL returned');
+        rec.url = url;
+        _photoUrls.push(url);
+        _renderThumb(false);
+        if (window.Wren) Wren.toast('Photo uploaded', 'success', 2000);
+      }).catch(function(err) {
+        /* Upload failed. If it's a network error (offline), KEEP the photo
+         * queued so the outbox uploads it on sync. Only drop on a real
+         * server-side rejection while genuinely online. */
+        var networkish = !navigator.onLine || (err instanceof TypeError);
+        if (networkish) {
+          _renderThumb(true);
+          if (window.Wren) Wren.toast('Photo will upload when back online', 'info', 2500);
+        } else {
+          _photoFiles = _photoFiles.filter(function(r) { return r !== rec; });
+          _updateMediaCard();
+          if (strip && wrap.parentNode) wrap.remove();
+          if (!_photoFiles.length && section) section.hidden = true;
+          if (window.Wren) Wren.toast('Upload failed: ' + err.message, 'error');
+        }
+      });
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Framework tag picker — MULTI-FRAMEWORK (one observation, many frameworks)
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _openTagDrawer() {
+    var backdrop = document.getElementById('obs-tag-drawer-backdrop');
+    var drawer   = document.getElementById('obs-tag-drawer');
+    if (backdrop) backdrop.classList.add('open');
+    if (drawer)   { drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false'); }
+
+    var title = document.getElementById('obs-tag-drawer-title');
+    if (title) title.textContent = 'Framework Tags';
+
+    /* Default to the globally-active framework if it's one we offer, else EYFS. */
+    var active = _getActiveFramework();
+    if (TAG_FRAMEWORKS.some(function(f){ return f.param === active; })) _tagFw = active;
+
+    _renderFwChips();
+    _selectTagFramework(_tagFw);
+
+    var search = document.getElementById('obs-tag-search');
+    if (search) { search.value = ''; requestAnimationFrame(function() { search.focus(); }); }
+  }
+
+  /* Render the framework chip row; highlights the active one. */
+  function _renderFwChips() {
+    var row = document.getElementById('obs-tag-fw-row');
+    if (!row) return;
+    row.innerHTML = '';
+    TAG_FRAMEWORKS.forEach(function(f) {
+      var on = (f.param === _tagFw);
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'obs-tag-fw-chip';
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(on));
+      b.dataset.fw = f.param;
+      b.textContent = f.label;
+      b.style.cssText = 'flex:0 0 auto;padding:7px 13px;border-radius:16px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap;border:1px solid var(--c-border);' +
+        (on ? 'background:var(--c-blue);border-color:var(--c-blue);color:#fff;'
+            : 'background:transparent;color:var(--c-muted);');
+      b.addEventListener('click', function() { _selectTagFramework(f.param); });
+      row.appendChild(b);
+    });
+  }
+
+  /* Switch the drawer to a framework: load (cached) statements then render. _tags is
+   * NOT cleared, so selections from OTHER frameworks persist — that's the whole point. */
+  /* Age-band chip row — distinct age_range values for the current framework.
+   * Hidden when a framework has ≤1 band (e.g. EYFS statutory = "End of Reception"). */
+  function _renderBandChips() {
+    var row = document.getElementById('obs-tag-band-row');
+    if (!row) return;
+    var stmts = _stmtCache[_tagFw] || [];
+    var bands = [];
+    stmts.forEach(function(s) { if (s.age_range && bands.indexOf(s.age_range) === -1) bands.push(s.age_range); });
+    bands.sort();
+    if (bands.length <= 1) { row.style.display = 'none'; row.innerHTML = ''; _tagBand = ''; return; }
+    if (_tagBand && bands.indexOf(_tagBand) === -1) _tagBand = '';
+    row.style.display = 'flex';
+    row.innerHTML = '';
+    [{ label: 'All ages', val: '' }].concat(bands.map(function(b){ return { label: b, val: b }; })).forEach(function(c) {
+      var on = (c.val === _tagBand);
+      var b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(on));
+      b.dataset.band = c.val; b.textContent = c.label;
+      b.style.cssText = 'flex:0 0 auto;padding:5px 11px;border-radius:14px;font-size:.76rem;font-weight:600;cursor:pointer;white-space:nowrap;border:1px solid var(--c-border);' +
+        (on ? 'background:var(--c-navy,#1e293b);border-color:var(--c-blue);color:#fff;' : 'background:transparent;color:var(--c-muted);');
+      b.addEventListener('click', function() {
+        _tagBand = c.val; _renderBandChips();
+        var s = document.getElementById('obs-tag-search');
+        _renderTagList(s ? s.value.trim() : '');
+      });
+      row.appendChild(b);
+    });
+  }
+
+  function _selectTagFramework(param) {
+    _tagFw = param;
+    _tagBand = '';                 // reset to "All ages" when switching framework
+    _renderFwChips();
+    var search = document.getElementById('obs-tag-search');
+    var q = search ? search.value.trim() : '';
+    if (_stmtCache[param]) {
+      _renderBandChips(); _renderTagList(q);
+    } else {
+      var list = document.getElementById('obs-tag-list');
+      if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--c-muted)">Loading…</div>';
+      _loadStatements(param).then(function() { _renderBandChips(); _renderTagList(q); });
+    }
+  }
+
+  function _closeTagDrawer() {
+    var backdrop = document.getElementById('obs-tag-drawer-backdrop');
+    var drawer   = document.getElementById('obs-tag-drawer');
+    if (backdrop) backdrop.classList.remove('open');
+    if (drawer)   { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
+    _renderTagChips();
+    _saveDraft();   // persist tag selection into the draft so it survives navigation
+    document.getElementById('obs-tags-add-btn').focus();
+  }
+
+  /* Per-framework cache: only fetch each framework's statements once (fixes the old
+   * single _allStmts cache whose !length guard never reloaded after a framework switch). */
+  function _loadStatements(param) {
+    return Wren.api('/api/framework-statements?framework=' + encodeURIComponent(param) + '&limit=300')
+      .then(function(data) {
+        _stmtCache[param] = Array.isArray(data) ? data : [];
+      })
+      .catch(function(err) {
+        _stmtCache[param] = _stmtCache[param] || [];
+        if (window.Wren) Wren.toast('Could not load ' + param + ' tags', 'error');
+        console.error('[obs] load statements:', err);
+      });
+  }
+
+  function _renderTagList(q) {
+    var list = document.getElementById('obs-tag-list');
+    if (!list) return;
+    var allStmts = _stmtCache[_tagFw] || [];
+    var stmts = _tagBand ? allStmts.filter(function(s) { return s.age_range === _tagBand; }) : allStmts;
+    var selectedIds = new Set(_tags.map(function(t) { return t.id; }));
+    var filtered = q
+      ? stmts.filter(function(s) {
+          var hay = ((s.statement_text || '') + ' ' + (s.area || '') + ' ' + (s.aspect || '')).toLowerCase();
+          return hay.indexOf(q.toLowerCase()) !== -1;
+        })
+      : stmts;
+
+    if (!filtered.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--c-muted)">' +
+        (allStmts.length ? 'No matching statements' : 'No statements for this framework yet') + '</div>';
+      return;
+    }
+
+    /* Group by area */
+    var groups = {};
+    filtered.forEach(function(s) {
+      var area = s.area || 'Other';
+      if (!groups[area]) groups[area] = [];
+      groups[area].push(s);
+    });
+
+    /* Age-band sort order (youngest first) */
+    var AGE_ORDER = ['0-11','birth-11','0-12','12-24','birth-2','22-36','2-3','3-4','40-60','4-5','5+','all'];
+    function _ageRank(range) {
+      if (!range) return 999;
+      var idx = AGE_ORDER.indexOf(range.toLowerCase().replace(/\s/g,''));
+      return idx === -1 ? 500 : idx;
+    }
+
+    var html = '';
+    Object.keys(groups).sort().forEach(function(area) {
+      html += '<div class="obs-tag-area-heading" aria-label="Area: ' + _e(area) + '">' + _e(area) + '</div>';
+      /* Sort statements within this area: age-band first, then aspect */
+      groups[area].sort(function(a,b) {
+        var ageA = _ageRank(a.age_range), ageB = _ageRank(b.age_range);
+        if (ageA !== ageB) return ageA - ageB;
+        var aspA = (a.aspect || '').toLowerCase(), aspB = (b.aspect || '').toLowerCase();
+        return aspA < aspB ? -1 : aspA > aspB ? 1 : 0;
+      });
+      groups[area].forEach(function(s) {
+        var sel = selectedIds.has(s.id);
+        html += '<div class="obs-tag-stmt' + (sel ? ' selected' : '') + '" role="listitem" data-id="' + s.id + '" tabindex="0" aria-selected="' + sel + '">' +
+                '  <div class="obs-tag-stmt-check" aria-hidden="true">' + (sel ? '✓' : '') + '</div>' +
+                '  <div class="obs-tag-stmt-body">' +
+                '    <div class="obs-tag-stmt-text">' + _e(s.statement_text) + '</div>' +
+                '    <div class="obs-tag-stmt-meta">' + _e(s.aspect || '') + (s.age_range ? ' · ' + _e(s.age_range) : '') + '</div>' +
+                '  </div>' +
+                '</div>';
+      });
+    });
+    list.innerHTML = html;
+
+    list.querySelectorAll('.obs-tag-stmt').forEach(function(row) {
+      function _toggleTag() {
+        var id = parseInt(row.dataset.id, 10);
+        var stmt = (_stmtCache[_tagFw] || []).find(function(x) { return x.id === id; });
+        if (!stmt) return;
+        var idx = _tags.findIndex(function(x) { return x.id === id; });
+        if (idx === -1) { _tags.push(stmt); } else { _tags.splice(idx, 1); }
+        var sel = _tags.some(function(x) { return x.id === id; });
+        row.classList.toggle('selected', sel);
+        row.setAttribute('aria-selected', String(sel));
+        var check = row.querySelector('.obs-tag-stmt-check');
+        if (check) check.textContent = sel ? '✓' : '';
+      }
+      row.addEventListener('click', _toggleTag);
+      row.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleTag(); }
+      });
+    });
+  }
+
+  function _renderTagChips() {
+    var row    = document.getElementById('obs-tags-row');
+    var addBtn = document.getElementById('obs-tags-add-btn');
+    if (!row || !addBtn) return;
+    row.querySelectorAll('.obs-tag-chip').forEach(function(el) { el.remove(); });
+    _tags.forEach(function(t) {
+      var chip = document.createElement('div');
+      chip.className = 'obs-tag-chip';
+      chip.setAttribute('role', 'listitem');
+      var fwShort = _FW_SHORT[t.framework] || '';
+      var label = (fwShort ? fwShort + ' · ' : '') + (t.statement_text || '').substring(0, 20);
+      chip.innerHTML =
+        '<span title="' + _e((fwShort ? fwShort + ' — ' : '') + (t.statement_text || '')) + '">' + _e(label) + '</span>' +
+        '<button class="obs-tag-chip-remove" type="button" aria-label="Remove tag" data-id="' + t.id + '">×</button>';
+      chip.querySelector('.obs-tag-chip-remove').addEventListener('click', function() {
+        _tags = _tags.filter(function(x) { return x.id !== t.id; });
+        _renderTagChips();
+      });
+      row.insertBefore(chip, addBtn);
+    });
+    _updateB5mCard();
+  }
+
+  function _initTagDrawer() {
+    var addBtn   = document.getElementById('obs-tags-add-btn');
+    var backdrop = document.getElementById('obs-tag-drawer-backdrop');
+    var close    = document.getElementById('obs-tag-drawer-close');
+    var doneBtn  = document.getElementById('obs-tag-drawer-done');
+    var search   = document.getElementById('obs-tag-search');
+
+    if (addBtn)   addBtn.addEventListener('click', _openTagDrawer);
+    if (backdrop) backdrop.addEventListener('click', _closeTagDrawer);
+    if (close)    close.addEventListener('click', _closeTagDrawer);
+    if (doneBtn)  doneBtn.addEventListener('click', _closeTagDrawer);
+    if (search)   search.addEventListener('input', function() { _renderTagList(search.value.trim()); });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Framework switcher (opens the app drawer)
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _initFrameworkBtn() {
+    var btn = document.getElementById('obs-framework-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+      var hamburger = document.getElementById('wren-app-hamburger');
+      if (hamburger) hamburger.click();
+    });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Save as draft — enqueues into the outbox with status:'draft' so it won't
+   * auto-sync; staff can review/submit from /ey/drafts.
+   * ──────────────────────────────────────────────────────────────────────────── */
+  async function _saveDraftToOutbox() {
+    if (!window.WrenObsOutbox) {
+      if (window.Wren) Wren.toast('Outbox unavailable', 'error');
+      return;
+    }
+    var obsText = (document.getElementById('obs-text') || {}).value.trim();
+    if (!obsText) {
+      _showError('Add some text before saving a draft.');
+      return;
+    }
+    if (!_children.length) {
+      // A childless draft can never be submitted (server requires child_id → 400),
+      // so it would become a permanently-stuck 'failed' outbox entry. Require a child.
+      _showError('Select at least one child before saving a draft.');
+      return;
+    }
+
+    var draftBtn = document.getElementById('obs-topbar-draft');
+    if (draftBtn) { draftBtn.disabled = true; draftBtn.textContent = 'Saving…'; }
+
+    var dateEl   = document.getElementById('obs-date');
+    var timeEl   = document.getElementById('obs-time');
+    var obsDate  = (dateEl ? dateEl.value : '') + (timeEl && timeEl.value ? 'T' + timeEl.value + ':00' : 'T00:00:00');
+    var shared   = !(document.getElementById('obs-private') || {}).checked; // share-all policy 2026-07-10
+    var dslOnly  = !!(document.getElementById('obs-private') || {}).checked;
+    var termly   = !!(document.getElementById('obs-termly') || {}).checked;
+    var nextSteps = (document.getElementById('obs-next-steps') || {}).value.trim();
+    var analysis  = (document.getElementById('obs-analysis') || {}).value || '';
+    var comments  = (document.getElementById('obs-comments') || {}).value || '';
+    var tagIds   = _tags.map(function(t) { return t.id; });
+    var pendingFiles = _photoFiles.filter(function(r) { return !r.url; }).map(function(r) { return r.file; });
+
+    /* Enqueue one entry per selected child (guaranteed ≥1 by the guard above). */
+    var targets = _children;
+
+    try {
+      for (var i = 0; i < targets.length; i++) {
+        var child = targets[i];
+        var clientUuid = WrenObsOutbox.uuid();
+        var payload = {
+          child_id:              child.id,
+          observation_text:      obsText,
+          observation_type:      (document.getElementById('obs-planned') && document.getElementById('obs-planned').checked) ? 'planned_activity' : 'learning_story',
+          photo_urls:            _photoUrls.slice(),
+          shared_with_parents:   shared,
+          dsl_only:              dslOnly,
+          termly_update:         termly,
+          next_steps:            nextSteps || null,
+          analysis:              analysis.trim() || null,
+          additional_comments:   comments.trim() || null,
+          framework_tracker_ids: tagIds,
+          obs_date:              obsDate,
+          client_uuid:           clientUuid,
+          _child_label:          child.first_name
+        };
+        await WrenObsOutbox.enqueue(payload, pendingFiles, { status: 'draft' });
+      }
+      _clearDraft();
+      if (window.Wren) {
+        Wren.toast('Saved as draft — find it in Drafts 📝', 'info', 3500);
+        setTimeout(function() { Wren.navigate('/ey/drafts'); }, 1200);
+      } else {
+        setTimeout(function() { location.href = '/ey/drafts'; }, 1200);
+      }
+    } catch (err) {
+      if (window.Wren) Wren.toast('Could not save draft: ' + (err.message || 'error'), 'error');
+      if (draftBtn) { draftBtn.disabled = false; draftBtn.textContent = 'Draft'; }
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Save
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _showError(msg) {
+    var el = document.getElementById('obs-error');
+    if (!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  function _hideError() {
+    var el = document.getElementById('obs-error');
+    if (el) el.hidden = true;
+  }
+
+  async function _save() {
+    if (_saving) return;
+    _hideError();
+
+    var obsText = (document.getElementById('obs-text') || {}).value.trim();
+    if (!_children.length) {
+      _showError('Please select at least one child.');
+      return;
+    }
+    if (!obsText) {
+      _showError('Please describe what you saw.');
+      return;
+    }
+
+    var dateEl = document.getElementById('obs-date');
+    var timeEl = document.getElementById('obs-time');
+    var obsDate = (dateEl ? dateEl.value : '') + (timeEl && timeEl.value ? 'T' + timeEl.value + ':00' : 'T00:00:00');
+    var shared  = !(document.getElementById('obs-private') || {}).checked; // share-all policy 2026-07-10
+    var dslOnly = !!(document.getElementById('obs-private') || {}).checked;
+    var termly  = !!(document.getElementById('obs-termly') || {}).checked;
+    var nextSteps = (document.getElementById('obs-next-steps') || {}).value.trim();
+    var analysisV = ((document.getElementById('obs-analysis') || {}).value || '').trim();
+    var commentsV = ((document.getElementById('obs-comments') || {}).value || '').trim();
+    var tagIds  = _tags.map(function(t) { return t.id; });
+
+    var saveBtn = document.getElementById('obs-topbar-save');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    _saving = true;
+
+    var errors  = [];
+    var savedIds = [];
+    var queuedCount = 0;
+
+    /* Photo File objects that never got an online URL — these need to ride
+     * along in the outbox so they can be uploaded on sync. */
+    var pendingFiles = _photoFiles.filter(function(r) { return !r.url; }).map(function(r) { return r.file; });
+    var childLabel = _children.map(function(c){ return c.first_name; }).join(', ');
+
+    /* Decide whether a failure is "network-ish" (queue it) vs a real app error
+     * (surface it). Wren.api rejects with the parsed JSON body {error} on a
+     * non-2xx response; a genuine network failure rejects with a TypeError
+     * ("Failed to fetch") and has no .error field. */
+    function _isNetworkError(err) {
+      if (!navigator.onLine) return true;
+      if (err instanceof TypeError) return true;          // fetch network failure
+      if (err && err.error) return false;                 // server returned a JSON error → real
+      if (err && typeof err.message === 'string' &&
+          /failed to fetch|networkerror|load failed/i.test(err.message)) return true;
+      return false;
+    }
+
+    try {
+      for (var i = 0; i < _children.length; i++) {
+        var child = _children[i];
+        var clientUuid = (window.WrenObsOutbox && WrenObsOutbox.uuid)
+          ? WrenObsOutbox.uuid()
+          : (Date.now() + '-' + i + '-' + Math.random().toString(16).slice(2));
+        var payload = {
+          child_id:            child.id,
+          observation_text:    obsText,
+          observation_type:    (document.getElementById('obs-planned') && document.getElementById('obs-planned').checked) ? 'planned_activity' : 'learning_story',
+          photo_urls:          _photoUrls.slice(),
+          shared_with_parents: shared,
+          dsl_only:            dslOnly,
+          termly_update:       termly,
+          next_steps:          nextSteps || null,
+          analysis:            analysisV || null,
+          additional_comments: commentsV || null,
+          framework_tracker_ids: tagIds,
+          obs_date:            obsDate,
+          client_uuid:         clientUuid
+        };
+
+        /* Offline up front → queue immediately, don't even attempt the network. */
+        if (!navigator.onLine && window.WrenObsOutbox) {
+          try {
+            await WrenObsOutbox.enqueue(
+              Object.assign({}, payload, { _child_label: child.first_name }),
+              pendingFiles
+            );
+            queuedCount++;
+          } catch (qe) {
+            errors.push(_e(child.first_name) + ': could not save offline');
+          }
+          continue;
+        }
+
+        try {
+          var result = await Wren.api('/api/observations', { method: 'POST', body: payload });
+          savedIds.push(result.id);
+        } catch (err) {
+          if (_isNetworkError(err) && window.WrenObsOutbox) {
+            /* Network died mid-save → fall back to the outbox, don't error. */
+            try {
+              await WrenObsOutbox.enqueue(
+                Object.assign({}, payload, { _child_label: child.first_name }),
+                pendingFiles
+              );
+              queuedCount++;
+            } catch (qe) {
+              errors.push(_e(child.first_name) + ': could not save offline');
+            }
+          } else {
+            errors.push(_e(child.first_name) + ': ' + (err.error || err.message || 'failed'));
+          }
+        }
+      }
+
+      if (errors.length) {
+        _showError('Some failed: ' + errors.join('; '));
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+      } else {
+        _clearDraft();
+        /* Clear the home-grid multi-select set so it doesn't bleed into the next obs */
+        try { sessionStorage.removeItem(SELECTION_KEY); sessionStorage.removeItem('eyGroupSelection'); } catch (_) {}
+        if (queuedCount && !savedIds.length) {
+          /* Pure offline save */
+          if (window.Wren) Wren.toast('Saved offline — will sync when back online ⏳', 'info', 4000);
+        } else if (queuedCount) {
+          /* Mixed (rare): some online, some queued */
+          if (window.Wren) Wren.toast('Saved · ' + queuedCount + ' queued offline ⏳', 'info', 4000);
+        } else {
+          var savedCount = savedIds.length;
+          var stmtNote = (tagIds && tagIds.length)
+            ? ' · ' + tagIds.length + ' statement' + (tagIds.length === 1 ? '' : 's') + ' → tracker'
+            : '';
+          if (window.Wren) Wren.toast('Observation saved for ' + savedCount + ' ' + (savedCount === 1 ? 'child' : 'children') + ' ✓' + stmtNote, 'success', 3000);
+        }
+        setTimeout(_close, queuedCount ? 1100 : 800);
+      }
+    } catch (e) {
+      _showError(e.error || e.message || 'Save failed');
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    } finally {
+      _saving = false;
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Load children + pre-populate from URL param
+   * ──────────────────────────────────────────────────────────────────────────── */
+  /* Gather the set of pre-selected child ids, in priority order:
+   *   1. ?children=1,2,3  (explicit multi-child group selection)
+   *   2. ?child=:id       (legacy single-child flow)
+   *   3. sessionStorage 'wren.ey.selection' (child grid multi-select on /ey/home)
+   * De-duplicated, order-preserving. */
+  var SELECTION_KEY = 'wren.ey.selection';
+  var SELECTION_TTL = 30 * 60 * 1000;
+
+  function _preselectedIds() {
+    var ids    = [];
+    var seen   = {};
+    function _add(n) {
+      var id = parseInt(n, 10);
+      if (id && !seen[id]) { seen[id] = true; ids.push(id); }
+    }
+
+    var params = new URLSearchParams(location.search);
+
+    /* ?children=1,2,3 */
+    var multi = params.get('children');
+    if (multi) multi.split(',').forEach(_add);
+
+    /* ?child=:id (legacy single) */
+    _add(params.get('child') || 0);
+
+    /* sessionStorage selection set from the /ey/home child grid */
+    try {
+      var raw = sessionStorage.getItem(SELECTION_KEY);
+      if (raw) {
+        var sel = JSON.parse(raw);
+        if (sel && sel.childIds && (!sel.timestamp || (Date.now() - sel.timestamp) <= SELECTION_TTL)) {
+          sel.childIds.forEach(_add);
+        }
+      }
+    } catch (_) {}
+
+    return ids;
+  }
+
+  function _loadChildren() {
+    Wren.api('/api/children').then(function(data) {
+      _allChildren = Array.isArray(data) ? data : (data && data.rows ? data.rows : []);
+
+      /* Pre-populate ALL pre-selected children (group observation auto-fill) */
+      var preIds = _preselectedIds();
+      var added  = false;
+      preIds.forEach(function(id) {
+        var child = _allChildren.find(function(c) { return c.id === id; });
+        if (child && !_children.some(function(c) { return c.id === id; })) {
+          _children.push(child);
+          added = true;
+        }
+      });
+      if (added) _renderChildChips();
+    }).catch(function() {
+      if (window.Wren) Wren.toast('Could not load children list', 'error');
+    });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Boot
+   * ──────────────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function() {
+    _injectTopbarButtons();
+    _initDateTime();
+    _initCards();
+    _initDraft();
+    _renderFrameworkBtn();
+    _initChildDrawer();
+    _initPhotos();
+    _initTagDrawer();
+    _initFrameworkBtn();
+
+    /* Prompt 28: arriving from Trackers → "Record termly update" pre-ticks the
+     * Termly Update toggle so the saved observation clears that child's reminder. */
+    try {
+      if (new URLSearchParams(location.search).get('termly') === '1') {
+        var tu = document.getElementById('obs-termly');
+        if (tu) tu.checked = true;
+      }
+    } catch (_) {}
+
+    /* Voice */
+    var textarea = document.getElementById('obs-text');
+    if (typeof WrenVoice !== 'undefined' && textarea) {
+      WrenVoice.attachTo(textarea, { context: 'observation' });
+      /* Hide the manual voice button since WrenVoice attaches its own */
+      var voiceBtn = document.getElementById('obs-voice-btn');
+      if (voiceBtn) voiceBtn.style.display = 'none';
+    }
+
+    _loadChildren();
+
+    /* Offline outbox status line — show queued/draft/failed counts under the
+     * textarea; tappable link to /ey/drafts so staff can review the queue. */
+    function _renderOutboxStatus(c) {
+      var statusEl = document.getElementById('obs-draft-status');
+      if (!statusEl || !c) return;
+      if (c.total) {
+        var bits = [];
+        if (c.pending || c.syncing) bits.push((c.pending + c.syncing) + ' waiting to sync');
+        if (c.draft) bits.push(c.draft + ' draft' + (c.draft > 1 ? 's' : ''));
+        if (c.failed) bits.push(c.failed + ' failed');
+        var label = '⏳ ' + bits.join(' · ');
+        statusEl.innerHTML = '<a href="/ey/drafts" aria-label="View drafts and pending observations">' + label + '</a>';
+        statusEl.style.color = c.failed ? 'var(--c-red)' : 'var(--c-muted)';
+      } else {
+        statusEl.innerHTML = '';
+      }
+    }
+    window.addEventListener('wren:outbox-changed', function(e) { _renderOutboxStatus(e.detail); });
+    if (window.WrenObsOutbox) WrenObsOutbox.counts().then(_renderOutboxStatus);
+
+    /* ── Draft with Wren (Twinkl-Ari) ── */
+    (function initDW() {
+      var panel      = document.getElementById('dw-panel');
+      var openBtn    = document.getElementById('dw-open-btn');
+      var saveBtn    = document.getElementById('dw-save-btn');
+      var cancelBtn  = document.getElementById('dw-cancel-btn');
+      var suggestions = document.getElementById('dw-suggestions');
+      var coelPanel  = document.getElementById('dw-coel');
+      var coelList   = document.getElementById('dw-coel-list');
+      var output     = document.getElementById('dw-output');
+      var loadEl     = document.getElementById('dw-load');
+      var actionsEl  = document.getElementById('dw-actions');
+      var tabObs     = document.getElementById('tab-obs');
+      var tabParent  = document.getElementById('tab-parent');
+      var tabNext    = document.getElementById('tab-next');
+      var regBtn     = document.getElementById('dw-regenerate');
+
+      if (!panel || !openBtn) return;
+
+      var _dwObservationId = null;
+      var _dwSuggestions   = [];
+      var _dwCoelSelections = [];
+      var _dwCurrentObsId  = null;
+
+      function _showDW() {
+        panel.classList.add('visible');
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        openBtn.style.display = 'none';
+      }
+      function _hideDW() {
+        panel.classList.remove('visible');
+        panel.hidden = true;
+        suggestions.hidden = true;
+        coelPanel.hidden = true;
+        output.hidden = true;
+        actionsEl.hidden = true;
+        loadEl.hidden = true;
+        openBtn.style.display = '';
+        _dwSuggestions = [];
+        _dwCoelSelections = [];
+      }
+
+      /* Tab switching */
+      document.querySelectorAll('.dw-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          document.querySelectorAll('.dw-tab').forEach(function(t){ t.classList.remove('active'); });
+          document.querySelectorAll('.dw-tab-body').forEach(function(b){ b.classList.remove('active'); });
+          tab.classList.add('active');
+          var target = document.getElementById(tab.getAttribute('data-dw-tab'));
+          if (target) target.classList.add('active');
+        });
+      });
+
+      /* Open button */
+      openBtn.addEventListener('click', function() {
+        var txt = (document.getElementById('obs-text') || {}).value.trim();
+        if (!txt) {
+          if (window.Wren) Wren.toast('Write some observation text first.', 'warning', 2500);
+          return;
+        }
+        // Get the current observation ID (if editing an existing one)
+        var urlParams = new URLSearchParams(location.search);
+        _dwCurrentObsId = parseInt(urlParams.get('id')) || 0;
+        _showDW();
+        _runSuggest(txt);
+      });
+
+      /* Run suggest-statements */
+      async function _runSuggest(text) {
+        loadEl.hidden = false;
+        suggestions.hidden = true;
+        coelPanel.hidden = true;
+        output.hidden = true;
+        actionsEl.hidden = true;
+
+        var childId = _children.length ? _children[0].id : 0;
+        var fwList = ['birth_to_5','development_matters','coel'];
+
+        try {
+          var token = sessionStorage.getItem('wrenToken') || '';
+          var obsId = _dwCurrentObsId || 'new';
+          var resp = await fetch('/api/observations/' + obsId + '/suggest-statements', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': token ? 'Bearer ' + token : ''
+            },
+            body: JSON.stringify({ observation_text: text, child_id: childId, frameworks: fwList })
+          });
+          if (!resp.ok) throw new Error('suggest failed: ' + resp.status);
+          var data = await resp.json();
+          loadEl.hidden = true;
+          _renderSuggestions(data);
+        } catch (e) {
+          loadEl.hidden = true;
+          if (window.Wren) Wren.toast('Suggest failed: ' + e.message, 'error');
+        }
+      }
+
+      /* Render suggestion list */
+      function _renderSuggestions(data) {
+        _dwSuggestions = data.suggestions || [];
+        _dwCoelSelections = [];
+
+        var html = '';
+        var lastFw = '';
+        var lastArea = '';
+
+        for (var i = 0; i < _dwSuggestions.length; i++) {
+          var s = _dwSuggestions[i];
+          if (s.framework !== lastFw) {
+            html += '<div class="dw-stmt-group"><div class="dw-stmt-group-title">' +
+              (_FW_SHORT[s.framework] || s.framework) + '</div>';
+            lastFw = s.framework;
+            lastArea = '';
+          }
+          if (s.area && s.area !== lastArea) {
+            html += '<div class="dw-stmt-group-title" style="padding-left:12px;">' + _e(s.area) + '</div>';
+            lastArea = s.area;
+          }
+          html += '<div class="dw-stmt-item" data-stmt-id="' + s.id + '" data-fw="' + s.framework + '" data-code="' + _e(s.statement_code) + '">' +
+            '<input type="checkbox">' +
+            '<div class="dw-stmt-body">' +
+              '<div class="dw-stmt-text">' + _e(s.statement_text) +
+                (s.age_range ? '<span class="dw-age-chip">' + _e(s.age_range) + '</span>' : '') +
+              '</div>' +
+              '<div class="dw-stmt-meta">' + _e((s.aspect || s.area || '').substring(0, 50)) + '</div>' +
+              (s._why ? '<div class="dw-stmt-why">' + _e(s._why) + '</div>' : '') +
+            '</div></div>';
+        }
+        suggestions.innerHTML = html;
+        suggestions.hidden = false;
+
+        /* Checkbox toggles */
+        suggestions.querySelectorAll('.dw-stmt-item input[type=checkbox]').forEach(function(cb) {
+          cb.addEventListener('change', function() {
+            var item = this.closest('.dw-stmt-item');
+            item.classList.toggle('checked', this.checked);
+          });
+        });
+
+        /* Render CoEL cards */
+        if (data.coel_matches && data.coel_matches.length) {
+          _renderCoel(data.coel_matches);
+          coelPanel.hidden = false;
+        }
+
+        /* Generate draft automatically after suggestions */
+        _runDraft();
+      }
+
+      /* Render CoEL cards */
+      function _renderCoel(matches) {
+        var coelAreas = [
+          { key: 'pe', name: 'Playing and Exploring', levels: ['Finding out and exploring','Playing with what they know','Being willing to have a go'] },
+          { key: 'al', name: 'Active Learning', levels: ['Being involved and concentrating','Keeping on trying','Enjoying achieving what they set out to do'] },
+          { key: 'ctc', name: 'Creating and Thinking Critically', levels: ['Having their own ideas','Making links','Working with ideas'] }
+        ];
+        var html = '';
+        for (var i = 0; i < coelAreas.length; i++) {
+          var area = coelAreas[i];
+          html += '<div class="dw-coel-card" data-coel-key="' + area.key + '">' +
+            '<div class="dw-coel-title">' + area.name + '</div>' +
+            '<div class="dw-coel-pills">';
+          for (var j = 0; j < 3; j++) {
+            var labels = ['Emerging','Developing','Secure'];
+            html += '<button class="dw-coel-pill" data-level="' + labels[j].toLowerCase() + '">' + labels[j] + '</button>';
+          }
+          html += '</div></div>';
+        }
+        coelList.innerHTML = html;
+        coelList.querySelectorAll('.dw-coel-pill').forEach(function(pill) {
+          pill.addEventListener('click', function() {
+            var card = this.closest('.dw-coel-card');
+            card.classList.add('checked');
+            card.querySelectorAll('.dw-coel-pill').forEach(function(p){ p.classList.remove('sel'); });
+            this.classList.add('sel');
+          });
+        });
+      }
+
+      /* Generate draft (parent-friendly prose) */
+      async function _runDraft() {
+        var checked = [];
+        var items = suggestions.querySelectorAll('.dw-stmt-item.checked');
+        for (var i = 0; i < items.length; i++) {
+          var ci = items[i].querySelector('input[type=checkbox]');
+          var code = items[i].getAttribute('data-code');
+          var fid = items[i].getAttribute('data-stmt-id');
+          var fw = items[i].getAttribute('data-fw');
+          checked.push({ statement_id: parseInt(fid), framework: fw, statement_code: code });
+        }
+        var coelSel = [];
+        coelList.querySelectorAll('.dw-coel-card').forEach(function(card) {
+          var sel = card.querySelector('.dw-coel-pill.sel');
+          if (sel) coelSel.push({ characteristic: card.querySelector('.dw-coel-title').textContent, level: sel.getAttribute('data-level') });
+        });
+
+        try {
+          var token = sessionStorage.getItem('wrenToken') || '';
+          var obsId = _dwCurrentObsId || 'new';
+          var txt = (document.getElementById('obs-text') || {}).value.trim();
+          var childId = _children.length ? _children[0].id : 0;
+          var childName = _children.length ? _children[0].first_name : '';
+          var name = (new URLSearchParams(location.search)).get('child_name') || childName || 'this child';
+
+          var resp = await fetch('/api/observations/' + obsId + '/draft', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': token ? 'Bearer ' + token : ''
+            },
+            body: JSON.stringify({
+              observation_text: txt,
+              child_name: name,
+              child_pronouns: 'they',
+              statement_codes: checked,
+              coel_selections: coelSel
+            })
+          });
+          if (!resp.ok) throw new Error('draft failed: ' + resp.status);
+          var data = await resp.json();
+
+          document.getElementById('dw-out-obs').value = data.polished_observation || txt;
+          document.getElementById('dw-out-parent').value = data.parent_friendly_text || '';
+          document.getElementById('dw-out-next').value = (data.next_steps || []).join('\n');
+          output.hidden = false;
+          actionsEl.hidden = false;
+        } catch (e) {
+          if (window.Wren) Wren.toast('Draft failed: ' + e.message, 'error');
+        }
+      }
+
+      /* Save confirmed links */
+      async function _handleSave() {
+        var checked = [];
+        suggestions.querySelectorAll('.dw-stmt-item.checked').forEach(function(item) {
+          checked.push({
+            statement_id: parseInt(item.getAttribute('data-stmt-id')),
+            framework: item.getAttribute('data-fw'),
+            statement_code: item.getAttribute('data-code'),
+            is_next_step: false
+          });
+        });
+        var coelSel = [];
+        coelList.querySelectorAll('.dw-coel-card').forEach(function(card) {
+          var sel = card.querySelector('.dw-coel-pill.sel');
+          if (sel) coelSel.push({
+            characteristic: card.querySelector('.dw-coel-title').textContent,
+            level: sel.getAttribute('data-level'),
+            statement_code: null
+          });
+        });
+        var nextSteps = document.getElementById('dw-out-next').value.trim();
+
+        saveBtn.textContent = 'Saving…'; saveBtn.disabled = true;
+        try {
+          var token = sessionStorage.getItem('wrenToken') || '';
+          var obsId = _dwCurrentObsId || 'new';
+          var resp = await fetch('/api/observations/' + obsId + '/statements', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': token ? 'Bearer ' + token : ''
+            },
+            body: JSON.stringify({ statements: checked, coel_selections: coelSel, next_steps_text: nextSteps })
+          });
+          if (!resp.ok) throw new Error('save failed: ' + resp.status);
+          saveBtn.textContent = '💾 Save & close';
+          saveBtn.disabled = false;
+          _hideDW();
+          if (window.Wren) Wren.toast('Statement links saved ✓', 'success', 2500);
+        } catch (e) {
+          saveBtn.textContent = '💾 Save & close';
+          saveBtn.disabled = false;
+          if (window.Wren) Wren.toast('Save failed: ' + e.message, 'error');
+        }
+      }
+
+      /* Copy to parent message */
+      document.getElementById('dw-copy-parent').addEventListener('click', function() {
+        var el = document.getElementById('dw-out-parent');
+        navigator.clipboard.writeText(el.value).then(function() {
+          if (window.Wren) Wren.toast('Copied to clipboard ✓', 'info', 1500);
+        });
+      });
+
+      /* Event bindings */
+      saveBtn.addEventListener('click', _handleSave);
+      cancelBtn.addEventListener('click', _hideDW);
+      if (regBtn) regBtn.addEventListener('click', _runDraft);
+
+      /* Regenerate for parent/next tabs also */
+      var regP = document.getElementById('dw-regenerate-p');
+      var regN = document.getElementById('dw-regenerate-n');
+      if (regP) regP.addEventListener('click', _runDraft);
+      if (regN) regN.addEventListener('click', _runDraft);
+    })();
+  });
+
+}());
+</script>
+</body>
+</html>

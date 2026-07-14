@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Resident</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+<style>
+  .prof-head { display: flex; gap: 18px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .prof-avatar { width: 74px; height: 74px; border-radius: 50%; background: rgba(111,179,168,.18);
+    color: var(--h-accent); display: flex; align-items: center; justify-content: center;
+    font-size: 1.7rem; font-weight: 700; font-family: 'Playfair Display', serif; }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; font-size: .92rem; }
+  .kv dt { color: var(--h-muted); } .kv dd { margin: 0; }
+  .score-preview { background: #10161f; border: 1px solid var(--h-border); border-radius: 12px;
+    padding: 14px; margin-top: 8px; font-size: .95rem; }
+  .score-preview .big { font-size: 1.7rem; font-weight: 700; }
+</style>
+</head>
+<body>
+<template id="page">
+  <div id="profHead" class="prof-head"></div>
+  <div class="hv-tabs" id="tabs">
+    <button data-tab="overview">Overview</button>
+    <button data-tab="careplans">Care plans</button>
+    <button data-tab="risks">Risk assessments</button>
+    <button data-tab="scores">Clinical scores</button>
+    <button data-tab="bodymap">Body map</button>
+    <button data-tab="notes">Daily notes</button>
+    <button data-tab="mca">MCA / DoLS</button>
+  </div>
+  <div id="tabContent"></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+const RID = new URLSearchParams(location.search).get('id');
+let RESIDENT = null;
+let STAFF = [];
+
+if (Haven.guard()) { Haven.shell('residents'); init(); }
+
+async function init() {
+  if (!RID) { location.href = '/residents'; return; }
+  try {
+    [RESIDENT, STAFF] = await Promise.all([
+      Haven.api(`/api/haven/residents/${RID}`),
+      Haven.api('/api/auth/staff-list').catch(() => []),
+    ]);
+  } catch (e) { Haven.toast(e.message, true); return; }
+  const r = RESIDENT;
+  document.title = `Haven — ${r.first_name} ${r.last_name}`;
+  document.getElementById('profHead').innerHTML = `
+    <div class="prof-avatar">${Haven.esc(r.first_name[0] + r.last_name[0])}</div>
+    <div>
+      <h1 class="hv-page-title" style="margin-bottom:2px">${Haven.esc(r.first_name)} ${Haven.esc(r.last_name)}
+        ${r.preferred_name ? `<span style="font-size:1rem;color:var(--h-muted)">“${Haven.esc(r.preferred_name)}”</span>` : ''}</h1>
+      <p class="hv-page-sub" style="margin:0">
+        Room ${Haven.esc(r.room_number || '—')} · ${r.age} years · ${Haven.badge(r.care_level || 'unset', 'accent')}
+        ${r.dnacpr ? Haven.badge('DNACPR in place', 'red') : ''}
+        ${r.is_active ? '' : Haven.badge('discharged', 'neutral')}</p>
+    </div>`;
+  const tabs = document.getElementById('tabs');
+  tabs.addEventListener('click', e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+  showTab(new URLSearchParams(location.search).get('tab') || 'overview');
+}
+
+function setActive(tab) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+}
+const C = () => document.getElementById('tabContent');
+function staffOptions(excludeId) {
+  return STAFF.filter(s => s.id !== excludeId)
+    .map(s => `<option value="${s.id}">${Haven.esc(s.first_name + ' ' + (s.last_name || ''))}</option>`).join('');
+}
+
+async function showTab(tab) {
+  setActive(tab);
+  const fns = { overview, careplans, risks, scores, bodymap, notes, mca };
+  try { await (fns[tab] || overview)(); } catch (e) { Haven.toast(e.message, true); }
+}
+
+// ── Overview ──────────────────────────────────────────────────────────────────
+async function overview() {
+  const r = RESIDENT;
+  C().innerHTML = `
+    <div class="hv-grid cols-2">
+      <div class="hv-card"><h3>Personal</h3><dl class="kv">
+        <dt>Date of birth</dt><dd>${Haven.fmtDate(r.date_of_birth)} (${r.age})</dd>
+        <dt>NHS number</dt><dd>${Haven.esc(r.nhs_number || '—')}</dd>
+        <dt>Admitted</dt><dd>${Haven.fmtDate(r.admission_date)}</dd>
+        <dt>Allergies</dt><dd>${Haven.esc(r.allergies || 'None recorded')}</dd>
+        <dt>Diet</dt><dd>${Haven.esc(r.dietary_notes || '—')}</dd>
+        <dt>Mobility</dt><dd>${Haven.esc(r.mobility_notes || '—')}</dd>
+        <dt>Communication</dt><dd>${Haven.esc(r.communication_notes || '—')}</dd>
+      </dl></div>
+      <div class="hv-card"><h3>GP &amp; next of kin</h3><dl class="kv">
+        <dt>GP</dt><dd>${Haven.esc(r.gp_name || '—')}</dd>
+        <dt>Practice</dt><dd>${Haven.esc(r.gp_practice || '—')}</dd>
+        <dt>GP phone</dt><dd>${Haven.esc(r.gp_phone || '—')}</dd>
+        <dt>Next of kin</dt><dd>${Haven.esc(r.nok_name || '—')} ${r.nok_relationship ? `(${Haven.esc(r.nok_relationship)})` : ''}</dd>
+        <dt>NoK phone</dt><dd>${Haven.esc(r.nok_phone || '—')}</dd>
+        <dt>LPA</dt><dd>${r.nok_is_lpa ? Haven.badge(r.lpa_type || 'yes', 'accent') : 'No'}</dd>
+        <dt>DNACPR</dt><dd>${r.dnacpr ? `Yes — reviewed ${Haven.fmtDate(r.dnacpr_reviewed_at)}` : 'No'}</dd>
+      </dl></div>
+    </div>
+    <div class="hv-card"><h3>Life history</h3>
+      <p style="font-size:.93rem;white-space:pre-wrap">${Haven.esc(r.life_history || 'Not recorded yet.')}</p></div>`;
+}
+
+// ── Care plans ────────────────────────────────────────────────────────────────
+async function careplans() {
+  const plans = await Haven.api(`/api/haven/care-plans?resident_id=${RID}`);
+  C().innerHTML = `
+    <div class="hv-actions-bar"><div></div>${Haven.can('clinical_write') ? '<button class="hv-btn" id="addPlan">New care plan</button>' : ''}</div>
+    <div id="planList">${plans.map(p => `
+      <div class="hv-card">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0">${Haven.esc(p.title)} ${Haven.badge(p.category, 'accent')}
+            ${p.review_overdue ? Haven.badge('review overdue', 'red') : ''}</h3>
+          <div>
+            ${Haven.can('clinical_write') ? `<button class="hv-btn small secondary" onclick="reviewPlan(${p.id})">Record review</button>` : ''}
+          </div>
+        </div>
+        <dl class="kv" style="margin-top:10px">
+          <dt>Need</dt><dd>${Haven.esc(p.need || '—')}</dd>
+          <dt>Goal</dt><dd>${Haven.esc(p.goal || '—')}</dd>
+          <dt>Interventions</dt><dd style="white-space:pre-wrap">${Haven.esc(p.interventions || '—')}</dd>
+          <dt>Involvement</dt><dd>${Haven.esc(p.resident_involvement || '—')}</dd>
+          <dt>Review cycle</dt><dd>every ${p.review_frequency_days} days — next due <b>${Haven.fmtDate(p.next_review_due)}</b>
+            (${p.review_count} reviews, last ${Haven.fmtDate(p.last_reviewed)})</dd>
+        </dl>
+      </div>`).join('') || '<div class="hv-empty">No active care plans</div>'}</div>`;
+  const _addPlan = document.getElementById('addPlan');
+  if (_addPlan) _addPlan.onclick = () => Haven.modal('New care plan', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Category *</label><select name="category">
+        ${['personal_care','mobility','nutrition','continence','skin','medication_support','mental_health','social','communication','sleep','end_of_life'].map(c => `<option>${c}</option>`).join('')}
+      </select></div>
+      <div class="hv-field"><label>Review every (days)</label><input name="review_frequency_days" type="number" value="30"></div>
+    </div>
+    <div class="hv-field"><label>Title *</label><input name="title" required></div>
+    <div class="hv-field"><label>Assessed need</label><textarea name="need"></textarea></div>
+    <div class="hv-field"><label>Goal / outcome</label><textarea name="goal"></textarea></div>
+    <div class="hv-field"><label>Interventions</label><textarea name="interventions"></textarea></div>
+    <div class="hv-field"><label>Resident / family involvement</label><input name="resident_involvement"></div>`,
+    async fd => {
+      await Haven.api('/api/haven/care-plans', { method: 'POST', body: { ...fd, resident_id: RID } });
+      Haven.toast('Care plan created'); careplans();
+    });
+}
+function reviewPlan(planId) {
+  Haven.modal('Record care plan review', `
+    <div class="hv-field"><label>Outcome *</label><select name="outcome">
+      <option value="no_change">No change — plan still meets needs</option>
+      <option value="updated">Updated — plan amended</option>
+      <option value="superseded">Superseded — replaced by a new plan</option>
+      <option value="archived">Archived — no longer needed</option></select></div>
+    <div class="hv-field"><label>Notes</label><textarea name="notes"></textarea></div>
+    <div class="hv-field"><label><input type="checkbox" name="resident_or_family_involved" style="width:auto;margin-right:8px">Resident or family involved in this review</label></div>`,
+    async fd => {
+      await Haven.api(`/api/haven/care-plans/${planId}/reviews`, { method: 'POST', body: fd });
+      Haven.toast('Review recorded'); careplans();
+    }, 'Record review');
+}
+
+// ── Risk assessments ─────────────────────────────────────────────────────────
+async function risks() {
+  const rows = await Haven.api(`/api/haven/risk-assessments?resident_id=${RID}`);
+  C().innerHTML = `
+    <div class="hv-actions-bar"><div></div>${Haven.can('clinical_write') ? '<button class="hv-btn" id="addRisk">New risk assessment</button>' : ''}</div>
+    <div class="hv-card"><table class="hv-table"><thead><tr>
+      <th>Risk</th><th>Category</th><th>L×S</th><th>Rating</th><th>Next review</th></tr></thead>
+      <tbody>${rows.map(x => `
+        <tr><td><b>${Haven.esc(x.title)}</b><br><span class="hv-note-meta">${Haven.esc(x.existing_controls || '')}</span></td>
+        <td>${Haven.badge(x.category, 'neutral')}</td>
+        <td>${x.likelihood ?? '—'}×${x.severity ?? '—'}</td>
+        <td>${x.risk_rating != null ? Haven.badge(x.risk_rating + (x.risk_rating >= 15 ? ' high' : x.risk_rating >= 8 ? ' med' : ' low'), x.risk_rating >= 15 ? 'high' : x.risk_rating >= 8 ? 'medium' : 'low') : '—'}</td>
+        <td>${Haven.fmtDate(x.next_review_due)} ${x.review_overdue ? Haven.badge('overdue', 'red') : ''}</td></tr>`).join('')
+        || '<tr><td colspan="5" class="hv-empty">No active risk assessments</td></tr>'}</tbody></table></div>`;
+  const _addRisk = document.getElementById('addRisk');
+  if (_addRisk) _addRisk.onclick = () => Haven.modal('New risk assessment', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Category *</label><select name="category">
+        ${['falls','pressure','choking','moving_handling','behaviour','absconding','bedrails','environment','infection','other'].map(c => `<option>${c}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>Title *</label><input name="title" required></div>
+    </div>
+    <div class="hv-field"><label>Hazard</label><textarea name="hazard"></textarea></div>
+    <div class="hv-field"><label>Existing controls</label><textarea name="existing_controls"></textarea></div>
+    <div class="hv-field"><label>Further actions</label><textarea name="further_actions"></textarea></div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Likelihood (1–5)</label><input name="likelihood" type="number" min="1" max="5"></div>
+      <div class="hv-field"><label>Severity (1–5)</label><input name="severity" type="number" min="1" max="5"></div>
+    </div>`,
+    async fd => {
+      await Haven.api('/api/haven/risk-assessments', { method: 'POST', body: { ...fd, resident_id: RID } });
+      Haven.toast('Risk assessment created'); risks();
+    });
+}
+
+// ── Clinical scores ──────────────────────────────────────────────────────────
+const TOOL_FORMS = {
+  news2: `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Respiratory rate (/min)</label><input name="respiratory_rate" type="number" required></div>
+      <div class="hv-field"><label>SpO₂ (%)</label><input name="spo2" type="number" required></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>SpO₂ scale</label><select name="spo2_scale"><option value="1">Scale 1 (standard)</option><option value="2">Scale 2 (hypercapnic resp. failure)</option></select></div>
+      <div class="hv-field"><label>On supplemental oxygen?</label><select name="on_oxygen"><option value="">No — air</option><option value="1">Yes — oxygen</option></select></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Systolic BP (mmHg)</label><input name="systolic_bp" type="number" required></div>
+      <div class="hv-field"><label>Pulse (/min)</label><input name="pulse" type="number" required></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Consciousness (ACVPU)</label><select name="consciousness">
+        <option value="A">Alert</option><option value="C">New confusion</option><option value="V">Voice</option>
+        <option value="P">Pain</option><option value="U">Unresponsive</option></select></div>
+      <div class="hv-field"><label>Temperature (°C)</label><input name="temperature" type="number" step="0.1" required></div>
+    </div>`,
+  must: `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>BMI</label><input name="bmi" type="number" step="0.1" required></div>
+      <div class="hv-field"><label>Unplanned weight loss past 3–6 months (%)</label><input name="weight_loss_pct" type="number" step="0.1" required></div>
+    </div>
+    <div class="hv-field"><label><input type="checkbox" name="acute_disease_no_intake" style="width:auto;margin-right:8px">
+      Acutely ill AND no nutritional intake for &gt;5 days</label></div>`,
+  waterlow: `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Build / BMI band</label><select name="build">
+        <option value="average">Average (BMI 20–24.9)</option><option value="above_average">Above average (25–29.9)</option>
+        <option value="obese">Obese (&gt;30)</option><option value="below_average">Below average (&lt;20)</option></select></div>
+      <div class="hv-field"><label>Sex</label><select name="sex"><option value="male">Male</option><option value="female">Female</option></select></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Age</label><input name="age" type="number" required></div>
+      <div class="hv-field"><label>Continence</label><select name="continence">
+        <option value="complete">Complete / catheterised</option><option value="urine_incontinent">Urine incontinent</option>
+        <option value="faecal_incontinent">Faecal incontinent</option><option value="doubly_incontinent">Doubly incontinent</option></select></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Skin type</label><select name="skin_type">
+        <option value="healthy">Healthy</option><option value="tissue_paper">Tissue paper</option><option value="dry">Dry</option>
+        <option value="oedematous">Oedematous</option><option value="clammy">Clammy / pyrexia</option>
+        <option value="discoloured">Discoloured (grade 1)</option><option value="broken">Broken (grade 2–4)</option></select></div>
+      <div class="hv-field"><label>Mobility</label><select name="mobility">
+        <option value="fully">Fully mobile</option><option value="restless">Restless / fidgety</option><option value="apathetic">Apathetic</option>
+        <option value="restricted">Restricted</option><option value="bedbound">Bedbound</option><option value="chairbound">Chairbound</option></select></div>
+    </div>
+    <div class="hv-field"><label>Appetite / nutrition</label><select name="appetite">
+      <option value="average">Average</option><option value="poor">Poor</option>
+      <option value="ng_tube_fluids_only">NG tube / fluids only</option><option value="nbm_anorexic">NBM / anorexic</option></select></div>
+    <div class="hv-field"><label>Special risks (hold Ctrl/Cmd to multi-select)</label>
+      <select name="special_risks" multiple size="6">
+        <option value="terminal_cachexia">Terminal cachexia (8)</option><option value="multiple_organ_failure">Multiple organ failure (8)</option>
+        <option value="single_organ_failure">Single organ failure (5)</option><option value="peripheral_vascular_disease">Peripheral vascular disease (5)</option>
+        <option value="anaemia">Anaemia (2)</option><option value="smoking">Smoking (1)</option>
+        <option value="neuro_deficit">Neurological deficit (4)</option><option value="neuro_deficit_severe">Severe neurological deficit (6)</option>
+        <option value="surgery_orthopaedic_below_waist">Orthopaedic surgery below waist (5)</option>
+        <option value="surgery_on_table_over_2h">On table &gt;2h (5)</option><option value="surgery_on_table_over_6h">On table &gt;6h (8)</option>
+        <option value="cytotoxics_steroids_antiinflammatory">Cytotoxics / high-dose steroids / anti-inflammatories (4)</option></select></div>`,
+  falls: `
+    <div class="hv-field"><label>Recent falls</label><select name="recent_falls">
+      <option value="none_last_12m">None in last 12 months (2)</option>
+      <option value="one_or_more_last_12m">One or more in last 12 months (4)</option>
+      <option value="one_or_more_last_3m">One or more in last 3 months (6)</option>
+      <option value="one_or_more_last_3m_while_inpatient">One or more in last 3 months while resident/inpatient (8)</option></select></div>
+    <div class="hv-field"><label>Risk-increasing medications (sedatives, antidepressants, diuretics, antihypertensives…)</label><select name="medications">
+      <option value="none">None (1)</option><option value="one">One (2)</option><option value="two">Two (3)</option><option value="three_or_more">Three or more (4)</option></select></div>
+    <div class="hv-field"><label>Psychological state</label><select name="psychological">
+      <option value="none">Settled (1)</option><option value="mild_anxiety">Mild anxiety (2)</option>
+      <option value="agitated_confusion">Agitated / confused (3)</option><option value="marked_agitation_or_poor_judgement">Marked agitation / poor judgement (4)</option></select></div>
+    <div class="hv-field"><label>Cognitive status (AMTS)</label><select name="cognitive_status">
+      <option value="intact">Intact — AMTS 9–10 (1)</option><option value="mild_impairment">Mild impairment — 7–9 (2)</option>
+      <option value="moderate_impairment">Moderate — 5–7 (3)</option><option value="severe_impairment">Severe — &lt;5 (4)</option></select></div>
+    <div class="hv-field"><label><input type="checkbox" name="auto_high_risk" style="width:auto;margin-right:8px">
+      Recent change in function/medication affecting safe mobility OR dizziness/postural hypotension (automatic HIGH risk)</label></div>`,
+};
+
+async function scores() {
+  const [latest, history] = await Promise.all([
+    Haven.api(`/api/haven/scores/latest?resident_id=${RID}`),
+    Haven.api(`/api/haven/scores?resident_id=${RID}`),
+  ]);
+  const toolNames = { must: 'MUST (nutrition)', waterlow: 'Waterlow (pressure)', news2: 'NEWS2 (vital signs)', falls: 'Falls risk (FRAT)' };
+  C().innerHTML = `
+    <div class="hv-grid cols-4" style="margin-bottom:16px">${['news2','must','waterlow','falls'].map(t => {
+      const l = latest.find(x => x.tool === t);
+      return `<div class="hv-stat"><div class="l" style="margin-bottom:6px">${toolNames[t]}</div>
+        ${l ? `<div class="n ${['high','very_high','medium'].includes(l.band) ? 'bad' : ['at_risk','low_medium'].includes(l.band) ? 'warn' : ''}">${l.score}</div>
+        ${Haven.badge(l.band, l.band)}<div class="hv-note-meta" style="margin-top:4px">${Haven.fmtDateTime(l.scored_at)}</div>`
+        : '<div class="hv-empty" style="padding:6px 0">Never scored</div>'}
+        ${Haven.can('clinical_write') ? `<button class="hv-btn small secondary" style="margin-top:8px" onclick="newScore('${t}')">Score now</button>` : ''}</div>`;
+    }).join('')}</div>
+    <div class="hv-card"><h3>Score history</h3><table class="hv-table"><thead><tr>
+      <th>When</th><th>Tool</th><th>Score</th><th>Band</th><th>Escalation</th><th>By</th></tr></thead>
+      <tbody>${history.map(h => `<tr>
+        <td>${Haven.fmtDateTime(h.scored_at)}</td><td>${toolNames[h.tool] || h.tool}</td>
+        <td><b>${h.score}</b></td><td>${Haven.badge(h.band, h.band)}</td>
+        <td style="font-size:.83rem;max-width:340px">${Haven.esc(h.escalation || '')}</td>
+        <td>${Haven.esc((h.scored_by_first || '') + ' ' + (h.scored_by_last || ''))}</td></tr>`).join('')
+        || '<tr><td colspan="6" class="hv-empty">No scores recorded</td></tr>'}</tbody></table></div>`;
+}
+
+function newScore(tool) {
+  const names = { must: 'MUST — nutrition screening', waterlow: 'Waterlow — pressure ulcer risk', news2: 'NEWS2 — vital signs', falls: 'Falls risk (FRAT part 1)' };
+  const bk = Haven.modal(names[tool], TOOL_FORMS[tool] + `<div class="score-preview" id="scorePreview">Fill in the fields — the score calculates automatically.</div>`,
+    async fd => {
+      const inputs = buildInputs(tool, bk);
+      const saved = await Haven.api('/api/haven/scores', { method: 'POST', body: { resident_id: RID, tool, inputs } });
+      Haven.toast(`Saved — ${tool.toUpperCase()} score ${saved.score} (${saved.band.replace(/_/g, ' ')})`);
+      scores();
+    }, 'Save score');
+  if (tool === 'waterlow') {
+    const ageInput = bk.querySelector('[name=age]');
+    if (ageInput && RESIDENT.age) ageInput.value = RESIDENT.age;
+    const sexSel = bk.querySelector('[name=sex]');
+    if (sexSel && RESIDENT.sex) sexSel.value = RESIDENT.sex;
+  }
+  bk.addEventListener('input', () => preview(tool, bk));
+  preview(tool, bk);
+}
+function buildInputs(tool, bk) {
+  const inputs = {};
+  bk.querySelectorAll('[name]').forEach(inp => {
+    if (inp.name === 'special_risks') {
+      inputs.special_risks = [...inp.selectedOptions].map(o => o.value);
+    } else if (inp.type === 'checkbox') inputs[inp.name] = inp.checked;
+    else if (inp.value !== '') inputs[inp.name] = isNaN(inp.value) ? inp.value : Number(inp.value);
+  });
+  if (tool === 'news2') inputs.on_oxygen = !!inputs.on_oxygen;
+  return inputs;
+}
+async function preview(tool, bk) {
+  const el = bk.querySelector('#scorePreview');
+  try {
+    const r = await Haven.api('/api/haven/scores/preview', { method: 'POST', body: { tool, inputs: buildInputs(tool, bk) } });
+    el.innerHTML = `<span class="big">${r.score}</span> ${Haven.badge(r.band, r.band)}
+      ${(r.red_flags || []).length ? Haven.badge('3 in one parameter', 'red') : ''}
+      <div style="margin-top:6px;font-size:.85rem;color:var(--h-muted)">${Haven.esc(r.escalation || '')}</div>`;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--h-muted);font-size:.88rem">Waiting for: ${Haven.esc(e.message.replace('invalid: ', ''))}</span>`;
+  }
+}
+
+// ── Body map ─────────────────────────────────────────────────────────────────
+const BODY_SVG = (side) => `
+<svg viewBox="0 0 200 420" width="200" height="420" xmlns="http://www.w3.org/2000/svg">
+  <g fill="rgba(111,179,168,.10)" stroke="rgba(111,179,168,.55)" stroke-width="2">
+    <circle cx="100" cy="42" r="30"/>
+    <path d="M100 72 L100 78 M70 90 Q100 78 130 90 L138 180 Q132 186 124 184 L120 150 L122 250 Q112 262 100 262 Q88 262 78 250 L80 150 L76 184 Q68 186 62 180 Z"/>
+    <path d="M62 182 L48 246 Q52 252 60 250 L76 190 Z"/>
+    <path d="M138 182 L152 246 Q148 252 140 250 L124 190 Z"/>
+    <path d="M84 262 L78 350 L82 400 Q90 406 96 400 L96 330 L100 300 L104 330 L104 400 Q110 406 118 400 L122 350 L116 262 Z"/>
+  </g>
+  <text x="100" y="415" text-anchor="middle" fill="var(--h-muted)" font-size="13">${side === 'front' ? 'Front' : 'Back'}</text>
+</svg>`;
+
+async function bodymap() {
+  const entries = await Haven.api(`/api/haven/body-map?resident_id=${RID}`);
+  const active = entries.filter(e => !e.resolved_at);
+  C().innerHTML = `
+    <div class="hv-card"><h3>Body map — click the outline to record a mark</h3>
+      <div class="hv-bodymap-wrap">
+        <div class="hv-bodymap" data-side="front" id="bmFront">${BODY_SVG('front')}</div>
+        <div class="hv-bodymap" data-side="back" id="bmBack">${BODY_SVG('back')}</div>
+        <div style="flex:1;min-width:260px">
+          <h3 style="font-size:.95rem">Active marks (${active.length})</h3>
+          <div id="markList">${active.map(m => `
+            <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+              <span class="mark ${m.mark_type}" style="position:static;display:inline-block;transform:none;width:12px;height:12px;vertical-align:middle"></span>
+              <b>${Haven.esc(m.mark_type.replace(/_/g, ' '))}</b> — ${m.side}
+              <div class="hv-note-meta">${Haven.esc(m.note || '')} · ${Haven.fmtDateTime(m.observed_at)} ·
+                ${Haven.esc((m.recorded_by_first || '') + ' ' + (m.recorded_by_last || ''))}
+                <button class="hv-btn small secondary" style="margin-left:6px" onclick="resolveMark(${m.id})">Resolve</button></div>
+            </div>`).join('') || '<div class="hv-empty">No active marks</div>'}</div>
+        </div>
+      </div></div>`;
+  for (const m of active) {
+    const wrap = document.getElementById(m.side === 'front' ? 'bmFront' : 'bmBack');
+    const dot = document.createElement('div');
+    dot.className = `mark ${m.mark_type}`;
+    dot.style.left = m.x_pct + '%';
+    dot.style.top = m.y_pct + '%';
+    dot.title = `${m.mark_type.replace(/_/g, ' ')}: ${m.note || ''}`;
+    wrap.appendChild(dot);
+  }
+  document.querySelectorAll('.hv-bodymap').forEach(el => el.addEventListener('click', e => {
+    if (e.target.classList.contains('mark')) return;
+    const rect = el.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(1);
+    const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(1);
+    Haven.modal('Record body-map mark', `
+      <p style="font-size:.85rem;color:var(--h-muted);margin-bottom:12px">${el.dataset.side} — position ${x}%, ${y}%</p>
+      <div class="hv-field"><label>Mark type *</label><select name="mark_type">
+        ${['bruise','pressure_area','skin_tear','rash','wound','swelling','other'].map(t => `<option>${t}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>Note</label><textarea name="note" placeholder="Size, colour, cause if known, action taken…"></textarea></div>`,
+      async fd => {
+        await Haven.api('/api/haven/body-map', { method: 'POST',
+          body: { ...fd, resident_id: RID, side: el.dataset.side, x_pct: x, y_pct: y } });
+        Haven.toast('Mark recorded'); bodymap();
+      }, 'Record mark');
+  }));
+}
+async function resolveMark(id) {
+  await Haven.api(`/api/haven/body-map/${id}/resolve`, { method: 'PATCH' });
+  Haven.toast('Mark resolved'); bodymap();
+}
+
+// ── Daily notes ──────────────────────────────────────────────────────────────
+async function notes() {
+  const rows = await Haven.api(`/api/haven/notes/daily?resident_id=${RID}`);
+  C().innerHTML = `
+    <div class="hv-actions-bar"><div></div><button class="hv-btn" id="addNote">Add note</button></div>
+    <div class="hv-card">${rows.map(nt => `
+      <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+        ${Haven.badge(nt.category, 'accent')} ${Haven.esc(nt.note)}
+        <div class="hv-note-meta" style="margin-top:3px">${Haven.fmtDateTime(nt.recorded_at)} ·
+          ${Haven.esc((nt.recorded_by_first || '') + ' ' + (nt.recorded_by_last || ''))}</div>
+      </div>`).join('') || '<div class="hv-empty">No notes yet</div>'}</div>`;
+  document.getElementById('addNote').onclick = () => Haven.modal('Add daily note', `
+    <div class="hv-field"><label>Category</label><select name="category">
+      ${['general','personal_care','nutrition','fluids','activity','night_check','visit','mood'].map(c => `<option>${c}</option>`).join('')}</select></div>
+    <div class="hv-field"><label>Note *</label><textarea name="note" required></textarea></div>`,
+    async fd => {
+      await Haven.api('/api/haven/notes/daily', { method: 'POST', body: { ...fd, resident_id: RID } });
+      Haven.toast('Note added'); notes();
+    }, 'Add note');
+}
+
+// ── MCA / DoLS ───────────────────────────────────────────────────────────────
+async function mca() {
+  const rows = await Haven.api(`/api/haven/mca-dols?resident_id=${RID}`);
+  const typeNames = { mca_assessment: 'MCA capacity assessment', best_interests_decision: 'Best-interests decision',
+    dols_application: 'DoLS application', dols_authorisation: 'DoLS authorisation' };
+  C().innerHTML = `
+    <div class="hv-actions-bar"><div></div>${Haven.can('senior_write') ? '<button class="hv-btn" id="addMca">New record</button>' : ''}</div>
+    ${rows.map(m => `<div class="hv-card">
+      <h3>${typeNames[m.record_type] || m.record_type}
+        ${m.dols_status ? Haven.badge(m.dols_status, m.dols_expired ? 'red' : 'accent') : ''}
+        ${m.dols_expired ? Haven.badge('EXPIRED', 'red') : ''}
+        ${m.has_capacity === true ? Haven.badge('has capacity', 'green') : m.has_capacity === false ? Haven.badge('lacks capacity', 'amber') : ''}</h3>
+      <dl class="kv">
+        ${m.decision_subject ? `<dt>Decision</dt><dd>${Haven.esc(m.decision_subject)}</dd>` : ''}
+        ${m.assessment_date ? `<dt>Assessed</dt><dd>${Haven.fmtDate(m.assessment_date)}</dd>` : ''}
+        ${m.best_interests_summary ? `<dt>Best interests</dt><dd style="white-space:pre-wrap">${Haven.esc(m.best_interests_summary)}</dd>` : ''}
+        ${m.consultees ? `<dt>Consulted</dt><dd>${Haven.esc(m.consultees)}</dd>` : ''}
+        ${m.dols_authority ? `<dt>Supervisory body</dt><dd>${Haven.esc(m.dols_authority)} ${m.dols_reference ? `(ref ${Haven.esc(m.dols_reference)})` : ''}</dd>` : ''}
+        ${m.dols_start_date ? `<dt>Authorised</dt><dd>${Haven.fmtDate(m.dols_start_date)} → ${Haven.fmtDate(m.dols_expiry_date)}</dd>` : ''}
+        ${m.conditions ? `<dt>Conditions</dt><dd>${Haven.esc(m.conditions)}</dd>` : ''}
+        ${m.review_due ? `<dt>Review due</dt><dd>${Haven.fmtDate(m.review_due)} ${m.review_overdue ? Haven.badge('overdue', 'red') : ''}</dd>` : ''}
+        ${m.notes ? `<dt>Notes</dt><dd>${Haven.esc(m.notes)}</dd>` : ''}
+      </dl></div>`).join('') || '<div class="hv-empty">No MCA / DoLS records</div>'}`;
+  const _addMca = document.getElementById('addMca');
+  if (_addMca) _addMca.onclick = () => Haven.modal('New MCA / DoLS record', `
+    <div class="hv-field"><label>Record type *</label><select name="record_type">
+      <option value="mca_assessment">MCA capacity assessment</option>
+      <option value="best_interests_decision">Best-interests decision</option>
+      <option value="dols_application">DoLS application</option>
+      <option value="dols_authorisation">DoLS authorisation</option></select></div>
+    <div class="hv-field"><label>Decision subject (what is being decided)</label><input name="decision_subject"></div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Assessment date</label><input name="assessment_date" type="date"></div>
+      <div class="hv-field"><label>Capacity outcome</label><select name="has_capacity">
+        <option value="">n/a</option><option value="true">Has capacity</option><option value="false">Lacks capacity</option></select></div>
+    </div>
+    <div class="hv-field"><label>Best-interests summary</label><textarea name="best_interests_summary"></textarea></div>
+    <div class="hv-field"><label>Consultees</label><input name="consultees"></div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>DoLS supervisory body</label><input name="dols_authority"></div>
+      <div class="hv-field"><label>DoLS status</label><select name="dols_status">
+        <option value="">—</option><option>pending</option><option>urgent_granted</option><option>standard_granted</option>
+        <option>refused</option><option>expired</option><option>withdrawn</option></select></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>DoLS start</label><input name="dols_start_date" type="date"></div>
+      <div class="hv-field"><label>DoLS expiry</label><input name="dols_expiry_date" type="date"></div>
+    </div>
+    <div class="hv-field"><label>Review due</label><input name="review_due" type="date"></div>
+    <div class="hv-field"><label>Notes</label><textarea name="notes"></textarea></div>`,
+    async fd => {
+      if (fd.has_capacity !== undefined) fd.has_capacity = fd.has_capacity === 'true';
+      await Haven.api('/api/haven/mca-dols', { method: 'POST', body: { ...fd, resident_id: RID } });
+      Haven.toast('Record created'); mca();
+    });
+}
+</script>
+</body>
+</html>

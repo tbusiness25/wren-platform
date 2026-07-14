@@ -122,7 +122,7 @@ const MONTHLY_CHECKLIST_ITEMS = [
   { title: 'Submit funding claim to Ealing LA', priority: 'high',   description: 'EYPP, 15h/30h universal and extended. Portal: ealing.gov.uk' },
   { title: 'Send parent newsletter',            priority: 'high',   description: 'Draft, review with deputy, send via Wren comms.' },
   { title: 'Medicine records audit',            priority: 'high',   description: 'Review all active medicine records. Archive completed courses.' },
-  { title: 'Safeguarding register review',      priority: 'high',   description: 'Check all open concerns with the deputy. Update risk status.' },
+  { title: 'Safeguarding register review',      priority: 'high',   description: 'Check all open concerns with Ayla. Update risk status.' },
   { title: 'Risk assessment review',            priority: 'medium', description: 'Review any outstanding risk assessments flagged for update this month.' },
   { title: 'Staff supervision scheduling',      priority: 'medium', description: 'Ensure all staff have a supervision booked within the quarter.' },
   { title: 'Incident & accident log review',    priority: 'medium', description: 'Review all incidents from the past month. Look for patterns.' },

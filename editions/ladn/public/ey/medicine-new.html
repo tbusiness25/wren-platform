@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"           content="ladn">
+  <meta name="wren-app-page"          content="medicine-new">
+  <meta name="wren-app-title"         content="Log Medicine">
+  <meta name="wren-app-chat"          content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>Log Medicine · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #med-form { padding:16px; display:flex; flex-direction:column; gap:14px; max-width:560px; margin:0 auto; }
+    .med-field label { display:block; font-size:.8rem; font-weight:600; color:var(--c-muted); margin-bottom:6px; }
+    .med-field input, .med-field select, .med-field textarea {
+      width:100%; background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px;
+      color:var(--c-text); padding:12px 14px; font-size:1rem; font-family:inherit; outline:none;
+    }
+    .med-field input:focus, .med-field select:focus, .med-field textarea:focus { border-color:var(--c-blue); }
+    .med-consent { display:flex; align-items:center; gap:10px; font-size:.92rem; color:var(--c-text); }
+    .med-consent input { width:22px; height:22px; }
+    #med-save { background:var(--c-blue); color:#fff; border:none; border-radius:14px; padding:16px; font-size:1.05rem; font-weight:700; cursor:pointer; }
+    #med-save:disabled { opacity:.5; }
+  </style>
+</head>
+<body>
+<div id="med-form">
+  <div class="med-field"><label>Child *</label><select id="m-child"><option value="">Select a child…</option></select></div>
+
+  <!-- Parent consents for selected child -->
+  <div id="parent-consents" style="display:none;background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:12px">
+    <div style="font-size:.8rem;font-weight:600;color:var(--c-muted);margin-bottom:8px">📋 Parent consents for this child</div>
+    <div id="consents-list"></div>
+  </div>
+
+  <div class="med-field"><label>Medicine *</label><input id="m-name" type="text" placeholder="e.g. Calpol" autocomplete="off"></div>
+  <div class="med-field"><label>Dose</label><input id="m-dose" type="text" placeholder="e.g. 2.5ml"></div>
+  <div class="med-field"><label>Time given</label><input id="m-time" type="time"></div>
+  <div class="med-field"><label>Temperature (&deg;C, if taken)</label><input id="m-temp" type="number" step="0.1" min="30" max="43" placeholder="e.g. 38.2" inputmode="decimal"></div>
+  <label class="med-consent"><input type="checkbox" id="m-consent"> Parent has given written consent</label>
+  <label class="med-consent"><input type="checkbox" id="m-consent-verbal"> Parent gave verbal consent by phone (e.g. one-off Calpol dose)</label>
+  <div class="med-field"><label>Staff signature (type your full name) *</label><input id="m-signature" type="text" autocomplete="off" placeholder="Your full name"></div>
+  <div class="med-field"><label>Notes</label><textarea id="m-notes" rows="2" placeholder="Reason, who administered, witnessed by…"></textarea></div>
+  <button id="med-save">Log medicine</button>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function preChild(){ var m=(location.search||'').match(/(?:child_id|child|children)=(\d+)/); return m?m[1]:''; }
+
+  document.addEventListener('wren:ready', function () {
+    var tb = document.querySelector('.wren-app-topbar');
+    if (tb && !document.getElementById('med-back')) {
+      var b=document.createElement('button'); b.id='med-back'; b.setAttribute('aria-label','Back');
+      b.style.cssText='width:44px;height:44px;background:transparent;border:none;color:var(--c-muted);font-size:1.25rem;cursor:pointer';
+      b.innerHTML='&#8592;'; b.addEventListener('click',function(){ Wren.navigate('/ey/home'); }); tb.insertBefore(b, tb.firstChild);
+    }
+    document.getElementById('m-time').value = new Date().toTimeString().slice(0,5);
+    Wren.api('/api/children').then(function(data){
+      var all = Array.isArray(data)?data:(data&&data.rows?data.rows:[]);
+      var pre = preChild();
+      document.getElementById('m-child').innerHTML = '<option value="">Select a child…</option>' +
+        all.map(function(c){ return '<option value="'+c.id+'"'+(String(c.id)===pre?' selected':'')+'>'+esc(c.first_name+' '+(c.last_name||''))+'</option>'; }).join('');
+      if (pre) loadParentConsents(pre);
+    }).catch(function(){ Wren.toast('Could not load children','error'); });
+
+    // Load parent consents when child is selected
+    document.getElementById('m-child').addEventListener('change', function() {
+      var cid = this.value;
+      if (cid) loadParentConsents(cid);
+      else document.getElementById('parent-consents').style.display = 'none';
+    });
+
+    function loadParentConsents(childId) {
+      Wren.api('/api/medicine/parent-consents/child/' + childId).then(function(consents) {
+        var box = document.getElementById('parent-consents');
+        var list = document.getElementById('consents-list');
+        if (!consents || !consents.length) {
+          box.style.display = 'none';
+          return;
+        }
+        box.style.display = 'block';
+        list.innerHTML = consents.map(function(c) {
+          var statusBadge = c.status === 'acknowledged' ? '<span style="color:#22c55e;font-size:.75rem">✅ Acknowledged</span>' :
+                            c.status === 'declined' ? '<span style="color:#ef4444;font-size:.75rem">❌ Declined</span>' :
+                            '<button class="ack-btn" data-id="'+c.id+'" style="background:var(--c-blue);color:#fff;border:none;border-radius:8px;padding:4px 10px;font-size:.75rem;cursor:pointer">Acknowledge</button>';
+          return '<div style="border-top:1px solid var(--c-border);padding:8px 0;font-size:.85rem">' +
+            '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px">' +
+            '<strong>' + esc(c.medicine_name) + ' (' + esc(c.dose) + ')</strong>' +
+            statusBadge + '</div>' +
+            '<div style="color:var(--c-muted);font-size:.78rem">Valid: ' + c.valid_from + ' – ' + c.valid_to + '</div>' +
+            '<div style="color:var(--c-muted);font-size:.78rem;margin-top:2px">' + esc(c.reason) + '</div>' +
+            '</div>';
+        }).join('');
+
+        // Attach acknowledge handlers
+        list.querySelectorAll('.ack-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var id = this.getAttribute('data-id');
+            this.disabled = true;
+            Wren.api('/api/medicine/parent-consents/' + id + '/acknowledge', {method:'POST'}).then(function() {
+              Wren.toast('Consent acknowledged','success');
+              loadParentConsents(childId);
+            }).catch(function(err) {
+              btn.disabled = false;
+              Wren.toast((err&&err.error)||'Failed to acknowledge','error');
+            });
+          });
+        });
+      }).catch(function() {
+        document.getElementById('parent-consents').style.display = 'none';
+      });
+    }
+
+    document.getElementById('med-save').addEventListener('click', function () {
+      var btn=this;
+      var child_id=document.getElementById('m-child').value, name=document.getElementById('m-name').value.trim();
+      if(!child_id||!name){ Wren.toast('Child and medicine are required','warning'); return; }
+      var sig=document.getElementById('m-signature').value.trim();
+      if(!sig){ Wren.toast('Type your full name as the staff signature','warning'); return; }
+      var written=document.getElementById('m-consent').checked, verbal=document.getElementById('m-consent-verbal').checked;
+      if(!written && !verbal){ Wren.toast('Record parent consent (written or verbal by phone)','warning'); return; }
+      var t=document.getElementById('m-time').value;
+      var temp=document.getElementById('m-temp').value;
+      var body={ child_id:child_id, medicine_name:name, dose:document.getElementById('m-dose').value.trim(),
+        time_given: t ? (new Date().toISOString().slice(0,10)+'T'+t) : undefined,
+        parent_consent: written || verbal,
+        consent_method: written ? 'written' : 'verbal_phone',
+        temperature: temp || null,
+        staff_signature: sig,
+        notes:document.getElementById('m-notes').value.trim() };
+      btn.disabled=true;
+      Wren.api('/api/medicine',{method:'POST',body:body}).then(function(){
+        Wren.toast('Medicine logged','success'); setTimeout(function(){ Wren.navigate('/ey/home'); }, 600);
+      }).catch(function(x){ btn.disabled=false; Wren.toast((x&&x.error)||'Could not save','error'); });
+    });
+  });
+}());
+</script>
+</body>
+</html>

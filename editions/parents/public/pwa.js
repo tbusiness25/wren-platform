@@ -1,4 +1,4 @@
-/* Your Nursery — Parents PWA + mobile shell.
+/* Little Angels — Parents PWA + mobile shell.
  * Loaded (deferred) on every /welcome/* page. Self-contained, no dependencies.
  * Responsibilities:
  *   1. Inject PWA <head> tags (manifest, theme-color, apple touch icon + meta).
@@ -170,7 +170,7 @@
     function dismiss() { banner.classList.remove('lap-show'); localStorage.setItem('lap.install.dismissed', '1'); }
 
     if (isIOS) {
-      banner.innerHTML = '<span class="lap-ico">📲</span><div class="lap-txt">Add Your Nursery to your Home Screen' +
+      banner.innerHTML = '<span class="lap-ico">📲</span><div class="lap-txt">Add Little Angels to your Home Screen' +
         '<small>Tap the Share icon, then “Add to Home Screen”.</small></div>' +
         '<button class="lap-no" id="lap-no">Got it</button>';
       document.body.appendChild(banner);
@@ -183,7 +183,7 @@
     document.body.appendChild(banner);
     window.addEventListener('beforeinstallprompt', function (e) {
       e.preventDefault(); deferred = e;
-      banner.innerHTML = '<span class="lap-ico">📲</span><div class="lap-txt">Install the Your Nursery app' +
+      banner.innerHTML = '<span class="lap-ico">📲</span><div class="lap-txt">Install the Little Angels app' +
         '<small>Quick access from your Home Screen.</small></div>' +
         '<button class="lap-go" id="lap-go">Install</button><button class="lap-no" id="lap-no">Not now</button>';
       banner.classList.add('lap-show');

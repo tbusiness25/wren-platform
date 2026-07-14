@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="wren-edition" content="ladn">
+<title>Food Diary — Daily Feeding Log</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js"></script>
+<style>
+.child-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-bottom:20px; }
+.child-card { background:#1e293b; border:2px solid #2d3748; border-radius:12px; padding:14px; cursor:pointer; text-align:center; transition:.15s; }
+.child-card.selected { border-color:#4a9abf; background:rgba(74,154,191,.1); }
+.child-card:hover { border-color:#4a9abf; }
+.child-avatar { width:50px; height:50px; border-radius:50%; background:#2d3748; display:flex; align-items:center; justify-content:center; font-size:1.2rem; font-weight:700; color:#f1f5f9; margin:0 auto 8px; }
+.amount-btns { display:flex; gap:5px; }
+.amount-btn { flex:1; padding:8px 4px; border:1.5px solid #2d3748; background:none; border-radius:8px; color:var(--c-muted); font-size:.78rem; font-weight:700; cursor:pointer; transition:.15s; }
+.amount-btn.selected { border-color:#4a9abf; background:rgba(74,154,191,.15); color:#4a9abf; }
+.amount-btn.full { border-color:#22c55e; background:rgba(34,197,94,.15); color:#22c55e; }
+.meal-row { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:14px; margin-bottom:10px; }
+.allergen-warn { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3); border-radius:8px; padding:8px 12px; font-size:.78rem; color:#ef4444; margin-top:6px; display:none; }
+</style>
+</head>
+<body>
+<div id="wren-shell"></div>
+<div class="page-content" data-role="manager deputy_manager practitioner">
+
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap">
+    <div>
+      <div id="today-label" style="font-size:.85rem;color:var(--c-muted)"></div>
+      <h1 style="margin:2px 0;font-size:1.3rem;color:#f1f5f9">Feeding Log</h1>
+    </div>
+    <div style="margin-left:auto">
+      <input type="date" id="log-date" style="background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:7px 12px;font-size:.82rem">
+    </div>
+  </div>
+
+  <!-- Child selector -->
+  <div style="font-size:.78rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Select child</div>
+  <div id="child-grid" class="child-grid">
+    <div style="color:var(--c-muted);font-size:.875rem;grid-column:1/-1">Loading children…</div>
+  </div>
+
+  <!-- Meals for selected child -->
+  <div id="meal-section" style="display:none">
+    <div style="font-size:.78rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Record what <span id="child-name-display">child</span> ate</div>
+    <div id="meal-rows"></div>
+    <button id="save-feeding-btn" style="margin-top:14px;width:100%;padding:12px;background:#4a9abf;border:none;border-radius:10px;color:#fff;font-size:.875rem;font-weight:700;cursor:pointer">Save Feeding Log</button>
+  </div>
+
+</div>
+
+<script>
+let selectedChildId = null;
+let children = [];
+let todayPlans = [];
+let childAllergens = {};
+const amountLabels = ['None','25%','50%','75%','All'];
+const amountValues = [0,25,50,75,100];
+let selections = {}; // {meal_type: {amount, notes}}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function today() { return new Date().toISOString().split('T')[0]; }
+
+document.addEventListener('wren:ready', async () => {
+  const d = today();
+  document.getElementById('log-date').value = d;
+  document.getElementById('today-label').textContent = new Date(d).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+
+  // Load children + today's plans
+  try {
+    [children] = await Promise.all([
+      Wren.api('/api/children?active=true&limit=100')
+        .then(r => Array.isArray(r) ? r : (r.children || []))
+    ]);
+    renderChildGrid();
+  } catch(e){ document.getElementById('child-grid').innerHTML=`<div style="color:#ef4444">Error loading children: ${esc(e.error||'')}</div>`; }
+
+  // Load today's plans
+  try {
+    const data = await Wren.api('/api/menus/today?room=preschool');
+    todayPlans = data.plans || [];
+    (data.allergen_children||[]).forEach(c => { childAllergens[c.id] = c.allergens||[]; });
+  } catch(e){ console.warn('No menu data:', e); }
+
+  // Event delegation for child grid
+  document.getElementById('child-grid').addEventListener('click', function(e) {
+    const card = e.target.closest('[data-action="select-child"]');
+    if (!card) return;
+    selectChild(parseInt(card.dataset.id), decodeURIComponent(card.dataset.name));
+  });
+
+  // Event delegation for amount buttons
+  document.getElementById('meal-rows').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action="set-amount"]');
+    if (!btn) return;
+    setAmount(btn.dataset.mt, parseInt(btn.dataset.val), btn);
+  });
+
+  // Save feeding log button
+  document.getElementById('save-feeding-btn').addEventListener('click', saveFeedingLog);
+});
+
+function renderChildGrid() {
+  document.getElementById('child-grid').innerHTML = children.map(c=>
+    `<div class="child-card ${selectedChildId===c.id?'selected':''}" data-action="select-child" data-id="${c.id}" data-name="${encodeURIComponent(c.first_name + ' ' + c.last_name)}">
+      <div class="child-avatar">${esc(c.first_name[0]||'?')}</div>
+      <div style="font-size:.82rem;font-weight:700;color:#f1f5f9">${esc(c.first_name)}</div>
+      ${childAllergens[c.id]?.length?`<div style="font-size:.65rem;color:#f59e0b;margin-top:3px">⚠ Allergens</div>`:''}
+    </div>`
+  ).join('');
+}
+
+async function selectChild(id, name) {
+  selectedChildId = id;
+  renderChildGrid();
+  document.getElementById('child-name-display').textContent = name;
+  document.getElementById('meal-section').style.display='block';
+  selections = {};
+
+  // Load existing log for this child today
+  try {
+    const existing = await Wren.api(`/api/menus/food-intake?child_id=${id}&date=${document.getElementById('log-date').value}`);
+    existing.forEach(e => { selections[e.meal_type] = {amount:e.amount_eaten_pct, notes:e.notes||'', plan_id:e.recipe_id}; });
+  } catch(e){}
+
+  renderMealRows();
+}
+
+function renderMealRows() {
+  const mealOrder = ['breakfast','snack_am','lunch','snack_pm','tea'];
+  const labels = {breakfast:'Breakfast',snack_am:'AM Snack',lunch:'Lunch',snack_pm:'PM Snack',tea:'Tea'};
+  const cAllergens = childAllergens[selectedChildId] || [];
+
+  document.getElementById('meal-rows').innerHTML = mealOrder.map(mt => {
+    const plan = todayPlans.find(p=>p.meal_type===mt);
+    const sel = selections[mt] || {amount:null, notes:''};
+    const hasConflict = plan && cAllergens.some(a => (plan.allergens||[]).includes(a));
+
+    return `<div class="meal-row">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:.78rem;font-weight:700;color:var(--c-muted);text-transform:uppercase">${labels[mt]}</div>
+          <div style="font-size:.85rem;color:#f1f5f9;margin-top:2px">${esc(plan?.recipe_name || 'No menu planned')}</div>
+          ${plan?.allergen_codes_display?.length?`<div style="font-size:.65rem;color:#f59e0b;margin-top:2px">${plan.allergen_codes_display.join(' ')}</div>`:''}
+        </div>
+      </div>
+      ${hasConflict?`<div class="allergen-warn" style="display:block">⚠ This meal contains allergens that affect this child. Confirm alternative was served.</div>`:''}
+      <div style="font-size:.72rem;color:var(--c-muted);margin-bottom:6px;font-weight:700">Amount eaten:</div>
+      <div class="amount-btns">
+        ${amountValues.map((v,i)=>`<button class="amount-btn ${sel.amount===v?'selected':''} ${v===100?'full':''}" data-action="set-amount" data-mt="${mt}" data-val="${v}">${amountLabels[i]}</button>`).join('')}
+      </div>
+      <input placeholder="Notes (optional)" id="notes-${mt}" value="${esc(sel.notes||'')}" style="margin-top:8px;width:100%;background:#0f172a;border:1px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:7px 10px;font-size:.8rem;box-sizing:border-box">
+    </div>`;
+  }).join('');
+}
+
+function setAmount(mealType, value, btn) {
+  if (!selections[mealType]) selections[mealType] = {};
+  selections[mealType].amount = value;
+  // Update button styling
+  btn.closest('.amount-btns').querySelectorAll('.amount-btn').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+async function saveFeedingLog() {
+  if (!selectedChildId) return Wren.toast('Select a child first','error');
+  const date = document.getElementById('log-date').value;
+  const mealTypes = ['breakfast','snack_am','lunch','snack_pm','tea'];
+  const errors = [];
+  for (const mt of mealTypes) {
+    const sel = selections[mt];
+    if (sel?.amount === null || sel?.amount === undefined) continue;
+    const plan = todayPlans.find(p=>p.meal_type===mt);
+    try {
+      await Wren.api('/api/menus/food-intake',{method:'POST',body:{
+        child_id: selectedChildId, date, meal_type: mt,
+        recipe_id: plan?.recipe_id || null,
+        amount_eaten_pct: sel.amount,
+        notes: document.getElementById('notes-'+mt)?.value || ''
+      }});
+    } catch(e){ errors.push(mt); }
+  }
+  if (errors.length) Wren.toast(`Saved with errors on: ${errors.join(', ')}`, 'warning');
+  else Wren.toast('Feeding log saved','success');
+}
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

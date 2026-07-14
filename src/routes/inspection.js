@@ -489,6 +489,122 @@ router.post('/', async (req, res) => {
   }
 });
 
+// ── Ofsted Crib Sheet (phone-call one-pager) ──────────────────────────────────
+
+router.get('/crib-sheet', async (req, res) => {
+  try {
+    const schema = req.user?.schema || 'ladn';
+    const db = getPool();
+
+    // Opening hours (from settings if available, otherwise default)
+    const { rows: settingsRows } = await db.query(
+      `SELECT key, value FROM ${schema}.settings WHERE key IN ('opening_time', 'closing_time', 'opening_days')`
+    );
+    const settings = settingsRows.reduce((acc, r) => ({ ...acc, [r.key]: r.value }), {});
+    const openingHours = settings.opening_time && settings.closing_time
+      ? `${settings.opening_time} - ${settings.closing_time}`
+      : '8:00am - 6:00pm'; // LADN default from CLAUDE.md
+    const openingDays = settings.opening_days || 'Monday - Friday';
+
+    // Total staff on roll (active)
+    const { rows: [{ total_staff }] } = await db.query(
+      `SELECT COUNT(*) AS total_staff FROM ${schema}.staff WHERE is_active = true`
+    );
+
+    // Total children on roll (active)
+    const { rows: [{ total_children }] } = await db.query(
+      `SELECT COUNT(*) AS total_children FROM ${schema}.children WHERE is_active = true`
+    );
+
+    // EAL (English as Additional Language)
+    const { rows: [{ eal_count }] } = await db.query(
+      `SELECT COUNT(*) AS eal_count
+       FROM ${schema}.children c
+       LEFT JOIN ${schema}.child_about_me a ON c.id = a.child_id
+       WHERE c.is_active = true AND a.eal = true`
+    );
+
+    // Pupil Premium / EYPP
+    const { rows: [{ pp_count }] } = await db.query(
+      `SELECT COUNT(*) AS pp_count
+       FROM ${schema}.children c
+       LEFT JOIN ${schema}.child_about_me a ON c.id = a.child_id
+       WHERE c.is_active = true AND (a.pupil_premium = true OR c.pupil_premium = true OR c.eypp_eligible = true)`
+    );
+
+    // 2-year funded
+    const { rows: [{ two_year_funded }] } = await db.query(
+      `SELECT COUNT(*) AS two_year_funded
+       FROM ${schema}.children c
+       LEFT JOIN ${schema}.child_about_me a ON c.id = a.child_id
+       WHERE c.is_active = true AND (c.two_year_funded = true OR a.two_year_funded = true)`
+    );
+
+    // 3&4-year funded (15 or 30 hours)
+    const { rows: [{ three_four_funded }] } = await db.query(
+      `SELECT COUNT(*) AS three_four_funded
+       FROM ${schema}.children c
+       LEFT JOIN ${schema}.child_about_me a ON c.id = a.child_id
+       WHERE c.is_active = true
+         AND (c.funded_hours_15 = true OR c.funded_hours_30 = true
+              OR a.three_four_year_funded = true OR a.thirty_hour_funded = true)`
+    );
+
+    // Aged 2 (2-3 years old)
+    const { rows: [{ aged_2 }] } = await db.query(
+      `SELECT COUNT(*) AS aged_2
+       FROM ${schema}.children
+       WHERE is_active = true
+         AND date_of_birth >= CURRENT_DATE - INTERVAL '3 years'
+         AND date_of_birth < CURRENT_DATE - INTERVAL '2 years'`
+    );
+
+    // Aged 3&4 (3-5 years old)
+    const { rows: [{ aged_3_4 }] } = await db.query(
+      `SELECT COUNT(*) AS aged_3_4
+       FROM ${schema}.children
+       WHERE is_active = true
+         AND date_of_birth >= CURRENT_DATE - INTERVAL '5 years'
+         AND date_of_birth < CURRENT_DATE - INTERVAL '3 years'`
+    );
+
+    // SEND (Special Educational Needs)
+    const { rows: [{ send_count }] } = await db.query(
+      `SELECT COUNT(*) AS send_count
+       FROM ${schema}.children c
+       LEFT JOIN ${schema}.child_about_me a ON c.id = a.child_id
+       WHERE c.is_active = true AND (a.send = true OR c.send_needs = true OR c.sen_status IS NOT NULL)`
+    );
+
+    // Child protection / safeguarding flagged
+    const { rows: [{ safeguarding_count }] } = await db.query(
+      `SELECT COUNT(*) AS safeguarding_count
+       FROM ${schema}.children c
+       LEFT JOIN ${schema}.child_about_me a ON c.id = a.child_id
+       WHERE c.is_active = true
+         AND (a.safeguarding_flag = true OR c.looked_after = true OR a.children_of_concern = true)`
+    );
+
+    res.json({
+      openingHours,
+      openingDays,
+      totalStaff: parseInt(total_staff, 10),
+      totalChildren: parseInt(total_children, 10),
+      eal: parseInt(eal_count, 10),
+      pupilPremium: parseInt(pp_count, 10),
+      twoYearFunded: parseInt(two_year_funded, 10),
+      threeFourFunded: parseInt(three_four_funded, 10),
+      aged2: parseInt(aged_2, 10),
+      aged3_4: parseInt(aged_3_4, 10),
+      send: parseInt(send_count, 10),
+      safeguarding: parseInt(safeguarding_count, 10),
+    });
+  } catch (err) {
+    console.error('crib-sheet error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/inspection/:id — get inspection with action items
 router.get('/:id', async (req, res) => {
   try {
@@ -733,7 +849,7 @@ router.post('/:id/export', async (req, res) => {
 
     // Manifest
     const manifest = {
-      school: 'Your Nursery',
+      school: 'Little Angels Day Nursery',
       generated: new Date().toISOString(),
       inspection: {
         id: inspection.id,
@@ -756,7 +872,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border:1px solid #dd
 .footer{margin-top:40px;font-size:0.8em;color:#666;border-top:1px solid #ddd;padding-top:10px}
 </style></head><body>
 <h1>Inspection Readiness Report</h1>
-<p><strong>Setting:</strong> Your Nursery, 1A Example Lane, W13 9LU</p>
+<p><strong>Setting:</strong> Little Angels Day Nursery, 1A Dudley Gardens, W13 9LU</p>
 <p><strong>Date generated:</strong> ${new Date().toLocaleString('en-GB')}</p>
 <p><strong>Readiness score:</strong> <strong>${readiness.pct}%</strong> (${readiness.score}/${readiness.max})</p>
 <h2>Compliance Categories</h2>

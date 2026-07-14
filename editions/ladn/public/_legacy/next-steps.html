@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Next Steps — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .ns-filter-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+    .ns-chip{background:var(--c-card);border:1px solid var(--c-border);border-radius:20px;padding:5px 14px;font-size:.8rem;font-weight:600;cursor:pointer;color:var(--c-muted);transition:.15s}
+    .ns-chip.active{background:#4a9abf22;border-color:#4a9abf;color:#4a9abf}
+    .ns-chip:hover:not(.active){border-color:#4a9abf;color:var(--c-text)}
+    .ns-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+    .ns-child-name{font-weight:700;font-size:.95rem;color:var(--c-text)}
+    .ns-group-header{font-size:.8rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--c-border)}
+    .ns-status-chip{font-size:.72rem;font-weight:700;border-radius:20px;padding:3px 10px;text-transform:uppercase;letter-spacing:.04em}
+    .ns-status-pending{background:#4a9abf22;color:#4a9abf}
+    .ns-status-planned{background:#e0782022;color:#e07820}
+    .ns-status-completed{background:#22c55e22;color:#22c55e}
+    .ns-status-cancelled{background:#ef444422;color:#ef4444}
+    .ns-description{font-size:.9rem;color:var(--c-text);margin:8px 0;line-height:1.5}
+    .ns-meta{font-size:.78rem;color:var(--c-muted);margin-bottom:10px;line-height:1.6}
+    .ns-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .ns-empty{text-align:center;padding:48px 16px;color:var(--c-muted)}
+    .ns-empty-icon{font-size:2.5rem;margin-bottom:8px}
+    .ns-sort-row{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+    .ns-badge-room{font-size:.72rem;background:var(--c-bg);border:1px solid var(--c-border);border-radius:4px;padding:2px 7px;color:var(--c-muted)}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Next Steps</div>
+      <div class="page-subtitle" id="ns-subtitle">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Filter chips -->
+  <div class="ns-filter-bar">
+    <button class="ns-chip active" data-status="">All</button>
+    <button class="ns-chip" data-status="pending">Pending</button>
+    <button class="ns-chip" data-status="planned">Planned</button>
+    <button class="ns-chip" data-status="completed">Completed</button>
+  </div>
+
+  <!-- Sort / secondary filters -->
+  <div class="ns-sort-row">
+    <select class="form-control" id="ns-child-filter" style="flex:0 0 auto;max-width:180px">
+      <option value="">All children</option>
+    </select>
+    <select class="form-control" id="ns-sort" style="flex:0 0 auto;max-width:160px">
+      <option value="recent">Most recent</option>
+      <option value="oldest">Oldest pending first</option>
+    </select>
+  </div>
+
+  <div id="ns-list">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+let allNs = [], activeStatus = '', children = [];
+
+async function loadNs() {
+  try {
+    const [nsData, kidData] = await Promise.all([
+      Wren.api('/api/next-steps?limit=200'),
+      Wren.api('/api/children').catch(() => [])
+    ]);
+    allNs = nsData;
+    children = kidData;
+    const childSel = document.getElementById('ns-child-filter');
+    childSel.innerHTML = '<option value="">All children</option>' +
+      children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('');
+    renderNs();
+  } catch(e) {
+    document.getElementById('ns-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderNs() {
+  const childId = document.getElementById('ns-child-filter').value;
+  const sort    = document.getElementById('ns-sort').value;
+  let items = allNs.filter(ns => {
+    if (activeStatus && ns.status !== activeStatus) return false;
+    if (childId && String(ns.child_id) !== childId) return false;
+    return true;
+  });
+  if (sort === 'oldest') items = [...items].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+
+  const el = document.getElementById('ns-list');
+  const sub = document.getElementById('ns-subtitle');
+  sub.textContent = `${items.length} next step${items.length !== 1 ? 's' : ''}`;
+
+  if (!items.length) {
+    el.innerHTML = `<div class="ns-empty"><div class="ns-empty-icon">✅</div>
+      <div>No next steps here</div>
+      <div style="font-size:.85rem;margin-top:4px">Observations with a next step text will appear here</div>
+    </div>`;
+    return;
+  }
+
+  // Group by child
+  const byChild = {};
+  items.forEach(ns => {
+    const k = ns.child_id;
+    if (!byChild[k]) byChild[k] = { name: ns.child_name, room: ns.room_name, items: [] };
+    byChild[k].items.push(ns);
+  });
+
+  el.innerHTML = Object.values(byChild).map(g => `
+    <div class="ns-group-header">
+      👶 ${g.name}${g.room ? ` <span class="ns-badge-room">${g.room}</span>` : ''}
+    </div>
+    ${g.items.map(ns => nsCard(ns)).join('')}
+  `).join('');
+}
+
+function nsCard(ns) {
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB') : '';
+  const dueText = ns.due_by ? ` · Due ${fmtDate(ns.due_by)}` : '';
+  const srcText = ns.source_obs_date ? ` · From obs ${fmtDate(ns.source_obs_date)}` : '';
+  const fwText  = ns.framework_statement_text
+    ? `<span title="${ns.framework_statement_text}">📚 ${ns.framework_area || 'EYFS'}</span> · `
+    : '';
+  const plannedText = ns.planned_date ? `<span style="color:#e07820"> · 📅 Planned ${fmtDate(ns.planned_date)}</span>` : '';
+
+  return `<div class="ns-card" data-id="${ns.id}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <span class="ns-status-chip ns-status-${ns.status}">${ns.status}</span>
+      ${plannedText}
+    </div>
+    <div class="ns-description">${ns.description}</div>
+    <div class="ns-meta">${fwText}${ns.staff_name || ''}${srcText}${dueText}</div>
+    <div class="ns-actions">
+      ${ns.status === 'pending' ? `
+        <button class="btn btn-sm btn-primary" data-action="promote-ns" data-id="${ns.id}" data-child="${encodeURIComponent(ns.child_first_name||ns.child_name)}">Plan as Activity</button>
+        <button class="btn btn-sm btn-ghost" data-action="complete-ns" data-id="${ns.id}">Mark Complete</button>
+        <button class="btn btn-sm btn-ghost" style="color:#ef4444" data-action="cancel-ns" data-id="${ns.id}">Cancel</button>
+      ` : ''}
+      ${ns.status === 'planned' ? `
+        <button class="btn btn-sm btn-ghost" data-action="complete-ns" data-id="${ns.id}">Mark Complete</button>
+      ` : ''}
+    </div>
+  </div>`;
+}
+
+function promoteNs(nsId, childName) {
+  const today = new Date().toISOString().slice(0,10);
+  const form = document.createElement('div');
+  form.innerHTML = `
+    <p style="color:var(--c-muted);font-size:.85rem;margin-bottom:12px">Create a planned activity for <strong>${childName}</strong></p>
+    <div class="form-group">
+      <label class="form-label">Date</label>
+      <input class="form-control" type="date" id="pns-date" value="${today}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Slot</label>
+      <select class="form-control" id="pns-slot">
+        <option value="morning">Morning</option>
+        <option value="afternoon">Afternoon</option>
+        <option value="anytime">Any time</option>
+      </select>
+    </div>
+  `;
+  Wren.modal('Plan as Activity', form, [
+    { label: 'Plan It', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api(`/api/next-steps/${nsId}/promote-to-activity`, { method: 'POST', body: {
+          plan_date: document.getElementById('pns-date').value,
+          slot: document.getElementById('pns-slot').value
+        }});
+        Wren.toast('Activity planned ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadNs();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+function completeNs(nsId) {
+  Wren.modal('Mark as Complete', `
+    <p style="color:var(--c-muted);font-size:.85rem;margin-bottom:12px">Which observation evidences this was achieved? (optional)</p>
+    <div class="form-group">
+      <label class="form-label">Observation ID</label>
+      <input class="form-control" type="number" id="cns-obs" placeholder="Leave blank if none">
+    </div>
+  `, [
+    { label: 'Mark Complete', class: 'btn-primary', close: false, action: async () => {
+      try {
+        const obsId = document.getElementById('cns-obs').value;
+        await Wren.api(`/api/next-steps/${nsId}/mark-completed`, { method: 'POST',
+          body: { completed_observation_id: obsId ? parseInt(obsId) : null }
+        });
+        Wren.toast('Marked complete ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadNs();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+async function cancelNs(nsId) {
+  if (!confirm('Cancel this next step?')) return;
+  try {
+    await Wren.api(`/api/next-steps/${nsId}`, { method: 'PATCH', body: { status: 'cancelled' }});
+    Wren.toast('Cancelled', 'info');
+    const idx = allNs.findIndex(n => n.id === nsId);
+    if (idx >= 0) allNs[idx].status = 'cancelled';
+    renderNs();
+  } catch(e) { Wren.toast('Failed', 'error'); }
+}
+
+// Delegated actions on ns-list
+document.getElementById('ns-list').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = parseInt(btn.dataset.id);
+  if (btn.dataset.action === 'promote-ns') promoteNs(id, decodeURIComponent(btn.dataset.child));
+  else if (btn.dataset.action === 'complete-ns') completeNs(id);
+  else if (btn.dataset.action === 'cancel-ns') cancelNs(id);
+});
+
+// Filter chip clicks
+document.querySelectorAll('.ns-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.ns-chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeStatus = btn.dataset.status;
+    renderNs();
+  });
+});
+document.getElementById('ns-child-filter').addEventListener('change', renderNs);
+document.getElementById('ns-sort').addEventListener('change', renderNs);
+
+document.addEventListener('DOMContentLoaded', () => loadNs());
+</script>
+</body>
+</html>

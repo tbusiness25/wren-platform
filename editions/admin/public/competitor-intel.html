@@ -1,0 +1,217 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Competitor Intelligence · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .ci-wrap{padding:18px;max-width:1300px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--bd)}
+ .tab{padding:8px 14px;cursor:pointer;font-size:.85rem;color:var(--mut);border-bottom:2px solid transparent}
+ .tab.active{color:var(--txt);border-bottom-color:var(--blue);font-weight:700}
+ .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+ .panel h3{margin:0 0 10px;font-size:.98rem}
+ button{background:var(--blue);border:none;color:#06121f;border-radius:6px;padding:7px 13px;font-size:.82rem;font-weight:700;cursor:pointer}
+ button:hover{opacity:.9}
+ button.ghost{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600}
+ button.sm{padding:4px 9px;font-size:.75rem}
+ table{width:100%;border-collapse:collapse;font-size:.83rem}
+ th{color:var(--mut);font-weight:600;text-align:left;padding:8px;border-bottom:1px solid var(--bd)}
+ td{padding:8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top}
+ .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:8px}
+ .c{background:#0b1428;border:1px solid var(--bd);border-radius:9px;padding:11px}
+ .c .n{font-size:1.4rem;font-weight:800}.c .l{color:var(--mut);font-size:.72rem;text-transform:uppercase}
+ .badge{display:inline-block;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:999px}
+ .b-pos{background:rgba(34,197,94,.15);color:var(--ok)}.b-neg{background:rgba(239,68,68,.15);color:var(--bad)}
+ .b-neu{background:rgba(148,163,184,.15);color:var(--mut)}
+ .grade{font-weight:700}
+ .g-out{color:var(--ok)}.g-good{color:#4ade80}.g-ri{color:var(--warn)}.g-inad{color:var(--bad)}
+ input,textarea{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:6px;padding:7px 9px;font-size:.82rem}
+ .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;align-items:end}
+ .form label{font-size:.72rem;color:var(--mut);display:flex;flex-direction:column;gap:3px}
+ .msg{font-size:.8rem;color:var(--warn);min-height:1em;margin:8px 0}
+ .chips{display:flex;flex-wrap:wrap;gap:4px}
+ .chip{background:#0b1428;border:1px solid var(--bd);border-radius:5px;padding:2px 7px;font-size:.72rem}
+ .mention{border-left:3px solid var(--bd);padding:8px 10px;margin-bottom:8px;background:#0b1428;border-radius:0 8px 8px 0}
+ .mention a{color:var(--blue);text-decoration:none;font-weight:600}
+ .mention .meta{color:var(--mut);font-size:.72rem;margin-top:3px}
+ .hide{display:none}
+ .note{font-size:.72rem;color:var(--mut);margin-top:6px}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="ci-wrap">
+  <h1>🔭 Competitor Intelligence</h1>
+  <div class="sub">Local nursery pricing, Ofsted &amp; reputation — public data only. Compare against us. <span class="note">No competitor is ever contacted; pricing gaps are surfaced for you to act on.</span></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">Us vs Local</div>
+    <div class="tab" data-tab="manage">Competitors</div>
+    <div class="tab" data-tab="reputation">Our Reputation</div>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <!-- OVERVIEW -->
+  <div id="tab-overview">
+    <div class="panel">
+      <h3>Little Angels (us)</h3>
+      <div class="cards" id="usStats"></div>
+      <div id="usRooms" class="chips"></div>
+    </div>
+    <div class="panel">
+      <h3>Local competitors <button class="ghost sm" id="btnRefreshAll" style="float:right">↻ Refresh all</button></h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Nursery</th><th>Ofsted</th><th>Fees (extracted)</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="compTable"></tbody>
+      </table></div>
+      <div class="note">Fees are best-effort LLM extraction from each nursery's own website — point the website at their fees page for best results. Ofsted is most accurate when a URN is set.</div>
+    </div>
+  </div>
+
+  <!-- MANAGE -->
+  <div id="tab-manage" class="hide">
+    <div class="panel">
+      <h3>Add / edit a competitor</h3>
+      <div class="form">
+        <label>Name<input id="f-name" placeholder="Monkey Puzzle Ealing"></label>
+        <label>Postcode<input id="f-postcode" placeholder="W13 9xx"></label>
+        <label>Website<input id="f-website" placeholder="https://…"></label>
+        <label>Ofsted URN<input id="f-urn" placeholder="EY123456"></label>
+        <label>Distance<input id="f-distance" placeholder="0.4 mi"></label>
+        <label>Notes<input id="f-notes" placeholder="chain / Montessori…"></label>
+        <button id="btnAddComp">Add competitor</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Tracked competitors</h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Name</th><th>Postcode</th><th>Website</th><th>Intel</th><th></th></tr></thead>
+        <tbody id="manageTable"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- REPUTATION -->
+  <div id="tab-reputation" class="hide">
+    <div class="panel">
+      <h3>What people say about us <button class="ghost sm" id="btnRefreshMentions" style="float:right">↻ Scan now</button></h3>
+      <div class="note" id="mentionsNote">Searches the public web (via SearXNG) for mentions of Little Angels and scores sentiment locally. “Scan now” takes ~30–60s.</div>
+      <div id="mentionsList" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/competitor-intel';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  function api(p,opts){opts=opts||{};return fetch(API+p,{method:opts.method||'GET',
+    headers:{'Authorization':'Bearer '+TOKEN(),'Content-Type':'application/json'},
+    body:opts.body?JSON.stringify(opts.body):undefined}).then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};}).catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function msg(t,c){var m=el('msg');m.textContent=t||'';m.style.color=c==='ok'?'var(--ok)':c==='bad'?'var(--bad)':'var(--warn)';}
+  function esc(s){return (s||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
+  function gradeClass(g){g=(g||'').toLowerCase();return g.indexOf('outstand')>=0?'g-out':g.indexOf('good')>=0?'g-good':g.indexOf('requires')>=0?'g-ri':g.indexOf('inad')>=0?'g-inad':'';}
+
+  // tabs
+  document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active');});
+    t.classList.add('active');
+    ['overview','manage','reputation'].forEach(function(n){el('tab-'+n).classList.toggle('hide',n!==t.getAttribute('data-tab'));});
+    if(t.getAttribute('data-tab')==='reputation') loadMentions();
+    if(t.getAttribute('data-tab')==='manage') loadManage();
+  });});
+
+  function loadUs(){
+    api('/us').then(function(r){
+      if(!r.ok)return;
+      var s=r.j.staff||{};
+      el('usStats').innerHTML=[
+        ['Rooms',(r.j.rooms||[]).length],['Staff',s.total],['Level 3',s.level3],['½+ L2',s.level2plus],['First aiders',s.first_aiders]
+      ].map(function(x){return '<div class="c"><div class="n">'+(x[1]!=null?x[1]:'–')+'</div><div class="l">'+x[0]+'</div></div>';}).join('');
+      el('usRooms').innerHTML=(r.j.rooms||[]).map(function(rm){return '<span class="chip">'+esc(rm.name)+': '+(rm.monthly_fee||'—')+'/mo · cap '+rm.capacity+'</span>';}).join('');
+    });
+  }
+  function loadCompetitors(){
+    Promise.all([api('/competitors')]).then(function(res){
+      var comps=res[0].j||[];
+      if(!comps.length){el('compTable').innerHTML='<tr><td colspan="5" style="color:var(--mut)">No competitors yet — add some in the Competitors tab.</td></tr>';return;}
+      Promise.all(comps.map(function(c){return api('/competitors/'+c.id+'/intel').then(function(r){return{c:c,intel:r.j||[]};});})).then(function(rows){
+        el('compTable').innerHTML=rows.map(function(row){
+          var of=row.intel.find(function(i){return i.kind==='ofsted';});
+          var fees=row.intel.filter(function(i){return i.kind==='fee';}).map(function(i){return esc(i.value);});
+          return '<tr><td><b>'+esc(row.c.name)+'</b><br><span style="color:var(--mut);font-size:.72rem">'+esc(row.c.postcode||'')+(row.c.distance_note?' · '+esc(row.c.distance_note):'')+'</span></td>'+
+            '<td>'+(of?'<span class="grade '+gradeClass(of.value)+'">'+esc(of.value)+'</span>':'<span style="color:var(--mut)">—</span>')+'</td>'+
+            '<td>'+(fees.length?'<div class="chips">'+fees.slice(0,4).map(function(f){return '<span class="chip">'+f+'</span>';}).join('')+'</div>':'<span style="color:var(--mut)">—</span>')+'</td>'+
+            '<td style="color:var(--mut);font-size:.76rem">'+esc(row.c.notes||'')+'</td>'+
+            '<td><button class="ghost sm" data-refresh="'+row.c.id+'">↻</button></td></tr>';
+        }).join('');
+      });
+    });
+  }
+  el('compTable').addEventListener('click',function(e){
+    var id=e.target.getAttribute&&e.target.getAttribute('data-refresh');if(!id)return;
+    e.target.textContent='…';msg('Refreshing competitor (fetch + extract)…');
+    api('/competitors/'+id+'/refresh',{method:'POST'}).then(function(r){msg(r.ok?('Updated ('+r.j.added+' data points).'):'Refresh failed','ok');loadCompetitors();});
+  });
+  el('btnRefreshAll').addEventListener('click',function(){
+    msg('Refreshing all competitors…');
+    api('/competitors').then(function(r){
+      var comps=r.j||[];var i=0;
+      (function next(){if(i>=comps.length){msg('All refreshed.','ok');loadCompetitors();return;}
+        api('/competitors/'+comps[i].id+'/refresh',{method:'POST'}).then(function(){i++;msg('Refreshed '+i+'/'+comps.length+'…');next();});})();
+    });
+  });
+
+  function loadManage(){
+    api('/competitors').then(function(r){
+      var comps=r.j||[];
+      el('manageTable').innerHTML=comps.length?comps.map(function(c){
+        return '<tr><td><b>'+esc(c.name)+'</b></td><td>'+esc(c.postcode||'')+'</td>'+
+          '<td>'+(c.website?'<a href="'+esc(c.website)+'" target="_blank" style="color:var(--blue)">link</a>':'—')+'</td>'+
+          '<td>'+c.intel_count+'</td>'+
+          '<td><button class="ghost sm" data-del="'+c.id+'">Delete</button></td></tr>';
+      }).join(''):'<tr><td colspan="5" style="color:var(--mut)">None yet.</td></tr>';
+    });
+  }
+  el('manageTable').addEventListener('click',function(e){
+    var id=e.target.getAttribute&&e.target.getAttribute('data-del');if(!id)return;
+    if(!confirm('Remove this competitor?'))return;
+    api('/competitors/'+id,{method:'DELETE'}).then(function(){loadManage();loadCompetitors();});
+  });
+  el('btnAddComp').addEventListener('click',function(){
+    var name=el('f-name').value.trim();if(!name){msg('Name required','bad');return;}
+    api('/competitors',{method:'POST',body:{name:name,postcode:el('f-postcode').value,website:el('f-website').value,ofsted_urn:el('f-urn').value,distance_note:el('f-distance').value,notes:el('f-notes').value}})
+      .then(function(r){if(!r.ok){msg('Add failed','bad');return;}
+        ['f-name','f-postcode','f-website','f-urn','f-distance','f-notes'].forEach(function(id){el(id).value='';});
+        msg('Added.','ok');loadManage();loadCompetitors();});
+  });
+
+  var mentionsLoaded=false;
+  function loadMentions(){
+    api('/mentions').then(function(r){
+      var m=r.j||[];mentionsLoaded=true;
+      el('mentionsList').innerHTML=m.length?m.map(function(x){
+        var b=x.sentiment==='positive'?'b-pos':x.sentiment==='negative'?'b-neg':'b-neu';
+        return '<div class="mention"><a href="'+esc(x.url)+'" target="_blank">'+esc(x.title||x.url)+'</a> <span class="badge '+b+'">'+esc(x.sentiment||'?')+'</span>'+
+          '<div>'+esc((x.snippet||'').slice(0,180))+'</div><div class="meta">'+esc(x.source||'')+' · '+(x.captured_at||'').slice(0,10)+'</div></div>';
+      }).join(''):'<div style="color:var(--mut)">No mentions scanned yet — click “Scan now”.</div>';
+    });
+  }
+  el('btnRefreshMentions').addEventListener('click',function(){
+    el('mentionsNote').textContent='Scanning… this runs web search + local sentiment scoring, ~30–60s.';
+    api('/mentions/refresh',{method:'POST'}).then(function(r){
+      el('mentionsNote').textContent=r.ok?('Scan complete — '+r.j.new+' new of '+r.j.found+' results.'):'Scan failed.';
+      loadMentions();
+    });
+  });
+
+  function init(){ loadUs(); loadCompetitors(); }
+  document.addEventListener('wren:ready', init);
+})();
+</script>
+</body></html>

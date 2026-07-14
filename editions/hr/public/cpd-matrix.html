@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>CPD Matrix — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .tab-bar { display:flex; gap:4px; margin-bottom:20px; }
+    .tab-bar button { padding:8px 18px; border:none; border-radius:8px; cursor:pointer; font-size:.875rem; font-weight:600; background:#1e293b; color:#94a3b8; transition:.15s; }
+    .tab-bar button.active { background:#4a9abf; color:#fff; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .rag-g { background:#166534; color:#86efac; }
+    .rag-a { background:#78350f; color:#fde68a; }
+    .rag-r { background:#7f1d1d; color:#fca5a5; }
+    .badge-status { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.75rem; font-weight:700; }
+    .published { background:#166534; color:#86efac; }
+    .review { background:#78350f; color:#fde68a; }
+    .draft { background:#1e293b; color:#64748b; border:1px solid #334155; }
+    .course-row { padding:14px 16px; border-radius:8px; background:#1e293b; border:1px solid #2d3748; margin-bottom:8px; }
+    .course-row:hover { border-color:#4a9abf; }
+    .btn-sm { padding:4px 12px; border-radius:6px; font-size:.8rem; font-weight:600; border:none; cursor:pointer; transition:.15s; }
+    .btn-publish { background:#4a9abf; color:#fff; }
+    .btn-unpublish { background:#334155; color:#94a3b8; }
+    .btn-publish:hover { background:#3b82f6; }
+    .btn-unpublish:hover { background:#475569; color:#f1f5f9; }
+    .attempt-row { padding:10px 14px; background:#0f172a; border-radius:6px; margin-bottom:6px; font-size:.875rem; }
+    /* Assign & Authorise grid */
+    .grid-wrap { overflow:auto; max-height:72vh; border:1px solid #2d3748; border-radius:10px; }
+    table.assign-grid { border-collapse:separate; border-spacing:0; font-size:.8rem; }
+    table.assign-grid th, table.assign-grid td { border-bottom:1px solid #1e293b; border-right:1px solid #1e293b; padding:0; }
+    table.assign-grid thead th { position:sticky; top:0; z-index:3; background:#0f172a; color:#94a3b8; font-weight:600; padding:8px 6px; white-space:nowrap; vertical-align:bottom; text-align:center; min-width:52px; }
+    table.assign-grid thead th.corner { left:0; z-index:5; text-align:left; min-width:240px; }
+    table.assign-grid tbody th.course-cell { position:sticky; left:0; z-index:2; background:#1e293b; color:#f1f5f9; font-weight:600; text-align:left; padding:8px 12px; min-width:240px; max-width:260px; }
+    table.assign-grid tbody tr:hover th.course-cell { background:#243042; }
+    .gc { width:52px; height:38px; text-align:center; cursor:pointer; font-size:1rem; user-select:none; }
+    .gc:hover { outline:2px solid #4a9abf; outline-offset:-2px; }
+    .cell-dot { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; font-size:.85rem; font-weight:700; }
+    .cd-auth { background:#166534; color:#86efac; }
+    .cd-done { background:#1e3a5f; color:#7dd3fc; }
+    .cd-asg  { background:#78350f; color:#fde68a; }
+    .cd-none { background:transparent; color:#334155; }
+    .field-row { margin-bottom:12px; }
+    .field-row label { display:block; font-size:.8rem; color:#94a3b8; margin-bottom:4px; }
+    .field-row select, .field-row input { width:100%; padding:8px 10px; border-radius:8px; background:#0f172a; border:1px solid #334155; color:#f1f5f9; font-size:.875rem; }
+    .staff-pick { max-height:180px; overflow:auto; border:1px solid #334155; border-radius:8px; padding:8px; background:#0f172a; }
+    .staff-pick label { display:flex; align-items:center; gap:8px; padding:4px 2px; font-size:.85rem; color:#f1f5f9; cursor:pointer; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 class="page-title">CPD Matrix</h1>
+      <p style="color:#94a3b8;margin:0">Staff training compliance &amp; course library</p>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="active" data-tab="matrix">Staff Matrix</button>
+    <button data-tab="assign">Assign &amp; Authorise</button>
+    <button data-tab="courses">Course Library</button>
+    <button data-tab="attempts">Recent Attempts</button>
+  </div>
+
+  <!-- Tab 1: Staff Matrix -->
+  <div class="tab-panel active" id="tab-matrix">
+    <div id="matrix-content"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab: Assign & Authorise (course × staff grid) -->
+  <div class="tab-panel" id="tab-assign">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div style="color:#94a3b8;font-size:.875rem">Click any cell to assign, authorise (sign off), or remove a course for a staff member.</div>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <span style="font-size:.78rem;color:#94a3b8;display:flex;align-items:center;gap:5px"><span class="cell-dot cd-auth">✓</span> Authorised</span>
+        <span style="font-size:.78rem;color:#94a3b8;display:flex;align-items:center;gap:5px"><span class="cell-dot cd-done">◆</span> Completed</span>
+        <span style="font-size:.78rem;color:#94a3b8;display:flex;align-items:center;gap:5px"><span class="cell-dot cd-asg">●</span> Assigned</span>
+        <span style="font-size:.78rem;color:#94a3b8;display:flex;align-items:center;gap:5px"><span class="cell-dot cd-none">·</span> Not assigned</span>
+        <button class="btn-sm btn-publish" id="btn-bulk-assign">+ Assign a course…</button>
+      </div>
+    </div>
+    <div id="assign-content"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab 2: Course Library (manager admin) -->
+  <div class="tab-panel" id="tab-courses">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div style="color:#94a3b8;font-size:.875rem">15 statutory courses — click Publish to make visible to staff</div>
+      <div style="display:flex;gap:8px;font-size:.8rem">
+        <span class="badge-status published">published</span>
+        <span class="badge-status review">awaiting review</span>
+        <span class="badge-status draft">draft</span>
+      </div>
+    </div>
+    <div id="courses-content"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab 3: Recent attempts -->
+  <div class="tab-panel" id="tab-attempts">
+    <div id="attempts-content"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', init);
+
+const IS_MANAGER = ['manager','deputy_manager','admin'].includes((window.Wren && Wren.user && Wren.user.role) || '');
+
+function init() {
+  // Delegated click for publish toggle + assign buttons (rendered inside courses-content)
+  document.getElementById('courses-content').addEventListener('click', function(e) {
+    const pub = e.target.closest('[data-action="toggle-publish"]');
+    if (pub) { togglePublish(parseInt(pub.dataset.id), pub); return; }
+    const asg = e.target.closest('[data-action="assign-course"]');
+    if (asg) { openAssignModal(parseInt(asg.dataset.id), asg.dataset.name); return; }
+  });
+
+  // Delegated click for grid cells (assign / authorise / remove)
+  document.getElementById('assign-content').addEventListener('click', function(e) {
+    const cell = e.target.closest('.gc');
+    if (!cell) return;
+    openCellModal(parseInt(cell.dataset.course), cell.dataset.cname, parseInt(cell.dataset.staff), cell.dataset.sname);
+  });
+
+  // Bulk "Assign a course…" button
+  document.getElementById('btn-bulk-assign').addEventListener('click', () => openAssignModal());
+
+  // Tab switching
+  document.querySelectorAll('.tab-bar button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      loadTab(btn.dataset.tab);
+    });
+  });
+  loadTab('matrix');
+}
+
+const loaded = {};
+
+async function loadTab(tab) {
+  if (loaded[tab]) return;
+  loaded[tab] = true;
+  if (tab === 'matrix') await loadMatrix();
+  if (tab === 'assign') await loadAssign();
+  if (tab === 'courses') await loadCourses();
+  if (tab === 'attempts') await loadAttempts();
+}
+
+async function loadMatrix() {
+  const el = document.getElementById('matrix-content');
+  try {
+    // Independent loads — a single failing call must not blank the whole matrix.
+    const [staffRes, summaryRes, certsRes] = await Promise.all([
+      Wren.api('/api/staff').catch(() => []),
+      Wren.api('/api/cpd/summary').catch(() => []),
+      Wren.api('/api/courses/certificates').catch(() => []),
+    ]);
+    const staff = (staffRes || []).filter(s => s.is_active !== false);
+    const summary = summaryRes || [];
+    const certs = certsRes || [];
+
+    const sumMap = {};
+    summary.forEach(r => sumMap[r.id] = r);
+
+    // Build cert map: staff_id → [course_names]
+    const certMap = {};
+    certs.forEach(c => {
+      if (!certMap[c.staff_id]) certMap[c.staff_id] = [];
+      certMap[c.staff_id].push(c.course_name);
+    });
+
+    const thisYear = new Date().getFullYear();
+
+    el.innerHTML = `<div style="overflow-x:auto">
+      <table class="data-table" style="width:100%;min-width:700px">
+        <thead><tr>
+          <th>Name</th><th>Role</th>
+          <th>CPD Hours (${thisYear})</th>
+          <th>Courses (${thisYear})</th>
+          <th>Online Certs</th>
+          <th>Expiring &lt;60d</th>
+          <th>DBS Expiry</th>
+          <th>FA Expiry</th>
+        </tr></thead>
+        <tbody>
+          ${staff.map(s => {
+            const sm = sumMap[s.id] || {};
+            const totalH = parseFloat(sm.total_hours || 0);
+            const expiring = parseInt(sm.expiring_soon || 0);
+            const mycerts = (certMap[s.id] || []).length;
+            const ragH = totalH >= 24 ? 'rag-g' : totalH >= 12 ? 'rag-a' : 'rag-r';
+            const ragExp = expiring === 0 ? 'rag-g' : expiring <= 2 ? 'rag-a' : 'rag-r';
+            function expBadge(d) {
+              if (!d) return '<span style="color:#475569">—</span>';
+              const exp = new Date(d) < new Date();
+              return `<span style="color:${exp?'#ef4444':'#22c55e'}">${fmtDate(d)}${exp?' ⚠':''}</span>`;
+            }
+            return `<tr>
+              <td style="font-weight:600;color:#f1f5f9">${esc(s.name||[s.first_name,s.last_name].join(' '))}</td>
+              <td style="color:#94a3b8;font-size:.8rem;text-transform:capitalize">${(s.role||'').replace(/_/g,' ')}</td>
+              <td><span class="badge-status ${ragH}">${totalH.toFixed(1)}h</span></td>
+              <td>${sm.total_courses||0}</td>
+              <td style="color:#4a9abf;font-weight:600">${mycerts}</td>
+              <td><span class="badge-status ${ragExp}">${expiring}</span></td>
+              <td>${expBadge(s.dbs_expiry)}</td>
+              <td>${expBadge(s.first_aid_expiry)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p style="color:#475569;font-size:.75rem;margin-top:12px">Green ≥24h / Amber ≥12h / Red &lt;12h CPD this year. Online Certs = Wren platform certificates earned.</p>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load matrix: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadCourses() {
+  const el = document.getElementById('courses-content');
+  try {
+    const courses = await Wren.api('/api/courses');
+    if (!courses || !courses.length) {
+      el.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:32px">No courses found.</div>';
+      return;
+    }
+    el.innerHTML = courses.map(c => `
+      <div class="course-row" id="cr-${c.id}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div style="flex:1;min-width:200px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="font-weight:700;color:#f1f5f9">${esc(c.name)}</span>
+              <span class="badge-status ${c.status}">${c.status}</span>
+              ${c.is_mandatory ? '<span style="background:#312e81;color:#a5b4fc;font-size:.7rem;padding:2px 8px;border-radius:10px;font-weight:700">MANDATORY</span>' : ''}
+            </div>
+            <div style="color:#64748b;font-size:.8rem">
+              ${c.category ? esc(c.category) + ' · ' : ''}
+              ${c.duration_minutes || 25} min · ${c.cpd_hours || 0}h CPD · ${c.section_count||0} sections · ${c.question_count||0} questions
+              · <span style="color:#4a9abf">${c.pass_count||0}/${c.attempt_count||0} passed</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn-sm btn-unpublish" data-action="assign-course" data-id="${c.id}" data-name="${esc(c.name)}">Assign…</button>
+            <button class="btn-sm ${c.status === 'published' ? 'btn-unpublish' : 'btn-publish'}"
+              data-action="toggle-publish" data-id="${c.id}">
+              ${c.status === 'published' ? 'Unpublish' : 'Publish'}
+            </button>
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load courses: ${esc(e.message)}</div>`;
+  }
+}
+
+async function togglePublish(id, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const result = await Wren.api(`/api/courses/${id}/publish`, { method: 'PUT' });
+    // Refresh just this row
+    const row = document.getElementById('cr-' + id);
+    const isNowPublished = result.status === 'published';
+    row.querySelector('.badge-status.published, .badge-status.review, .badge-status.draft').className =
+      'badge-status ' + result.status;
+    row.querySelector('.badge-status.published, .badge-status.review, .badge-status.draft').textContent =
+      result.status;
+    btn.textContent = isNowPublished ? 'Unpublish' : 'Publish';
+    btn.className = 'btn-sm ' + (isNowPublished ? 'btn-unpublish' : 'btn-publish');
+  } catch(e) {
+    btn.textContent = 'Error';
+  }
+  btn.disabled = false;
+}
+
+async function loadAttempts() {
+  const el = document.getElementById('attempts-content');
+  try {
+    const attempts = await Wren.api('/api/courses/attempts');
+    if (!attempts || !attempts.length) {
+      el.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:32px">No course attempts yet — staff haven\'t started any courses.</div>';
+      return;
+    }
+    el.innerHTML = `<table class="data-table" style="width:100%">
+      <thead><tr><th>Staff</th><th>Course</th><th>Score</th><th>Result</th><th>Date</th></tr></thead>
+      <tbody>
+        ${attempts.map(a => `<tr>
+          <td style="font-weight:600;color:#f1f5f9">${esc(a.staff_name)}</td>
+          <td>${esc(a.course_name)}</td>
+          <td style="font-weight:700;color:${a.score_pct>=80?'#22c55e':'#ef4444'}">${a.score_pct != null ? a.score_pct + '%' : '—'}</td>
+          <td><span class="badge-status ${a.passed?'published':'rag-r'}">${a.passed?'Passed':'Failed'}</span></td>
+          <td style="color:#64748b;font-size:.8rem">${a.completed_at ? fmtDate(a.completed_at) : 'In progress'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load attempts: ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Assign & Authorise grid ────────────────────────────────────────────────
+let _staff = [], _courses = [], _asgIndex = {};
+
+async function fetchGridData() {
+  const [staffR, coursesR, asgR] = await Promise.all([
+    Wren.api('/api/staff').catch(() => []),
+    Wren.api('/api/courses').catch(() => []),
+    Wren.api('/api/courses/assignments').catch(() => []),
+  ]);
+  _staff = (staffR || []).filter(s => s.is_active !== false)
+    .sort((a,b) => (a.first_name||'').localeCompare(b.first_name||''));
+  _courses = (coursesR || []).slice().sort((a,b) =>
+    (b.is_mandatory?1:0)-(a.is_mandatory?1:0) || (a.name||'').localeCompare(b.name||''));
+  _asgIndex = {};
+  (asgR || []).forEach(a => { _asgIndex[a.course_id + ':' + a.staff_id] = a; });
+}
+
+function cellState(courseId, staffId) {
+  const a = _asgIndex[courseId + ':' + staffId];
+  if (!a) return { cls:'cd-none', mark:'·', a:null };
+  if (a.status === 'authorised') return { cls:'cd-auth', mark:'✓', a };
+  if (a.certificate_id || a.best_passed_score != null) return { cls:'cd-done', mark:'◆', a };
+  return { cls:'cd-asg', mark:'●', a };
+}
+
+async function loadAssign() {
+  const el = document.getElementById('assign-content');
+  if (!IS_MANAGER) { el.innerHTML = '<div style="color:#94a3b8;padding:24px">Manager access required.</div>'; return; }
+  el.innerHTML = '<div style="color:#94a3b8">Loading…</div>';
+  try {
+    await fetchGridData();
+    if (!_courses.length || !_staff.length) {
+      el.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:32px">No courses or staff to display.</div>';
+      return;
+    }
+    const head = _staff.map(s =>
+      `<th title="${esc(s.first_name+' '+s.last_name)}">${esc(s.first_name||s.name||'')}</th>`).join('');
+    const body = _courses.map(c => {
+      const cells = _staff.map(s => {
+        const st = cellState(c.id, s.id);
+        return `<td class="gc" data-course="${c.id}" data-cname="${esc(c.name)}" data-staff="${s.id}" data-sname="${esc(s.first_name+' '+s.last_name)}">
+          <span class="cell-dot ${st.cls}">${st.mark}</span></td>`;
+      }).join('');
+      return `<tr><th class="course-cell" title="${esc(c.name)}">${esc(c.name)}${c.is_mandatory?' <span style="color:#a5b4fc;font-size:.7rem">★</span>':''}</th>${cells}</tr>`;
+    }).join('');
+    el.innerHTML = `<div class="grid-wrap"><table class="assign-grid">
+      <thead><tr><th class="corner">Course \\ Staff</th>${head}</tr></thead>
+      <tbody>${body}</tbody></table></div>
+      <p style="color:#475569;font-size:.75rem;margin-top:10px">★ = mandatory course. Click a cell to assign, authorise (sign off) or remove.</p>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load grid: ${esc(e.message||'error')}</div>`;
+  }
+}
+
+function openCellModal(courseId, courseName, staffId, staffName) {
+  const a = _asgIndex[courseId + ':' + staffId];
+  const statusTxt = !a ? 'Not assigned'
+    : a.status === 'authorised' ? 'Authorised ✓' + (a.authorised_by_name ? ' by ' + esc(a.authorised_by_name) : '')
+    : (a.certificate_id || a.best_passed_score != null) ? 'Completed (awaiting sign-off)'
+    : 'Assigned' + (a.required ? ' (required)' : ' (optional)');
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <p style="margin:0 0 6px"><strong style="color:#f1f5f9">${esc(courseName)}</strong></p>
+    <p style="margin:0 0 14px;color:#94a3b8;font-size:.875rem">${esc(staffName)} — <span style="color:#cbd5e1">${statusTxt}</span></p>
+    <div class="field-row"><label>Sign-off note (optional)</label><input id="cell-note" placeholder="e.g. certificate seen / external provider"></div>`;
+  const buttons = [];
+  buttons.push({ label: a && a.status==='authorised' ? 'Re-authorise' : 'Authorise (sign off)', class:'btn-primary', close:false, action: async () => {
+    const note = body.querySelector('#cell-note').value.trim();
+    await doAction(`/api/courses/${courseId}/authorise`, 'POST', { staff_id: staffId, notes: note || undefined }, `Authorised ${courseName} for ${staffName}`);
+  }});
+  if (!a) {
+    buttons.push({ label:'Assign (required)', class:'btn-ghost', close:false, action: async () => {
+      await doAction(`/api/courses/${courseId}/assign`, 'POST', { staff_ids:[staffId], required:true }, `Assigned ${courseName} to ${staffName}`);
+    }});
+  } else {
+    buttons.push({ label:'Remove', class:'btn-ghost', close:false, action: async () => {
+      await doAction(`/api/courses/assignments/${a.id}`, 'DELETE', null, `Removed ${courseName} from ${staffName}`);
+    }});
+  }
+  buttons.push({ label:'Cancel', class:'btn-ghost' });
+  Wren.modal('Manage course', body, buttons);
+}
+
+function openAssignModal(courseId, courseName) {
+  if (!IS_MANAGER) { Wren.toast('Manager access required', 'warning'); return; }
+  const body = document.createElement('div');
+  const courseField = courseId
+    ? `<p style="margin:0 0 12px"><strong style="color:#f1f5f9">${esc(courseName||'')}</strong></p>`
+    : `<div class="field-row"><label>Course</label><select id="am-course">${
+        (_courses.length ? _courses : []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+      }</select></div>`;
+  body.innerHTML = `
+    ${courseField}
+    <div class="field-row"><label>Assign to</label>
+      <select id="am-target">
+        <option value="staff">Selected staff…</option>
+        <option value="all">Everyone (all active staff)</option>
+        <option value="room">A room…</option>
+      </select>
+    </div>
+    <div class="field-row" id="am-staff-wrap"><label>Staff</label>
+      <div class="staff-pick" id="am-staff">${_staff.map(s =>
+        `<label><input type="checkbox" value="${s.id}"> ${esc(s.first_name+' '+s.last_name)} <span style="color:#64748b;font-size:.75rem">${esc((s.role||'').replace(/_/g,' '))}</span></label>`
+      ).join('')}</div>
+    </div>
+    <div class="field-row" id="am-room-wrap" style="display:none"><label>Room</label>
+      <select id="am-room"><option value="1">Baby Room</option><option value="2">Pre-school</option></select>
+    </div>
+    <div class="field-row"><label>Due date (optional)</label><input type="date" id="am-due"></div>
+    <div class="field-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="am-required" checked style="width:auto"> Required (mandatory for these staff)</label></div>`;
+  body.querySelector('#am-target').addEventListener('change', e => {
+    body.querySelector('#am-staff-wrap').style.display = e.target.value === 'staff' ? '' : 'none';
+    body.querySelector('#am-room-wrap').style.display  = e.target.value === 'room'  ? '' : 'none';
+  });
+  Wren.modal('Assign a course', body, [
+    { label:'Assign', class:'btn-primary', close:false, action: async () => {
+      const cid = courseId || parseInt(body.querySelector('#am-course').value);
+      const target = body.querySelector('#am-target').value;
+      const payload = { required: body.querySelector('#am-required').checked, due_date: body.querySelector('#am-due').value || undefined };
+      if (target === 'all') payload.all = true;
+      else if (target === 'room') payload.room_id = parseInt(body.querySelector('#am-room').value);
+      else {
+        payload.staff_ids = [...body.querySelectorAll('#am-staff input:checked')].map(i => parseInt(i.value));
+        if (!payload.staff_ids.length) { Wren.toast('Pick at least one staff member', 'warning'); return; }
+      }
+      const r = await doAction(`/api/courses/${cid}/assign`, 'POST', payload, null, true);
+      if (r) Wren.toast(`Assigned to ${r.assigned} staff`, 'success');
+    }},
+    { label:'Cancel', class:'btn-ghost' },
+  ]);
+}
+
+// Run an action, refresh the grid, close any open modal. Returns the result (or null on error).
+async function doAction(url, method, bodyObj, successMsg, keepRefreshOnly) {
+  try {
+    const opts = { method };
+    if (bodyObj) opts.body = bodyObj;
+    const res = await Wren.api(url, opts);
+    if (successMsg) Wren.toast(successMsg, 'success');
+    // close any open modal
+    document.querySelectorAll('.wren-modal-overlay .modal-close').forEach(b => b.click());
+    await loadAssign();
+    // course library pass/attempt counts may change after authorise — invalidate its cache
+    loaded.courses = false; loaded.matrix = false;
+    return res || true;
+  } catch (e) {
+    Wren.toast('Failed: ' + (e.error || e.message || 'error'), 'error');
+    return null;
+  }
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'2-digit' });
+}
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

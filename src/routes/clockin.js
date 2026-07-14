@@ -109,7 +109,7 @@ async function handleFobEvent({ fob_uid, door_name, event_time, source_raw }) {
   return { ok: true, staff_id: staffId, name, event_type: eventType, total_minutes: totalMinutes };
 }
 
-// ── Public: door intercom webhook (no auth — Dahua can't send JWT) ────────────────
+// ── Public: Dahua VTO webhook (no auth — Dahua can't send JWT) ────────────────
 // Must be before authenticate middleware
 router.use(express.text({ type: 'text/xml' }));
 router.use(express.text({ type: 'application/xml' }));

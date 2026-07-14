@@ -50,7 +50,7 @@ async function drainEmailQueue() {
   for (const row of rows) {
     // Recipient: prefer explicit to_email; survey path overloads from_email as the recipient.
     const recipient = (row.to_email || row.from_email || '').trim();
-    const subject   = row.subject || 'Your Nursery';
+    const subject   = row.subject || 'Little Angels Day Nursery';
     const html      = row.body_html
       || (row.draft_text ? `<p>${String(row.draft_text).replace(/\n/g, '<br>')}</p>` : null)
       || (row.body_text  ? `<p>${String(row.body_text).replace(/\n/g, '<br>')}</p>`  : null)

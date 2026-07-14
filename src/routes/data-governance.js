@@ -260,7 +260,7 @@ router.post('/archive', managerOnly, async (req, res) => {
     await recordAudit({ req, action: 'archive_request', entity_type: 'data_archive', entity_id: a.id,
       meta: { record_type, criteria } });
     res.json({ ok: true, archive: a,
-      host_command: `bash /app/scripts/governance-archive.sh ${record_type} ${a.id}` });
+      host_command: `bash /home/toby/wren/scripts/governance-archive.sh ${record_type} ${a.id}` });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -290,7 +290,7 @@ router.get('/pdf-report', adminOnly, async (req, res) => {
     const { rows: [n] } = await db.query(`SELECT body, model, generated_at FROM governance_narrative WHERE section='framework_summary'`);
     const { rows: archives } = await db.query(`SELECT record_type, row_count, sha256, offsite_remote, cipher, status, created_at FROM data_archives ORDER BY created_at DESC LIMIT 20`);
     const { rows: [settings] } = await db.query("SELECT value FROM settings WHERE key='setting_name' LIMIT 1").catch(() => ({ rows: [] }));
-    const settingName = settings?.value || 'Your Nursery';
+    const settingName = settings?.value || 'Little Angels Day Nursery';
 
     await recordAudit({ req, action: 'export', entity_type: 'governance_report', meta: { format: 'pdf' } });
 

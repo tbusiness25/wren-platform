@@ -217,7 +217,7 @@ router.post('/week/:date/publish', checkFeature, managerOnly, async (req, res) =
       if (smtpOk) {
         try {
           await transport.sendMail({
-            from: process.env.SMTP_FROM || 'Your Nursery <admissions@example-nursery.co.uk>',
+            from: process.env.SMTP_FROM || 'Little Angels Day Nursery <admissions@littleangelsealing.co.uk>',
             to: staffData.email,
             subject: `Your rota — w/c ${weekLabel}`,
             html
@@ -319,7 +319,7 @@ function buildRotaEmail(name, shifts, weekLabel) {
 <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
   <tr><td style="background:#0f172a;padding:24px 32px;text-align:center">
     <div style="font-family:'Arial Rounded MT Bold',Arial,sans-serif;font-size:22px">
-      <span style="color:#4a9abf">Your Nursery</span>
+      <span style="color:#4a9abf">Little Angels</span>
       <span style="color:#e07820"> Day Nursery</span>
     </div>
     <div style="color:#94a3b8;font-size:13px;margin-top:6px">Weekly Rota</div>
@@ -339,7 +339,7 @@ function buildRotaEmail(name, shifts, weekLabel) {
       <tbody>${rows || '<tr><td colspan="4" style="padding:16px;color:#9ca3af;text-align:center">No shifts scheduled this week</td></tr>'}</tbody>
     </table>
     <div style="margin-top:24px;text-align:center">
-      <a href="https://hr.example-nursery.co.uk/my-shifts.html"
+      <a href="https://hr.littleangelsealing.co.uk/my-shifts.html"
          style="display:inline-block;background:#4a9abf;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;font-size:14px">
         View My Shifts Online
       </a>
@@ -347,8 +347,8 @@ function buildRotaEmail(name, shifts, weekLabel) {
   </td></tr>
   <tr><td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e5e7eb;text-align:center">
     <div style="font-size:12px;color:#9ca3af;line-height:1.6">
-      Your Nursery | 1A Example Lane, Ealing, W13 9LU<br>
-      Office: 01234 567890 | admissions@example-nursery.co.uk<br>
+      Little Angels Day Nursery | 1A Dudley Gardens, Ealing, W13 9LU<br>
+      Office: 020 8051 0349 | admissions@littleangelsealing.co.uk<br>
       Mon–Fri 8:00am–6:00pm | Established 1990
     </div>
   </td></tr>
@@ -681,7 +681,7 @@ router.put('/weeks/:id/publish', checkFeature, managerOnly, async (req, res) => 
       if (smtpOk) {
         try {
           await transport.sendMail({
-            from: process.env.SMTP_FROM || 'Your Nursery <admissions@example-nursery.co.uk>',
+            from: process.env.SMTP_FROM || 'Little Angels Day Nursery <admissions@littleangelsealing.co.uk>',
             to: staffData.email,
             subject: `Your rota — w/c ${weekLabel}`,
             html
@@ -746,7 +746,7 @@ router.get('/calendar.ics', async (req, res) => {
     const icalLines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Your Nursery//Wren Rota//EN',
+      'PRODID:-//Little Angels Day Nursery//Wren Rota//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       `X-WR-CALNAME:Wren Rota`,
@@ -761,13 +761,13 @@ router.get('/calendar.ics', async (req, res) => {
       const roomNote = s.room_name ? ` (${s.room_name})` : '';
       icalLines.push(
         'BEGIN:VEVENT',
-        `UID:wren-rota-${staffId}-${dtStamp}@example-nursery.co.uk`,
+        `UID:wren-rota-${staffId}-${dtStamp}@littleangelsealing.co.uk`,
         `DTSTAMP:${new Date().toISOString().replace(/[-:.]/g,'').substring(0,15)}Z`,
         `DTSTART;TZID=Europe/London:${dtStamp}T${startHH}00`,
         `DTEND;TZID=Europe/London:${dtStamp}T${endHH}00`,
         `SUMMARY:Shift${roomNote}`,
-        `DESCRIPTION:Your Nursery\\nRoom: ${s.room_name || 'Any'}\\nBreak: ${s.break_mins || 30} mins`,
-        `LOCATION:1A Example Lane\\, Ealing\\, W13 9LU`,
+        `DESCRIPTION:Little Angels Day Nursery\\nRoom: ${s.room_name || 'Any'}\\nBreak: ${s.break_mins || 30} mins`,
+        `LOCATION:1A Dudley Gardens\\, Ealing\\, W13 9LU`,
         'END:VEVENT'
       );
     }
@@ -1375,7 +1375,7 @@ router.get('/week/:date/payroll.pdf', managerOnly, requireSalaryView, async (req
     doc.on('data', c => chunks.push(c));
     const done = new Promise((resolve, reject) => { doc.on('end', () => resolve(Buffer.concat(chunks))); doc.on('error', reject); });
 
-    doc.fontSize(17).fillColor('#0f172a').text('Your Nursery — Payroll');
+    doc.fontSize(17).fillColor('#0f172a').text('Little Angels Day Nursery — Payroll');
     doc.moveDown(0.15).fontSize(10).fillColor('#475569')
       .text(`Week commencing ${p.week_start}${p.week_name ? ' · ' + p.week_name : ''}${p.status ? ' · ' + p.status : ''}   (generated ${new Date().toISOString().slice(0, 10)})`);
     doc.moveDown(0.6);

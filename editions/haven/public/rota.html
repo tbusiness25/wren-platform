@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Rota</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+<style>
+  .rota-grid { overflow-x: auto; }
+  .rota-grid table { min-width: 860px; }
+  .shift-pill { display: inline-block; background: rgba(111,179,168,.14); color: var(--h-accent);
+    border-radius: 8px; padding: 3px 8px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
+  .shift-pill.late { background: rgba(201,168,106,.16); color: var(--h-gold); }
+  .shift-pill.night { background: rgba(124,110,224,.16); color: #a99cf0; }
+  .rota-day-head small { display: block; color: var(--h-muted); font-weight: 400; }
+</style>
+</head>
+<body>
+<template id="page">
+  <div class="hv-actions-bar">
+    <div><h1 class="hv-page-title">Rota</h1>
+      <p class="hv-page-sub" style="margin-bottom:0" id="weekLabel">Weekly rota (read-only)</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="hv-btn secondary small" id="prevWeek">← Previous</button>
+      <button class="hv-btn secondary small" id="thisWeek">This week</button>
+      <button class="hv-btn secondary small" id="nextWeek">Next →</button>
+    </div>
+  </div>
+  <div class="hv-card rota-grid" id="grid"></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+let weekStart = mondayOf(new Date());
+if (Haven.guard()) {
+  Haven.shell('rota');
+  document.getElementById('prevWeek').onclick = () => { weekStart = addDays(weekStart, -7); load(); };
+  document.getElementById('nextWeek').onclick = () => { weekStart = addDays(weekStart, 7); load(); };
+  document.getElementById('thisWeek').onclick = () => { weekStart = mondayOf(new Date()); load(); };
+  load();
+}
+function mondayOf(d) {
+  const x = new Date(d); const day = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - day); x.setHours(12, 0, 0, 0); return x;
+}
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function iso(d) { return d.toISOString().slice(0, 10); }
+function hm(t) { return t ? String(t).slice(0, 5) : ''; }
+
+async function load() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '<div class="hv-empty">Loading rota…</div>';
+  try {
+    const d = await Haven.api('/api/rota/week/' + iso(weekStart));
+    const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
+    document.getElementById('weekLabel').textContent =
+      `Week beginning ${weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` +
+      (d.week ? (d.week.published_at ? ' — published' : ' — draft') : '');
+    if (!d.week || !d.shifts.length) {
+      grid.innerHTML = '<div class="hv-empty">No rota published for this week yet.</div>';
+      return;
+    }
+    const byStaffDay = {};
+    d.shifts.forEach(s => { byStaffDay[`${s.staff_id}|${String(s.shift_date).slice(0, 10)}`] = s; });
+    const staffWithShifts = d.staff.filter(st => d.shifts.some(s => s.staff_id === st.id));
+    grid.innerHTML = `<table class="hv-table"><thead><tr><th>Staff</th>
+      ${days.map(day => `<th class="rota-day-head">${day.toLocaleDateString('en-GB', { weekday: 'short' })}
+        <small>${day.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</small></th>`).join('')}
+      </tr></thead><tbody>
+      ${staffWithShifts.map(st => `<tr>
+        <td><b>${Haven.esc(st.first_name)} ${Haven.esc(st.last_name)}</b><br>
+          <span class="hv-note-meta">${Haven.esc((st.role || '').replace(/_/g, ' '))}</span></td>
+        ${days.map(day => {
+          const s = byStaffDay[`${st.id}|${iso(day)}`];
+          if (!s) return '<td></td>';
+          const cls = /night/i.test(s.label || '') ? 'night' : /late/i.test(s.label || '') ? 'late' : '';
+          return `<td><span class="shift-pill ${cls}" title="${Haven.esc(s.notes || '')}">
+            ${Haven.esc(s.label || 'Shift')}<br>${hm(s.planned_start)}–${hm(s.planned_end)}</span></td>`;
+        }).join('')}
+      </tr>`).join('')}</tbody></table>`;
+  } catch (e) {
+    grid.innerHTML = `<div class="hv-empty">Could not load the rota — ${Haven.esc(e.message)}</div>`;
+  }
+}
+</script>
+</body>
+</html>

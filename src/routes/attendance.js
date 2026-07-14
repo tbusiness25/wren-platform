@@ -139,7 +139,8 @@ router.post('/sign-in', async (req, res) => {
       VALUES ($1, CURRENT_DATE, $2, NOW(), $3)
       ON CONFLICT (child_id, date, session)
       DO UPDATE SET sign_in_time=COALESCE(attendance.sign_in_time, NOW()), sign_out_time=NULL,
-                    signed_in_by=$3, absent=false
+                    signed_in_by=$3, absent=false,
+                    collected_by=NULL, signed_out_by=NULL
       RETURNING *
     `, [child_id, session || 'full_day', req.user.id]);
     // Event log (2026-07-10): children can leave for an appointment and return —
@@ -161,18 +162,53 @@ router.post('/sign-in', async (req, res) => {
 
 // POST /sign-out
 router.post('/sign-out', async (req, res) => {
-  const { child_id, session } = req.body;
+  const { child_id, session, collected_by } = req.body;
   if (!child_id) return res.status(400).json({ error: 'child_id required' });
   try {
     const db = getPool();
-    // Set sign_out_time on attendance record
+
+    // SAFEGUARDING: block collection by a barred / court-order person (s06).
+    // FAIL-CLOSED — if this check errors for ANY reason we BLOCK the sign-out.
+    // A child under a court-order restriction must never be signed out to a barred
+    // person because a lookup failed. Columns match ladn.carer_restrictions exactly:
+    //   restricted_person_name / active / details (NOT collector_name/is_active/notes).
+    if (collected_by) {
+      let restrictions;
+      try {
+        ({ rows: restrictions } = await db.query(
+          `SELECT id, restriction_type, details FROM carer_restrictions
+           WHERE child_id=$1
+             AND lower(trim(restricted_person_name)) = lower(trim($2))
+             AND active = true`,
+          [child_id, collected_by]
+        ));
+      } catch (e) {
+        // Could not verify restrictions — cannot prove the collector is safe → BLOCK.
+        return res.status(503).json({
+          error: 'Collection blocked',
+          reason: 'Unable to verify collection restrictions — sign-out blocked for safety. Please check with a manager.',
+          detail: e.message
+        });
+      }
+
+      if (restrictions.length > 0) {
+        const r = restrictions[0];
+        return res.status(403).json({
+          error: 'Collection blocked',
+          reason: `${r.restriction_type}: ${r.details || 'Court order / safeguarding restriction'}`,
+          restriction_id: r.id
+        });
+      }
+    }
+
+    // Set sign_out_time + collected_by on attendance record
     const { rows } = await db.query(`
-      INSERT INTO attendance (child_id, date, session, sign_out_time, signed_out_by)
-      VALUES ($1, CURRENT_DATE, $2, NOW(), $3)
+      INSERT INTO attendance (child_id, date, session, sign_out_time, signed_out_by, collected_by)
+      VALUES ($1, CURRENT_DATE, $2, NOW(), $3, $4)
       ON CONFLICT (child_id, date, session)
-      DO UPDATE SET sign_out_time=NOW(), signed_out_by=$3
+      DO UPDATE SET sign_out_time=NOW(), signed_out_by=$3, collected_by=$4
       RETURNING *
-    `, [child_id, session || 'full_day', req.user.id]);
+    `, [child_id, session || 'full_day', req.user.id, collected_by || null]);
     await db.query(`INSERT INTO attendance_events (child_id, event, by_staff) VALUES ($1,'out',$2)`,
       [child_id, req.user.id]).catch(() => {});
 
@@ -181,6 +217,25 @@ router.post('/sign-out', async (req, res) => {
       'UPDATE daily_diary SET finalised_at=NOW() WHERE child_id=$1 AND date=CURRENT_DATE AND finalised_at IS NULL',
       [child_id]
     ).catch(() => {});
+
+    // Create parent notification about collection
+    if (collected_by) {
+      const { rows: childRows } = await db.query(
+        `SELECT first_name, last_name FROM children WHERE id=$1`, [child_id]
+      );
+      if (childRows.length) {
+        const child = childRows[0];
+        const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const title = `${child.first_name} collected`;
+        const body = `${child.first_name} ${child.last_name || ''} was collected at ${now} by ${collected_by}`;
+
+        await db.query(
+          `INSERT INTO notifications (recipient_type, recipient_id, category, title, body, priority)
+           VALUES ('parent', $1, 'collection', $2, $3, 'normal')`,
+          [child_id, title, body]
+        ).catch(() => {}); // Graceful failure if notifications table doesn't exist in dev
+      }
+    }
 
     res.json(rows[0]);
   } catch (e) {

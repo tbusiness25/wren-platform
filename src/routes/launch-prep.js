@@ -115,14 +115,14 @@ router.get('/status', authenticate, async (req, res) => {
 // POST /send-parent-onboarding — {mode: 'dry_run'|'test'|'send', confirm}
 // dry_run: preview only. test: ONE email to the manager test address.
 // send: all active portal parents — requires confirm === 'SEND-TO-ALL-PARENTS'.
-const TEST_ADDR = 'admin@example.com';
+const TEST_ADDR = 'toby.jones1@gmail.com';
 
 function onboardingEmail() {
-  const url = 'https://parents.example-nursery.co.uk';
-  const subject = 'Your Your Nursery parent portal is ready 🐤';
+  const url = 'https://parents.littleangelsealing.co.uk';
+  const subject = 'Your Little Angels parent portal is ready 🐤';
   const text = `Hello!
 
-Your Nursery is moving to our own parent portal — here's how to get set up (it takes about a minute):
+Little Angels is moving to our own parent portal — here's how to get set up (it takes about a minute):
 
 1. On your phone, open ${url}
 2. Enter the email address this message was sent to
@@ -136,7 +136,7 @@ From the portal you can see your child's daily diary, learning journey, photos, 
 
 Any trouble logging in, just reply to this email.
 
-The Your Nursery team`;
+The Little Angels team`;
   const html = text
     .split('\n\n')
     .map(p => `<p style="margin:0 0 14px;line-height:1.5">${p.replace(/\n/g, '<br>')}</p>`)

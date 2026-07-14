@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"           content="ladn">
+  <meta name="wren-app-page"          content="log-select-action">
+  <meta name="wren-app-title"         content="Log Activity">
+  <meta name="wren-app-chat"          content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>Log Activity · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260515">
+  <style>
+    #sa-page { display:flex;flex-direction:column;min-height:100%; }
+
+    /* Topbar back button */
+    #sa-back-btn {
+      width:44px;height:44px;background:transparent;border:none;
+      color:var(--c-muted);font-size:1.25rem;cursor:pointer;border-radius:10px;
+      display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0;
+    }
+    #sa-back-btn:hover { background:rgba(255,255,255,0.06);color:var(--c-text); }
+
+    /* Children thumbnail strip */
+    #sa-thumb-strip {
+      display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;
+      background:var(--c-navy-mid);border-bottom:1px solid var(--c-border);
+    }
+    .sa-thumb {
+      display:flex;flex-direction:column;align-items:center;gap:4px;
+    }
+    .sa-thumb-av {
+      width:44px;height:44px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-size:1.1rem;font-weight:700;color:#fff;overflow:hidden;flex-shrink:0;
+    }
+    .sa-thumb-av img { width:100%;height:100%;object-fit:cover;border-radius:50%; }
+    .sa-thumb-name {
+      font-size:.68rem;color:var(--c-muted);text-align:center;
+      max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+
+    /* Action grid */
+    #sa-actions {
+      display:grid;
+      grid-template-columns:repeat(2,1fr);
+      gap:12px;
+      padding:16px;
+      flex:1;
+    }
+    @media (min-width:480px) {
+      #sa-actions { grid-template-columns:repeat(3,1fr); }
+    }
+
+    .sa-btn {
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:8px;
+      min-height:96px;
+      background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;
+      color:var(--c-text);font-size:.9rem;font-weight:600;
+      cursor:pointer;padding:14px 8px;
+      transition:background .15s,border-color .15s,transform .1s;
+      user-select:none;
+    }
+    .sa-btn:hover { background:rgba(255,255,255,0.06);border-color:var(--c-blue); }
+    .sa-btn:active { transform:scale(0.97); }
+    .sa-btn-icon { font-size:1.8rem;line-height:1; }
+
+    /* Safeguarding — amber accent, spans both columns on 2-col or last column on 3-col */
+    .sa-btn--safeguarding {
+      background:rgba(245,158,11,0.10);
+      border-color:rgba(245,158,11,0.35);
+      color:var(--c-amber,#f59e0b);
+    }
+    .sa-btn--safeguarding:hover {
+      background:rgba(245,158,11,0.18);
+      border-color:#f59e0b;
+    }
+    /* On 2-column grid, safeguarding spans the full width */
+    @media (max-width:479px) {
+      .sa-btn--safeguarding { grid-column:1/-1; min-height:72px; }
+    }
+  </style>
+</head>
+<body>
+<div id="sa-page">
+  <div id="sa-thumb-strip" aria-label="Selected children"></div>
+
+  <div id="sa-actions" role="list" aria-label="Choose an action to log">
+    <button class="sa-btn" data-action="observation" role="listitem">
+      <span class="sa-btn-icon">📝</span>Observation
+    </button>
+    <button class="sa-btn" data-action="sleep" role="listitem">
+      <span class="sa-btn-icon">😴</span>Sleep
+    </button>
+    <button class="sa-btn" data-action="nappies" role="listitem">
+      <span class="sa-btn-icon">👶</span>Nappies
+    </button>
+    <button class="sa-btn" data-action="food" role="listitem">
+      <span class="sa-btn-icon">🍽️</span>Food
+    </button>
+    <button class="sa-btn" data-action="bottle" role="listitem">
+      <span class="sa-btn-icon">🍼</span>Bottle
+    </button>
+    <!-- Toileting removed 2026-07-10 (staff feedback via Toby) — will return as a
+         settings-driven toggle when the customisable-actions settings ship. -->
+    <button class="sa-btn sa-btn--safeguarding" data-action="safeguarding" role="listitem">
+      <span class="sa-btn-icon">🛡️</span>Safeguarding Concern
+    </button>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260515" defer></script>
+<script src="/js/wren-app-shell.js?v=20260515" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var SELECTION_KEY = 'wren.ey.selection';
+  var SELECTION_TTL = 30 * 60 * 1000;
+
+  var COLORS = ['#4a9abf','#e07820','#22c55e','#a855f7','#ef4444','#06b6d4','#f59e0b','#10b981','#ec4899','#3b82f6'];
+  function color(n) { return COLORS[(n||'A').charCodeAt(0) % COLORS.length]; }
+  function e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  var _childIds = [];
+  var _children = [];
+
+  /* ── Read selection from sessionStorage ───────────────────────────────────── */
+  function getSelection() {
+    try {
+      var raw = sessionStorage.getItem(SELECTION_KEY);
+      if (!raw) return [];
+      var sel = JSON.parse(raw);
+      if (Date.now() - sel.timestamp > SELECTION_TTL) {
+        sessionStorage.removeItem(SELECTION_KEY);
+        return [];
+      }
+      return sel.childIds || [];
+    } catch(ex) { return []; }
+  }
+
+  /* ── Render thumb strip ───────────────────────────────────────────────────── */
+  function renderThumbs() {
+    var strip = document.getElementById('sa-thumb-strip');
+    if (!strip) return;
+    strip.innerHTML = _children.map(function(c) {
+      var init = (c.first_name || '?').charAt(0).toUpperCase();
+      var av = c.photo_url
+        ? '<div class="sa-thumb-av"><img src="' + e(c.photo_url) + '" alt="' + e(c.first_name) + '" loading="lazy"></div>'
+        : '<div class="sa-thumb-av" style="background:' + color(init) + '" aria-hidden="true">' + e(init) + '</div>';
+      return '<div class="sa-thumb">' + av + '<span class="sa-thumb-name">' + e(c.first_name) + '</span></div>';
+    }).join('');
+
+    var n = _children.length;
+    var titleEl = document.querySelector('.wren-app-topbar-title');
+    if (titleEl) titleEl.textContent = 'Logging for ' + n + (n === 1 ? ' child' : ' children');
+  }
+
+  /* ── Wire action buttons ──────────────────────────────────────────────────── */
+  function wireActions() {
+    document.querySelectorAll('.sa-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var action = btn.dataset.action;
+        var count  = _childIds.length;
+        var route  = '';
+
+        if (action === 'observation') {
+          // Always use the full observation form so a group observation writes one
+          // row PER child WITH the same text, photos and framework tags (the old
+          // /ey/group/observation grid dropped photos + framework tags).
+          route = '/ey/observation/new' + (count ? '?children=' + _childIds.join(',') : '');
+        } else if (action === 'sleep')       { route = '/ey/group/sleep'; }
+        else if (action === 'nappies')       { route = '/ey/group/nappies'; }
+        else if (action === 'food')          { route = '/ey/group/food'; }
+        else if (action === 'bottle')        { route = '/ey/group/bottle'; }
+        else if (action === 'toileting')     { route = '/ey/group/toilet'; }
+        else if (action === 'safeguarding')  { route = '/ey/safeguarding/new'; }
+
+        if (route) Wren.navigate(route);
+      });
+    });
+  }
+
+  /* ── Wire topbar back button ──────────────────────────────────────────────── */
+  function wireTopbar() {
+    var tb = document.querySelector('.wren-app-topbar');
+    if (!tb) return;
+    var backBtn = document.createElement('button');
+    backBtn.id = 'sa-back-btn';
+    backBtn.setAttribute('aria-label', 'Back to children');
+    backBtn.innerHTML = '&#8592;';
+    backBtn.addEventListener('click', function() { Wren.navigate('/ey/home'); });
+    tb.insertBefore(backBtn, tb.firstChild);
+  }
+
+  /* ── Boot ─────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function() {
+    wireTopbar();
+    _childIds = getSelection();
+
+    if (!_childIds.length) {
+      Wren.toast('Select children first', 'error');
+      setTimeout(function() { Wren.navigate('/ey/home'); }, 1500);
+      return;
+    }
+
+    Wren.api('/api/children').then(function(data) {
+      var all = Array.isArray(data) ? data : (data && data.rows ? data.rows : []);
+      _children = all.filter(function(c) { return _childIds.indexOf(c.id) !== -1; });
+      renderThumbs();
+      wireActions();
+    }).catch(function() {
+      Wren.toast('Could not load children', 'error');
+      setTimeout(function() { Wren.navigate('/ey/home'); }, 1500);
+    });
+  });
+}());
+</script>
+</body>
+</html>

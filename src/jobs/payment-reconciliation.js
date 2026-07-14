@@ -34,7 +34,7 @@ async function run() {
 
   if (flags > 0) {
     await sendEmail({
-      to: process.env.ADMIN_EMAIL || 'admin@example.com',
+      to: process.env.ADMIN_EMAIL || 'toby.jones1@gmail.com',
       subject: `Payment reconciliation: ${flags} discrepancy(ies) found`,
       html: `<p>${flags} discrepancy flag(s) were raised during the nightly reconciliation. Check the Payment Admin panel for details.</p>`,
       text: `${flags} discrepancy flag(s) during reconciliation. Check Payment Admin panel.`,

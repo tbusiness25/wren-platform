@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Repairs — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🔧 Repairs & Maintenance</div>
+      <div class="page-subtitle">Report a problem — Toby will be notified immediately</div>
+    </div>
+    <button class="btn btn-primary" id="btn-open-report">+ Report Issue</button>
+  </div>
+
+  <div id="report-panel" style="display:none;margin-bottom:20px">
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:14px">Report a Maintenance Issue</div>
+      <div class="form-group">
+        <label class="form-label">Title <span style="color:var(--c-red)">*</span></label>
+        <input class="form-control" id="r-title" placeholder="Brief description — e.g. Dripping tap in baby room kitchen">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <select class="form-control" id="r-location">
+            <option value="">Select location</option>
+            <option>Baby Room</option><option>Pre-school</option><option>Garden</option>
+            <option>Kitchen</option><option>Corridor</option><option>Pre-school toilets</option>
+            <option>Baby room toilets</option><option>Office</option><option>Entrance</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <select class="form-control" id="r-category">
+            <option value="">Select category</option>
+            <option value="plumbing">Plumbing</option>
+            <option value="electrical">Electrical</option>
+            <option value="fixtures">Fixtures & fittings</option>
+            <option value="furniture">Furniture</option>
+            <option value="outdoor">Outdoor / garden</option>
+            <option value="appliance">Appliance</option>
+            <option value="safety">Safety concern</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Severity</label>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          <label class="severity-opt"><input type="radio" name="severity" value="low"><div class="sev-card">🟢<br><strong>Low</strong><br><small>Non-urgent</small></div></label>
+          <label class="severity-opt"><input type="radio" name="severity" value="normal" checked><div class="sev-card">🟡<br><strong>Normal</strong><br><small>Fix this week</small></div></label>
+          <label class="severity-opt"><input type="radio" name="severity" value="urgent"><div class="sev-card">🟠<br><strong>Urgent</strong><br><small>Fix today</small></div></label>
+          <label class="severity-opt"><input type="radio" name="severity" value="safety-critical"><div class="sev-card">🔴<br><strong>Safety!</strong><br><small>Immediate</small></div></label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Details</label>
+        <textarea class="form-control" id="r-desc" rows="3" placeholder="What is wrong? Where exactly?"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Photo (optional)</label>
+        <input type="file" class="form-control" id="r-photo" accept="image/jpeg,image/png,image/webp">
+        <div style="font-size:12px;color:var(--c-muted);margin-top:4px">Max 8MB — JPEG/PNG/WebP</div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button class="btn btn-primary" id="btn-submit-report">Submit Report</button>
+        <button class="btn btn-ghost" id="btn-close-report">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <select class="form-control" id="status-filter" style="flex:0 0 150px">
+      <option value="reported">Open</option>
+      <option value="in_progress">In Progress</option>
+      <option value="">All</option>
+      <option value="resolved">Resolved</option>
+    </select>
+    <select class="form-control" id="location-filter" style="flex:0 0 170px">
+      <option value="">All Locations</option>
+      <option>Baby Room</option><option>Pre-school</option><option>Garden</option>
+      <option>Kitchen</option><option>Corridor</option><option>Office</option>
+    </select>
+  </div>
+
+  <div id="repairs-list"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<style>
+.severity-opt { cursor:pointer; }
+.severity-opt input { display:none; }
+.sev-card { border:2px solid var(--c-border); border-radius:10px; padding:10px 6px; text-align:center; font-size:13px; line-height:1.5; transition:all .15s; }
+.severity-opt:has(input:checked) .sev-card { border-color:var(--c-primary); background:color-mix(in srgb,var(--c-primary) 12%,transparent); }
+</style>
+
+<script>
+let repairs = [];
+const SEV_COLOUR = { low:'#22c55e', normal:'#f59e0b', urgent:'#e07820', 'safety-critical':'#ef4444' };
+const SEV_LABEL  = { low:'🟢 Low', normal:'🟡 Normal', urgent:'🟠 Urgent', 'safety-critical':'🔴 Safety!' };
+
+async function loadRepairs() {
+  const status   = document.getElementById('status-filter').value;
+  const location = document.getElementById('location-filter').value;
+  let url = '/api/repairs?';
+  if (status)   url += `status=${encodeURIComponent(status)}&`;
+  if (location) url += `location=${encodeURIComponent(location)}`;
+  try {
+    repairs = await Wren.api(url);
+    renderRepairs();
+  } catch {
+    document.getElementById('repairs-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderRepairs() {
+  const list = document.getElementById('repairs-list');
+  if (!repairs.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">No open issues</div><div class="empty-body">Tap + Report Issue to log a new problem.</div></div>`;
+    return;
+  }
+  list.innerHTML = `<div style="display:grid;gap:10px">` +
+    repairs.map(r => {
+      const sev = r.severity || 'normal';
+      const col = SEV_COLOUR[sev] || '#4a9abf';
+      return `<div class="card" style="border-left:4px solid ${col};cursor:pointer" data-action="view-repair" data-id="${r.id}">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700">${escHtml(r.title)}</div>
+            ${r.description ? `<div style="color:var(--c-muted);font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.description)}</div>` : ''}
+            <div style="font-size:12px;color:var(--c-muted);margin-top:4px">
+              ${r.location ? `📍 ${escHtml(r.location)} · ` : ''}
+              ${r.category ? `${escHtml(r.category)} · ` : ''}
+              ${new Date(r.reported_at).toLocaleDateString('en-GB')}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0">
+            <span style="padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:${col}22;color:${col};border:1px solid ${col}44">${SEV_LABEL[sev]||sev}</span>
+            <span class="badge badge-grey" style="font-size:10px">${(r.status||'').replace(/_/g,' ')}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+}
+
+function viewRepair(id) {
+  const r = repairs.find(x => x.id === id);
+  if (!r) return;
+  const sev = r.severity || 'normal';
+  const col = SEV_COLOUR[sev] || '#4a9abf';
+  Wren.modal(`Issue: ${escHtml(r.title)}`, `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <span style="padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;background:${col}22;color:${col};border:1px solid ${col}44">${SEV_LABEL[sev]||sev}</span>
+      <span class="badge badge-grey">${(r.status||'').replace(/_/g,' ')}</span>
+      ${r.category ? `<span class="badge badge-grey">${escHtml(r.category)}</span>` : ''}
+    </div>
+    ${r.description ? `<p style="color:var(--c-muted);font-size:14px;margin-bottom:12px">${escHtml(r.description)}</p>` : ''}
+    ${r.photo_path ? `<img src="${escHtml(r.photo_path)}" style="max-width:100%;border-radius:8px;margin-bottom:12px">` : ''}
+    <div style="font-size:12px;color:var(--c-muted)">
+      ${r.location ? `📍 ${escHtml(r.location)}<br>` : ''}
+      Reported by ${escHtml(r.reported_by_name||'Unknown')} on ${new Date(r.reported_at).toLocaleDateString('en-GB')}
+      ${r.assigned_to_name ? `<br>Assigned to: ${escHtml(r.assigned_to_name)}` : ''}
+      ${r.resolution_notes ? `<br><br><strong>Resolution:</strong> ${escHtml(r.resolution_notes)}` : ''}
+    </div>
+  `, [{ label: 'Close', class: 'btn-ghost' }]);
+}
+
+function openReportForm() {
+  document.getElementById('report-panel').style.display = 'block';
+  document.getElementById('r-title').focus();
+}
+function closeReportForm() {
+  document.getElementById('report-panel').style.display = 'none';
+}
+
+async function submitReport() {
+  const title = document.getElementById('r-title').value.trim();
+  if (!title) { Wren.toast('Please enter a title', 'warning'); return; }
+  const severity = document.querySelector('input[name="severity"]:checked')?.value || 'normal';
+  const photoFile = document.getElementById('r-photo').files[0];
+  try {
+    const repair = await Wren.api('/api/repairs', {
+      method: 'POST',
+      body: {
+        title,
+        description: document.getElementById('r-desc').value.trim() || null,
+        location:    document.getElementById('r-location').value || null,
+        category:    document.getElementById('r-category').value || null,
+        severity,
+      },
+    });
+    if (photoFile) {
+      const fd = new FormData();
+      fd.append('photo', photoFile);
+      const tok = Wren.getToken();
+      await fetch(`/api/repairs/${repair.id}/photo`, {
+        method: 'POST',
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+        body: fd,
+      });
+    }
+    Wren.toast(severity === 'safety-critical' ? '🚨 Safety issue reported!' : 'Issue reported ✓', 'success');
+    closeReportForm();
+    document.getElementById('r-title').value = '';
+    document.getElementById('r-desc').value = '';
+    document.getElementById('r-photo').value = '';
+    document.querySelector('input[name="severity"][value="normal"]').checked = true;
+    await loadRepairs();
+  } catch (e) {
+    Wren.toast('Failed: ' + (e.error || e.message || 'Unknown'), 'error');
+  }
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('btn-open-report').addEventListener('click', openReportForm);
+  document.getElementById('btn-submit-report').addEventListener('click', submitReport);
+  document.getElementById('btn-close-report').addEventListener('click', closeReportForm);
+  document.getElementById('status-filter').addEventListener('change', loadRepairs);
+  document.getElementById('location-filter').addEventListener('change', loadRepairs);
+  document.getElementById('repairs-list').addEventListener('click', function(e) {
+    const card = e.target.closest('[data-action="view-repair"]');
+    if (card) viewRepair(parseInt(card.dataset.id));
+  });
+  loadRepairs();
+});
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

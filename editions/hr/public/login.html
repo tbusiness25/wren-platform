@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="hr">
+  <title>HR Portal Login — Little Angels Day Nursery</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <script src="/js/wren-shell-v2.js?v=20260514a" defer></script>
+  <script>
+    // Register service worker to clear any stale cross-edition cache
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    }
+    // Edition guard: if a previous response set a different edition in meta, abort and alert
+    (function() {
+      var expected = 'hr';
+      var meta = document.querySelector('meta[name="wren-edition"]');
+      var actual = meta ? meta.content : null;
+      if (actual && actual !== expected) {
+        fetch('/api/security-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alert_type: 'hr_edition_mismatch', expected_edition: expected, actual_edition: actual, path: window.location.pathname })
+        }).catch(() => {});
+        document.body.innerHTML = '<div style="padding:40px;color:#ef4444;font-family:sans-serif"><h2>Security check failed</h2><p>Unexpected portal content detected. Please clear your browser cache and try again.</p></div>';
+      }
+    })();
+  </script>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="wren-logo">
+        <span class="logo-w">w</span><span class="logo-ren">ren</span>
+        <span class="logo-edition">HR</span>
+      </div>
+      <p style="color:#94a3b8;font-size:.875rem;margin-top:8px">Little Angels Day Nursery — Staff Portal</p>
+    </div>
+
+    <div id="step-email">
+      <div class="form-group">
+        <label class="form-label">Work Email Address</label>
+        <input type="email" class="form-control" id="email" placeholder="your.name@littleangelsealing.co.uk" autocomplete="username">
+      </div>
+      <button id="continue-btn" class="btn btn-primary btn-block">Continue →</button>
+      <p style="font-size:.8rem;color:#64748b;text-align:center;margin-top:16px">
+        Access is protected by Cloudflare — your email must be on the approved list.
+      </p>
+    </div>
+
+    <div id="step-pin" style="display:none">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-weight:700;font-size:1.1rem;color:var(--c-text)" id="pin-name"></div>
+        <p style="font-size:.875rem;color:#64748b">Enter your 4-digit PIN</p>
+      </div>
+      <div class="pin-dots" id="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key" data-val="back">⌫</button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key" data-val="cancel" style="font-size:.75rem">Back</button>
+      </div>
+      <p id="pin-error" style="color:var(--c-red);text-align:center;margin-top:12px;display:none">Incorrect PIN — try again</p>
+    </div>
+  </div>
+</div>
+
+<script>
+let staffEmail = '';
+let pin = '';
+// PIN length (4 or 6); defaults to 4 so existing users are unaffected.
+let MAX_PIN = 4;
+
+function renderDots(n) {
+  const box = document.getElementById('pin-dots');
+  if (!box) return;
+  box.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const span = document.createElement('span');
+    span.className = 'pin-dot';
+    box.appendChild(span);
+  }
+}
+
+function updateDots() {
+  document.querySelectorAll('.pin-dot').forEach((d, i) => d.classList.toggle('filled', i < pin.length));
+}
+
+async function findStaff() {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return;
+  staffEmail = email;
+  MAX_PIN = 4;
+  try {
+    const r = await fetch('/api/auth/pin-length?email=' + encodeURIComponent(email));
+    if (r.ok) { const d = await r.json(); MAX_PIN = (d.pin_length === 6) ? 6 : 4; }
+  } catch {}
+  renderDots(MAX_PIN);
+  document.getElementById('step-email').style.display = 'none';
+  document.getElementById('step-pin').style.display = 'block';
+  document.getElementById('pin-name').textContent = email;
+}
+
+async function submitPin() {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: staffEmail, pin })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('pin-error').style.display = 'block';
+      pin = ''; updateDots(); return;
+    }
+    sessionStorage.setItem('wrenToken', data.token);
+    window.location.href = '/index.html';
+  } catch {
+    document.getElementById('pin-error').style.display = 'block';
+    pin = ''; updateDots();
+  }
+}
+
+document.querySelectorAll('.pin-key').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const val = btn.dataset.val;
+    document.getElementById('pin-error').style.display = 'none';
+    if (val === 'back') { pin = pin.slice(0, -1); updateDots(); }
+    else if (val === 'cancel') {
+      pin = '';
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-email').style.display = 'block';
+    } else if (pin.length < MAX_PIN) {
+      pin += val; updateDots();
+      if (pin.length === MAX_PIN) submitPin();
+    }
+  });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  var t = sessionStorage.getItem('wrenToken');
+  if (t) {
+    fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t } })
+      .then(function(r) { if (r.ok) window.location.href = '/index.html'; else sessionStorage.removeItem('wrenToken'); })
+      .catch(function() { sessionStorage.removeItem('wrenToken'); });
+  }
+  const emailInput = document.getElementById('email');
+  if (emailInput) emailInput.addEventListener('keydown', e => { if (e.key === 'Enter') findStaff(); });
+  const contBtn = document.getElementById('continue-btn');
+  if (contBtn) contBtn.addEventListener('click', findStaff);
+});
+</script>
+</body>
+</html>

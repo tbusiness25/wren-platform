@@ -38,7 +38,7 @@ async function sendEmail({ to, subject, html, text }) {
     return { skipped: true };
   }
   return t.sendMail({
-    from: process.env.SMTP_FROM || 'admin@example-nursery.co.uk',
+    from: process.env.SMTP_FROM || 'admin@littleangelsealing.co.uk',
     to,
     subject,
     html,

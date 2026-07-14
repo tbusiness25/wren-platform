@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Controlled drugs register</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+</head>
+<body>
+<template id="page">
+  <div class="hv-actions-bar">
+    <div><h1 class="hv-page-title">Controlled drugs register</h1>
+      <p class="hv-page-sub" style="margin-bottom:0">Stock in/out ledger with two signatures. <b>Not an eMAR</b> — administration stays on your paper MAR.</p></div>
+    <button class="hv-btn" id="addBtn">New entry</button>
+  </div>
+  <div class="hv-card"><h3>Current balances</h3><table class="hv-table"><thead><tr>
+    <th>Drug</th><th>Resident</th><th>Balance</th><th>Last entry</th></tr></thead><tbody id="balances"></tbody></table></div>
+  <div class="hv-card"><h3>Ledger</h3><table class="hv-table"><thead><tr>
+    <th>When</th><th>Drug</th><th>Resident</th><th>Entry</th><th>In</th><th>Out</th><th>Balance</th><th>Signatures</th>
+  </tr></thead><tbody id="rows"></tbody></table></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+let RESIDENTS = [], STAFF = [];
+if (Haven.guard()) { Haven.shell('cd'); Haven.gateBtn('addBtn', 'clinical_write'); load(); }
+async function load() {
+  try {
+    const [rows, balances, residents, staff] = await Promise.all([
+      Haven.api('/api/haven/cd-register'),
+      Haven.api('/api/haven/cd-register/balances'),
+      Haven.api('/api/haven/residents'),
+      Haven.api('/api/auth/staff-list'),
+    ]);
+    RESIDENTS = residents; STAFF = staff;
+    document.getElementById('balances').innerHTML = balances.map(b => `
+      <tr><td><b>${Haven.esc(b.drug_name)}</b> <span class="hv-note-meta">${Haven.esc(b.form_strength || '')}</span></td>
+      <td>${b.first_name ? Haven.esc(b.first_name + ' ' + b.last_name) : '<span class="hv-note-meta">home stock</span>'}</td>
+      <td><b>${Number(b.balance)}</b></td><td>${Haven.fmtDateTime(b.entry_at)}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="hv-empty">No stock recorded</td></tr>';
+    document.getElementById('rows').innerHTML = rows.map(x => `
+      <tr><td>${Haven.fmtDateTime(x.entry_at)}</td>
+      <td><b>${Haven.esc(x.drug_name)}</b> <span class="hv-note-meta">${Haven.esc(x.form_strength || '')}</span></td>
+      <td>${x.first_name ? Haven.esc(x.first_name + ' ' + x.last_name) : '—'}</td>
+      <td>${Haven.badge(x.entry_type, 'neutral')}${x.notes ? `<div class="hv-note-meta">${Haven.esc(x.notes)}</div>` : ''}</td>
+      <td>${Number(x.qty_in) || ''}</td><td>${Number(x.qty_out) || ''}</td><td><b>${Number(x.balance)}</b></td>
+      <td class="hv-note-meta">${Haven.esc((x.witness_1_first || '') + ' ' + (x.witness_1_last || ''))}<br>
+        ${Haven.esc((x.witness_2_first || '') + ' ' + (x.witness_2_last || ''))}</td>
+      </tr>`).join('') || '<tr><td colspan="8" class="hv-empty">Register is empty</td></tr>';
+  } catch (e) { Haven.toast(e.message, true); }
+}
+document.addEventListener('click', e => {
+  if (e.target.id !== 'addBtn') return;
+  const me = Haven.user();
+  Haven.modal('CD register entry', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Drug name *</label><input name="drug_name" required placeholder="e.g. Morphine sulfate"></div>
+      <div class="hv-field"><label>Form &amp; strength</label><input name="form_strength" placeholder="e.g. MST Continus 10mg tablets"></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Resident (blank = home stock)</label><select name="resident_id"><option value="">—</option>
+        ${RESIDENTS.map(r => `<option value="${r.id}">${Haven.esc(r.first_name + ' ' + r.last_name)}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>Entry type *</label><select name="entry_type">
+        <option value="received">Received from pharmacy</option>
+        <option value="administered_recorded">Administered (recorded on paper MAR)</option>
+        <option value="returned_pharmacy">Returned to pharmacy</option>
+        <option value="destroyed">Destroyed</option>
+        <option value="balance_check">Balance check</option></select></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Quantity in</label><input name="qty_in" type="number" step="0.5" min="0" value="0"></div>
+      <div class="hv-field"><label>Quantity out</label><input name="qty_out" type="number" step="0.5" min="0" value="0"></div>
+    </div>
+    <div class="hv-field"><label>Supplier / destination</label><input name="supplier_or_destination"></div>
+    <div class="hv-field"><label>Second signature (witness) * — you are signature 1 (${Haven.esc(me.first_name + ' ' + me.last_name)})</label>
+      <select name="witness_2_id" required><option value="">— select witness —</option>
+      ${STAFF.filter(s => s.id !== me.id).map(s => `<option value="${s.id}">${Haven.esc(s.first_name + ' ' + (s.last_name || ''))}</option>`).join('')}</select></div>
+    <div class="hv-field"><label>Witness PIN * — entered by the witness themselves (countersignature)</label>
+      <input name="witness_2_pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" required placeholder="Witness enters their PIN"></div>
+    <div class="hv-field"><label>Notes</label><input name="notes"></div>`,
+    async fd => {
+      const saved = await Haven.api('/api/haven/cd-register', { method: 'POST', body: fd });
+      Haven.toast(`Entry recorded — balance now ${Number(saved.balance)}`); load();
+    }, 'Record entry');
+});
+</script>
+</body>
+</html>

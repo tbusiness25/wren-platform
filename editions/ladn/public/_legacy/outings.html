@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Outings — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .outing-card{background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:14px;margin-bottom:10px}
+    .outing-type{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8}
+    .outing-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+    .badge-sm{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
+    .modal-overlay{position:fixed;inset:0;background:#0008;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+    .modal{background:#1e293b;border:1px solid #2d3748;border-radius:16px;padding:24px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
+    .modal-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px}
+    .form-row{margin-bottom:12px}
+    .form-label{font-size:12px;color:#94a3b8;margin-bottom:4px}
+    .multi-select{display:flex;flex-wrap:wrap;gap:6px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:8px;min-height:40px}
+    .ms-chip{background:#2d3748;border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer;color:#94a3b8}
+    .ms-chip.selected{background:#4a9abf22;border:1px solid #4a9abf;color:#4a9abf}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">Outings Log</div>
+    <button class="btn btn-primary" id="open-outing-btn">+ Add Outing</button>
+  </div>
+
+  <div id="outings-list"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<!-- NEW OUTING MODAL -->
+<div id="outing-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Add Outing</div>
+    <div class="form-row">
+      <div class="form-label">Date</div>
+      <input type="date" class="form-control" id="o-date">
+    </div>
+    <div class="form-row">
+      <div class="form-label">Destination *</div>
+      <input class="form-control" id="o-dest" placeholder="e.g. Local Park, Ealing Library">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <div class="form-label">Type</div>
+        <select class="form-control" id="o-type">
+          <option value="local_walk">Local Walk</option>
+          <option value="park">Park</option>
+          <option value="trip">Trip</option>
+          <option value="visit">Visit</option>
+        </select>
+      </div>
+      <div>
+        <div class="form-label">Transport</div>
+        <select class="form-control" id="o-transport">
+          <option value="on_foot">On Foot</option>
+          <option value="public_transport">Public Transport</option>
+          <option value="minibus">Minibus</option>
+          <option value="coach">Coach</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-label">Learning Intention</div>
+      <input class="form-control" id="o-learning" placeholder="e.g. Exploring nature, Physical development">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <div class="form-label">Departure Time</div>
+        <input type="time" class="form-control" id="o-depart">
+      </div>
+      <div>
+        <div class="form-label">Return Time</div>
+        <input type="time" class="form-control" id="o-return">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-label">Staff Attending</div>
+      <div class="multi-select" id="o-staff-select"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-label">Children Attending</div>
+      <div class="multi-select" id="o-child-select"></div>
+    </div>
+    <div class="form-row">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="o-ra"> <span style="color:#f1f5f9;font-size:14px">Risk Assessment Completed</span>
+      </label>
+    </div>
+    <div class="form-row">
+      <div class="form-label">Notes/Observations</div>
+      <textarea class="form-control" id="o-notes" rows="2"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-secondary" id="cancel-outing-btn">Cancel</button>
+      <button class="btn btn-primary" id="save-outing-btn">Save Outing</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let outings=[], defaults={staff:[],children:[]};
+let selStaff=new Set(), selChildren=new Set();
+
+async function init(){
+  const [o,d]=await Promise.all([
+    Wren.api('/api/outings').catch(()=>[]),
+    Wren.api('/api/outings/today-defaults').catch(()=>({staff:[],children:[]}))
+  ]);
+  outings=o||[];
+  defaults=d||{staff:[],children:[]};
+  renderList();
+}
+
+function renderList(){
+  const area=document.getElementById('outings-list');
+  if(!outings.length){area.innerHTML='<div class="empty-state">No outings recorded yet. Add your first outing.</div>';return;}
+  const typeLabels={local_walk:'Local Walk',park:'Park',trip:'Trip',visit:'Visit'};
+  area.innerHTML=outings.map(o=>`
+    <div class="outing-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:#f1f5f9">${o.destination}</div>
+          <div class="outing-type">${new Date(o.date).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})} · ${typeLabels[o.outing_type]||o.outing_type||''}</div>
+        </div>
+        ${o.risk_assessment_completed?'<span class="badge-sm" style="background:#22c55e22;color:#22c55e">✓ RA</span>':'<span class="badge-sm" style="background:#ef444422;color:#ef4444">⚠ No RA</span>'}
+      </div>
+      ${o.learning_intention?`<div style="font-size:13px;color:#94a3b8;margin-top:6px">🎓 ${o.learning_intention}</div>`:''}
+      <div class="outing-badges">
+        ${o.staff_ids?.length?`<span class="badge-sm" style="background:#4a9abf22;color:#4a9abf">👥 ${o.staff_ids.length} staff</span>`:''}
+        ${o.child_ids?.length?`<span class="badge-sm" style="background:#e0782022;color:#e07820">👶 ${o.child_ids.length} children</span>`:''}
+        ${o.transport_method?`<span class="badge-sm" style="background:#2d3748;color:#94a3b8">${o.transport_method.replace('_',' ')}</span>`:''}
+        ${o.departure_time?`<span class="badge-sm" style="background:#2d3748;color:#94a3b8">Out: ${o.departure_time} In: ${o.return_time||'—'}</span>`:''}
+      </div>
+      ${o.notes?`<div style="font-size:13px;color:#94a3b8;margin-top:6px">📝 ${o.notes}</div>`:''}
+    </div>`).join('');
+}
+
+async function openNewOuting(){
+  // Set defaults
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('o-date').value=today;
+  selStaff=new Set(defaults.staff.map(s=>s.id));
+  selChildren=new Set(defaults.children.map(c=>c.id));
+  renderSelections();
+  document.getElementById('outing-modal').style.display='flex';
+}
+
+function renderSelections(){
+  const staffEl=document.getElementById('o-staff-select');
+  staffEl.innerHTML=defaults.staff.map(s=>`<span class="ms-chip${selStaff.has(s.id)?' selected':''}" data-action="toggle-staff" data-id="${s.id}">${s.first_name} ${s.last_name}</span>`).join('');
+  const childEl=document.getElementById('o-child-select');
+  childEl.innerHTML=defaults.children.map(c=>`<span class="ms-chip${selChildren.has(c.id)?' selected':''}" data-action="toggle-child" data-id="${c.id}">${c.first_name} ${c.last_name}</span>`).join('');
+}
+
+function toggleSel(type,id,el){
+  const s=type==='staff'?selStaff:selChildren;
+  s.has(id)?s.delete(id):s.add(id);
+  el.classList.toggle('selected',s.has(id));
+}
+
+async function saveOuting(){
+  const dest=document.getElementById('o-dest').value.trim();
+  if(!dest)return Wren.toast('Destination required','error');
+  try{
+    await Wren.api('/api/outings',{method:'POST',body:JSON.stringify({
+      date:document.getElementById('o-date').value,
+      destination:dest,
+      outing_type:document.getElementById('o-type').value,
+      transport_method:document.getElementById('o-transport').value,
+      learning_intention:document.getElementById('o-learning').value||null,
+      departure_time:document.getElementById('o-depart').value||null,
+      return_time:document.getElementById('o-return').value||null,
+      staff_ids:Array.from(selStaff),
+      child_ids:Array.from(selChildren),
+      risk_assessment_completed:document.getElementById('o-ra').checked,
+      notes:document.getElementById('o-notes').value||null
+    })});
+    Wren.toast('Outing saved');
+    document.getElementById('outing-modal').style.display='none';
+    outings=await Wren.api('/api/outings');
+    renderList();
+  }catch(e){Wren.toast('Error: '+e.message,'error');}
+}
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('open-outing-btn').addEventListener('click', openNewOuting);
+  document.getElementById('cancel-outing-btn').addEventListener('click', function() {
+    document.getElementById('outing-modal').style.display = 'none';
+  });
+  document.getElementById('save-outing-btn').addEventListener('click', saveOuting);
+  document.getElementById('o-staff-select').addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action="toggle-staff"]');
+    if (!el) return;
+    toggleSel('staff', parseInt(el.dataset.id), el);
+  });
+  document.getElementById('o-child-select').addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action="toggle-child"]');
+    if (!el) return;
+    toggleSel('child', parseInt(el.dataset.id), el);
+  });
+  init();
+});
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

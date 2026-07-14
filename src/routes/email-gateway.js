@@ -19,7 +19,7 @@ const { getPool } = require('../db/pool');
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || process.env.OLLAMA_URL || 'http://ollama:11434';
 const GATEWAY_MODEL = process.env.EMAIL_GATEWAY_MODEL || 'qwen3.6:35b-a3b';
-const STAFF_MAILBOX = process.env.GATEWAY_MAILBOX || 'staff@example-nursery.co.uk';
+const STAFF_MAILBOX = process.env.GATEWAY_MAILBOX || 'staff@littleangelsealing.co.uk';
 const LIVE = () => process.env.EMAIL_GATEWAY_LIVE === 'on';
 
 // ── Auth: any staff may compose; manager-level for review ────────────────────
@@ -62,7 +62,7 @@ async function recipientIsParent(db, email) {
 // Returns { verdict: 'ok'|'flagged', notes, suggested_body|null }. Fails SAFE:
 // any AI error → 'flagged' so a human always reviews when the firewall is down.
 async function aiCheck({ to, subject, body, staffName }) {
-  const prompt = `You are the outbound-email firewall for Your Nursery (Ealing). A staff member wants to send an email through the nursery mailbox. Assess it.
+  const prompt = `You are the outbound-email firewall for Little Angels Day Nursery (Ealing). A staff member wants to send an email through the nursery mailbox. Assess it.
 
 RULES:
 - Emails must be professional and appropriate for a nursery employee writing to suppliers, trip venues, training providers or other organisations.
@@ -106,7 +106,7 @@ Return ONLY valid JSON, no markdown:
 
 // ── Gated send ────────────────────────────────────────────────────────────────
 async function gatedSend({ to, subject, body, staffName }) {
-  const footer = `\n\n—\n${staffName}\nYour Nursery\n[sent via Wren by ${staffName}]`;
+  const footer = `\n\n—\n${staffName}\nLittle Angels Day Nursery\n[sent via Wren by ${staffName}]`;
   const text = String(body) + footer;
   if (!LIVE()) {
     console.log(`[email-gateway] DRY RUN (EMAIL_GATEWAY_LIVE!=on) — would send to ${to}: "${subject}"`);

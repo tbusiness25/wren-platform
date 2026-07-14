@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"           content="ladn">
+  <meta name="wren-app-page"          content="observation-view">
+  <meta name="wren-app-title"         content="Observation">
+  <meta name="wren-app-chat"          content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>Observation · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* ── View page layout ──────────────────────────────────────────────────────── */
+    #obs-view-page { padding: 0 0 env(safe-area-inset-bottom, 0); }
+
+    /* ── Topbar overrides ──────────────────────────────────────────────────────── */
+    #obs-view-back {
+      width: 44px; height: 44px;
+      background: transparent; border: none;
+      color: var(--c-text); cursor: pointer;
+      border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #obs-view-back:hover { background: rgba(255,255,255,0.06); }
+
+    #obs-view-edit-btn {
+      height: 36px; padding: 0 16px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text); font-size: .9rem; font-weight: 600;
+      cursor: pointer; flex-shrink: 0;
+      transition: border-color .15s;
+    }
+    #obs-view-edit-btn:hover { border-color: var(--c-blue); }
+
+    #obs-view-save-btn {
+      height: 36px; padding: 0 16px;
+      background: var(--c-blue); border: none; border-radius: 10px;
+      color: #fff; font-size: .9rem; font-weight: 700;
+      cursor: pointer; flex-shrink: 0;
+      transition: opacity .15s;
+      display: none;
+    }
+    #obs-view-save-btn:hover   { opacity: .88; }
+    #obs-view-save-btn:disabled { opacity: .45; cursor: default; }
+
+    /* ── Main content ──────────────────────────────────────────────────────────── */
+    #obs-view-body {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0 0 40px;
+    }
+
+    /* ── Loading skeleton ──────────────────────────────────────────────────────── */
+    #obs-view-loading { padding: 16px; }
+
+    /* ── Header card ───────────────────────────────────────────────────────────── */
+    #obs-view-header {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 14px 16px;
+      background: var(--c-surface);
+      border-bottom: 1px solid var(--c-border);
+    }
+    #obs-view-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--c-blue);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem; font-weight: 700; color: #fff;
+      flex-shrink: 0; overflow: hidden;
+    }
+    #obs-view-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    #obs-view-header-info { flex: 1; min-width: 0; }
+    #obs-view-child-name {
+      font-size: .95rem; font-weight: 700; color: var(--c-text); margin-bottom: 2px;
+    }
+    #obs-view-meta { font-size: .8rem; color: var(--c-muted); }
+    #obs-view-share-badge {
+      height: 22px; padding: 0 8px;
+      background: rgba(34,197,94,0.14);
+      border-radius: 11px;
+      font-size: .72rem; font-weight: 700; color: var(--c-green, #22c55e);
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-top: 4px;
+    }
+    #obs-view-share-badge.hidden { display: none; }
+
+    /* ── Section groups ────────────────────────────────────────────────────────── */
+    .ov-section { padding: 16px 16px 0; }
+    .ov-label {
+      font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--c-muted); margin-bottom: 8px; display: block;
+    }
+    .ov-text {
+      font-size: .9rem; color: var(--c-text); line-height: 1.6;
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* ── Editable textarea ─────────────────────────────────────────────────────── */
+    .ov-textarea {
+      width: 100%; box-sizing: border-box;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text); font-size: .9rem; line-height: 1.55;
+      padding: 10px 12px; resize: vertical; min-height: 100px;
+      outline: none; font-family: system-ui, Arial, sans-serif;
+    }
+    .ov-textarea:focus { border-color: var(--c-blue); }
+    .ov-textarea[readonly] {
+      background: transparent; border-color: transparent;
+      padding: 0; resize: none;
+    }
+    .ov-textarea[readonly]:focus { border-color: transparent; }
+
+    /* ── Photo strip ───────────────────────────────────────────────────────────── */
+    #ov-photo-strip {
+      display: flex; gap: 8px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      padding-bottom: 4px;
+    }
+    #ov-photo-strip:empty { display: none; }
+    .ov-photo-thumb {
+      width: 80px; height: 80px;
+      border-radius: 8px; object-fit: cover;
+      border: 1px solid var(--c-border);
+      flex-shrink: 0; cursor: pointer;
+    }
+
+    /* ── Framework tags ────────────────────────────────────────────────────────── */
+    #ov-tags-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ov-tag-chip {
+      height: 26px; padding: 0 10px;
+      background: rgba(91,143,255,0.14);
+      border-radius: 13px;
+      color: var(--c-blue); font-size: .78rem; font-weight: 600;
+      display: inline-flex; align-items: center;
+    }
+
+    /* ── Next steps ────────────────────────────────────────────────────────────── */
+    .ov-next-steps-box {
+      padding: 10px 12px;
+      background: rgba(74,154,191,0.08);
+      border: 1px solid rgba(74,154,191,0.3);
+      border-radius: 10px;
+      font-size: .88rem; color: var(--c-text); line-height: 1.5;
+    }
+
+    /* ── Share toggle ──────────────────────────────────────────────────────────── */
+    #ov-share-btn {
+      display: flex; align-items: center; gap: 8px;
+      height: 44px; padding: 0 14px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      color: var(--c-text); font-size: .88rem;
+      cursor: pointer; width: 100%; text-align: left;
+      transition: border-color .15s;
+    }
+    #ov-share-btn:hover { border-color: var(--c-blue); }
+    #ov-share-btn.shared { border-color: var(--c-green, #22c55e); background: rgba(34,197,94,0.08); }
+    #ov-share-icon { font-size: 1.1rem; }
+    #ov-share-label { flex: 1; font-weight: 600; }
+
+    /* ── Divider ───────────────────────────────────────────────────────────────── */
+    .ov-divider { height: 1px; background: var(--c-border); margin: 16px 16px 0; }
+
+    /* ── Error ─────────────────────────────────────────────────────────────────── */
+    #ov-error {
+      margin: 12px 16px 0; padding: 10px 14px;
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      color: var(--c-red, #ef4444); font-size: .85rem;
+    }
+    #ov-error[hidden] { display: none; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="obs-view-page">
+
+  <div id="ov-error" hidden role="alert" aria-live="assertive"></div>
+
+  <div id="obs-view-body">
+
+    <!-- Loading skeleton -->
+    <div id="obs-view-loading">
+      <div class="app-skeleton" style="height:80px;border-radius:12px;margin-bottom:12px"></div>
+      <div class="app-skeleton" style="height:120px;border-radius:12px;margin-bottom:12px"></div>
+      <div class="app-skeleton" style="height:60px;border-radius:12px"></div>
+    </div>
+
+    <!-- Populated once loaded -->
+    <div id="obs-view-content" hidden>
+
+      <!-- Child / date header -->
+      <div id="obs-view-header">
+        <div id="obs-view-avatar" aria-hidden="true">?</div>
+        <div id="obs-view-header-info">
+          <div id="obs-view-child-name">Loading…</div>
+          <div id="obs-view-meta"></div>
+          <div id="obs-view-share-badge" class="hidden">📤 Shared with parents</div>
+        </div>
+      </div>
+
+      <!-- Observation text -->
+      <div class="ov-section">
+        <label class="ov-label" for="ov-obs-text">What was seen</label>
+        <textarea id="ov-obs-text" class="ov-textarea" readonly aria-label="Observation text"></textarea>
+      </div>
+
+      <!-- Photos / videos -->
+      <div class="ov-section" id="ov-photos-section" hidden>
+        <label class="ov-label">Media</label>
+        <div id="ov-photo-strip" role="list" aria-label="Observation media"></div>
+      </div>
+
+      <!-- Analysis (EyLog parity) -->
+      <div class="ov-section" id="ov-analysis-section" hidden>
+        <label class="ov-label" for="ov-analysis">Analysis</label>
+        <textarea id="ov-analysis" class="ov-textarea" readonly rows="3"
+          placeholder="What does this tell you about the child's learning?" aria-label="Analysis"></textarea>
+      </div>
+
+      <div class="ov-divider"></div>
+
+      <!-- Framework tags -->
+      <div class="ov-section" id="ov-tags-section" hidden>
+        <label class="ov-label">Framework tags</label>
+        <div id="ov-tags-wrap"></div>
+      </div>
+
+      <!-- Next steps -->
+      <div class="ov-section" id="ov-nextsteps-section" hidden>
+        <label class="ov-label" for="ov-next-steps">Next steps</label>
+        <div id="ov-nextsteps-box" class="ov-next-steps-box"></div>
+      </div>
+
+      <!-- Additional comments (EyLog parity) -->
+      <div class="ov-section" id="ov-comments-section" hidden>
+        <label class="ov-label" for="ov-comments">Additional comments</label>
+        <textarea id="ov-comments" class="ov-textarea" readonly rows="2"
+          placeholder="Anything else worth noting…" aria-label="Additional comments"></textarea>
+      </div>
+
+      <div class="ov-divider"></div>
+
+      <!-- Share toggle -->
+      <div class="ov-section">
+        <label class="ov-label">Visibility</label>
+        <button id="ov-share-btn" type="button" aria-label="Toggle share with parents">
+          <span id="ov-share-icon">📤</span>
+          <span id="ov-share-label">Share with parents</span>
+        </button>
+      </div>
+
+      <!-- Staff notes (edit mode only) -->
+      <div class="ov-section" id="ov-notes-section">
+        <label class="ov-label" for="ov-staff-notes">Staff notes (private)</label>
+        <textarea id="ov-staff-notes" class="ov-textarea" readonly rows="2"
+          placeholder="Private notes visible to staff only…" aria-label="Staff notes"></textarea>
+      </div>
+
+      <div style="height:24px"></div>
+
+    </div><!-- #obs-view-content -->
+
+  </div><!-- #obs-view-body -->
+
+</div><!-- #obs-view-page -->
+
+<script src="/js/wren-core.js?v=20260704"      defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Parse observation ID from URL /ey/observation/:id
+   * ──────────────────────────────────────────────────────────────────────────── */
+  var _obsId = (function() {
+    var m = location.pathname.match(/\/ey\/observation\/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }());
+
+  var _obs   = null;
+  var _editing = false;
+
+  /* HTML escape */
+  function _e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* Avatar colours */
+  var AVATAR_COLORS = [
+    '#4a9abf','#e07820','#22c55e','#a855f7','#ef4444',
+    '#06b6d4','#f59e0b','#10b981','#ec4899','#3b82f6'
+  ];
+  function _color(name) {
+    return AVATAR_COLORS[(name || 'A').charCodeAt(0) % AVATAR_COLORS.length];
+  }
+
+  function _fmtDate(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Topbar
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _injectTopbar() {
+    var topbar    = document.getElementById('wren-app-topbar');
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (!topbar || !hamburger) return;
+
+    /* Back button */
+    var backBtn = document.createElement('button');
+    backBtn.id = 'obs-view-back';
+    backBtn.type = 'button';
+    backBtn.setAttribute('aria-label', 'Go back');
+    backBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+    backBtn.addEventListener('click', function() {
+      if (history.length > 1) history.back();
+      else Wren.navigate('/ey/home');
+    });
+    hamburger.parentNode.insertBefore(backBtn, hamburger);
+    hamburger.style.display = 'none';
+
+    /* Edit / Save buttons */
+    var actions = topbar.querySelector('.wren-app-topbar-actions');
+    if (actions) {
+      var saveBtn = document.createElement('button');
+      saveBtn.id = 'obs-view-save-btn';
+      saveBtn.type = 'button';
+      saveBtn.textContent = 'Save';
+      saveBtn.addEventListener('click', _saveEdits);
+      actions.insertBefore(saveBtn, actions.firstChild);
+
+      var editBtn = document.createElement('button');
+      editBtn.id = 'obs-view-edit-btn';
+      editBtn.type = 'button';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', _enterEditMode);
+      actions.insertBefore(editBtn, actions.firstChild);
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Render loaded observation
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _render(obs) {
+    _obs = obs;
+
+    /* Loading → content */
+    var loading = document.getElementById('obs-view-loading');
+    var content = document.getElementById('obs-view-content');
+    if (loading) loading.hidden = true;
+    if (content) content.hidden = false;
+
+    /* Topbar title */
+    var titleEl = document.getElementById('wren-app-title');
+    if (titleEl) titleEl.textContent = obs.child_first_name ? obs.child_first_name + "'s observation" : 'Observation';
+
+    /* Avatar */
+    var av   = document.getElementById('obs-view-avatar');
+    var init = (obs.child_first_name || '?').charAt(0).toUpperCase();
+    if (av) {
+      av.style.background = _color(init);
+      av.textContent = init;
+    }
+
+    /* Child name + meta */
+    var nameEl = document.getElementById('obs-view-child-name');
+    if (nameEl) nameEl.textContent = (obs.child_first_name || '') + ' ' + (obs.child_last_name || '');
+    var metaEl = document.getElementById('obs-view-meta');
+    if (metaEl) metaEl.textContent = _fmtDate(obs.created_at) + (obs.staff_name ? ' · ' + obs.staff_name : '');
+
+    /* Share badge */
+    var badge = document.getElementById('obs-view-share-badge');
+    if (badge) badge.classList.toggle('hidden', !obs.shared_with_parents);
+
+    /* Observation text */
+    var textEl = document.getElementById('ov-obs-text');
+    if (textEl) textEl.value = obs.observation_text || '';
+
+    /* Photos / videos — photo_urls may contain video files (EyLog-parity media) */
+    var photoStrip   = document.getElementById('ov-photo-strip');
+    var photoSection = document.getElementById('ov-photos-section');
+    var photos = obs.photo_urls || [];
+    if (photos.length && photoStrip) {
+      photoSection.hidden = false;
+      photoStrip.innerHTML = photos.map(function(u) {
+        if (/\.(mp4|webm|mov|3gp|mkv)(\?|$)/i.test(u)) {
+          return '<video class="ov-photo-thumb" src="' + _e(u) + '" muted playsinline preload="metadata" role="listitem" data-action="open-photo" data-url="' + _e(u) + '" style="background:#000"></video>';
+        }
+        return '<img class="ov-photo-thumb" src="' + _e(u) + '" alt="Observation photo" loading="lazy" role="listitem" data-action="open-photo" data-url="' + _e(u) + '">';
+      }).join('');
+    }
+
+    /* Analysis + additional comments (shown only when present; editable in edit mode) */
+    var anEl = document.getElementById('ov-analysis');
+    if (anEl) anEl.value = obs.analysis || '';
+    var anSection = document.getElementById('ov-analysis-section');
+    if (anSection) anSection.hidden = !obs.analysis;
+    var cmEl = document.getElementById('ov-comments');
+    if (cmEl) cmEl.value = obs.additional_comments || '';
+    var cmSection = document.getElementById('ov-comments-section');
+    if (cmSection) cmSection.hidden = !obs.additional_comments;
+
+    /* Framework tags */
+    var tagsWrap    = document.getElementById('ov-tags-wrap');
+    var tagsSection = document.getElementById('ov-tags-section');
+    var areas = obs.eyfs_areas || [];
+    if (areas.length && tagsWrap) {
+      tagsSection.hidden = false;
+      tagsWrap.innerHTML = areas.map(function(a) {
+        return '<span class="ov-tag-chip">' + _e(a) + '</span>';
+      }).join('');
+    }
+
+    /* Next steps */
+    var nsSection = document.getElementById('ov-nextsteps-section');
+    var nsBox     = document.getElementById('ov-nextsteps-box');
+    if (obs.next_steps && nsSection && nsBox) {
+      nsSection.hidden = false;
+      nsBox.textContent = obs.next_steps;
+    }
+
+    /* Share button state */
+    _updateShareBtn(obs.shared_with_parents);
+
+    /* Staff notes */
+    var notesEl = document.getElementById('ov-staff-notes');
+    if (notesEl) notesEl.value = obs.staff_notes || '';
+    if (notesEl && !obs.staff_notes) {
+      document.getElementById('ov-notes-section').hidden = true;
+    }
+  }
+
+  function _updateShareBtn(shared) {
+    var btn   = document.getElementById('ov-share-btn');
+    var icon  = document.getElementById('ov-share-icon');
+    var label = document.getElementById('ov-share-label');
+    if (!btn) return;
+    btn.classList.toggle('shared', !!shared);
+    if (icon)  icon.textContent  = shared ? '✓' : '📤';
+    if (label) label.textContent = shared ? 'Shared with parents' : 'Share with parents';
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Edit mode
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _enterEditMode() {
+    _editing = true;
+    var textEl  = document.getElementById('ov-obs-text');
+    var notesEl = document.getElementById('ov-staff-notes');
+    var editBtn = document.getElementById('obs-view-edit-btn');
+    var saveBtn = document.getElementById('obs-view-save-btn');
+    var nsSection = document.getElementById('ov-notes-section');
+
+    if (textEl)    { textEl.removeAttribute('readonly'); textEl.focus(); }
+    if (notesEl)   { notesEl.removeAttribute('readonly'); }
+    if (nsSection) nsSection.hidden = false;
+    /* Analysis + comments become editable (and visible) in edit mode */
+    var anEl = document.getElementById('ov-analysis');
+    var cmEl = document.getElementById('ov-comments');
+    if (anEl) { anEl.removeAttribute('readonly'); document.getElementById('ov-analysis-section').hidden = false; }
+    if (cmEl) { cmEl.removeAttribute('readonly'); document.getElementById('ov-comments-section').hidden = false; }
+    if (editBtn)   editBtn.style.display = 'none';
+    if (saveBtn)   saveBtn.style.display = '';
+  }
+
+  async function _saveEdits() {
+    if (!_obs || !_obsId) return;
+
+    var textEl  = document.getElementById('ov-obs-text');
+    var notesEl = document.getElementById('ov-staff-notes');
+    var saveBtn = document.getElementById('obs-view-save-btn');
+    var editBtn = document.getElementById('obs-view-edit-btn');
+
+    var newText  = (textEl  ? textEl.value.trim()  : '');
+    var newNotes = (notesEl ? notesEl.value.trim()  : '');
+    var anEl2 = document.getElementById('ov-analysis');
+    var cmEl2 = document.getElementById('ov-comments');
+    var newAnalysis = anEl2 ? anEl2.value.trim() : '';
+    var newComments = cmEl2 ? cmEl2.value.trim() : '';
+
+    if (!newText) {
+      _showError('Observation text cannot be empty.');
+      return;
+    }
+
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    try {
+      var updated = await Wren.api('/api/observations/' + _obsId, {
+        method: 'PUT',
+        body: {
+          observation_text: newText,
+          staff_notes:      newNotes || null,
+          analysis:            newAnalysis || null,
+          additional_comments: newComments || null,
+          /* PUT does NOT coalesce next_steps — resend the current value or it's wiped */
+          next_steps:          (_obs && _obs.next_steps) || null,
+        }
+      });
+      _obs = updated;
+      _editing = false;
+      if (textEl)  textEl.setAttribute('readonly', '');
+      if (notesEl) notesEl.setAttribute('readonly', '');
+      if (anEl2) { anEl2.setAttribute('readonly', ''); document.getElementById('ov-analysis-section').hidden = !newAnalysis; }
+      if (cmEl2) { cmEl2.setAttribute('readonly', ''); document.getElementById('ov-comments-section').hidden = !newComments; }
+      if (editBtn) editBtn.style.display = '';
+      if (saveBtn) { saveBtn.style.display = 'none'; saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+      if (window.Wren) Wren.toast('Observation updated ✓', 'success', 3000);
+    } catch (e) {
+      _showError(e.error || e.message || 'Could not save changes.');
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Share toggle
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _initShareBtn() {
+    var btn = document.getElementById('ov-share-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function() {
+      if (!_obsId) return;
+      try {
+        var result = await Wren.api('/api/observations/' + _obsId + '/share', { method: 'POST' });
+        _obs.shared_with_parents = result.shared_with_parents;
+        _updateShareBtn(result.shared_with_parents);
+        var badge = document.getElementById('obs-view-share-badge');
+        if (badge) badge.classList.toggle('hidden', !result.shared_with_parents);
+        if (window.Wren) Wren.toast(result.shared_with_parents ? 'Shared with parents ✓' : 'Unshared', 'success', 2500);
+      } catch (e) {
+        _showError(e.error || 'Could not update sharing.');
+      }
+    });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Error
+   * ──────────────────────────────────────────────────────────────────────────── */
+  function _showError(msg) {
+    var el = document.getElementById('ov-error');
+    if (!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * Boot
+   * ──────────────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function() {
+    _injectTopbar();
+    _initShareBtn();
+
+    document.getElementById('ov-photo-strip').addEventListener('click', function(e) {
+      var img = e.target.closest('[data-action="open-photo"]');
+      if (!img) return;
+      window.open(img.dataset.url, '_blank');
+    });
+
+    if (!_obsId) {
+      _showError('Invalid observation ID.');
+      return;
+    }
+
+    Wren.api('/api/observations/' + _obsId)
+      .then(function(data) {
+        _render(data);
+      })
+      .catch(function(err) {
+        var loading = document.getElementById('obs-view-loading');
+        if (loading) loading.innerHTML = '<div class="app-empty-state"><div class="app-empty-state-icon">⚠️</div><div class="app-empty-state-title">Not found</div><div class="app-empty-state-msg">This observation could not be loaded.</div></div>';
+        console.error('[obs-view]', err);
+      });
+  });
+
+}());
+</script>
+</body>
+</html>

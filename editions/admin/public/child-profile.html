@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="wren-edition" content="admin">
   <title>Child Profile — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css?v=20260712fix">
   <script src="/js/wren-shell-v2.js" defer></script>
   <script src="/js/wren-chat.js?v=2026070901" defer></script>
   <style>
@@ -624,6 +626,50 @@
       <p style="font-size:.82rem;color:var(--muted);margin:0 0 12px">Both parents/carers and at least one additional emergency contact should be on file.</p>
       <div id="family-form"></div>
       <button class="btn btn-primary" id="save-family" style="margin-top:12px">Save contacts</button>
+    </div>
+
+    <!-- s03: Authorised collectors -->
+    <div class="card" style="max-width:640px;margin-top:14px">
+      <h3 style="margin:0 0 4px">👥 Authorised collectors</h3>
+      <p style="font-size:.82rem;color:var(--muted);margin:0 0 12px">People who can collect this child (tracked at sign-out).</p>
+      <div id="collectors-list"></div>
+      <button class="btn btn-ghost btn-sm" id="add-collector" style="margin-top:8px">+ Add collector</button>
+    </div>
+
+    <!-- s06: Court orders & restrictions -->
+    <div class="card" style="max-width:640px;margin-top:14px">
+      <h3 style="margin:0 0 4px">⚖️ Court orders &amp; safeguarding restrictions</h3>
+      <p style="font-size:.82rem;color:var(--muted);margin:0 0 12px">Court orders, no-contact/no-collect restrictions, and social worker details.</p>
+
+      <!-- Court order fields -->
+      <div style="margin-bottom:16px;padding:12px;background:#0f172a;border-radius:8px;border-left:3px solid var(--orange)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <input type="checkbox" id="court-order" style="width:18px;height:18px;accent-color:var(--orange)">
+          <label for="court-order" style="font-size:.85rem;font-weight:700;color:var(--text);cursor:pointer">Court order in place</label>
+        </div>
+        <div id="court-order-details-wrap" class="hidden">
+          <label class="form-label" style="margin-bottom:4px">Court order details</label>
+          <textarea id="court-order-details" class="form-control" rows="2" placeholder="e.g. Contact restrictions under Family Law Act 1996..."></textarea>
+        </div>
+        <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label class="form-label" style="margin-bottom:4px">Social worker name</label>
+            <input type="text" id="social-worker-name" class="form-control" placeholder="e.g. Jane Smith">
+          </div>
+          <div>
+            <label class="form-label" style="margin-bottom:4px">Social worker phone</label>
+            <input type="tel" id="social-worker-phone" class="form-control" placeholder="e.g. 020 1234 5678">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="save-court-order" style="margin-top:10px">Save court order info</button>
+      </div>
+
+      <!-- Restrictions list -->
+      <div style="margin-top:12px">
+        <div style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Collection/contact restrictions</div>
+        <div id="restrictions-list"></div>
+        <button class="btn btn-ghost btn-sm" id="add-restriction" style="margin-top:8px">+ Add restriction</button>
+      </div>
     </div>
   </div>
 
@@ -1304,7 +1350,126 @@ async function loadFamily(){
     _field('Name','emergency_contact_1_name',c.emergency_contact_1_name)+_field('Phone','emergency_contact_1_phone',c.emergency_contact_1_phone,'tel')+
     '<div style="font-weight:700;font-size:.85rem;margin:14px 0 6px">Emergency contact 2 (optional)</div>'+
     _field('Name','emergency_contact_2_name',c.emergency_contact_2_name)+_field('Phone','emergency_contact_2_phone',c.emergency_contact_2_phone,'tel');
+  loadCollectors();
+  loadCourtOrderInfo();
+  loadRestrictions();
 }
+
+// s03: Authorised collectors management
+async function loadCollectors(){
+  try {
+    const collectors = await api('/api/collectors/'+childId);
+    const el = document.getElementById('collectors-list');
+    if(!collectors.length){
+      el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;margin-bottom:8px">No authorised collectors yet. Add parents and contacts above first.</div>';
+      return;
+    }
+    el.innerHTML = collectors.map(c => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px;background:#0f172a;border-radius:8px;margin-bottom:6px;border:1px solid var(--border)">
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:.88rem">${esc(c.name)}</div>
+          <div style="font-size:.76rem;color:var(--muted)">${esc(c.relationship||'')} ${c.phone?'· '+esc(c.phone):''}</div>
+        </div>
+        <span style="font-size:.72rem;padding:3px 8px;border-radius:999px;${c.can_collect?'background:rgba(34,197,94,.12);color:var(--green)':'background:rgba(239,68,68,.12);color:var(--danger)'}">${c.can_collect?'✓ Can collect':'✗ Restricted'}</span>
+        <button class="btn-ghost btn-sm" data-coll-id="${c.id}" data-coll-action="edit">Edit</button>
+        <button class="btn-ghost btn-sm" data-coll-id="${c.id}" data-coll-action="delete" style="color:var(--danger)">Remove</button>
+      </div>
+    `).join('');
+
+    // Wire up edit/delete
+    document.querySelectorAll('[data-coll-action="edit"]').forEach(btn => {
+      btn.onclick = () => editCollector(btn.dataset.collId);
+    });
+    document.querySelectorAll('[data-coll-action="delete"]').forEach(btn => {
+      btn.onclick = () => deleteCollector(btn.dataset.collId);
+    });
+  } catch(e){
+    document.getElementById('collectors-list').textContent = 'Could not load collectors.';
+  }
+}
+
+function editCollector(id){
+  alert('Edit collector UI not yet implemented — use the form below to re-add with updated details.');
+}
+
+async function deleteCollector(id){
+  if(!confirm('Remove this collector?')) return;
+  try {
+    await api('/api/collectors/'+id, {method:'DELETE'});
+    (window.Wren && Wren.toast) ? Wren.toast('Removed','success') : alert('Removed');
+    loadCollectors();
+  } catch(e){
+    (window.Wren && Wren.toast) ? Wren.toast('Delete failed','error') : alert('Delete failed');
+  }
+}
+
+// s06: Court orders & restrictions management
+async function loadCourtOrderInfo(){
+  try {
+    const c = await _fetchChild();
+    setChecked('court-order', c.court_order);
+    setVal('court-order-details', c.court_order_details);
+    setVal('social-worker-name', c.social_worker_name);
+    setVal('social-worker-phone', c.social_worker_phone);
+
+    // Show/hide details box
+    const wrap = document.getElementById('court-order-details-wrap');
+    if(c.court_order) wrap.classList.remove('hidden');
+    else wrap.classList.add('hidden');
+  } catch(e){
+    console.error('Could not load court order info:', e);
+  }
+}
+
+async function loadRestrictions(){
+  try {
+    const restrictions = await api('/api/children/'+childId+'/restrictions');
+    const el = document.getElementById('restrictions-list');
+    if(!restrictions.length){
+      el.innerHTML = '<div style="color:var(--muted);font-size:.85rem;margin-bottom:8px">No restrictions recorded.</div>';
+      return;
+    }
+    el.innerHTML = restrictions.map(r => {
+      const typeLabel = {no_collect:'No collect',no_contact:'No contact',court_order:'Court order',other:'Other'}[r.restriction_type] || r.restriction_type;
+      const typeColor = r.restriction_type === 'court_order' ? 'var(--danger)' : 'var(--orange)';
+      const activeStyle = r.active ? `border-left:3px solid ${typeColor}` : 'opacity:0.5;border-left:3px solid #475569';
+      return `
+        <div style="padding:10px;background:#0f172a;border-radius:8px;margin-bottom:6px;${activeStyle}">
+          <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:6px">
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:.88rem">${esc(r.restricted_person_name)}</div>
+              <div style="font-size:.72rem;color:var(--muted);margin-top:2px">
+                <span style="padding:2px 6px;border-radius:4px;background:${typeColor}22;color:${typeColor};font-weight:700">${typeLabel}</span>
+                ${r.court_order_ref ? ' · Ref: '+esc(r.court_order_ref) : ''}
+              </div>
+              ${r.details ? '<div style="font-size:.78rem;color:var(--muted);margin-top:4px">'+esc(r.details)+'</div>' : ''}
+              <div style="font-size:.68rem;color:var(--muted);margin-top:4px">Added ${fmtDate(r.created_at)} by ${esc(r.created_by_name||'staff')}</div>
+            </div>
+            <button class="btn-ghost btn-sm" data-rest-id="${r.id}" data-rest-action="${r.active?'deactivate':'reactivate'}">${r.active?'Deactivate':'Reactivate'}</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Wire up deactivate/reactivate
+    document.querySelectorAll('[data-rest-action]').forEach(btn => {
+      btn.onclick = () => toggleRestriction(btn.dataset.restId, btn.dataset.restAction === 'reactivate');
+    });
+  } catch(e){
+    document.getElementById('restrictions-list').textContent = 'Could not load restrictions.';
+  }
+}
+
+async function toggleRestriction(id, reactivate){
+  try {
+    await api('/api/children/'+childId+'/restrictions/'+id, {method:'PUT', body:{active:reactivate}});
+    (window.Wren && Wren.toast) ? Wren.toast(reactivate?'Reactivated':'Deactivated','success') : alert('Updated');
+    loadRestrictions();
+  } catch(e){
+    (window.Wren && Wren.toast) ? Wren.toast('Update failed','error') : alert('Update failed');
+  }
+}
+
 async function _saveChildFields(container){
   const body = {};
   document.querySelectorAll('#'+container+' [data-cf]').forEach(i => { body[i.dataset.cf] = i.value === '' ? null : i.value; });
@@ -1340,8 +1505,9 @@ async function loadSettling(){
     if(!p){ el.innerHTML='<button class="btn btn-primary" id="ob-gen">Generate settling-in schedule</button>';
       document.getElementById('ob-gen').onclick=async()=>{ await api('/api/onboarding/child/'+childId+'/settling-plan/generate',{method:'POST',body:{}}); loadSettling(); }; return; }
     const rows=(p.sessions||[]).map((s,i)=>'<tr><td>'+esc(s.date)+'</td><td><input data-si="'+i+'" data-f="start" value="'+esc(s.start||'')+'" style="width:70px"></td><td><input data-si="'+i+'" data-f="end" value="'+esc(s.end||'')+'" style="width:70px"></td></tr>').join('');
-    el.innerHTML='<div style="font-size:.8rem;color:var(--muted)">Room type: '+esc(p.room_type||'')+'</div><table style="width:100%;font-size:.85rem"><thead><tr><th>Date</th><th>Start</th><th>End</th></tr></thead><tbody>'+rows+'</tbody></table><button class="btn btn-primary" id="ob-save-settle" style="margin-top:8px">Save schedule</button> <button class="btn btn-sm" id="ob-regen">Regenerate</button>';
-    document.getElementById('ob-save-settle').onclick=async()=>{ const ss=(p.sessions||[]).map((x,i)=>({date:x.date,start:document.querySelector('[data-si="'+i+'"][data-f="start"]').value,end:document.querySelector('[data-si="'+i+'"][data-f="end"]').value,notes:x.notes||''})); await api('/api/onboarding/child/'+childId+'/settling-plan',{method:'PUT',body:{sessions:ss,room_type:p.room_type}}); alert('Saved'); };
+    const countsChecked = (p.counts_on_ratio == null || p.counts_on_ratio) ? 'checked' : '';
+    el.innerHTML='<div style="font-size:.8rem;color:var(--muted)">Room type: '+esc(p.room_type||'')+'</div><div style="margin:8px 0"><label style="font-size:.85rem"><input type="checkbox" id="ob-ratio-toggle" '+countsChecked+'> Count this child in staff ratio</label> <span style="color:var(--muted);font-size:.75rem">(Uncheck for supernumerary settling-in)</span></div><table style="width:100%;font-size:.85rem"><thead><tr><th>Date</th><th>Start</th><th>End</th></tr></thead><tbody>'+rows+'</tbody></table><button class="btn btn-primary" id="ob-save-settle" style="margin-top:8px">Save schedule</button> <button class="btn btn-sm" id="ob-regen">Regenerate</button>';
+    document.getElementById('ob-save-settle').onclick=async()=>{ const ss=(p.sessions||[]).map((x,i)=>({date:x.date,start:document.querySelector('[data-si="'+i+'"][data-f="start"]').value,end:document.querySelector('[data-si="'+i+'"][data-f="end"]').value,notes:x.notes||''})); const countsOn=document.getElementById('ob-ratio-toggle').checked; await api('/api/onboarding/child/'+childId+'/settling-plan',{method:'PUT',body:{sessions:ss,room_type:p.room_type,counts_on_ratio:countsOn}}); alert('Saved'); };
     document.getElementById('ob-regen').onclick=async()=>{ await api('/api/onboarding/child/'+childId+'/settling-plan/generate',{method:'POST',body:{}}); loadSettling(); };
   }catch(e){ el.textContent='Could not load settling plan.'; }
 }
@@ -1386,6 +1552,55 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Static listeners
   document.getElementById('save-details').addEventListener('click', () => _saveChildFields('details-form'));
   document.getElementById('save-family').addEventListener('click', () => _saveChildFields('family-form'));
+  document.getElementById('add-collector').addEventListener('click', () => {
+    const name = prompt('Collector name:');
+    if(!name) return;
+    const relationship = prompt('Relationship (optional):') || '';
+    const phone = prompt('Phone (optional):') || '';
+    api('/api/collectors', {method:'POST', body:{child_id:childId, name, relationship, phone, can_collect:true}})
+      .then(() => { (window.Wren&&Wren.toast)?Wren.toast('Added','success'):alert('Added'); loadCollectors(); })
+      .catch(e => (window.Wren&&Wren.toast)?Wren.toast('Failed','error'):alert('Failed'));
+  });
+
+  // s06: Court order & restrictions listeners
+  document.getElementById('court-order').addEventListener('change', e => {
+    const wrap = document.getElementById('court-order-details-wrap');
+    if(e.target.checked) wrap.classList.remove('hidden');
+    else wrap.classList.add('hidden');
+  });
+  document.getElementById('save-court-order').addEventListener('click', async () => {
+    const body = {
+      court_order: document.getElementById('court-order').checked,
+      court_order_details: document.getElementById('court-order-details').value || null,
+      social_worker_name: document.getElementById('social-worker-name').value || null,
+      social_worker_phone: document.getElementById('social-worker-phone').value || null
+    };
+    try {
+      await api('/api/children/'+childId, {method:'PUT', body});
+      _childRecord = null;
+      (window.Wren && Wren.toast) ? Wren.toast('Saved','success') : alert('Saved');
+    } catch(e){
+      (window.Wren && Wren.toast) ? Wren.toast('Save failed','error') : alert('Save failed');
+    }
+  });
+  document.getElementById('add-restriction').addEventListener('click', async () => {
+    const restricted_person_name = prompt('Restricted person name:');
+    if(!restricted_person_name) return;
+    const restriction_type = prompt('Type (no_collect, no_contact, court_order, other):') || 'no_collect';
+    const court_order_ref = prompt('Court order reference (optional):') || '';
+    const details = prompt('Additional details (optional):') || '';
+    try {
+      await api('/api/children/'+childId+'/restrictions', {
+        method:'POST',
+        body:{restricted_person_name, restriction_type, court_order_ref, details}
+      });
+      (window.Wren && Wren.toast) ? Wren.toast('Restriction added','success') : alert('Added');
+      loadRestrictions();
+    } catch(e){
+      (window.Wren && Wren.toast) ? Wren.toast('Failed to add restriction','error') : alert('Failed');
+    }
+  });
+
   loadDetails();
   document.getElementById('btn-save-profile').addEventListener('click', saveAboutMe);
   document.getElementById('btn-save-myworld').addEventListener('click', saveAboutMe);

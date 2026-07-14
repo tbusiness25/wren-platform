@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PII Sanitiser — Wren</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#080f1e">
+<meta name="description" content="Strip identifying data from text. Runs 100% offline in your browser — no data ever leaves your device.">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+  --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:20px;
+  line-height:1.6}
+.container{max-width:900px;margin:0 auto}
+h1{font-size:1.5rem;margin-bottom:8px}
+.sub{color:var(--mut);font-size:.9rem;margin-bottom:24px}
+.badge{display:inline-block;background:var(--ok);color:#000;font-size:.7rem;font-weight:700;
+  padding:3px 8px;border-radius:4px;margin-left:8px}
+.box{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;margin:20px 0}
+.box h3{margin:0 0 12px;font-size:1rem}
+textarea{width:100%;min-height:200px;background:var(--bg);border:1px solid var(--bd);
+  border-radius:8px;padding:12px;color:var(--txt);font-family:ui-monospace,monospace;
+  font-size:.9rem;resize:vertical}
+.btn-row{display:flex;gap:12px;margin:16px 0}
+.btn{background:var(--card);border:1px solid var(--bd);color:var(--txt);border-radius:10px;
+  padding:12px 20px;font-size:.9rem;cursor:pointer;font-weight:600}
+.btn:hover{border-color:var(--blue)}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#06121f}
+.btn:disabled{opacity:.5;cursor:default}
+#stats{font-size:.85rem;color:var(--mut);margin-top:10px}
+.repl{margin-top:16px}
+.repl-item{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10px 14px;
+  margin:8px 0;font-size:.85rem;display:flex;gap:14px;align-items:center}
+.repl-token{color:var(--warn);font-weight:700;font-family:ui-monospace,monospace}
+.repl-type{color:var(--mut);text-transform:uppercase;font-size:.75rem}
+#output:empty{display:none}
+.info{background:rgba(74,154,191,.1);border:1px solid var(--blue);border-radius:8px;
+  padding:12px;margin:20px 0;font-size:.85rem}
+.info strong{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔒 PII Sanitiser<span class="badge">100% OFFLINE</span></h1>
+  <div class="sub">Strip identifying data from text before sharing or sending to cloud AI. All processing happens in your browser — no data ever leaves your device.</div>
+
+  <div class="info">
+    <strong>✓ Privacy guaranteed:</strong> This tool runs entirely offline. Install it (Add to Home Screen) and use it without an internet connection.
+  </div>
+
+  <div class="box">
+    <h3>1. Input text</h3>
+    <textarea id="input" placeholder="Paste text containing names, emails, phone numbers, postcodes, dates of birth, etc.
+
+Example:
+John Smith called about his son Oliver Smith (DOB 15/03/2018) who lives at 123 Main St, W13 9LU. Contact: john@example.com or 07700 900123."></textarea>
+    <div class="btn-row">
+      <button class="btn primary" onclick="sanitise()">Sanitise</button>
+      <button class="btn" onclick="clearAll()">Clear</button>
+    </div>
+    <div id="stats"></div>
+  </div>
+
+  <div id="output"></div>
+</div>
+
+<script>
+// Common UK names list (top 200 first names)
+const COMMON_NAMES = [
+  'Oliver','George','Arthur','Noah','Muhammad','Leo','Harry','Oscar','Archie','Jack','Henry','Theodore','Freddie','Charlie','Theo','Alfie','Jacob','Thomas','Finley','Arlo','William','Lucas','Roman','Tommy','Isaac','Teddy','Alexander','Luca','Edward','James','Max','Mohammed','Mason','Sebastian','Albie','Reuben','Louie','Rory','Louis','Logan','Ethan','Benjamin','Adam','Elijah','Liam','Joseph','Samuel','Jude','Daniel','Jayden','Felix','Ezra',
+  'Olivia','Amelia','Isla','Ava','Ivy','Freya','Lily','Florence','Mia','Willow','Rosie','Sophia','Isabella','Grace','Daisy','Sienna','Poppy','Elsie','Emily','Ella','Evie','Phoebe','Sofia','Evelyn','Ruby','Millie','Maisie','Aria','Esme','Ellie','Isabelle','Sophie','Luna','Emilia','Thea','Maya','Erin','Harriet','Nancy','Emma','Alice','Maeve','Rose','Matilda','Bonnie','Harper','Hannah','Aurora','Charlotte','Mila','Lucy','Mabel','Zara','Eva','Imogen','Penelope','Violet','Ada','Molly'
+];
+
+// PII patterns
+const PATTERNS = {
+  email: {
+    regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+    replacement: '[EMAIL]',
+    type: 'email'
+  },
+  phone_uk: {
+    regex: /\b(?:0|\+44\s?)?(?:\d{4}\s?\d{6}|\d{5}\s?\d{5}|\d{3}\s?\d{3}\s?\d{4})\b/g,
+    replacement: '[PHONE]',
+    type: 'phone'
+  },
+  postcode_uk: {
+    regex: /\b[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}\b/gi,
+    replacement: '[POSTCODE]',
+    type: 'postcode'
+  },
+  dob: {
+    regex: /\b(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})\b/g,
+    replacement: '[DATE]',
+    type: 'date_of_birth'
+  },
+  nhs_number: {
+    regex: /\b\d{3}\s?\d{3}\s?\d{4}\b/g,
+    replacement: '[NHS_NUM]',
+    type: 'nhs_number'
+  },
+  ni_number: {
+    regex: /\b[A-Z]{2}\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-Z]\b/gi,
+    replacement: '[NI_NUM]',
+    type: 'ni_number'
+  },
+  address: {
+    regex: /\b\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Street|St|Road|Rd|Avenue|Ave|Lane|Ln|Drive|Dr|Close|Court|Ct|Way|Place|Gardens|Gdns)\b/gi,
+    replacement: '[ADDRESS]',
+    type: 'address'
+  }
+};
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sanitise() {
+  const input = document.getElementById('input').value.trim();
+  if (!input) {
+    alert('Please enter text to sanitise');
+    return;
+  }
+
+  const stats = document.getElementById('stats');
+  const outputDiv = document.getElementById('output');
+
+  stats.textContent = 'Sanitising...';
+  outputDiv.innerHTML = '';
+
+  let sanitised = input;
+  const replacements = [];
+  const nameTokens = new Map();
+  let nameCounter = 1;
+
+  // Step 1: Replace common names
+  COMMON_NAMES.forEach(name => {
+    const regex = new RegExp(`\\b${escapeRegex(name)}\\b`, 'gi');
+    if (regex.test(sanitised)) {
+      if (!nameTokens.has(name.toLowerCase())) {
+        nameTokens.set(name.toLowerCase(), `[NAME_${nameCounter++}]`);
+      }
+      const token = nameTokens.get(name.toLowerCase());
+      sanitised = sanitised.replace(regex, token);
+      if (!replacements.find(r => r.token === token)) {
+        replacements.push({
+          type: 'name',
+          original_masked: name.substring(0, 1) + '***',
+          token
+        });
+      }
+    }
+  });
+
+  // Step 2: Apply regex patterns
+  for (const [key, { regex, replacement, type }] of Object.entries(PATTERNS)) {
+    const matches = [...input.matchAll(regex)];
+    matches.forEach(match => {
+      const original = match[0];
+      const masked = type === 'email'
+        ? original.substring(0, 2) + '***@' + original.split('@')[1]
+        : original.substring(0, 2) + '***';
+
+      if (!replacements.find(r => r.original_masked === masked && r.type === type)) {
+        replacements.push({ type, original_masked: masked, token: replacement });
+      }
+    });
+
+    sanitised = sanitised.replace(regex, replacement);
+  }
+
+  stats.textContent = `✓ Sanitised — ${replacements.length} items replaced`;
+
+  let html = '<div class="box"><h3>2. Sanitised output</h3>';
+  html += `<textarea id="result" readonly>${sanitised}</textarea>`;
+  html += '<div class="btn-row"><button class="btn primary" onclick="copyResult()">Copy sanitised text</button></div>';
+
+  if (replacements.length > 0) {
+    html += '<div class="repl"><strong>Replacements made:</strong>';
+    replacements.forEach(r => {
+      html += `<div class="repl-item">
+        <span class="repl-token">${r.token}</span>
+        <span class="repl-type">${r.type}</span>
+        <span style="color:var(--mut)">(was: ${r.original_masked})</span>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  outputDiv.innerHTML = html;
+}
+
+function copyResult() {
+  const result = document.getElementById('result');
+  result.select();
+  document.execCommand('copy');
+  alert('✓ Sanitised text copied to clipboard');
+}
+
+function clearAll() {
+  document.getElementById('input').value = '';
+  document.getElementById('output').innerHTML = '';
+  document.getElementById('stats').textContent = '';
+}
+
+// Service worker registration
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/tools/sanitiser/sw.js')
+      .then(reg => console.log('✓ Service worker registered'))
+      .catch(err => console.log('Service worker registration failed:', err));
+  });
+}
+</script>
+</body>
+</html>

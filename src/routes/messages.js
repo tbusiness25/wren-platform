@@ -372,7 +372,7 @@ router.post('/thread', async (req, res) => {
       }
     } else {
       await writeAudit(db, msgRows[0].id, req.user.id, body, false);
-      _notifyParentOfChild(effectiveChildId, `New message from Your Nursery`, body);
+      _notifyParentOfChild(effectiveChildId, `New message from Little Angels`, body);
     }
 
     res.json(thread);
@@ -451,7 +451,7 @@ router.post('/thread/:id/reply', async (req, res) => {
 
     // Staff reply → in-app notification for the child's parent(s)
     if (!isParent && thread.child_id) {
-      _notifyParentOfChild(thread.child_id, `New message from Your Nursery`, body);
+      _notifyParentOfChild(thread.child_id, `New message from Little Angels`, body);
     }
 
     res.json(msg);

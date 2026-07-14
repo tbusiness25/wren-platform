@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>Rota Builder — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .rota-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .week-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 6px 10px;
+    }
+    .week-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f1f5f9;
+      min-width: 180px;
+      text-align: center;
+    }
+    .rota-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .status-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .status-pill.draft     { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .status-pill.published { background: rgba(34,197,94,.15);  color: #22c55e; }
+    .status-pill.empty     { background: rgba(148,163,184,.1); color: #64748b; }
+
+    /* Rota table */
+    .rota-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+    }
+    .rota-table {
+      border-collapse: collapse;
+      min-width: 720px;
+      width: 100%;
+    }
+    .rota-table th,
+    .rota-table td {
+      border: 1px solid #2d3748;
+      padding: 0;
+    }
+    .rota-table thead th {
+      background: #1e293b;
+      padding: 10px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .rota-table thead th.col-today {
+      color: #4a9abf;
+      background: rgba(74,154,191,.1);
+    }
+    .rota-table thead th.col-weekend {
+      color: #475569;
+      background: rgba(0,0,0,.15);
+    }
+    .rota-th-staff {
+      background: #1e293b !important;
+      text-align: left !important;
+      padding: 10px 14px !important;
+      min-width: 130px;
+      position: sticky;
+      left: 0;
+      z-index: 2;
+    }
+    .rota-td-name {
+      background: #1e293b;
+      padding: 8px 14px;
+      min-width: 130px;
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+    .rota-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f1f5f9;
+      line-height: 1.2;
+    }
+    .rota-role {
+      font-size: 10px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .rota-cell {
+      min-width: 100px;
+      height: 60px;
+      vertical-align: middle;
+      text-align: center;
+      cursor: pointer;
+      transition: background .15s;
+      padding: 4px;
+      background: #0f172a;
+    }
+    .rota-cell.col-today  { background: rgba(74,154,191,.06); }
+    .rota-cell.col-weekend { background: rgba(0,0,0,.25); cursor: default; }
+    .rota-cell.has-shift  { background: rgba(74,154,191,.12); }
+    .rota-cell.has-shift:hover { background: rgba(74,154,191,.2); }
+    .rota-cell.published  { cursor: default; }
+    .rota-cell:not(.col-weekend):not(.published):hover { background: rgba(74,154,191,.1); }
+
+    .shift-times {
+      font-size: 11px;
+      font-weight: 700;
+      color: #4a9abf;
+      line-height: 1.3;
+    }
+    .shift-room {
+      font-size: 10px;
+      color: #64748b;
+    }
+    .cell-add {
+      font-size: 18px;
+      color: #2d3748;
+      line-height: 1;
+    }
+    .rota-cell:not(.col-weekend):not(.published):not(.has-shift):hover .cell-add {
+      color: #4a9abf;
+    }
+
+    /* Modal */
+    .shift-modal-bg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .shift-modal-bg.open { display: flex; }
+    .shift-modal {
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 16px;
+      padding: 24px;
+      width: 340px;
+      max-width: calc(100vw - 32px);
+    }
+    .shift-modal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 16px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .form-label { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .form-input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      color: #f1f5f9;
+      font-size: 13px;
+      padding: 8px 10px;
+      box-sizing: border-box;
+    }
+    .form-input:focus { outline: none; border-color: #4a9abf; }
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* Toast */
+    .rota-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 13px;
+      color: #f1f5f9;
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+    }
+    .rota-toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Weekly Rota Builder</div>
+      <div class="page-subtitle" id="rota-subtitle" style="color:#94a3b8">Loading...</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap" id="rota-action-btns">
+      <button class="btn btn-ghost btn-sm" id="btn-copy-prev" onclick="copyLastWeek()" title="Copy shifts from previous week">Copy Last Week</button>
+      <button class="btn btn-secondary btn-sm" id="btn-save-draft" onclick="saveDraft()">Save Draft</button>
+      <button class="btn btn-primary btn-sm" id="btn-publish" onclick="publishRota()">Publish &amp; Email All</button>
+      <button class="btn btn-ghost btn-sm" id="btn-payroll-csv" style="display:none" onclick="downloadPayroll('csv')" title="Export this week's hours per staff as CSV for payroll">🧾 Payroll CSV</button>
+      <button class="btn btn-ghost btn-sm" id="btn-payroll-pdf" style="display:none" onclick="downloadPayroll('pdf')" title="Export this week's hours per staff as PDF">📄 PDF</button>
+    </div>
+  </div>
+
+  <!-- Week navigation -->
+  <div class="rota-toolbar">
+    <div class="week-nav">
+      <button class="btn btn-ghost btn-sm" style="padding:4px 10px" onclick="changeWeek(-1)">&#8592;</button>
+      <div class="week-label" id="rota-week-label">—</div>
+      <button class="btn btn-ghost btn-sm" style="padding:4px 10px" onclick="changeWeek(1)">&#8594;</button>
+      <button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11px" onclick="changeWeek(0)">Today</button>
+    </div>
+    <div class="rota-status-bar" id="rota-status-bar">
+      <span class="status-pill empty" id="rota-status-pill">No rota</span>
+      <span id="rota-published-info" style="font-size:12px;color:#64748b"></span>
+      <button id="btn-unlock" class="btn btn-ghost btn-sm" style="display:none;font-size:11px;color:#f59e0b;border-color:#f59e0b40" onclick="unlockRota()">🔓 Unlock for corrections</button>
+    </div>
+  </div>
+
+  <!-- Rota grid -->
+  <div class="rota-wrap" id="rota-wrap">
+    <div style="padding:40px;text-align:center;color:#64748b">Loading rota...</div>
+  </div>
+
+  <!-- Summary row -->
+  <div id="rota-summary" style="margin-top:12px;font-size:12px;color:#64748b"></div>
+</div>
+
+<!-- Shift edit modal -->
+<div class="shift-modal-bg" id="shift-modal-bg" onclick="closeModal(event)">
+  <div class="shift-modal" onclick="event.stopPropagation()">
+    <div class="shift-modal-title" id="modal-title">Edit Shift</div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Start time *</div>
+        <select class="form-input" id="modal-start"></select>
+      </div>
+      <div>
+        <div class="form-label">End time *</div>
+        <select class="form-input" id="modal-end"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <div class="form-label">Room</div>
+        <select class="form-input" id="modal-room">
+          <option value="">— Any —</option>
+        </select>
+      </div>
+      <div>
+        <div class="form-label">Break (mins)</div>
+        <input type="number" class="form-input" id="modal-break" value="30" min="0" max="120">
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div class="form-label">Notes</div>
+      <input type="text" class="form-input" id="modal-notes" placeholder="Optional">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1" onclick="saveShift()">Save Shift</button>
+      <button class="btn btn-ghost" onclick="clearShift()" style="color:#ef4444;border-color:#ef444440">Clear</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="rota-toast" id="rota-toast"></div>
+
+<script>
+const DAYS_LONG  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+let currentWeekStart = null; // YYYY-MM-DD (Monday)
+let weekOffset = 0;
+let weekData = null;         // { week, staff, shifts, rooms }
+let localShifts = {};        // key: `${staff_id}_${shift_date}` → shift object | null
+let isPublished = false;
+let isManager = false;
+let modalTarget = null;      // { staff_id, shift_date }
+
+function toWeekStart(d, offset = 0) {
+  const dt = new Date(d);
+  const day = dt.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + diff + offset * 7);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function fmtDate(d) {
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function fmtDateISO(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function shiftKey(staff_id, shift_date) {
+  return `${staff_id}_${shift_date}`;
+}
+
+function showToast(msg, isError) {
+  const t = document.getElementById('rota-toast');
+  t.textContent = msg;
+  t.style.borderColor = isError ? '#ef4444' : '#22c55e';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', async () => {
+  const user = Wren.user;
+  isManager = user && ['manager','deputy_manager','admin'].includes(user.role);
+  weekOffset = 0;
+  await loadWeek();
+});
+
+async function changeWeek(delta) {
+  if (delta === 0) weekOffset = 0;
+  else weekOffset += delta;
+  await loadWeek();
+}
+
+async function loadWeek() {
+  const ws = toWeekStart(new Date(), weekOffset);
+  currentWeekStart = fmtDateISO(ws);
+
+  const we = new Date(ws); we.setDate(we.getDate() + 6);
+  document.getElementById('rota-week-label').textContent =
+    fmtDate(ws) + ' – ' + fmtDate(we);
+
+  document.getElementById('rota-wrap').innerHTML =
+    '<div style="padding:40px;text-align:center;color:#64748b">Loading...</div>';
+
+  try {
+    weekData = await Wren.api(`/api/rota/week/${currentWeekStart}`);
+  } catch (e) {
+    document.getElementById('rota-wrap').innerHTML =
+      `<div style="padding:40px;text-align:center;color:#ef4444">Error loading rota: ${e.message}</div>`;
+    return;
+  }
+
+  // Rebuild localShifts from fetched data
+  localShifts = {};
+  for (const s of (weekData.shifts || [])) {
+    localShifts[shiftKey(s.staff_id, s.shift_date.split('T')[0])] = s;
+  }
+
+  isPublished = !!(weekData.week?.published_at);
+  updateStatusBar();
+  populateRooms();
+  renderGrid();
+  updateActionButtons();
+}
+
+function updateStatusBar() {
+  const pill = document.getElementById('rota-status-pill');
+  const info = document.getElementById('rota-published-info');
+  const unlockBtn = document.getElementById('btn-unlock');
+
+  if (!weekData.week) {
+    pill.className = 'status-pill empty'; pill.textContent = 'No rota yet';
+    info.textContent = '';
+    unlockBtn.style.display = 'none';
+  } else if (isPublished) {
+    pill.className = 'status-pill published'; pill.textContent = 'Published';
+    const d = new Date(weekData.week.published_at);
+    info.textContent = `Published ${d.toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'})}`;
+    unlockBtn.style.display = isManager ? '' : 'none';
+  } else {
+    pill.className = 'status-pill draft'; pill.textContent = 'Draft';
+    info.textContent = '';
+    unlockBtn.style.display = 'none';
+  }
+}
+
+function updateActionButtons() {
+  const copyBtn = document.getElementById('btn-copy-prev');
+  const draftBtn = document.getElementById('btn-save-draft');
+  const pubBtn = document.getElementById('btn-publish');
+
+  const canEdit = isManager && !isPublished;
+  if (copyBtn) copyBtn.style.display = canEdit ? '' : 'none';
+  if (draftBtn) draftBtn.style.display = canEdit ? '' : 'none';
+  if (pubBtn) {
+    if (!isManager) { pubBtn.style.display = 'none'; }
+    else if (isPublished) {
+      pubBtn.textContent = '✓ Published';
+      pubBtn.disabled = true;
+    } else {
+      pubBtn.textContent = 'Publish & Email All';
+      pubBtn.disabled = false;
+    }
+  }
+  // Payroll export — manager only, once a rota week exists (server also gates on salary-view).
+  const showPayroll = (isManager && weekData && weekData.week) ? '' : 'none';
+  const pcsv = document.getElementById('btn-payroll-csv'); if (pcsv) pcsv.style.display = showPayroll;
+  const ppdf = document.getElementById('btn-payroll-pdf'); if (ppdf) ppdf.style.display = showPayroll;
+}
+
+// Authed file download for the payroll CSV/PDF export (Bearer token → blob → save).
+async function downloadPayroll(fmt) {
+  if (!currentWeekStart) { (Wren.toast || alert)('Pick a rota week first'); return; }
+  const btn = document.getElementById(fmt === 'pdf' ? 'btn-payroll-pdf' : 'btn-payroll-csv');
+  const orig = btn ? btn.textContent : '';
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    const token = (Wren.getToken ? Wren.getToken() : sessionStorage.getItem('wrenToken'));
+    const resp = await fetch(`/api/rota/week/${currentWeekStart}/payroll.${fmt}`, { headers: { Authorization: 'Bearer ' + token } });
+    if (!resp.ok) {
+      (Wren.toast || alert)(resp.status === 403 ? 'Payroll export needs salary-view permission.' : `Export failed (${resp.status}).`);
+      console.error(await resp.text()); return;
+    }
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `payroll-${currentWeekStart}.${fmt}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    if (Wren.toast) Wren.toast(`Payroll ${fmt.toUpperCase()} downloaded`, 'success');
+  } catch (e) { console.error('downloadPayroll', e); (Wren.toast || alert)('Export error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = orig; } }
+}
+
+function populateRooms() {
+  const sel = document.getElementById('modal-room');
+  sel.innerHTML = '<option value="">— Any room —</option>';
+  for (const r of (weekData.rooms || [])) {
+    sel.innerHTML += `<option value="${r.id}">${r.name}</option>`;
+  }
+}
+
+// ── Render grid ───────────────────────────────────────────────────────────────
+function renderGrid() {
+  const staff = weekData.staff || [];
+  if (!staff.length) {
+    document.getElementById('rota-wrap').innerHTML =
+      '<div style="padding:40px;text-align:center;color:#64748b">No active staff found.</div>';
+    return;
+  }
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const ws = new Date(currentWeekStart + 'T00:00:00Z');
+
+  // Build 7 day objects
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(ws); d.setUTCDate(d.getUTCDate() + i);
+    const local = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    days.push({
+      date: local,
+      iso: fmtDateISO(local),
+      dow: local.getDay(),       // 0=Sun
+      isToday: local.getTime() === today.getTime(),
+      isWeekend: local.getDay() === 0 || local.getDay() === 6
+    });
+  }
+
+  // Header
+  const headerCols = days.map(d => {
+    const cls = d.isToday ? ' col-today' : d.isWeekend ? ' col-weekend' : '';
+    return `<th class="${cls}">${DAYS_SHORT[d.dow]}<br><span style="font-size:10px;font-weight:400">${fmtDate(d.date)}</span></th>`;
+  }).join('');
+
+  // Staff rows
+  const staffRows = staff.map(s => {
+    const cells = days.map(d => {
+      if (d.isWeekend) return `<td class="rota-cell col-weekend published"></td>`;
+      const key = shiftKey(s.id, d.iso);
+      const shift = localShifts[key];
+      const cls = [
+        'rota-cell',
+        d.isToday ? 'col-today' : '',
+        shift ? 'has-shift' : '',
+        isPublished ? 'published' : ''
+      ].filter(Boolean).join(' ');
+
+      const onclick = (!isPublished && isManager)
+        ? `onclick="openModal(${s.id},'${d.iso}')"`
+        : '';
+
+      const inner = shift
+        ? `<div class="shift-times">${fmtTime(shift.planned_start)}–${fmtTime(shift.planned_end)}</div>
+           <div class="shift-room">${shift.room_name || ''}</div>`
+        : (isPublished ? '' : `<div class="cell-add">+</div>`);
+
+      return `<td class="${cls}" ${onclick}>${inner}</td>`;
+    }).join('');
+
+    return `<tr>
+      <td class="rota-td-name">
+        <div class="rota-name">${s.first_name} ${s.last_name}</div>
+        <div class="rota-role">${(s.role||'').replace(/_/g,' ')}</div>
+      </td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  document.getElementById('rota-wrap').innerHTML = `
+    <table class="rota-table">
+      <thead>
+        <tr>
+          <th class="rota-th-staff">Staff</th>
+          ${headerCols}
+        </tr>
+      </thead>
+      <tbody>${staffRows}</tbody>
+    </table>`;
+
+  // Summary
+  const shiftCount = Object.values(localShifts).filter(Boolean).length;
+  const staffWithShifts = new Set(Object.entries(localShifts).filter(([,v]) => v).map(([k]) => k.split('_')[0])).size;
+  document.getElementById('rota-summary').textContent =
+    shiftCount
+      ? `${shiftCount} shift${shiftCount!==1?'s':''} planned across ${staffWithShifts} staff member${staffWithShifts!==1?'s':''}`
+      : '';
+}
+
+function fmtTime(t) {
+  if (!t) return '—';
+  return String(t).substring(0, 5);
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function populateTimeSelects() {
+  if (window._rotaTimesFilled) return;
+  ['modal-start','modal-end'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel || sel.tagName !== 'SELECT') return;
+    let html = '';
+    for (let m = 0; m < 24*60; m += 5) {
+      const hh = String(Math.floor(m/60)).padStart(2,'0');
+      const mm = String(m%60).padStart(2,'0');
+      html += '<option value="'+hh+':'+mm+'">'+hh+':'+mm+'</option>';
+    }
+    sel.innerHTML = html;
+  });
+  window._rotaTimesFilled = true;
+}
+
+function openModal(staff_id, shift_date) {
+  if (isPublished || !isManager) return;
+  populateTimeSelects();
+  modalTarget = { staff_id, shift_date };
+  const shift = localShifts[shiftKey(staff_id, shift_date)];
+  const staffMember = (weekData.staff || []).find(s => s.id === staff_id);
+  const d = new Date(shift_date + 'T00:00:00');
+
+  document.getElementById('modal-title').textContent =
+    `${staffMember ? staffMember.first_name + ' ' + staffMember.last_name : ''} — ${DAYS_LONG[d.getDay()]} ${fmtDate(d)}`;
+
+  document.getElementById('modal-start').value = shift?.planned_start?.substring(0,5) || '09:00';
+  document.getElementById('modal-end').value   = shift?.planned_end?.substring(0,5)   || '17:00';
+  document.getElementById('modal-room').value  = shift?.room_id || '';
+  document.getElementById('modal-break').value = shift?.break_mins ?? 30;
+  document.getElementById('modal-notes').value = shift?.notes || '';
+
+  document.getElementById('shift-modal-bg').classList.add('open');
+  document.getElementById('modal-start').focus();
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('shift-modal-bg')) return;
+  document.getElementById('shift-modal-bg').classList.remove('open');
+  modalTarget = null;
+}
+
+function saveShift() {
+  if (!modalTarget) return;
+  const start = document.getElementById('modal-start').value;
+  const end   = document.getElementById('modal-end').value;
+  if (!start || !end) { showToast('Start and end time required', true); return; }
+
+  const key = shiftKey(modalTarget.staff_id, modalTarget.shift_date);
+  const existing = localShifts[key] || {};
+  const roomId = document.getElementById('modal-room').value;
+  const roomName = roomId
+    ? (weekData.rooms||[]).find(r => r.id == roomId)?.name || ''
+    : '';
+
+  localShifts[key] = {
+    ...existing,
+    staff_id: modalTarget.staff_id,
+    shift_date: modalTarget.shift_date,
+    planned_start: start,
+    planned_end: end,
+    room_id: roomId ? parseInt(roomId) : null,
+    room_name: roomName,
+    break_mins: parseInt(document.getElementById('modal-break').value) || 30,
+    notes: document.getElementById('modal-notes').value || null
+  };
+
+  document.getElementById('shift-modal-bg').classList.remove('open');
+  renderGrid();
+}
+
+function clearShift() {
+  if (!modalTarget) return;
+  delete localShifts[shiftKey(modalTarget.staff_id, modalTarget.shift_date)];
+  document.getElementById('shift-modal-bg').classList.remove('open');
+  renderGrid();
+}
+
+// ── Save draft ────────────────────────────────────────────────────────────────
+async function saveDraft() {
+  const btn = document.getElementById('btn-save-draft');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const shifts = Object.values(localShifts).filter(Boolean);
+    const result = await Wren.api(`/api/rota/week/${currentWeekStart}/draft`, {
+      method: 'POST',
+      body: JSON.stringify({ shifts })
+    });
+    showToast(`Draft saved — ${result.saved} shift${result.saved!==1?'s':''}`);
+    // Reload to get fresh IDs
+    await loadWeek();
+  } catch (e) {
+    showToast('Save failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Draft';
+  }
+}
+
+// ── Copy last week ────────────────────────────────────────────────────────────
+async function copyLastWeek() {
+  const prevWS = new Date(currentWeekStart + 'T00:00:00Z');
+  prevWS.setUTCDate(prevWS.getUTCDate() - 7);
+  const prevStr = fmtDateISO(prevWS);
+
+  try {
+    const prev = await Wren.api(`/api/rota/week/${prevStr}`);
+    if (!prev.shifts?.length) {
+      showToast('No shifts found in previous week', true);
+      return;
+    }
+
+    // Map each shift: advance dates by 7 days, keep times/rooms
+    localShifts = {};
+    for (const s of prev.shifts) {
+      const oldDate = new Date(s.shift_date.split('T')[0] + 'T00:00:00Z');
+      oldDate.setUTCDate(oldDate.getUTCDate() + 7);
+      const newDate = fmtDateISO(oldDate);
+      const key = shiftKey(s.staff_id, newDate);
+      const roomName = s.room_id
+        ? (weekData.rooms||[]).find(r => r.id == s.room_id)?.name || s.room_name || ''
+        : '';
+      localShifts[key] = {
+        staff_id: s.staff_id,
+        shift_date: newDate,
+        planned_start: s.planned_start,
+        planned_end: s.planned_end,
+        room_id: s.room_id,
+        room_name: roomName,
+        break_mins: s.break_mins,
+        notes: s.notes
+      };
+    }
+    renderGrid();
+    showToast(`Copied ${prev.shifts.length} shifts from previous week — save draft to keep`);
+  } catch (e) {
+    showToast('Could not load previous week: ' + e.message, true);
+  }
+}
+
+// ── Publish ───────────────────────────────────────────────────────────────────
+async function publishRota() {
+  const shiftCount = Object.values(localShifts).filter(Boolean).length;
+  const staffCount = new Set(
+    Object.entries(localShifts).filter(([,v])=>v).map(([k])=>k.split('_')[0])
+  ).size;
+
+  const msg = shiftCount
+    ? `Publish rota for w/c ${currentWeekStart}?\n\n${shiftCount} shifts across ${staffCount} staff.\nThis will send an email to each staff member with their rota.`
+    : 'No shifts in this rota. Are you sure you want to publish an empty rota?';
+
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('btn-publish');
+  btn.disabled = true; btn.textContent = 'Publishing...';
+
+  try {
+    // Save draft first
+    await Wren.api(`/api/rota/week/${currentWeekStart}/draft`, {
+      method: 'POST',
+      body: JSON.stringify({ shifts: Object.values(localShifts).filter(Boolean) })
+    });
+
+    // Publish
+    const result = await Wren.api(`/api/rota/week/${currentWeekStart}/publish`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+
+    const smtpNote = result.smtp ? '' : ' (SMTP not configured — emails logged to console)';
+    showToast(`Published! ${result.sent} email${result.sent!==1?'s':''} sent${smtpNote}`);
+    await loadWeek();
+  } catch (e) {
+    showToast('Publish failed: ' + e.message, true);
+    btn.disabled = false; btn.textContent = 'Publish & Email All';
+  }
+}
+
+// ── Unlock ───────────────────────────────────────────────────────────────────
+async function unlockRota() {
+  if (!confirm('Unlock this rota for editing? Staff will still see the last published version until you re-publish.')) return;
+  try {
+    await Wren.api(`/api/rota/week/${currentWeekStart}/unlock`, {
+      method: 'POST', body: JSON.stringify({})
+    });
+    showToast('Rota unlocked for editing');
+    await loadWeek();
+  } catch (e) {
+    showToast('Unlock failed: ' + e.message, true);
+  }
+}
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

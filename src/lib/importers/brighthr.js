@@ -229,7 +229,7 @@ async function importEmployees(client, rows, schema = 'ladn') {
       let staffId;
 
       if (email) {
-        // ABSOLUTE RULE: never touch id=1 (Nursery Manager)
+        // ABSOLUTE RULE: never touch id=1 (Toby Jones)
         const { rows: ex } = await client.query(
           `SELECT id FROM ${S}.staff WHERE lower(email)=lower($1) AND id != 1 LIMIT 1`, [email]);
 

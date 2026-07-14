@@ -107,7 +107,7 @@ router.post('/generate/:child_id', async (req, res) => {
       .slice(0, 4)
       .map(a => a.name).join(', ') || 'all areas';
 
-    const prompt = `Write a warm, celebratory farewell message for ${name}'s Leavers Book at Your Nursery, Ealing.
+    const prompt = `Write a warm, celebratory farewell message for ${name}'s Leavers Book at Little Angels Day Nursery, Ealing.
 
 ${name} is ${ageYears} years old and has been with us in the ${child.room_name}.
 
@@ -210,8 +210,8 @@ router.post('/:id/finalise', async (req, res) => {
          .text(book.cover_title || `${childName}'s Leavers Book`, { align: 'center' });
       doc.moveDown(0.5);
       doc.fontSize(14).font('Helvetica')
-         .text('Your Nursery', { align: 'center' });
-      doc.text('1A Example Lane, Ealing, W13 9LU', { align: 'center' });
+         .text('Little Angels Day Nursery', { align: 'center' });
+      doc.text('1A Dudley Gardens, Ealing, W13 9LU', { align: 'center' });
       if (book.leaving_date) {
         doc.moveDown(0.5);
         doc.text(`Leaving: ${book.leaving_date}`, { align: 'center' });
@@ -221,7 +221,7 @@ router.post('/:id/finalise', async (req, res) => {
 
       // AI highlights
       if (book.ai_highlights) {
-        doc.fontSize(12).font('Helvetica-Bold').text('From All of Us at Your Nursery');
+        doc.fontSize(12).font('Helvetica-Bold').text('From All of Us at Little Angels');
         doc.moveDown(0.5);
         doc.fontSize(11).font('Helvetica').text(book.ai_highlights, { lineGap: 5 });
         doc.moveDown(2);
@@ -236,7 +236,7 @@ router.post('/:id/finalise', async (req, res) => {
       }
 
       doc.fontSize(10).font('Helvetica').fillColor('#888888')
-         .text('With love from the whole team.', { align: 'center' });
+         .text('With love from Toby, Ayla, and the whole Little Angels team.', { align: 'center' });
 
       doc.end();
     });

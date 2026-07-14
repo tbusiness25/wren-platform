@@ -169,7 +169,7 @@ router.get('/connect', async (req, res) => {
     if (!clientId) return res.status(503).json({ error: 'TrueLayer client_id not configured' });
 
     const authBase    = await _tlAuthBase();
-    const redirectUri = `${process.env.ADMIN_BASE_URL || 'https://admin.example-nursery.co.uk'}/api/open-banking/callback`;
+    const redirectUri = `${process.env.ADMIN_BASE_URL || 'https://admin.littleangelsealing.co.uk'}/api/open-banking/callback`;
     const state       = crypto.randomBytes(16).toString('hex');
     const nonce       = crypto.randomBytes(16).toString('hex');
 
@@ -210,7 +210,7 @@ router.get('/callback', async (req, res) => {
     const clientSecret = await _tlClientSecret();
     const authBase     = await _tlAuthBase();
     const apiBase      = await _tlBase();
-    const redirectUri  = `${process.env.ADMIN_BASE_URL || 'https://admin.example-nursery.co.uk'}/api/open-banking/callback`;
+    const redirectUri  = `${process.env.ADMIN_BASE_URL || 'https://admin.littleangelsealing.co.uk'}/api/open-banking/callback`;
 
     const tokenResp = await fetch(`${authBase}/connect/token`, {
       method: 'POST',
@@ -708,12 +708,12 @@ router.post('/xero/sync', async (req, res) => {
     if (e.code === 'no_xero_tokens') return res.status(503).json({ error: e.message, code: 'no_xero_tokens' });
     console.error('[open-banking/xero] sync error:', e.message);
     // 403 from a client_credentials (custom connection) token = the app has not
-    // been AUTHORISED to the Your Nursery organisation yet. Verified 2026-07-06:
+    // been AUTHORISED to the Little Angels organisation yet. Verified 2026-07-06:
     // the token issues fine (full scope list) but carries no tenant binding.
     if (e.statusCode === 403) {
       return res.status(502).json({
-        error: 'Xero app is not yet authorised to the Your Nursery organisation. '
-          + 'Toby: developer.xero.com → My Apps → the Wren custom connection → Authorise → choose Your Nursery → then retry sync.',
+        error: 'Xero app is not yet authorised to the Little Angels organisation. '
+          + 'Toby: developer.xero.com → My Apps → the Wren custom connection → Authorise → choose Little Angels → then retry sync.',
         code: 'xero_not_authorised',
       });
     }

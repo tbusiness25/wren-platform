@@ -47,7 +47,7 @@ async function getCalendarId(db) {
       requestBody: {
         summary:  CALENDAR_NAME,
         timeZone: 'Europe/London',
-        description: 'Your Nursery — events synced from Wren',
+        description: 'Little Angels Day Nursery — events synced from Wren',
       },
     });
     calId = created.data.id;

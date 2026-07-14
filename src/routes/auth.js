@@ -395,7 +395,7 @@ router.get('/me', authenticate, async (req, res) => {
 router.get('/cf-auto-login', loginLimiter, async (req, res) => {
   const cfEmail = (req.headers['cf-access-authenticated-user-email'] || '').toLowerCase().trim();
   if (!cfEmail) {
-    return res.status(403).json({ error: 'No Cloudflare Access session. Access this portal via parents.example-nursery.co.uk' });
+    return res.status(403).json({ error: 'No Cloudflare Access session. Access this portal via parents.littleangelsealing.co.uk' });
   }
   try {
     const db = getPool();
@@ -431,7 +431,7 @@ router.post('/parent-login', loginLimiter, async (req, res) => {
   // CF Access verification — mandatory, no fallback
   const cfEmail = (req.headers['cf-access-authenticated-user-email'] || '').toLowerCase().trim();
   if (!cfEmail) {
-    return res.status(403).json({ error: 'This portal requires Cloudflare Access verification. Please access via parents.example-nursery.co.uk' });
+    return res.status(403).json({ error: 'This portal requires Cloudflare Access verification. Please access via parents.littleangelsealing.co.uk' });
   }
   if (cfEmail !== email.toLowerCase().trim()) {
     return res.status(403).json({ error: 'Email does not match your verified session. Please use the email you signed in with.' });

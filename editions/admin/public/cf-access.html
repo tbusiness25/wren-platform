@@ -1,0 +1,130 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Access Control · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;--ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .ac-wrap{padding:18px;max-width:1200px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+ .panel h3{margin:0 0 10px;font-size:.98rem}
+ button{background:var(--blue);border:none;color:#06121f;border-radius:6px;padding:7px 13px;font-size:.82rem;font-weight:700;cursor:pointer}
+ button.ghost{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600}
+ button.sm{padding:4px 9px;font-size:.75rem}
+ .banner{border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:.85rem}
+ .banner.ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35)}
+ .banner.bad{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35)}
+ .banner code{background:#0b1428;padding:1px 5px;border-radius:4px}
+ .app{border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:10px;background:#0b1428}
+ .app .dn{font-weight:700}.app .dm{color:var(--mut);font-size:.78rem}
+ .pol{margin-top:8px;padding:8px 10px;border-left:3px solid var(--blue);background:rgba(255,255,255,.02);border-radius:0 6px 6px 0}
+ .pol .pn{font-weight:600;font-size:.82rem}
+ .rule{display:inline-block;font-size:.72rem;background:#0f1a34;border:1px solid var(--bd);border-radius:5px;padding:2px 7px;margin:2px 3px 0 0}
+ .rule.warn{border-color:var(--bad);color:var(--bad);font-weight:700}
+ table{width:100%;border-collapse:collapse;font-size:.82rem}
+ th{color:var(--mut);text-align:left;padding:7px;border-bottom:1px solid var(--bd)}
+ td{padding:7px;border-bottom:1px solid rgba(255,255,255,.05)}
+ .msg{font-size:.82rem;min-height:1em;margin:8px 0;color:var(--warn)}
+ textarea{width:100%;background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:6px;padding:8px;font-size:.8rem;font-family:monospace}
+ .secret{background:#0b1428;border:1px solid var(--warn);border-radius:6px;padding:8px;font-family:monospace;font-size:.78rem;word-break:break-all;margin-top:6px}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="ac-wrap">
+  <h1>🔐 Access Control</h1>
+  <div class="sub">Cloudflare Access — who can reach each portal, and the device service tokens. Manage policies + rotate tokens without leaving admin.</div>
+  <div id="statusBanner"></div>
+  <div class="msg" id="msg"></div>
+  <div id="apps"></div>
+  <div class="panel">
+    <h3>Service tokens (device logins)</h3>
+    <div id="tokens"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/cf-access';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  function api(p,opts){opts=opts||{};return fetch(API+p,{method:opts.method||'GET',headers:{'Authorization':'Bearer '+TOKEN(),'Content-Type':'application/json'},body:opts.body?JSON.stringify(opts.body):undefined}).then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};}).catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function msg(t,c){var m=el('msg');m.textContent=t||'';m.style.color=c==='ok'?'var(--ok)':c==='bad'?'var(--bad)':'var(--warn)';}
+  function esc(s){return (s||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
+
+  function renderStatus(s){
+    if(s.configured && s.valid){
+      el('statusBanner').innerHTML='<div class="banner ok">✓ Cloudflare API token connected (account <code>'+esc(s.account)+'</code>). You can view + edit policies and rotate tokens below.</div>';
+      return true;
+    }
+    el('statusBanner').innerHTML='<div class="banner bad"><b>⚠ No working Cloudflare API token.</b> '+(s.error?('('+esc(s.error)+') '):'')+
+      'This panel is read/manage-ready but needs a token. In Cloudflare → My Profile → API Tokens → Create Token → Custom, grant on <b>this account</b>: '+
+      '<code>Access: Apps and Policies · Edit</code> and <code>Access: Service Tokens · Edit</code>. '+
+      'Then set <code>CF_API_TOKEN=…</code> in <code>editions/ladn/.env</code> and restart wren-ladn.</div>';
+    return false;
+  }
+
+  function ruleHtml(rules){return (rules||[]).map(function(r){return '<span class="rule'+(r.warn?' warn':'')+'">'+esc(r.type)+': '+esc(String(r.value))+'</span>';}).join('')||'<span class="rule">—</span>';}
+
+  function renderApps(data){
+    el('apps').innerHTML=(data.apps||[]).map(function(a){
+      return '<div class="panel"><div class="app"><div class="dn">'+esc(a.name||'(app)')+'</div><div class="dm">'+esc(a.domain||'')+'</div>'+
+        (a.policies||[]).map(function(p){
+          return '<div class="pol"><div class="pn">'+esc(p.name||'policy')+' · <span style="color:var(--mut)">'+esc(p.decision)+'</span> '+
+            '<button class="ghost sm" data-editpol="'+a.id+'|'+p.id+'" style="float:right">Edit emails</button></div>'+
+            '<div>Allow: '+ruleHtml(p.include)+'</div>'+
+            (p.exclude&&p.exclude.length?'<div>Exclude: '+ruleHtml(p.exclude)+'</div>':'')+
+            '<div class="editbox" id="edit-'+p.id+'" style="display:none;margin-top:6px"><textarea rows="4" id="emails-'+p.id+'" placeholder="one email per line"></textarea>'+
+            '<button class="sm" data-savepol="'+a.id+'|'+p.id+'" style="margin-top:5px">Save allow-list</button></div>'+
+            '</div>';
+        }).join('')+'</div></div>';
+    }).join('')||'<div class="panel" style="color:var(--mut)">No apps returned.</div>';
+  }
+
+  function renderTokens(data){
+    var t=data.service_tokens||[];
+    el('tokens').innerHTML=t.length?'<table><thead><tr><th>Name</th><th>Client ID</th><th>Expires</th><th></th></tr></thead><tbody>'+
+      t.map(function(x){return '<tr><td>'+esc(x.name)+'</td><td style="font-family:monospace;font-size:.72rem">'+esc((x.client_id||'').slice(0,20))+'…</td><td>'+esc((x.expires_at||'').slice(0,10)||'—')+'</td>'+
+        '<td><button class="ghost sm" data-rotate="'+x.id+'" data-name="'+esc(x.name)+'">Rotate</button></td></tr><tr id="secret-'+x.id+'"></tr>';}).join('')+
+      '</tbody></table>':'<div style="color:var(--mut)">'+(data.service_tokens_error?esc(data.service_tokens_error):'No service tokens.')+'</div>';
+  }
+
+  el('apps').addEventListener('click',function(e){
+    var ed=e.target.getAttribute&&e.target.getAttribute('data-editpol');
+    if(ed){var pid=ed.split('|')[1];var b=el('edit-'+pid);b.style.display=b.style.display==='none'?'block':'none';return;}
+    var sv=e.target.getAttribute&&e.target.getAttribute('data-savepol');
+    if(sv){var a=sv.split('|')[0],p=sv.split('|')[1];
+      var emails=el('emails-'+p).value.split(/\n+/).map(function(s){return s.trim();}).filter(Boolean);
+      if(!confirm('Replace this policy\'s allow-list with '+emails.length+' email(s)? This changes who can log in.'))return;
+      msg('Saving policy…');
+      api('/apps/'+a+'/policies/'+p,{method:'PUT',body:{emails:emails}}).then(function(r){msg(r.ok?'Policy updated.':(r.j&&r.j.error||'Failed'),r.ok?'ok':'bad');if(r.ok)load();});
+    }
+  });
+  el('tokens').addEventListener('click',function(e){
+    var id=e.target.getAttribute&&e.target.getAttribute('data-rotate');if(!id)return;
+    var name=e.target.getAttribute('data-name');
+    if(!confirm('Rotate service token "'+name+'"? The old secret stops working immediately — you must update every device using it.'))return;
+    msg('Rotating…');
+    api('/service-tokens/'+id+'/rotate',{method:'POST'}).then(function(r){
+      if(!r.ok){msg(r.j&&r.j.error||'Rotate failed','bad');return;}
+      msg('Rotated. Copy the new secret now — it is shown only once.','ok');
+      var row=el('secret-'+id);if(row)row.innerHTML='<td colspan="4"><div class="secret"><b>New client_secret (copy now):</b><br>'+esc(r.j.client_secret)+'</div></td>';
+    });
+  });
+
+  function load(){
+    api('/status').then(function(r){
+      var okTok=renderStatus(r.j||{});
+      if(!okTok){ el('apps').innerHTML=''; el('tokens').innerHTML='<div style="color:var(--mut)">Add a token to manage service tokens.</div>'; return; }
+      api('/overview').then(function(o){
+        if(!o.ok){ msg(o.j&&o.j.error||'Could not load Access config','bad'); return; }
+        renderApps(o.j); renderTokens(o.j);
+      });
+    });
+  }
+  document.addEventListener('wren:ready', load);
+})();
+</script>
+</body></html>

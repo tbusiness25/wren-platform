@@ -9,7 +9,7 @@ const { recordAudit }           = require('../utils/audit');
 const stripe                    = require('../lib/stripe-client');
 const gc                        = require('../lib/gocardless-client');
 
-const PARENTS_BASE = process.env.PARENTS_BASE_URL || 'https://parents.example-nursery.co.uk';
+const PARENTS_BASE = process.env.PARENTS_BASE_URL || 'https://parents.littleangelsealing.co.uk';
 
 function cfEmail(req) {
   return (req.headers['cf-access-authenticated-user-email'] || '').toLowerCase().trim();
@@ -170,7 +170,7 @@ router.post('/gocardless/start', async (req, res) => {
     const isTest = await gc.isTestMode();
 
     const flow = await gc.createRedirectFlow({
-      description: 'Your Nursery — Direct Debit',
+      description: 'Little Angels Day Nursery — Direct Debit',
       sessionToken,
       successRedirectUrl: `${PARENTS_BASE}/welcome/dd-setup?redirect_flow_id={REDIRECT_FLOW_ID}`,
       email,

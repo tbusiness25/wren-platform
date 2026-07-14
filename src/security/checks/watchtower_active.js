@@ -53,7 +53,7 @@ module.exports = {
         return {
           status: 'fail',
           finding: 'Watchtower container is not running (host status file reports down). Docker images will not be automatically updated.',
-          remediation: 'Run: docker compose -f /app/docker/watchtower/docker-compose.yml up -d',
+          remediation: 'Run: docker compose -f /home/toby/docker/watchtower/docker-compose.yml up -d',
           evidence,
         };
       }
@@ -106,7 +106,7 @@ module.exports = {
       return {
         status: 'fail',
         finding: 'Watchtower container is not running. Docker images will not be automatically updated.',
-        remediation: 'Run: docker compose -f /app/docker/watchtower/docker-compose.yml up -d',
+        remediation: 'Run: docker compose -f /home/toby/docker/watchtower/docker-compose.yml up -d',
         evidence,
       };
     }

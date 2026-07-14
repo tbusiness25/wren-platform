@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="inbox">
+  <meta name="wren-app-title" content="Inbox">
+  <meta name="wren-app-chat"  content="on">
+  <title>Inbox · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-inbox-page {
+      padding: 0 0 env(safe-area-inset-bottom, 16px);
+    }
+
+    /* ── Sub-tabs ────────────────────────────────────────────────────────────── */
+    #ey-inbox-tabs {
+      display: flex;
+      background: var(--c-navy-mid);
+      border-bottom: 1px solid var(--c-border);
+      padding: 0 12px;
+    }
+    .ey-inbox-tab {
+      flex: 1;
+      height: 44px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--c-muted);
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color .15s, border-color .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      position: relative;
+    }
+    .ey-inbox-tab:hover { color: var(--c-text); }
+    .ey-inbox-tab.active {
+      color: var(--c-blue);
+      border-bottom-color: var(--c-blue);
+    }
+    .ey-inbox-tab-badge {
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: var(--c-blue);
+      color: #fff;
+      font-size: .7rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ey-inbox-tab-badge[hidden] { display: none; }
+
+    /* ── Panel container ─────────────────────────────────────────────────────── */
+    .ey-inbox-panel {
+      display: none;
+    }
+    .ey-inbox-panel.active {
+      display: block;
+    }
+
+    /* ── Mark-all-read bar ────────────────────────────────────────────────────── */
+    #ey-notif-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 6px 12px;
+      background: var(--c-navy-mid);
+      border-bottom: 1px solid var(--c-border);
+    }
+    #ey-mark-all-read {
+      height: 32px;
+      padding: 0 14px;
+      background: transparent;
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      color: var(--c-muted);
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    #ey-mark-all-read:hover { background: rgba(255,255,255,0.06); color: var(--c-text); }
+
+    /* ── Notifications list ───────────────────────────────────────────────────── */
+    #ey-notif-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .ey-notif-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--c-border);
+      cursor: pointer;
+      transition: background .15s;
+      position: relative;
+    }
+    .ey-notif-item:hover  { background: rgba(255,255,255,0.03); }
+    .ey-notif-item:active { background: rgba(255,255,255,0.06); }
+    .ey-notif-item:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+    .ey-notif-item.unread { background: rgba(74,154,191,0.06); }
+    .ey-notif-item.urgent { border-left: 3px solid var(--c-red); }
+    .ey-notif-item.urgent:not(.unread) { border-left-color: rgba(239,68,68,0.4); }
+
+    .ey-notif-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--c-blue);
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+    .ey-notif-dot[hidden] { display: none; }
+
+    .ey-notif-body { flex: 1; min-width: 0; }
+    .ey-notif-title {
+      font-size: .92rem;
+      font-weight: 500;
+      color: var(--c-text);
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+    .ey-notif-item.unread .ey-notif-title { font-weight: 700; }
+    .ey-notif-desc {
+      font-size: .83rem;
+      color: var(--c-muted);
+      margin-bottom: 4px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .ey-notif-item.expanded .ey-notif-desc {
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+    .ey-notif-meta {
+      font-size: .76rem;
+      color: var(--c-muted);
+    }
+    .ey-notif-urgent-tag {
+      display: inline-block;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--c-red);
+      margin-right: 6px;
+      letter-spacing: .04em;
+    }
+
+    .ey-notif-dismiss {
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: none;
+      color: var(--c-muted);
+      font-size: .9rem;
+      cursor: pointer;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background .15s, color .15s;
+    }
+    .ey-notif-dismiss:hover { background: rgba(255,255,255,0.08); color: var(--c-text); }
+
+    /* ── Skeleton ────────────────────────────────────────────────────────────── */
+    .ey-inbox-skeleton {
+      padding: 8px 12px;
+    }
+    .ey-skel-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--c-border);
+    }
+    .ey-skel-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--c-border);
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+    .ey-skel-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    .ey-skel-line  {
+      height: 12px;
+      border-radius: 6px;
+      background: var(--c-border);
+    }
+
+    /* ── Messages list ───────────────────────────────────────────────────────── */
+    #ey-msg-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .ey-msg-thread {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--c-border);
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .ey-msg-thread:hover  { background: rgba(255,255,255,0.03); }
+    .ey-msg-thread:active { background: rgba(255,255,255,0.06); }
+    .ey-msg-thread-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .ey-msg-thread-body { flex: 1; min-width: 0; }
+    .ey-msg-thread-subject {
+      font-size: .92rem;
+      font-weight: 600;
+      color: var(--c-text);
+      margin-bottom: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ey-msg-thread-preview {
+      font-size: .83rem;
+      color: var(--c-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ey-msg-thread-meta {
+      font-size: .76rem;
+      color: var(--c-muted);
+      margin-top: 3px;
+    }
+    .ey-msg-thread-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .ey-msg-thread-time  { font-size: .76rem; color: var(--c-muted); }
+    .ey-msg-thread-badge {
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 10px;
+      background: var(--c-blue);
+      color: #fff;
+      font-size: .72rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Inline thread expand */
+    .ey-msg-thread-expand {
+      background: var(--c-surface);
+      border-bottom: 1px solid var(--c-border);
+      padding: 12px 16px;
+      display: none;
+    }
+    .ey-msg-thread-expand.open { display: block; }
+    .ey-msg-bubble {
+      background: var(--c-navy-mid);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: .88rem;
+      color: var(--c-text);
+    }
+    .ey-msg-bubble-sender {
+      font-size: .76rem;
+      font-weight: 700;
+      color: var(--c-muted);
+      margin-bottom: 4px;
+    }
+
+    /* ── Empty state ─────────────────────────────────────────────────────────── */
+    .ey-inbox-empty {
+      padding: 48px 24px;
+      text-align: center;
+      color: var(--c-muted);
+    }
+    .ey-inbox-empty .empty-icon  { font-size: 3rem; margin-bottom: 12px; }
+    .ey-inbox-empty .empty-title { font-size: 1.05rem; font-weight: 600; color: var(--c-text); margin-bottom: 6px; }
+    .ey-inbox-empty .empty-body  { font-size: .88rem; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-inbox-page">
+
+  <!-- Sub-tab bar -->
+  <div id="ey-inbox-tabs" role="tablist" aria-label="Inbox sections">
+    <button class="ey-inbox-tab active" role="tab" id="tab-notif"
+            aria-selected="true" aria-controls="panel-notif">
+      Notifications
+      <span id="ey-notif-tab-badge" class="ey-inbox-tab-badge" hidden aria-label="unread count"></span>
+    </button>
+    <button class="ey-inbox-tab" role="tab" id="tab-msg"
+            aria-selected="false" aria-controls="panel-msg">
+      Messages
+      <span id="ey-msg-tab-badge" class="ey-inbox-tab-badge" hidden aria-label="unread messages"></span>
+    </button>
+  </div>
+
+  <!-- ── Notifications panel ─────────────────────────────────────────────── -->
+  <div id="panel-notif" class="ey-inbox-panel active" role="tabpanel" aria-labelledby="tab-notif">
+
+    <div id="ey-notif-bar">
+      <button id="ey-mark-all-read" aria-label="Mark all notifications as read">Mark all read</button>
+    </div>
+
+    <!-- Skeleton -->
+    <div id="ey-notif-skeleton" class="ey-inbox-skeleton" aria-hidden="true">
+      <div class="ey-skel-row">
+        <div class="ey-skel-dot"></div>
+        <div class="ey-skel-lines">
+          <div class="ey-skel-line" style="width:60%"></div>
+          <div class="ey-skel-line" style="width:85%"></div>
+          <div class="ey-skel-line" style="width:35%"></div>
+        </div>
+      </div>
+      <div class="ey-skel-row">
+        <div class="ey-skel-dot"></div>
+        <div class="ey-skel-lines">
+          <div class="ey-skel-line" style="width:50%"></div>
+          <div class="ey-skel-line" style="width:75%"></div>
+          <div class="ey-skel-line" style="width:30%"></div>
+        </div>
+      </div>
+    </div>
+
+    <ul id="ey-notif-list" role="list" aria-live="polite" hidden></ul>
+
+    <div id="ey-notif-empty" class="ey-inbox-empty" hidden role="status">
+      <div class="empty-icon">🔔</div>
+      <div class="empty-title">All caught up</div>
+      <div class="empty-body">No notifications to show.</div>
+    </div>
+  </div>
+
+  <!-- ── Messages panel ──────────────────────────────────────────────────── -->
+  <div id="panel-msg" class="ey-inbox-panel" role="tabpanel" aria-labelledby="tab-msg">
+
+    <!-- Skeleton -->
+    <div id="ey-msg-skeleton" class="ey-inbox-skeleton" aria-hidden="true">
+      <div class="ey-skel-row">
+        <div class="ey-skel-dot"></div>
+        <div class="ey-skel-lines">
+          <div class="ey-skel-line" style="width:55%"></div>
+          <div class="ey-skel-line" style="width:80%"></div>
+        </div>
+      </div>
+      <div class="ey-skel-row">
+        <div class="ey-skel-dot"></div>
+        <div class="ey-skel-lines">
+          <div class="ey-skel-line" style="width:65%"></div>
+          <div class="ey-skel-line" style="width:70%"></div>
+        </div>
+      </div>
+    </div>
+
+    <ul id="ey-msg-list" role="list" aria-live="polite" hidden></ul>
+
+    <div id="ey-msg-empty" class="ey-inbox-empty" hidden role="status">
+      <div class="empty-icon">💬</div>
+      <div class="empty-title">No staff messages yet</div>
+      <div class="empty-body">Staff group threads will appear here.</div>
+    </div>
+  </div>
+
+</div><!-- #ey-inbox-page -->
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ── Helpers ─────────────────────────────────────────────────────────────── */
+  function _e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _relTime(ts) {
+    if (!ts) return '';
+    var diff = Date.now() - new Date(ts).getTime();
+    var m = Math.floor(diff / 60000);
+    if (m < 1)   return 'just now';
+    if (m < 60)  return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24)  return h + 'h ago';
+    var d = Math.floor(h / 24);
+    return d + 'd ago';
+  }
+
+  /* ── Bell badge refresh ──────────────────────────────────────────────────── */
+  function _refreshBellBadge() {
+    if (!window.Wren) return;
+    Wren.api('/api/notifications/unread').then(function(data) {
+      var count = (data && data.count) ? data.count : 0;
+      var badge = document.getElementById('wren-app-notif-badge');
+      if (badge) {
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : String(count);
+          badge.hidden = false;
+        } else {
+          badge.hidden = true;
+        }
+      }
+      var tabBadge = document.getElementById('ey-notif-tab-badge');
+      if (tabBadge) {
+        if (count > 0) {
+          tabBadge.textContent = count > 99 ? '99+' : String(count);
+          tabBadge.hidden = false;
+        } else {
+          tabBadge.hidden = true;
+        }
+      }
+    }).catch(function() {});
+  }
+
+  /* ── Notifications ───────────────────────────────────────────────────────── */
+  var _notifications = [];
+
+  function _renderNotif() {
+    var list  = document.getElementById('ey-notif-list');
+    var empty = document.getElementById('ey-notif-empty');
+
+    if (!_notifications.length) {
+      list.hidden  = true;
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+    list.hidden  = false;
+    list.innerHTML = '';
+
+    _notifications.forEach(function(n) {
+      var isUnread  = !n.read_at;
+      var isUrgent  = n.priority === 'urgent';
+
+      var li = document.createElement('li');
+      li.dataset.id = n.id;
+
+      var cls = 'ey-notif-item' +
+        (isUnread ? ' unread'  : '') +
+        (isUrgent ? ' urgent'  : '');
+
+      li.innerHTML =
+        '<div class="' + cls + '" tabindex="0" role="button"' +
+          ' aria-label="' + _e(n.title) + (isUnread ? ', unread' : '') + '">' +
+          '<div class="ey-notif-dot"' + (isUnread ? '' : ' hidden') + ' aria-hidden="true"></div>' +
+          '<div class="ey-notif-body">' +
+            '<div class="ey-notif-title">' +
+              (isUrgent ? '<span class="ey-notif-urgent-tag" aria-label="urgent">URGENT</span>' : '') +
+              _e(n.title) +
+            '</div>' +
+            (n.body ? '<div class="ey-notif-desc">' + _e(n.body) + '</div>' : '') +
+            '<div class="ey-notif-meta">' + _e(_relTime(n.created_at)) + '</div>' +
+          '</div>' +
+          '<button class="ey-notif-dismiss" aria-label="Dismiss notification" data-dismiss="' + n.id + '">✕</button>' +
+        '</div>';
+
+      /* Tap to read + navigate */
+      var row = li.querySelector('.ey-notif-item');
+      row.addEventListener('click', function(ev) {
+        if (ev.target.closest('[data-dismiss]')) return;
+        _markRead(n.id, function() {
+          row.classList.remove('unread');
+          var dot = row.querySelector('.ey-notif-dot');
+          if (dot) dot.hidden = true;
+          var title = row.querySelector('.ey-notif-title');
+          if (title) title.style.fontWeight = '500';
+          _refreshBellBadge();
+          if (n.link) {
+            location.href = n.link;
+          } else {
+            /* Expand/collapse body inline */
+            row.classList.toggle('expanded');
+          }
+        });
+      });
+      row.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); row.click(); }
+      });
+
+      /* Dismiss */
+      li.querySelector('[data-dismiss]').addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        _dismiss(n.id, li);
+      });
+
+      list.appendChild(li);
+    });
+  }
+
+  function _markRead(id, cb) {
+    Wren.api('/api/notifications/' + id + '/read', { method: 'POST' })
+      .then(cb).catch(cb);
+  }
+
+  function _dismiss(id, li) {
+    Wren.api('/api/notifications/' + id + '/dismiss', { method: 'POST' })
+      .then(function() {
+        li.style.transition = 'opacity .2s';
+        li.style.opacity = '0';
+        setTimeout(function() {
+          li.remove();
+          _notifications = _notifications.filter(function(n) { return n.id !== id; });
+          if (!document.querySelectorAll('#ey-notif-list li').length) {
+            document.getElementById('ey-notif-list').hidden = true;
+            document.getElementById('ey-notif-empty').hidden = false;
+          }
+        }, 200);
+      })
+      .catch(function() {
+        if (window.Wren) Wren.toast('Could not dismiss notification', 'error');
+      });
+  }
+
+  function _loadNotifications() {
+    var skel  = document.getElementById('ey-notif-skeleton');
+    var list  = document.getElementById('ey-notif-list');
+    var empty = document.getElementById('ey-notif-empty');
+
+    skel.removeAttribute('aria-hidden');
+    skel.style.display = '';
+    list.hidden  = true;
+    empty.hidden = true;
+
+    Wren.api('/api/notifications').then(function(data) {
+      _notifications = Array.isArray(data) ? data : [];
+      skel.style.display = 'none';
+      _renderNotif();
+
+      /* Update tab badge with unread count */
+      var unread = _notifications.filter(function(n) { return !n.read_at; }).length;
+      var tabBadge = document.getElementById('ey-notif-tab-badge');
+      if (tabBadge && unread > 0) {
+        tabBadge.textContent = unread > 99 ? '99+' : String(unread);
+        tabBadge.hidden = false;
+      }
+    }).catch(function() {
+      _notifications = [];
+      skel.style.display = 'none';
+      _renderNotif();
+    });
+  }
+
+  /* ── Messages ────────────────────────────────────────────────────────────── */
+  var _expandedThread = null; // currently-expanded thread li
+
+  function _renderThreads(threads) {
+    var list  = document.getElementById('ey-msg-list');
+    var empty = document.getElementById('ey-msg-empty');
+
+    if (!threads.length) {
+      list.hidden  = true;
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+    list.hidden  = false;
+    list.innerHTML = '';
+
+    threads.forEach(function(t) {
+      var unread = parseInt(t.unread_count) || 0;
+
+      var li = document.createElement('li');
+      li.innerHTML =
+        '<div class="ey-msg-thread" tabindex="0" role="button"' +
+            ' aria-label="' + _e(t.subject || 'Staff thread') + (unread ? ', ' + unread + ' unread' : '') + '">' +
+          '<div class="ey-msg-thread-icon" aria-hidden="true">👥</div>' +
+          '<div class="ey-msg-thread-body">' +
+            '<div class="ey-msg-thread-subject">' + _e(t.subject || 'Staff thread') + '</div>' +
+            (t.last_message ? '<div class="ey-msg-thread-preview">' + _e(t.last_message) + '</div>' : '') +
+            '<div class="ey-msg-thread-meta">Staff group</div>' +
+          '</div>' +
+          '<div class="ey-msg-thread-right">' +
+            '<div class="ey-msg-thread-time">' + _e(_relTime(t.last_message_at)) + '</div>' +
+            (unread ? '<div class="ey-msg-thread-badge" aria-label="' + unread + ' unread">' + unread + '</div>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="ey-msg-thread-expand" id="expand-' + t.id + '" aria-label="Thread messages"></div>';
+
+      var row    = li.querySelector('.ey-msg-thread');
+      var expand = li.querySelector('.ey-msg-thread-expand');
+
+      row.addEventListener('click', function() { _toggleThread(t.id, expand, li); });
+      row.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); row.click(); }
+      });
+
+      list.appendChild(li);
+    });
+
+    /* Badge for messages tab */
+    var totalUnread = threads.reduce(function(s,t) { return s + (parseInt(t.unread_count)||0); }, 0);
+    var tabBadge = document.getElementById('ey-msg-tab-badge');
+    if (tabBadge && totalUnread > 0) {
+      tabBadge.textContent = totalUnread > 99 ? '99+' : String(totalUnread);
+      tabBadge.hidden = false;
+    }
+  }
+
+  function _toggleThread(id, expandEl, li) {
+    var isOpen = expandEl.classList.contains('open');
+
+    /* Close whatever was open before */
+    if (_expandedThread && _expandedThread !== expandEl) {
+      _expandedThread.classList.remove('open');
+      _expandedThread = null;
+    }
+
+    if (isOpen) {
+      expandEl.classList.remove('open');
+      _expandedThread = null;
+      return;
+    }
+
+    /* Already loaded? Just open it */
+    if (expandEl.dataset.loaded) {
+      expandEl.classList.add('open');
+      _expandedThread = expandEl;
+      return;
+    }
+
+    expandEl.innerHTML = '<div style="padding:12px;color:var(--c-muted);font-size:.85rem">Loading…</div>';
+    expandEl.classList.add('open');
+    _expandedThread = expandEl;
+
+    Wren.api('/api/messages/staff-thread/' + id).then(function(data) {
+      var messages = (data && data.messages) ? data.messages : [];
+      expandEl.dataset.loaded = '1';
+      if (!messages.length) {
+        expandEl.innerHTML = '<div style="padding:12px;color:var(--c-muted);font-size:.85rem">No messages in this thread.</div>';
+        return;
+      }
+      expandEl.innerHTML = '';
+      messages.forEach(function(m) {
+        var bubble = document.createElement('div');
+        bubble.className = 'ey-msg-bubble';
+        bubble.innerHTML =
+          '<div class="ey-msg-bubble-sender">' +
+            _e(m.staff_name || 'Staff') + ' · ' + _e(_relTime(m.created_at)) +
+          '</div>' +
+          _e(m.body || '');
+        expandEl.appendChild(bubble);
+      });
+    }).catch(function() {
+      expandEl.innerHTML = '<div style="padding:12px;color:var(--c-red);font-size:.85rem">Could not load messages.</div>';
+    });
+  }
+
+  function _loadMessages() {
+    var skel  = document.getElementById('ey-msg-skeleton');
+    var list  = document.getElementById('ey-msg-list');
+    var empty = document.getElementById('ey-msg-empty');
+
+    skel.removeAttribute('aria-hidden');
+    skel.style.display = '';
+    list.hidden  = true;
+    empty.hidden = true;
+
+    Wren.api('/api/messages/staff-threads').then(function(data) {
+      var threads = Array.isArray(data) ? data : [];
+      skel.style.display = 'none';
+      _renderThreads(threads);
+    }).catch(function() {
+      skel.style.display = 'none';
+      _renderThreads([]);
+    });
+  }
+
+  /* ── Sub-tab switching ───────────────────────────────────────────────────── */
+  function _switchTab(target) {
+    document.querySelectorAll('.ey-inbox-tab').forEach(function(btn) {
+      var isActive = btn.id === 'tab-' + target;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+    });
+    document.querySelectorAll('.ey-inbox-panel').forEach(function(panel) {
+      panel.classList.toggle('active', panel.id === 'panel-' + target);
+    });
+  }
+
+  /* ── Init ────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function () {
+
+    /* Sub-tab buttons */
+    document.getElementById('tab-notif').addEventListener('click', function() { _switchTab('notif'); });
+    document.getElementById('tab-msg').addEventListener('click', function() { _switchTab('msg'); });
+
+    /* Mark all read */
+    document.getElementById('ey-mark-all-read').addEventListener('click', function() {
+      Wren.api('/api/notifications/read-all', { method: 'POST' }).then(function() {
+        _notifications.forEach(function(n) { n.read_at = new Date().toISOString(); });
+        /* Update UI: remove unread styling */
+        document.querySelectorAll('.ey-notif-item.unread').forEach(function(el) {
+          el.classList.remove('unread');
+          var dot = el.querySelector('.ey-notif-dot');
+          if (dot) dot.hidden = true;
+        });
+        document.getElementById('ey-notif-tab-badge').hidden = true;
+        _refreshBellBadge();
+        if (window.Wren) Wren.toast('All notifications marked as read', 'success');
+      }).catch(function() {
+        if (window.Wren) Wren.toast('Could not mark as read', 'error');
+      });
+    });
+
+    /* Load data */
+    _loadNotifications();
+    _loadMessages();
+    _refreshBellBadge();
+  });
+
+}());
+</script>
+</body>
+</html>

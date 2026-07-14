@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Observation Tracker">
+  <meta name="wren-app-chat"  content="on">
+  <title>Observation Tracker · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ot-page { padding: 12px 12px env(safe-area-inset-bottom, 16px); max-width: 1000px; margin: 0 auto; }
+    #ot-filters { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px; }
+    #ot-filters label { display:block; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; color:var(--c-muted,#64748b); margin-bottom:3px; }
+    #ot-filters select { background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748); color:var(--c-text,#f1f5f9); border-radius:8px; padding:7px 10px; font-size:.85rem; font-family:inherit; }
+    .ot-chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+    .ot-chip { padding:7px 13px; border-radius:999px; border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b); color:var(--c-muted,#94a3b8); font-size:.82rem; cursor:pointer; }
+    .ot-chip.active { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; font-weight:600; }
+    .ot-grid-wrap { overflow-x:auto; border:1px solid var(--c-border,#2d3748); border-radius:12px; }
+    table.ot-grid { width:100%; border-collapse:collapse; font-size:.84rem; }
+    .ot-grid th, .ot-grid td { padding:8px 10px; text-align:center; white-space:nowrap; }
+    .ot-grid thead th { background:#0f172a; color:#64748b; font-size:.7rem; text-transform:uppercase; position:sticky; top:0; }
+    .ot-grid th.ot-name, .ot-grid td.ot-name { text-align:left; color:#f1f5f9; font-weight:600; position:sticky; left:0; background:var(--c-surface,#1e293b); }
+    .ot-grid tbody tr:nth-child(even) td.ot-name { background:#1a2536; }
+    .ot-cell { border-radius:6px; font-weight:700; }
+    .ot-summary { font-size:.8rem; color:var(--c-muted,#94a3b8); margin:10px 2px; }
+    .ot-empty { padding:30px; text-align:center; color:#64748b; }
+  </style>
+</head>
+<body>
+<div id="ot-page">
+  <h1 style="font-size:1.15rem;margin:6px 2px 10px;color:var(--c-text,#f1f5f9)">Observation Tracker</h1>
+
+  <div class="ot-chips" id="ot-view-chips" role="group" aria-label="View mode" style="margin-bottom:10px">
+    <button class="ot-chip active" data-view="grid">📊 Grid</button>
+    <button class="ot-chip" data-view="list">📋 List</button>
+  </div>
+
+  <div class="ot-chips" id="ot-room-chips" role="group" aria-label="Filter by room">
+    <button class="ot-chip active" data-room="" data-scope="">All</button>
+    <button class="ot-chip" data-room="1">Baby Room</button>
+    <button class="ot-chip" data-room="2">Pre-school</button>
+    <button class="ot-chip" data-room="" data-scope="mine">My Key Children</button>
+  </div>
+
+  <!-- Prompt 50: active-selection banner — scopes the tracker to children picked on /ey/home -->
+  <div id="ot-scope-banner" hidden style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(224,120,32,.12);border:1px solid rgba(224,120,32,.4);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:.84rem;color:#f1f5f9">
+    <span style="font-size:1rem">📌</span>
+    <span id="ot-scope-text" style="flex:1;min-width:0">Showing selected children</span>
+    <button id="ot-scope-clear" class="ot-chip" style="background:transparent;border-color:rgba(224,120,32,.5);color:#fbbf77">Show all children ✕</button>
+  </div>
+
+  <div id="ot-filters">
+    <div><label>Staff</label><select id="ot-staff"><option value="">All staff</option></select></div>
+    <div><label>EYFS area</label><select id="ot-area">
+      <option value="">All areas</option>
+      <option>Communication and Language</option>
+      <option>Personal, Social and Emotional Development</option>
+      <option>Physical Development</option>
+      <option>Literacy</option>
+      <option>Mathematics</option>
+      <option>Understanding the World</option>
+      <option>Expressive Arts and Design</option>
+    </select></div>
+    <div><label>Period</label><select id="ot-months">
+      <option value="3">Last 3 months</option>
+      <option value="6" selected>Last 6 months</option>
+      <option value="12">Last 12 months</option>
+    </select></div>
+  </div>
+
+  <div id="ot-filters-extra" style="margin-bottom:8px">
+    <div style="display:inline-block"><label style="display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:3px">Type</label>
+    <select id="ot-type" style="background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:8px;padding:7px 10px;font-size:.85rem;font-family:inherit">
+      <option value="">All types</option>
+      <option value="learning_story">Learning story</option>
+      <option value="quick_note">Quick note</option>
+      <option value="wow_moment">Wow moment</option>
+      <option value="next_step_followup">Next-step follow-up</option>
+    </select></div>
+  </div>
+
+  <div class="ot-summary" id="ot-summary"></div>
+  <div class="ot-grid-wrap" id="ot-grid-view"><div id="ot-grid"><div class="ot-empty">Loading…</div></div></div>
+  <div id="ot-list-view" style="display:none"><div id="ot-list"><div class="ot-empty">Loading…</div></div></div>
+</div>
+
+<style>
+  .ot-obs-item { display:block; background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748); border-radius:12px; padding:12px 14px; margin-bottom:8px; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s; }
+  .ot-obs-item:hover { border-color:var(--c-blue,#4a9abf); }
+  .ot-obs-top { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .ot-obs-child { font-weight:700; color:#f1f5f9; font-size:.9rem; flex:1; }
+  .ot-obs-date { font-size:.74rem; color:#64748b; white-space:nowrap; }
+  .ot-obs-type { font-size:.66rem; text-transform:uppercase; letter-spacing:.03em; color:#7dd3fc; background:rgba(74,154,191,.14); padding:2px 7px; border-radius:10px; }
+  .ot-obs-text { font-size:.82rem; color:#cbd5e1; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .ot-obs-meta { font-size:.72rem; color:#64748b; margin-top:5px; }
+</style>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+  var _room = '', _mine = false, _view = 'grid';
+  var _childIds = [];          // Prompt 50: explicit child selection (EY home multi-select / ?children=)
+  var _childNames = {};        // id → display name, for the scope banner
+
+  /* Read the active child selection in priority order:
+   *   1. ?children=1,2,3   (explicit, e.g. carried by the bottom-nav Obs Tracker tab)
+   *   2. sessionStorage 'wren.ey.selection'  (child grid multi-select on /ey/home)
+   * Mirrors observation-new.html / diary so the same picked set flows through. */
+  var SELECTION_KEY = 'wren.ey.selection';
+  var SELECTION_TTL = 30 * 60 * 1000;
+  function _selectedIds() {
+    var ids = [], seen = {};
+    function _add(n){ var id = parseInt(n,10); if (id && !seen[id]) { seen[id]=true; ids.push(id); } }
+    try {
+      var multi = new URLSearchParams(location.search).get('children');
+      if (multi) multi.split(',').forEach(_add);
+    } catch(_) {}
+    try {
+      var raw = sessionStorage.getItem(SELECTION_KEY);
+      if (raw) {
+        var sel = JSON.parse(raw);
+        if (sel && sel.childIds && (!sel.timestamp || (Date.now() - sel.timestamp) <= SELECTION_TTL)) {
+          sel.childIds.forEach(_add);
+        }
+      }
+    } catch(_) {}
+    return ids;
+  }
+
+  function _heat(n) {
+    if (!n) return { bg: 'transparent', fg: '#334155' };
+    if (n <= 2) return { bg: 'rgba(34,197,94,.16)',  fg: '#22c55e' };
+    if (n <= 5) return { bg: 'rgba(245,158,11,.16)', fg: '#f59e0b' };
+    return { bg: 'rgba(74,154,191,.22)', fg: '#7dd3fc' };
+  }
+  function _esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function _monthLabel(ym){ var p=ym.split('-'); return new Date(p[0], p[1]-1, 1).toLocaleDateString('en-GB',{month:'short',year:'2-digit'}); }
+
+  function _query() {
+    var q = '/api/observations/monthly-grid?months=' + (document.getElementById('ot-months').value || '6');
+    if (_childIds.length) q += '&child_ids=' + _childIds.join(',');
+    if (_room) q += '&room_id=' + encodeURIComponent(_room);
+    if (_mine) q += '&mine=1';
+    var staff = document.getElementById('ot-staff').value; if (staff) q += '&staff_id=' + encodeURIComponent(staff);
+    var area  = document.getElementById('ot-area').value;  if (area)  q += '&area=' + encodeURIComponent(area);
+    return q;
+  }
+
+  function _render(data) {
+    var grid = document.getElementById('ot-grid');
+    var summ = document.getElementById('ot-summary');
+    var months = data.months || [], kids = data.children || [];
+    if (!kids.length) { grid.innerHTML = '<div class="ot-empty">No observations match these filters for the selected period.</div>'; summ.textContent=''; return; }
+    var grand = kids.reduce(function(s,k){return s+k.total;},0);
+    summ.textContent = kids.length + ' child' + (kids.length===1?'':'ren') + ' · ' + grand + ' observations';
+    var html = '<table class="ot-grid"><thead><tr><th class="ot-name">Child</th>'
+      + months.map(function(m){return '<th>'+_monthLabel(m)+'</th>';}).join('')
+      + '<th>Total</th></tr></thead><tbody>';
+    html += kids.map(function(k){
+      return '<tr><td class="ot-name" data-child="'+k.child_id+'" style="cursor:pointer" title="Tap to list '+_esc(k.name)+'’s observations">'+_esc(k.name)+'</td>'
+        + months.map(function(m){ var n=k.months[m]||0, h=_heat(n); return '<td><span class="ot-cell" style="background:'+h.bg+';color:'+h.fg+';padding:3px 9px;display:inline-block;min-width:22px">'+(n||'·')+'</span></td>'; }).join('')
+        + '<td style="font-weight:800;color:#f1f5f9">'+k.total+'</td></tr>';
+    }).join('');
+    html += '</tbody></table>';
+    grid.innerHTML = html;
+  }
+
+  function _load() {
+    var grid = document.getElementById('ot-grid');
+    grid.innerHTML = '<div class="ot-empty">Loading…</div>';
+    Wren.api(_query())
+      .then(_render)
+      .catch(function(e){ grid.innerHTML = '<div class="ot-empty" style="color:#ef4444">Could not load: '+_esc(e.error||e.message)+'</div>'; });
+  }
+
+  // ── LIST view: real observations, click-through to the editable record ────────
+  function _monthsToFrom() {
+    var m = parseInt(document.getElementById('ot-months').value || '6', 10);
+    var d = new Date(); d.setMonth(d.getMonth() - (m - 1)); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  }
+  function _listQuery(extra) {
+    var q = '/api/observations?from=' + _monthsToFrom();
+    if (_childIds.length) q += '&child_ids=' + _childIds.join(',');
+    if (_room) q += '&room_id=' + encodeURIComponent(_room);
+    if (_mine) q += '&mine=1';
+    var staff = document.getElementById('ot-staff').value; if (staff) q += '&staff_id=' + encodeURIComponent(staff);
+    var area  = document.getElementById('ot-area').value;  if (area)  q += '&area=' + encodeURIComponent(area);
+    var type  = document.getElementById('ot-type').value;  if (type)  q += '&type=' + encodeURIComponent(type);
+    if (extra && extra.child_id) q += '&child_id=' + encodeURIComponent(extra.child_id);
+    if (extra && extra.from) q = q.replace(/from=[^&]*/, 'from=' + extra.from);
+    if (extra && extra.to) q += '&to=' + encodeURIComponent(extra.to);
+    return q;
+  }
+  function _fmtDate(s){ try { return new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'}); } catch(e){ return ''; } }
+  function _typeLabel(t){ return (t||'').replace(/_/g,' '); }
+
+  function _renderList(rows) {
+    var el = document.getElementById('ot-list'), summ = document.getElementById('ot-summary');
+    rows = rows || [];
+    if (!rows.length) { el.innerHTML = '<div class="ot-empty">No observations match these filters.</div>'; summ.textContent=''; return; }
+    summ.textContent = rows.length + ' observation' + (rows.length===1?'':'s') + ' · tap any to open & edit';
+    el.innerHTML = rows.map(function(o){
+      var nm = o.child_name || ((o.child_first_name||'')+' '+(o.child_last_name||''));
+      var txt = o.observation_text || o.title || '';
+      return '<a class="ot-obs-item" href="/ey/observation/'+o.id+'">'
+        + '<div class="ot-obs-top"><span class="ot-obs-child">'+_esc(nm)+'</span>'
+        + (o.observation_type?'<span class="ot-obs-type">'+_esc(_typeLabel(o.observation_type))+'</span>':'')
+        + '<span class="ot-obs-date">'+_esc(_fmtDate(o.created_at))+'</span></div>'
+        + '<div class="ot-obs-text">'+_esc(txt)+'</div>'
+        + '<div class="ot-obs-meta">'+_esc(o.staff_name||'')+(o.room_name?' · '+_esc(o.room_name):'')+(o.shared_with_parents?' · 📤 shared':'')+'</div>'
+        + '</a>';
+    }).join('');
+  }
+  function _loadList(extra) {
+    var el = document.getElementById('ot-list');
+    el.innerHTML = '<div class="ot-empty">Loading…</div>';
+    Wren.api(_listQuery(extra))
+      .then(_renderList)
+      .catch(function(e){ el.innerHTML = '<div class="ot-empty" style="color:#ef4444">Could not load: '+_esc(e.error||e.message)+'</div>'; });
+  }
+  function _setView(v, extra) {
+    _view = v;
+    document.querySelectorAll('#ot-view-chips .ot-chip').forEach(function(b){ b.classList.toggle('active', b.dataset.view===v); });
+    document.getElementById('ot-grid-view').style.display = v==='grid' ? '' : 'none';
+    document.getElementById('ot-list-view').style.display = v==='list' ? '' : 'none';
+    if (v==='list') _loadList(extra); else _load();
+  }
+
+  // ── Selected-children scope banner (Prompt 50) ──────────────────────────────
+  function _renderScopeBanner() {
+    var banner = document.getElementById('ot-scope-banner');
+    var txt    = document.getElementById('ot-scope-text');
+    if (!banner) return;
+    if (!_childIds.length) { banner.hidden = true; return; }
+    banner.hidden = false;
+    var names = _childIds.map(function(id){ return _childNames[id]; }).filter(Boolean);
+    txt.textContent = 'Showing ' + _childIds.length + ' selected child'
+      + (_childIds.length === 1 ? '' : 'ren')
+      + (names.length ? ': ' + names.join(', ') : '');
+  }
+  function _clearScope() {
+    _childIds = [];
+    try { sessionStorage.removeItem(SELECTION_KEY); sessionStorage.removeItem('eyGroupSelection'); } catch (_) {}
+    _renderScopeBanner();
+  }
+
+  function _boot() {
+    // Active child selection from /ey/home (scopes the whole tracker until "Show all")
+    _childIds = _selectedIds();
+    if (_childIds.length) {
+      Wren.api('/api/children').then(function(data){
+        var list = Array.isArray(data) ? data : (data && data.rows ? data.rows : []);
+        list.forEach(function(c){ _childNames[c.id] = c.name || ((c.first_name||'') + ' ' + (c.last_name||'')).trim(); });
+        _renderScopeBanner();
+      }).catch(function(){});
+    }
+    _renderScopeBanner();
+    var clearBtn = document.getElementById('ot-scope-clear');
+    if (clearBtn) clearBtn.addEventListener('click', function(){ _clearScope(); _refresh(); });
+
+    // Staff filter options
+    Wren.api('/api/staff').then(function(staff){
+      var sel = document.getElementById('ot-staff');
+      (staff||[]).filter(function(s){return s.is_active!==false;}).forEach(function(s){
+        var o=document.createElement('option'); o.value=s.id; o.textContent=s.name||((s.first_name||'')+' '+(s.last_name||'')); sel.appendChild(o);
+      });
+    }).catch(function(){});
+    // Room / key-children chips
+    document.querySelectorAll('#ot-room-chips .ot-chip').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        _room = btn.dataset.room || '';
+        _mine = btn.dataset.scope === 'mine';
+        // Room / key-children chips are a different scope to the explicit /ey/home
+        // selection — picking one drops the selected-children banner (Prompt 50).
+        if (_childIds.length) _clearScope();
+        document.querySelectorAll('#ot-room-chips .ot-chip').forEach(function(b){ b.classList.toggle('active', b===btn); });
+        _refresh();
+      });
+    });
+    // View toggle (Grid / List)
+    document.querySelectorAll('#ot-view-chips .ot-chip').forEach(function(btn){
+      btn.addEventListener('click', function(){ _setView(btn.dataset.view); });
+    });
+    // Filters refresh whichever view is active
+    ['ot-staff','ot-area','ot-months','ot-type'].forEach(function(id){ document.getElementById(id).addEventListener('change', _refresh); });
+    // Drill-through: tap a child's name in the grid → list of that child's observations
+    document.getElementById('ot-grid').addEventListener('click', function(e){
+      var nameCell = e.target.closest && e.target.closest('.ot-name');
+      if (nameCell && nameCell.dataset.child) _setView('list', { child_id: nameCell.dataset.child });
+    });
+    _load();
+  }
+  function _refresh() { if (_view === 'list') _loadList(); else _load(); }
+
+  document.addEventListener('wren:ready', _boot);
+}());
+</script>
+</body>
+</html>

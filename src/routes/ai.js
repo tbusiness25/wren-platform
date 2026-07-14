@@ -25,11 +25,11 @@ const EDITION_PROMPTS = {
   eyfs: 'You are a helpful assistant for an EYFS nursery (Early Years Foundation Stage, ages 0-5). You help practitioners write Ofsted-ready observations, plan activities, and understand the EYFS framework.',
   primary: 'You are a helpful assistant for a primary school. You help teachers with lesson plans, assessments, reports, and the National Curriculum.',
   secondary: 'You are a helpful assistant for a secondary school. You help teachers with GCSE/A-level content, lesson plans, assessments, and behaviour management.',
-  ladn: 'You are Wren AI, the assistant for Your Nursery. You help nursery staff with EYFS observations, planning, compliance, and daily operations.'
+  ladn: 'You are Wren AI, the assistant for Little Angels Day Nursery. You help nursery staff with EYFS observations, planning, compliance, and daily operations.'
 };
 
 const PERSONA_PROMPTS = {
-  eyfs: `You are Wren, an AI assistant for Your Nursery staff in Ealing, West London. You are helpful, warm, and knowledgeable about early years practice. You have expert knowledge of:
+  eyfs: `You are Wren, an AI assistant for Little Angels Day Nursery staff in Ealing, West London. You are helpful, warm, and knowledgeable about early years practice. You have expert knowledge of:
 
 EYFS Statutory Framework 2024
 Development Matters (non-statutory guidance)
@@ -45,7 +45,7 @@ Key person approach
 You always give practical, actionable advice. You are not a substitute for medical advice — always direct parents to NHS 111 or their GP for medical concerns. For safeguarding matters, always advise following the setting's safeguarding policy and contacting the designated safeguarding lead.
 Keep responses concise — 2-3 paragraphs maximum unless asked for more detail. Use UK English throughout.`,
 
-  admin: `You are Wren, an AI assistant for the manager of Your Nursery. You have comprehensive knowledge of:
+  admin: `You are Wren, an AI assistant for the manager of Little Angels Day Nursery. You have comprehensive knowledge of:
 
 Everything in the EYFS persona above
 Ofsted inspection preparation and self-evaluation
@@ -59,7 +59,7 @@ Safeguarding lead responsibilities
 HR processes: disciplinary, absence management, supervisions
 You can access information about the nursery's own systems when asked. Give detailed, manager-level advice. Always caveat employment law advice with 'consult an HR professional or employment solicitor for your specific situation'.`,
 
-  hr: `You are Wren, an HR assistant for Your Nursery staff. You can help with:
+  hr: `You are Wren, an HR assistant for Little Angels Day Nursery staff. You can help with:
 
 Understanding your employment contract and rights
 Holiday entitlement calculations
@@ -70,7 +70,7 @@ Understanding payslips
 Raising concerns or grievances (signpost to manager/policy)
 Keep responses factual and concise. For complex HR matters, always advise speaking with the manager directly.`,
 
-  parents: `You are a friendly early years advisor for parents using the Your Nursery Nursery parents portal. You help parents support their child's development at home. You have knowledge of:
+  parents: `You are a friendly early years advisor for parents using the Little Angels Nursery parents portal. You help parents support their child's development at home. You have knowledge of:
 
 School readiness: what it means and how to prepare
 Phonics: how it's taught, how to support reading at home (Letters and Sounds, Read Write Inc)
@@ -86,7 +86,7 @@ Screen time guidance (UK Chief Medical Officers)
 Managing emotions and behaviour at home
 You are warm, non-judgemental, and encouraging. Never make parents feel bad about their choices. Always acknowledge that parenting is hard. For medical concerns always direct to NHS 111, GP, or health visitor. Never give specific medical advice.`,
 
-  apprentice: `You are Nestling, a warm, patient mentor for an apprentice / new starter at Your Nursery in Ealing, England. Your job is to help them deepen their understanding of early years practice — child development, attachment, the developing brain, neurodiversity, self-regulation, communication & language, child psychology, the realities of being a working parent, empathy, child-first practice, safeguarding awareness, and health & safety.
+  apprentice: `You are Nestling, a warm, patient mentor for an apprentice / new starter at Little Angels Day Nursery in Ealing, England. Your job is to help them deepen their understanding of early years practice — child development, attachment, the developing brain, neurodiversity, self-regulation, communication & language, child psychology, the realities of being a working parent, empathy, child-first practice, safeguarding awareness, and health & safety.
 
 HOW YOU TEACH:
 - Plain language. Explain ideas simply, as if to someone new to the profession. Short paragraphs. Use a gentle, encouraging tone — they are learning.
@@ -100,7 +100,7 @@ STRICT SOURCING RULE (this is the most important rule):
 - England / UK EYFS context only.
 
 SAFEGUARDING — NON-NEGOTIABLE:
-- If the learner describes a real or current worry about a specific child's safety or welfare (a disclosure, a mark/bruise, fear, neglect, something that doesn't feel right), you MUST tell them to speak to the Designated Safeguarding Lead, the deputy (Deputy Manager), straight away and follow the nursery's safeguarding policy. Tell them to record exactly what they saw/heard in the child's own words and NOT to investigate, promise secrecy, or confront anyone themselves. You teach safeguarding awareness; you never replace the DSL.
+- If the learner describes a real or current worry about a specific child's safety or welfare (a disclosure, a mark/bruise, fear, neglect, something that doesn't feel right), you MUST tell them to speak to the Designated Safeguarding Lead, Ayla (Deputy Manager), straight away and follow the nursery's safeguarding policy. Tell them to record exactly what they saw/heard in the child's own words and NOT to investigate, promise secrecy, or confront anyone themselves. You teach safeguarding awareness; you never replace the DSL.
 
 MEDICAL & LEGAL BOUNDARIES:
 - You do not diagnose children or give medical advice. If asked whether a child "has" a condition, explain you cannot diagnose — only a qualified professional (GP, health visitor, paediatrician, educational psychologist) can — and that the nursery's role is to observe, support and refer. Teaching ABOUT a condition or about inclusive practice is fine; diagnosing a real child is not.
@@ -266,7 +266,7 @@ async function handleApprenticeChat(req, res, { message, history }) {
 
   // Graceful out-of-corpus decline — no approved material AND not a safeguarding redirect.
   if (!chunks.length && !isSafeguarding) {
-    const reply = "I can only help from Your Nursery' approved early years training and the EYFS framework, and I don't have anything in there that covers that one. I'd rather point you to the right person than guess — your room leader or the manager (Toby) can help, and for anything about a child's safety always speak to the DSL, the deputy. Try me on child development, attachment, the EYFS, neurodiversity, safeguarding awareness or health & safety instead.";
+    const reply = "I can only help from Little Angels' approved early years training and the EYFS framework, and I don't have anything in there that covers that one. I'd rather point you to the right person than guess — your room leader or the manager (Toby) can help, and for anything about a child's safety always speak to the DSL, Ayla. Try me on child development, attachment, the EYFS, neurodiversity, safeguarding awareness or health & safety instead.";
     logApprentice(_db, user, message, reply, 'declined-no-corpus');
     return res.json({ reply, sources: [], grounded: false, mode });
   }
@@ -274,7 +274,7 @@ async function handleApprenticeChat(req, res, { message, history }) {
   // Build the grounded system prompt.
   let systemPrompt = PERSONA_PROMPTS.apprentice + apprenticeRag.buildGroundingBlock(chunks);
   if (isSafeguarding) {
-    systemPrompt += `\n\nIMPORTANT: The learner's message may describe a real safeguarding worry about a child. Begin your reply by telling them to speak to the Designated Safeguarding Lead, the deputy, immediately and follow the safeguarding policy, then add brief, calm educational guidance from the corpus on what to do (record the child's exact words, do not investigate or promise secrecy).`;
+    systemPrompt += `\n\nIMPORTANT: The learner's message may describe a real safeguarding worry about a child. Begin your reply by telling them to speak to the Designated Safeguarding Lead, Ayla, immediately and follow the safeguarding policy, then add brief, calm educational guidance from the corpus on what to do (record the child's exact words, do not investigate or promise secrecy).`;
   }
   if (isMedical) {
     systemPrompt += `\n\nIMPORTANT: Do not diagnose or give medical advice. Make clear that only a qualified professional can diagnose, and that the nursery's role is to observe, support and refer. You may still teach generally about the topic from the corpus.`;
@@ -294,7 +294,7 @@ async function handleApprenticeChat(req, res, { message, history }) {
 
     // Guarantee the safeguarding redirect is present even if the model under-emphasised it.
     if (isSafeguarding && !/\bayla\b/i.test(reply)) {
-      reply = `⚠️ This sounds like it could be a safeguarding matter — please speak to our Designated Safeguarding Lead, the deputy (Deputy Manager), straight away and follow the safeguarding policy. Record exactly what you saw or heard in the child's own words, and don't investigate it or promise to keep it secret.\n\n` + reply;
+      reply = `⚠️ This sounds like it could be a safeguarding matter — please speak to our Designated Safeguarding Lead, Ayla (Deputy Manager), straight away and follow the safeguarding policy. Record exactly what you saw or heard in the child's own words, and don't investigate it or promise to keep it secret.\n\n` + reply;
     }
 
     // Guarantee citations: append the actual approved sources retrieved.
@@ -728,7 +728,7 @@ router.post('/report/start', authenticate, async (req, res) => {
       ? `${Math.floor(age_months / 12)} years ${age_months % 12} months`
       : 'age not specified';
 
-    const systemPrompt = `You are helping a nursery practitioner at Your Nursery write a warm, professional 6-monthly progress report for parents about ${child_name || 'a child'}, aged ${ageStr}, in the ${room || 'nursery'}.
+    const systemPrompt = `You are helping a nursery practitioner at Little Angels Day Nursery write a warm, professional 6-monthly progress report for parents about ${child_name || 'a child'}, aged ${ageStr}, in the ${room || 'nursery'}.
 
 Gather information through a friendly conversation. Ask ONE question at a time. Accept voice-note style rambling answers — that is fine.
 Cover these areas through your questions: PSED, Communication & Language, Physical Development, Literacy, Maths, Understanding the World, Expressive Arts, the child's personality and interests, and next steps.
@@ -785,7 +785,7 @@ router.post('/report/chat', authenticate, async (req, res) => {
 
     if (message.toLowerCase().includes('generate report')) {
       const reportSystem = `Write a warm, professional 6-monthly progress report for parents about ${session.child_name}, aged ${ageStr}.
-Start with "Dear Parent/Carer,". Use warm positive language specific to this child. Cover all 7 EYFS areas with headings. End with a "Next Steps" section and warm closing. Approximately 400-500 words. Sign off as "The Team at Your Nursery, Ealing".`;
+Start with "Dear Parent/Carer,". Use warm positive language specific to this child. Cover all 7 EYFS areas with headings. End with a "Next Steps" section and warm closing. Approximately 400-500 words. Sign off as "The Team at Little Angels Day Nursery, Ealing".`;
       const summary = conversation.map(m => `${m.role === 'assistant' ? 'Q' : 'A'}: ${m.content}`).join('\n');
       const report = await callAI(`Based on this conversation, write the parent report:\n\n${summary}`, reportSystem);
       conversation.push({ role: 'user', content: message }, { role: 'assistant', content: '✅ Report generated!' });
@@ -866,8 +866,8 @@ router.post('/waiting-list', authenticate, async (req, res) => {
     const profile = `Child: ${e.child_first_name} ${e.child_last_name}, DOB: ${e.child_dob || 'unknown'} (age ~${ageMonths || '?'} months), Room requested: ${e.preferred_room || e.room_needed || 'unknown'}. Parent: ${e.parent_name || 'unknown'}. Enquiry stage: ${e.stage}. Days on list: ${daysWaiting}. Funding: ${e.funded_hours_type || 'none'}. Source: ${e.source || 'unknown'}. Notes: ${e.notes || 'none'}.`;
 
     const prompts = {
-      score: `You are an admissions advisor for Your Nursery, Ealing. Score this enquiry 0-100 for offer priority. Consider: age fit for room, days waiting, sibling priority (unknown unless stated), funding eligibility, parent engagement. Format: Score: [number]/100\nReasoning: [2-3 sentences]. Child profile: ${profile}`,
-      email: `Write a warm, professional follow-up email for this nursery enquiry. Use the nursery name 'Your Nursery' and sign off from Nursery Manager, Manager. Keep it under 150 words. Enquiry: ${profile}`,
+      score: `You are an admissions advisor for Little Angels Day Nursery, Ealing. Score this enquiry 0-100 for offer priority. Consider: age fit for room, days waiting, sibling priority (unknown unless stated), funding eligibility, parent engagement. Format: Score: [number]/100\nReasoning: [2-3 sentences]. Child profile: ${profile}`,
+      email: `Write a warm, professional follow-up email for this nursery enquiry. Use the nursery name 'Little Angels Day Nursery' and sign off from Toby Jones, Manager. Keep it under 150 words. Enquiry: ${profile}`,
       notes: `Summarise these admissions notes in 2-3 bullet points for a manager. Highlight any action needed. Profile: ${profile}`,
       priority: `Rate this child's priority for a nursery offer compared to a typical waiting list. Give: HIGH / MEDIUM / LOW priority and one sentence of reasoning. Profile: ${profile}`,
     };
@@ -915,7 +915,7 @@ router.post('/waiting-list', authenticate, async (req, res) => {
 // POST /draft-email — AI email draft assist
 router.post('/draft-email', authenticate, async (req, res) => {
   const { context, recipient, subject } = req.body;
-  const prompt = `Draft a professional email for Your Nursery. Recipient: ${recipient||'parent'}. Subject: ${subject||''}. Context: ${context||''}. Write in a warm, professional tone appropriate for a nursery setting.`;
+  const prompt = `Draft a professional email for Little Angels Day Nursery. Recipient: ${recipient||'parent'}. Subject: ${subject||''}. Context: ${context||''}. Write in a warm, professional tone appropriate for a nursery setting.`;
   try {
     const draft = await callAI(prompt, EDITION_PROMPTS.ladn);
     let decisionId = null;
@@ -1222,7 +1222,7 @@ router.post('/report/:id/draft-report', authenticate, async (req, res) => {
       evidenceBlock += `[CoEL] ${c.characteristic || c.aspect || 'General'} — ${c.level || 'developing'}\n`;
     }
 
-    const systemPrompt = `You are helping a nursery practitioner at Your Nursery write a warm, professional, evidence-based 6-monthly progress report for parents.
+    const systemPrompt = `You are helping a nursery practitioner at Little Angels Day Nursery write a warm, professional, evidence-based 6-monthly progress report for parents.
 
 The report MUST weave the confirmed framework statements into warm, parent-friendly prose. Never invent statements — only use what's confirmed below.
 

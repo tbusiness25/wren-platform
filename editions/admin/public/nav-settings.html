@@ -1,0 +1,120 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sidebar Layout · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;--ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .ns-wrap{padding:18px;max-width:900px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+ button{background:var(--blue);border:none;color:#06121f;border-radius:6px;padding:7px 13px;font-size:.82rem;font-weight:700;cursor:pointer}
+ button.ghost{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600}
+ button.mini{padding:2px 7px;font-size:.72rem;background:transparent;border:1px solid var(--bd);color:var(--txt)}
+ button.mini:hover{border-color:var(--blue)}
+ .grp{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+ .grp-head{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+ .grp-head input{flex:1;background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:6px;padding:6px 9px;font-weight:700;font-size:.9rem}
+ .sec{display:flex;gap:8px;align-items:center;padding:5px 8px;border:1px solid var(--bd);border-radius:6px;margin:4px 0;background:#0b1428;font-size:.84rem}
+ .sec .lbl{flex:1}
+ .sec select,.avail select{background:#0f1a34;border:1px solid var(--bd);color:var(--txt);border-radius:5px;padding:3px 5px;font-size:.75rem}
+ .avail{background:var(--card);border:1px dashed var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+ .avail .sec{border-style:dashed}
+ .msg{font-size:.82rem;min-height:1em;margin:8px 0;color:var(--warn)}
+ .hint{color:var(--mut);font-size:.76rem}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="ns-wrap">
+  <h1>🎛️ Sidebar Layout</h1>
+  <div class="sub">Rearrange your admin sidebar — reorder groups + sections, rename groups, move things around. Saved to this device. <span class="hint">Any section not placed in a group still appears under “More”, so nothing gets lost.</span></div>
+  <div class="bar">
+    <button id="btnSave">Save layout</button>
+    <button class="ghost" id="btnAddGroup">+ Add group</button>
+    <button class="ghost" id="btnReset">Reset to default</button>
+  </div>
+  <div class="msg" id="msg"></div>
+  <div id="groups"></div>
+  <div id="available"></div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var META=null, groups=[], secMap={};
+  function el(id){return document.getElementById(id);}
+  function msg(t,c){var m=el('msg');m.textContent=t||'';m.style.color=c==='ok'?'var(--ok)':c==='bad'?'var(--bad)':'var(--warn)';}
+  function esc(s){return (s||'').replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+
+  function allGroupedIds(){var s=new Set();groups.forEach(function(g){(g.sections||[]).forEach(function(id){s.add(id);});});return s;}
+  function availableIds(){var g=allGroupedIds();return META.sections.filter(function(s){return !g.has(s.id);}).map(function(s){return s.id;});}
+  function label(id){return (secMap[id]?((secMap[id].icon||'')+' '+secMap[id].label):id);}
+
+  function render(){
+    // groups
+    el('groups').innerHTML=groups.map(function(g,gi){
+      return '<div class="grp"><div class="grp-head">'+
+        '<input value="'+esc(g.label)+'" data-gname="'+gi+'">'+
+        '<button class="mini" data-gup="'+gi+'" '+(gi===0?'disabled':'')+'>↑</button>'+
+        '<button class="mini" data-gdown="'+gi+'" '+(gi===groups.length-1?'disabled':'')+'>↓</button>'+
+        '<button class="mini" data-gdel="'+gi+'">✕ group</button></div>'+
+        (g.sections||[]).map(function(id,si){
+          return '<div class="sec"><span class="lbl">'+esc(label(id))+'</span>'+
+            '<button class="mini" data-sup="'+gi+'|'+si+'" '+(si===0?'disabled':'')+'>↑</button>'+
+            '<button class="mini" data-sdown="'+gi+'|'+si+'" '+(si===g.sections.length-1?'disabled':'')+'>↓</button>'+
+            '<select data-smove="'+gi+'|'+si+'"><option value="">move to…</option>'+
+              groups.map(function(g2,gj){return gj===gi?'':'<option value="'+gj+'">'+esc(g2.label)+'</option>';}).join('')+
+              '<option value="__hide">Remove (→ More)</option></select>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+    }).join('');
+    // available (ungrouped) — these currently show under auto "More"
+    var av=availableIds();
+    el('available').innerHTML=av.length?'<div class="avail"><div class="hint" style="margin-bottom:6px">Ungrouped (shown under “More”) — assign to a group:</div>'+
+      av.map(function(id){return '<div class="sec"><span class="lbl">'+esc(label(id))+'</span><select data-sassign="'+id+'"><option value="">add to…</option>'+
+        groups.map(function(g,gi){return '<option value="'+gi+'">'+esc(g.label)+'</option>';}).join('')+'</select></div>';}).join('')+'</div>':'';
+  }
+
+  el('groups').addEventListener('input',function(e){var gi=e.target.getAttribute('data-gname');if(gi!==null){groups[+gi].label=e.target.value;}});
+  el('groups').addEventListener('change',function(e){
+    var mv=e.target.getAttribute('data-smove');
+    if(mv){var p=mv.split('|'),gi=+p[0],si=+p[1],dest=e.target.value;if(dest==='')return;
+      var id=groups[gi].sections.splice(si,1)[0];
+      if(dest!=='__hide'){groups[+dest].sections.push(id);}
+      render();return;}
+    var as=e.target.getAttribute('data-sassign');
+    if(as){var gi2=e.target.value;if(gi2==='')return;groups[+gi2].sections.push(as);render();}
+  });
+  el('groups').addEventListener('click',function(e){
+    var t=e.target,v;
+    if((v=t.getAttribute('data-gup'))!==null){var i=+v;if(i>0){var x=groups.splice(i,1)[0];groups.splice(i-1,0,x);render();}return;}
+    if((v=t.getAttribute('data-gdown'))!==null){var i2=+v;if(i2<groups.length-1){var y=groups.splice(i2,1)[0];groups.splice(i2+1,0,y);render();}return;}
+    if((v=t.getAttribute('data-gdel'))!==null){if(confirm('Delete this group? Its sections move to “More”.')){groups.splice(+v,1);render();}return;}
+    if((v=t.getAttribute('data-sup'))!==null){var p=v.split('|'),gi=+p[0],si=+p[1];if(si>0){var a=groups[gi].sections;var s=a.splice(si,1)[0];a.splice(si-1,0,s);render();}return;}
+    if((v=t.getAttribute('data-sdown'))!==null){var q=v.split('|'),gj=+q[0],sj=+q[1];var arr=groups[gj].sections;if(sj<arr.length-1){var s2=arr.splice(sj,1)[0];arr.splice(sj+1,0,s2);render();}return;}
+  });
+  el('btnAddGroup').addEventListener('click',function(){var n=prompt('New group name:');if(!n)return;groups.push({label:n.trim(),sections:[]});render();});
+  el('btnSave').addEventListener('click',function(){
+    var clean=groups.filter(function(g){return g.label&&(g.sections||[]).length;}).map(function(g){return {label:g.label,sections:g.sections};});
+    if(window.Wren&&Wren.saveNavGroups&&Wren.saveNavGroups(clean)){msg('Saved. Reloading…','ok');setTimeout(function(){location.href='/app.html';},700);}
+    else msg('Could not save (storage blocked?)','bad');
+  });
+  el('btnReset').addEventListener('click',function(){
+    if(!confirm('Reset the sidebar to the default layout?'))return;
+    if(window.Wren&&Wren.resetNavGroups)Wren.resetNavGroups();
+    groups=JSON.parse(JSON.stringify(META.defaultGroups));render();msg('Reset to default — Save to keep, or reload.','ok');
+  });
+
+  function init(){
+    if(!window.Wren||!Wren.getNavMeta){msg('Shell not ready — reload the page.','bad');return;}
+    META=Wren.getNavMeta();
+    META.sections.forEach(function(s){secMap[s.id]=s;});
+    groups=JSON.parse(JSON.stringify(META.groups||META.defaultGroups));
+    render();
+  }
+  document.addEventListener('wren:ready',init);
+})();
+</script>
+</body></html>

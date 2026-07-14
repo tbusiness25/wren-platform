@@ -8,10 +8,10 @@ const fs   = require('fs');
 const { getPool } = require('../db/pool');
 const { notify } = require('./notification-dispatcher');
 
-const MQTT_HOST   = process.env.MQTT_HOST  || 'your-server';
+const MQTT_HOST   = process.env.MQTT_HOST  || '100.126.215.7';
 const MQTT_PORT   = parseInt(process.env.MQTT_PORT || '1883');
 const SNAP_DIR    = process.env.DOORBELL_SNAP_DIR || '/app/data/doorbell-snapshots';
-const SITE_BASE   = process.env.SITE_BASE || 'https://admin.example-nursery.co.uk';
+const SITE_BASE   = process.env.SITE_BASE || 'https://admin.littleangelsealing.co.uk';
 const DEDUP_MS    = 5_000; // suppress duplicate events within 5s
 
 let _lastEventAt = 0;

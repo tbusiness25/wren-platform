@@ -17,7 +17,7 @@ async function generateAndEmailPDF(surveyType, responses, email) {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      doc.fontSize(18).font('Helvetica-Bold').text('Your Nursery', { align: 'center' });
+      doc.fontSize(18).font('Helvetica-Bold').text('Little Angels Day Nursery', { align: 'center' });
       doc.fontSize(13).font('Helvetica').text(`Survey: ${surveyType}`, { align: 'center' });
       doc.fontSize(10).text(`Submitted by: ${email}`, { align: 'center' });
       doc.fontSize(10).text(`Date: ${new Date().toLocaleString('en-GB')}`, { align: 'center' });
@@ -42,8 +42,8 @@ async function generateAndEmailPDF(surveyType, responses, email) {
     });
 
     await transporter.sendMail({
-      from: process.env.SMTP_FROM || 'wren@example-nursery.co.uk',
-      to: 'admin@example.com',
+      from: process.env.SMTP_FROM || 'wren@littleangelsealing.co.uk',
+      to: 'toby.jones1@gmail.com',
       subject: `Survey response: ${surveyType} from ${email}`,
       text: `New survey response from ${email}. See attached PDF.`,
       attachments: [{ filename: `survey-${surveyType}-${Date.now()}.pdf`, content: pdf }]
@@ -226,7 +226,7 @@ router.post('/templates/:id/send', authenticate, mgr, async (req, res) => {
 
     const PUBLIC_ORIGIN = process.env.PARENTS_DOMAIN
       ? `https://${process.env.PARENTS_DOMAIN}`
-      : 'https://parents.example-nursery.co.uk';
+      : 'https://parents.littleangelsealing.co.uk';
 
     let created = 0, skipped = 0;
     const invites = [];
@@ -254,7 +254,7 @@ router.post('/templates/:id/send', authenticate, mgr, async (req, res) => {
       const html = `<p>Dear Parent,</p><p>We'd really value your thoughts. Please take a few minutes to complete our survey:</p>`
         + `<p><a href="${inv.url}">Complete the survey →</a></p>`
         + `<p>This link is personal to you — no login needed.</p>`
-        + `<p>Thank you,<br>Your Nursery</p>`
+        + `<p>Thank you,<br>Little Angels Day Nursery</p>`
         + `<img src="${pixel}" width="1" height="1" alt="" style="display:none">`;
       try {
         await db.query(
@@ -262,10 +262,10 @@ router.post('/templates/:id/send', authenticate, mgr, async (req, res) => {
              (from_email, from_name, subject, status, received_at, draft_text, body_html, classification)
            VALUES ($1,$2,$3,'pending',NOW(),$4,$5,'survey-invite')`,
           [
-            inv.email || 'wren@example-nursery.co.uk',
-            'Your Nursery',
+            inv.email || 'wren@littleangelsealing.co.uk',
+            'Little Angels Day Nursery',
             `We'd love your feedback — ${template.name}`,
-            `Dear Parent,\n\nWe'd really value your thoughts. Please take a few minutes to complete our survey:\n\n${inv.url}\n\nThis link is personal to you — no login needed.\n\nThank you,\nYour Nursery`,
+            `Dear Parent,\n\nWe'd really value your thoughts. Please take a few minutes to complete our survey:\n\n${inv.url}\n\nThis link is personal to you — no login needed.\n\nThank you,\nLittle Angels Day Nursery`,
             html
           ]
         );
@@ -507,7 +507,7 @@ router.post('/templates/:id/remind', authenticate, mgr, async (req, res) => {
 
     const PUBLIC_ORIGIN = process.env.PARENTS_DOMAIN
       ? `https://${process.env.PARENTS_DOMAIN}`
-      : 'https://parents.example-nursery.co.uk';
+      : 'https://parents.littleangelsealing.co.uk';
 
     // Invitees who were sent but have not responded
     const { rows: pending } = await db.query(
@@ -522,7 +522,7 @@ router.post('/templates/:id/remind', authenticate, mgr, async (req, res) => {
       const html = `<p>Dear Parent,</p><p>Just a gentle reminder that we'd still love your feedback. It only takes a few minutes:</p>`
         + `<p><a href="${url}">Complete the survey →</a></p>`
         + `<p>This link is personal to you — no login needed.</p>`
-        + `<p>Thank you,<br>Your Nursery</p>`
+        + `<p>Thank you,<br>Little Angels Day Nursery</p>`
         + `<img src="${pixel}" width="1" height="1" alt="" style="display:none">`;
       try {
         await db.query(
@@ -530,10 +530,10 @@ router.post('/templates/:id/remind', authenticate, mgr, async (req, res) => {
              (from_email, from_name, subject, status, received_at, draft_text, body_html, classification)
            VALUES ($1,$2,$3,'pending',NOW(),$4,$5,'survey-reminder')`,
           [
-            inv.email || 'wren@example-nursery.co.uk',
-            'Your Nursery',
+            inv.email || 'wren@littleangelsealing.co.uk',
+            'Little Angels Day Nursery',
             `A quick reminder — ${template.name}`,
-            `Dear Parent,\n\nJust a gentle reminder that we'd still love your feedback. It only takes a few minutes:\n\n${url}\n\nThis link is personal to you — no login needed.\n\nThank you,\nYour Nursery`,
+            `Dear Parent,\n\nJust a gentle reminder that we'd still love your feedback. It only takes a few minutes:\n\n${url}\n\nThis link is personal to you — no login needed.\n\nThank you,\nLittle Angels Day Nursery`,
             html
           ]
         );

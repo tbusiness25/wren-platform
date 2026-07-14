@@ -5,6 +5,7 @@
       <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="list"      id="tab-ns-list"      aria-controls="panel-ns-list">Pending</button>
       <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="completed" id="tab-ns-done"      aria-controls="panel-ns-done">Completed</button>
       <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="overdue"   id="tab-ns-overdue"  aria-controls="panel-ns-overdue">Overdue</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="gaps"      id="tab-ns-gaps"     aria-controls="panel-ns-gaps">Suggested (gaps)</button>
     </div>
     <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
     <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
@@ -50,6 +51,20 @@
       </div>
     </div>
 
+    <!-- SUGGESTED (FRAMEWORK GAPS) -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ns-gaps" data-tab="gaps" aria-labelledby="tab-ns-gaps" hidden>
+      <p style="color:var(--c-muted);font-size:.85rem;margin-bottom:14px">
+        Development Matters coverage gaps — statements at a child's current level that have <strong>no observation evidence yet</strong>.
+        Turn any into a tracked next step. This is how LADN assesses: by breadth of coverage across the 7 areas.
+      </p>
+      <div style="margin-bottom:16px">
+        <select class="v2-sort-select" id="ns-gap-child" aria-label="Select child">
+          <option value="">Select a child…</option>
+        </select>
+      </div>
+      <div id="ns-gap-container"></div>
+    </div>
+
   </div><!-- /.wren-tab-panels -->
 </div><!-- /.v2-section -->
 
@@ -68,6 +83,16 @@
 .ns-actions{display:flex;gap:8px;flex-wrap:wrap}
 .ns-empty{text-align:center;padding:40px 16px;color:var(--c-muted)}
 .ns-group-header{font-size:.8rem;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin:20px 0 8px}
+.ns-gap-summary{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:.85rem}
+.ns-gap-area{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.ns-gap-area-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.ns-gap-area-name{font-weight:700;font-size:.9rem;color:var(--c-text)}
+.ns-gap-count{font-size:.72rem;font-weight:700;border-radius:20px;padding:3px 10px;background:#4a9abf22;color:#4a9abf}
+.ns-gap-bar{height:6px;border-radius:4px;background:var(--c-bg);overflow:hidden;margin-bottom:10px}
+.ns-gap-bar>span{display:block;height:100%;background:#4a9abf}
+.ns-gap-stmt{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--c-border);font-size:.85rem;line-height:1.45}
+.ns-gap-stmt .txt{flex:1}
+.ns-gap-stmt .age{font-size:.72rem;color:var(--c-muted)}
 </style>
 
 <script>
@@ -111,9 +136,12 @@
           roomEl.innerHTML += `<option value="${id}">${name}</option>`;
         });
       }
-      if (childEl) {
+      const gapChildEl = document.getElementById('ns-gap-child');
+      if (childEl || gapChildEl) {
         children.forEach(c => {
-          childEl.innerHTML += `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`;
+          const opt = `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`;
+          if (childEl)    childEl.innerHTML    += opt;
+          if (gapChildEl) gapChildEl.innerHTML += opt;
         });
       }
     } catch(e) {}
@@ -232,8 +260,77 @@
     } catch(e) { Wren.toast('Failed', 'error'); }
   };
 
+  // ── Suggested (framework gaps) ────────────────────────────────────────────
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  async function _nsGapLoad() {
+    const childId = document.getElementById('ns-gap-child')?.value;
+    const el = document.getElementById('ns-gap-container');
+    if (!el) return;
+    if (!childId) { el.innerHTML = '<div class="ns-empty">Pick a child to see their coverage gaps.</div>'; return; }
+    el.innerHTML = '<div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>';
+    try {
+      const d = await Wren.api('/api/next-steps/suggestions/' + childId);
+      if (!d.has_assessment) {
+        el.innerHTML = `<div class="ns-empty">${esc(d.message || 'No assessment data yet for this child.')}</div>`;
+        return;
+      }
+      if (!d.areas || !d.areas.length) {
+        el.innerHTML = `<div class="ns-empty">🎉 No gaps found at ${esc(d.leading_band||'their level')} — every statement has evidence.</div>`;
+        return;
+      }
+      const max = Math.max(...d.areas.map(a => a.gap_count), 1);
+      el.innerHTML = `
+        <div class="ns-gap-summary">
+          <strong>${esc(d.child_name)}</strong> — working at <strong>${esc(d.leading_band)}</strong>.
+          <strong>${d.total_gaps}</strong> Development Matters statements without evidence yet, across ${d.areas.length} areas.
+        </div>
+        ${d.areas.map(a => `
+          <div class="ns-gap-area">
+            <div class="ns-gap-area-head">
+              <span class="ns-gap-area-name">${esc(a.area)}</span>
+              <span class="ns-gap-count">${a.gap_count} gap${a.gap_count===1?'':'s'}</span>
+            </div>
+            <div class="ns-gap-bar"><span style="width:${Math.round(100*a.gap_count/max)}%"></span></div>
+            ${(a.samples||[]).map(s => `
+              <div class="ns-gap-stmt">
+                <span class="txt">${esc(s.text)} <span class="age">· ${esc(s.age_range)}</span></span>
+                <button class="btn btn-sm btn-primary" data-gap-accept data-child="${childId}" data-stmt="${s.statement_id}">+ Next step</button>
+              </div>`).join('')}
+          </div>`).join('')}`;
+    } catch(e) {
+      el.innerHTML = '<div class="ns-empty">Failed to load gaps</div>';
+    }
+  }
+
+  async function _nsGapAccept(childId, stmtId, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    try {
+      const r = await Wren.api('/api/next-steps/from-statement', { method: 'POST', body: { child_id: parseInt(childId), statement_id: parseInt(stmtId) } });
+      Wren.toast(r.duplicate ? 'Already a next step for this child' : 'Added as next step ✓', 'success');
+      const row = btn?.closest('.ns-gap-stmt');
+      if (row) row.style.opacity = '.4';
+      if (btn) btn.textContent = r.duplicate ? 'Exists' : 'Added ✓';
+    } catch(e) {
+      Wren.toast('Failed to add', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '+ Next step'; }
+    }
+  }
+  window._nsGapLoad = _nsGapLoad;
+
+  function _wireGapPanel() {
+    document.getElementById('ns-gap-child')?.addEventListener('change', _nsGapLoad);
+    document.getElementById('tab-ns-gaps')?.addEventListener('click', _nsGapLoad);
+    document.getElementById('ns-gap-container')?.addEventListener('click', function(e){
+      const btn = e.target.closest('[data-gap-accept]');
+      if (!btn) return;
+      _nsGapAccept(btn.dataset.child, btn.dataset.stmt, btn);
+    });
+  }
+
   document.addEventListener('wren:section-loaded', async e => {
     if (e.detail?.section !== 'next-steps') return;
+    _wireGapPanel();
     await loadFilters();
     _nsLoad();
     document.getElementById('ns-refresh-btn')?.addEventListener('click', _nsLoad);
@@ -279,6 +376,7 @@
   // Also fire on first paint if section already loaded
   if (document.querySelector('.v2-section[data-section="next-steps"]')) {
     loadFilters().then(() => _nsLoad());
+    _wireGapPanel();
     document.getElementById('ns-refresh-btn')?.addEventListener('click', _nsLoad);
     document.getElementById('ns-list-container')?.addEventListener('click', function(e) {
       const btn = e.target.closest('[data-action]');

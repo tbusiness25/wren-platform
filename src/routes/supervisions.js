@@ -9,11 +9,11 @@ const fs = require('fs');
 
 // ── Recording constants ────────────────────────────────────────────────────────
 const OLLAMA_HELPER_URL   = process.env.OLLAMA_HOST || process.env.OLLAMA_URL || 'http://localhost:11434';
-// Ascent (your-ollama-host) model. qwen3.6:27b is NOT loaded on the Ascent — use 35b-a3b.
+// Ascent (100.109.248.102) model. qwen3.6:27b is NOT loaded on the Ascent — use 35b-a3b.
 const OLLAMA_HELPER_MODEL = process.env.OLLAMA_HELPER_MODEL || 'qwen3.6:35b-a3b';
-// Data root: inside the container this is /app/data (host bind /app/data/ladn).
+// Data root: inside the container this is /app/data (host bind /home/toby/wren/data/ladn).
 // Fall back to the host path for any out-of-container use.
-const DATA_ROOT  = fs.existsSync('/app/data') ? '/app/data' : '/app/data/ladn';
+const DATA_ROOT  = fs.existsSync('/app/data') ? '/app/data' : '/home/toby/wren/data/ladn';
 const AUDIO_BASE = path.join(DATA_ROOT, 'supervision-audio');
 
 // Chunk upload storage
@@ -299,7 +299,7 @@ Return ONLY valid JSON, no commentary.`;
 // Storage for audio uploads
 const audioStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = `/app/data/supervisions/${req.params.id}`;
+    const dir = `/home/toby/wren/data/supervisions/${req.params.id}`;
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -643,7 +643,7 @@ router.get('/:id/audio', async (req, res) => {
     const db = getPool();
     const { rows } = await db.query('SELECT audio_recording_path FROM supervisions WHERE id=$1', [req.params.id]);
     if (!rows.length || !rows[0].audio_recording_path) return res.status(404).json({ error: 'No audio' });
-    const fullPath = `/app/data/${rows[0].audio_recording_path}`;
+    const fullPath = `/home/toby/wren/data/${rows[0].audio_recording_path}`;
     if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'File not found' });
     res.setHeader('Content-Type', 'audio/webm');
     fs.createReadStream(fullPath).pipe(res);
@@ -838,7 +838,7 @@ router.get('/:id/recording', async (req, res) => {
     `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const row = rows[0];
-    const audioDir = row.audio_path ? path.join('/app/data', row.audio_path) : null;
+    const audioDir = row.audio_path ? path.join('/home/toby/wren/data', row.audio_path) : null;
     const audioAvailable = audioDir && fs.existsSync(audioDir) &&
       fs.readdirSync(audioDir).some(f => f.endsWith('.webm'));
     res.json({ ...row, audio_available: audioAvailable });

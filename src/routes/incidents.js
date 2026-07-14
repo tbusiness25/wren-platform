@@ -23,6 +23,57 @@ _ensureColumns();
 
 router.use(authenticate);
 
+// GET /by-practitioner — manager-only trend view (incidents grouped by reporting practitioner)
+router.get('/by-practitioner', async (req, res) => {
+  const isManager = ['manager', 'deputy_manager', 'admin'].includes(req.user?.role);
+  if (!isManager) return res.status(403).json({ error: 'Manager only' });
+
+  const { from, to } = req.query;
+  try {
+    const db = getPool();
+    const params = [];
+    let dateFilter = '';
+
+    if (from) {
+      params.push(from);
+      dateFilter += ` AND i.incident_date >= $${params.length}`;
+    }
+    if (to) {
+      params.push(to);
+      dateFilter += ` AND i.incident_date <= $${params.length}`;
+    }
+
+    const { rows } = await db.query(`
+      SELECT
+        s.id as staff_id,
+        s.first_name || ' ' || s.last_name as staff_name,
+        COUNT(i.id) as incident_count,
+        COUNT(CASE WHEN i.incident_type ILIKE '%accident%' THEN 1 END) as accident_count,
+        COUNT(CASE WHEN i.incident_type ILIKE '%incident%' THEN 1 END) as incident_count_specific,
+        COUNT(CASE WHEN i.status = 'closed' THEN 1 END) as closed_count,
+        COUNT(CASE WHEN i.status != 'closed' OR i.status IS NULL THEN 1 END) as open_count,
+        json_agg(json_build_object(
+          'id', i.id,
+          'child_name', c.first_name || ' ' || c.last_name,
+          'incident_date', i.incident_date,
+          'incident_type', i.incident_type,
+          'description', LEFT(i.description, 100),
+          'status', COALESCE(i.status, 'open')
+        ) ORDER BY i.incident_date DESC) as recent_incidents
+      FROM staff s
+      LEFT JOIN incidents i ON i.reported_by = s.id ${dateFilter}
+      LEFT JOIN children c ON c.id = i.child_id
+      GROUP BY s.id, s.first_name, s.last_name
+      HAVING COUNT(i.id) > 0
+      ORDER BY incident_count DESC, s.last_name
+    `, params);
+
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET / — all incidents (optional ?status=, ?child_id=)
 router.get('/', async (req, res) => {
   const status  = req.query.status;
@@ -176,7 +227,7 @@ router.post('/:id/notify-parent', async (req, res) => {
       [req.params.id, req.user.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    const baseUrl = process.env.ADMIN_BASE_URL || 'https://admin.example-nursery.co.uk';
+    const baseUrl = process.env.ADMIN_BASE_URL || 'https://admin.littleangelsealing.co.uk';
     res.json({
       ok: true,
       sign_url: `${baseUrl}/api/incidents/sign/${rows[0].parent_signature_token}`,

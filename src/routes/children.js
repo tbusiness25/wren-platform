@@ -233,7 +233,8 @@ router.put('/:id', async (req, res) => {
     'parent_2_phone','allergies','dietary_requirements','medical_notes','photo_consent',
     'media_consent','funded_hours','funded_hours_type','is_active','notes',
     'emergency_contact_1_name','emergency_contact_1_phone','send_needs','collection_password',
-    'start_date','postcode','emergency_contact_2_name','emergency_contact_2_phone'];
+    'start_date','postcode','emergency_contact_2_name','emergency_contact_2_phone',
+    'court_order','court_order_details','social_worker_name','social_worker_phone'];
   const updates = [];
   const vals = [];
   fields.forEach(f => {
@@ -428,6 +429,78 @@ router.post('/:id/photo', _childPhotoUpload.single('photo'), async (req, res) =>
     await getPool().query('UPDATE children SET photo_url=$1, updated_at=NOW() WHERE id=$2', [url, req.params.id]);
     res.json({ photo_url: url });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Carer Restrictions (s06) ──────────────────────────────────────────────────
+
+// GET /:id/restrictions — list all restrictions for a child
+router.get('/:id/restrictions', async (req, res) => {
+  try {
+    const db = getPool();
+    const { rows } = await db.query(`
+      SELECT r.*, s.first_name || ' ' || s.last_name as created_by_name
+      FROM carer_restrictions r
+      LEFT JOIN staff s ON s.id = r.created_by
+      WHERE r.child_id=$1
+      ORDER BY r.active DESC, r.created_at DESC
+    `, [req.params.id]);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /:id/restrictions — add a new restriction
+router.post('/:id/restrictions', async (req, res) => {
+  if (!CHILD_WRITE_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Insufficient role' });
+  }
+  const { restricted_person_name, restriction_type, court_order_ref, details } = req.body;
+  if (!restricted_person_name || !restriction_type) {
+    return res.status(400).json({ error: 'restricted_person_name and restriction_type required' });
+  }
+  const validTypes = ['no_collect','no_contact','court_order','other'];
+  if (!validTypes.includes(restriction_type)) {
+    return res.status(400).json({ error: 'Invalid restriction_type' });
+  }
+  try {
+    const db = getPool();
+    const { rows } = await db.query(`
+      INSERT INTO carer_restrictions
+        (child_id, restricted_person_name, restriction_type, court_order_ref, details, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [req.params.id, restricted_person_name, restriction_type, court_order_ref || null, details || null, req.user.id]);
+    recordAudit({ req, action: 'create', entity_type: 'carer_restriction', entity_id: rows[0].id,
+      meta: { child_id: req.params.id, restricted_person_name, restriction_type } });
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /:id/restrictions/:restrictionId — deactivate/reactivate a restriction
+router.put('/:id/restrictions/:restrictionId', async (req, res) => {
+  if (!CHILD_WRITE_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Insufficient role' });
+  }
+  const { active } = req.body;
+  if (active === undefined) {
+    return res.status(400).json({ error: 'active field required' });
+  }
+  try {
+    const db = getPool();
+    const { rows } = await db.query(
+      'UPDATE carer_restrictions SET active=$1 WHERE id=$2 AND child_id=$3 RETURNING *',
+      [active, req.params.restrictionId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    recordAudit({ req, action: 'update', entity_type: 'carer_restriction', entity_id: req.params.restrictionId,
+      meta: { child_id: req.params.id, active } });
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;

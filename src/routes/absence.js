@@ -405,6 +405,19 @@ router.post('/request', async (req, res) => {
     const db = getPool();
     const ai = await aiAuthoriseHoliday(db, req.user.id, start_date, end_date, request_type || 'holiday');
 
+    // Auto-approval kill-switch (Toby, 2026-07-13): until settings.absence_auto_approve='true',
+    // approve-decisions land as PENDING for manager review. Auto-declines (ratio/clash) still block.
+    let effectiveDecision = ai.decision;
+    let autoApproveOn = false;
+    try {
+      const { rows: aa } = await db.query("SELECT value FROM settings WHERE key='absence_auto_approve'");
+      autoApproveOn = aa.length > 0 && aa[0].value === 'true';
+    } catch (_) { /* settings unavailable — fail safe: no auto-approval */ }
+    if (!autoApproveOn && (ai.decision === 'auto_approve' || ai.decision === 'conditional_approve')) {
+      effectiveDecision = 'manual_review';
+      ai.reason = `[Auto-approve is off — queued for manager review] ${ai.reason}`;
+    }
+
     const decisionToStatus = {
       auto_approve: 'approved',
       conditional_approve: 'approved',
@@ -413,7 +426,7 @@ router.post('/request', async (req, res) => {
       decline_clash: 'declined',
       decline_no_entitlement: 'declined',
     };
-    const status       = decisionToStatus[ai.decision] || 'pending';
+    const status       = decisionToStatus[effectiveDecision] || 'pending';
     const autoApproved = status === 'approved';
 
     const { rows } = await db.query(`
@@ -606,6 +619,191 @@ router.get('/bradford/:staffId', async (req, res) => {
     res.json({ staff_id: parseInt(req.params.staffId), ...bf,
       rag: bf.score > 200 ? 'red' : bf.score > 100 ? 'amber' : bf.score > 50 ? 'yellow' : 'green' });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /preview  { request_type, start_date, end_date }
+// Transparency preview for the leave-request form (Toby, 2026-07-14): runs the SAME
+// gates as aiAuthoriseHoliday but without early exit, and returns every check with
+// its weighting so staff can see exactly how their request will be assessed BEFORE
+// submitting. Self-only: always previews for req.user.id. Read-only — writes nothing.
+router.post('/preview', async (req, res) => {
+  const db = getPool();
+  const staffId = req.user.id;
+  const { request_type = 'holiday', start_date, end_date } = req.body || {};
+  if (!start_date || !end_date) return res.status(400).json({ error: 'start_date and end_date required' });
+  const checks = [];
+  let percent = 95;        // auto-approval baseline
+  let hardBlock = false;   // any fail → declined at request time
+  let review = false;      // any review trigger → goes to manager
+  const cap = v => { percent = Math.min(percent, v); };
+
+  try {
+    // Sick leave never auto-approves
+    if (request_type === 'sick') {
+      review = true; cap(50);
+      checks.push({ key: 'sick', label: 'Request type', status: 'review', points: 'to manager',
+        detail: 'Sick leave always goes to your manager — it is never decided automatically.' });
+    }
+
+    // Gate 1: statutory staffing ratios (deterministic, authoritative)
+    try {
+      const rg = await ratioEngine.checkRange(db, start_date, end_date, staffId);
+      if (rg.blackout) {
+        review = true; cap(40);
+        checks.push({ key: 'ratio', label: 'Staffing ratios', status: 'review', points: 'to manager', detail: rg.blackout_note });
+      } else if (!rg.pass) {
+        hardBlock = true;
+        const near = (rg.nearest_passing_dates || []);
+        checks.push({ key: 'ratio', label: 'Staffing ratios', status: 'fail', points: 'blocks request',
+          detail: `${rg.failing_days?.[0]?.reason || 'Ratios cannot be maintained on these dates.'}${near.length ? ` Nearest dates that pass: ${near.join(', ')}.` : ''}` });
+      } else {
+        checks.push({ key: 'ratio', label: 'Staffing ratios', status: 'pass', points: '—',
+          detail: 'Legal child:staff ratios hold on every requested day with you away.' });
+      }
+    } catch (e) {
+      checks.push({ key: 'ratio', label: 'Staffing ratios', status: 'review', points: '—', detail: 'Ratio check unavailable — a manager will confirm.' });
+    }
+
+    // Gate 2: room clash
+    const { rows: staff } = await db.query('SELECT room_id FROM staff WHERE id=$1', [staffId]);
+    const roomId = staff[0]?.room_id;
+    if (roomId) {
+      const { rows: clashes } = await db.query(`
+        SELECT ar.staff_id FROM absence_requests ar
+        JOIN staff s ON s.id = ar.staff_id
+        WHERE ar.status='approved' AND ar.staff_id != $1
+          AND ar.start_date <= $3::date AND ar.end_date >= $2::date
+          AND s.room_id = $4
+      `, [staffId, start_date, end_date, roomId]);
+      if (clashes.length > 0) {
+        const { rows: rs } = await db.query('SELECT COUNT(*) as total FROM staff WHERE room_id=$1 AND is_active=true', [roomId]);
+        const total = parseInt(rs[0].total) || 1;
+        if (clashes.length >= Math.floor(total / 2)) {
+          hardBlock = true;
+          checks.push({ key: 'clash', label: 'Room cover', status: 'fail', points: 'blocks request',
+            detail: `${clashes.length} of your room already approved off over these dates — minimum staffing cannot be maintained.` });
+        } else {
+          review = true; percent -= 30;
+          checks.push({ key: 'clash', label: 'Room cover', status: 'flag', points: '−30%',
+            detail: `${clashes.length} other staff in your room already have approved leave overlapping these dates — manager decides.` });
+        }
+      } else {
+        checks.push({ key: 'clash', label: 'Room cover', status: 'pass', points: '—', detail: 'No overlapping approved leave in your room.' });
+      }
+    }
+
+    // Gate 3: Bradford Factor (your own score, rolling 52 weeks: spells² × days)
+    try {
+      const bf = await calculateBradfordFactor(db, staffId);
+      const formula = `${bf.instances ?? 0} spells² × ${bf.days_total ?? 0} days = ${bf.score}`;
+      if (bf.score > 200) {
+        review = true; cap(40);
+        checks.push({ key: 'bradford', label: 'Bradford Factor', status: 'review', points: 'to manager',
+          detail: `Your score is ${bf.score} (${formula}) — above the 200 threshold, so a manager reviews any leave.` });
+      } else if (bf.score > 100) {
+        percent -= 10;
+        checks.push({ key: 'bradford', label: 'Bradford Factor', status: 'flag', points: '−10%',
+          detail: `Your score is ${bf.score} (${formula}) — elevated (over 100). Approvable, but flagged for a welfare chat.` });
+      } else {
+        checks.push({ key: 'bradford', label: 'Bradford Factor', status: 'pass', points: '—',
+          detail: `Your score is ${bf.score} (${formula}) — under the 100 threshold.` });
+      }
+    } catch (e) {
+      checks.push({ key: 'bradford', label: 'Bradford Factor', status: 'review', points: '—', detail: 'Score unavailable.' });
+    }
+
+    // Gate 4: notice period
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const noticeDays = Math.floor((new Date(start_date) - today) / 86400000);
+    if (noticeDays < 2) {
+      review = true; cap(40);
+      checks.push({ key: 'notice', label: 'Notice given', status: 'review', points: 'to manager',
+        detail: `${noticeDays} day${noticeDays === 1 ? '' : 's'} notice — under 2 days always goes to a manager urgently.` });
+    } else if (noticeDays < 14) {
+      percent -= 10;
+      checks.push({ key: 'notice', label: 'Notice given', status: 'flag', points: '−10%',
+        detail: `${noticeDays} days notice — approvable, but under the 14 days we ask for, so your manager is notified.` });
+    } else {
+      checks.push({ key: 'notice', label: 'Notice given', status: 'pass', points: '—', detail: `${noticeDays} days notice.` });
+    }
+
+    // Gate 5: entitlement (holiday only)
+    if (request_type === 'holiday') {
+      const reqDays = Math.max(1, Math.floor((new Date(end_date) - new Date(start_date)) / 86400000) + 1);
+      const { rows: hrEnt } = await db.query(`
+        SELECT remaining_days, awaiting_approval_days FROM hr_holiday_entitlement
+        WHERE staff_id=$1 AND year_start <= $2::date AND year_end >= $2::date
+        ORDER BY year_start DESC LIMIT 1
+      `, [staffId, start_date]);
+      let remaining, awaiting;
+      if (hrEnt.length) {
+        remaining = parseFloat(hrEnt[0].remaining_days) || 0;
+        awaiting  = parseFloat(hrEnt[0].awaiting_approval_days) || 0;
+      } else {
+        const reqYear = new Date(start_date).getFullYear();
+        const { rows: used } = await db.query(`
+          SELECT COALESCE(SUM(days),0) as used FROM (
+            SELECT COALESCE(days_count,1) as days FROM absence_requests
+            WHERE staff_id=$1 AND status='approved' AND request_type='holiday'
+              AND start_date >= $2::date AND start_date <= $3::date
+            UNION ALL
+            SELECT COALESCE(duration_days,1) as days FROM hr_absences
+            WHERE staff_id=$1 AND absence_type='Annual leave'
+              AND start_date >= $2::date AND start_date <= $3::date
+          ) t
+        `, [staffId, `${reqYear}-01-01`, `${reqYear}-12-31`]);
+        remaining = 28 - parseFloat(used[0].used);
+        awaiting = 0;
+      }
+      if (reqDays > remaining) {
+        hardBlock = true;
+        checks.push({ key: 'entitlement', label: 'Holiday entitlement', status: 'fail', points: 'blocks request',
+          detail: `This is a ${reqDays}-day request but you have ${remaining.toFixed(1)} days remaining this year.` });
+      } else if (reqDays > remaining - awaiting) {
+        review = true; percent -= 20;
+        checks.push({ key: 'entitlement', label: 'Holiday entitlement', status: 'flag', points: '−20%',
+          detail: `${remaining.toFixed(1)} days remaining but ${awaiting} awaiting approval — this could take you over, so a manager checks.` });
+      } else {
+        checks.push({ key: 'entitlement', label: 'Holiday entitlement', status: 'pass', points: '—',
+          detail: `${reqDays}-day request, ${remaining.toFixed(1)} days remaining.` });
+      }
+    }
+
+    // Gate 6: same day-of-week pattern (last 12 months)
+    const twelveMonthsAgo = new Date(); twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
+    const { rows: history } = await db.query(`
+      SELECT start_date FROM absence_requests
+      WHERE staff_id=$1 AND status='approved' AND start_date >= $2::date
+    `, [staffId, twelveMonthsAgo.toISOString().split('T')[0]]);
+    const reqDow = new Date(start_date).getDay();
+    const sameDow = history.filter(h => new Date(h.start_date).getDay() === reqDow).length;
+    if (sameDow >= 3) {
+      review = true; cap(40);
+      checks.push({ key: 'pattern', label: 'Absence pattern', status: 'review', points: 'to manager',
+        detail: `${sameDow} of your previous absences started on this day of the week, so a manager reviews this one.` });
+    } else {
+      checks.push({ key: 'pattern', label: 'Absence pattern', status: 'pass', points: '—', detail: 'No repeating day-of-week pattern.' });
+    }
+
+    // Overall
+    if (hardBlock) percent = 5;
+    percent = Math.max(5, Math.min(95, Math.round(percent)));
+    const { rows: aa } = await db.query("SELECT value FROM settings WHERE key='absence_auto_approve'");
+    const autoApproveOn = aa.length && aa[0].value === 'true';
+    const band = hardBlock ? 'blocked' : percent >= 80 ? 'high' : percent >= 55 ? 'medium' : 'low';
+    const headline = hardBlock
+      ? 'This request would be declined as things stand — see the failing check below.'
+      : review
+        ? `Around ${percent}% — this will go to your manager to decide, with the flags below attached.`
+        : autoApproveOn
+          ? `Around ${percent}% — on today's numbers this would be approved automatically.`
+          : `Around ${percent}% — every check passes; your manager gets it marked "recommend approve".`;
+    res.json({ percent, band, headline, checks, auto_approve_enabled: autoApproveOn,
+      note: 'Estimate based on today\'s bookings, rotas and approved leave — it can change if those change before you submit. Your manager sees the same checks, and a person always makes the final call on anything not approved automatically.' });
+  } catch (e) {
+    console.error('[absence/preview]', e.message);
     res.status(500).json({ error: e.message });
   }
 });

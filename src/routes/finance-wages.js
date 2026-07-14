@@ -236,7 +236,7 @@ router.get('/export', async (req, res) => {
         `"${fmt(totals.net)}"`, `"${fmt(totals.cost)}"`,
       ].join(',');
 
-      const meta = [`# Your Nursery — Full Payroll Report`,
+      const meta = [`# Little Angels Day Nursery — Full Payroll Report`,
                     `# Period: ${label}`,
                     `# NOTE: PAYE/NI/pension are estimates. Use BrightPay/Sage/Xero for RTI.`,
                     `# Generated: ${new Date().toLocaleDateString('en-GB')}`, ''];

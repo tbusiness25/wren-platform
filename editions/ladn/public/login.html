@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Sign In — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+  <style>
+    /* Full-page sign-in: fill the whole viewport, never show a page scrollbar.
+       (Toby: "use whole page, get rid of scrollbar".) Scoped to this login only. */
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+    .login-page {
+      min-height: 100vh;
+      min-height: 100dvh;
+      height: 100dvh;
+      padding: clamp(16px, 3vh, 32px);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    .login-box {
+      width: 100%;
+      max-width: 720px;          /* wider — uses the page instead of a narrow card */
+      max-height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      overflow: hidden;          /* the box itself never scrolls the page */
+    }
+    /* Staff picker: show everyone without an inner scrollbar; only scroll inside
+       the picker (not the page) if the list ever exceeds the viewport. */
+    #step-select { min-height: 0; overflow-y: auto; }
+    .staff-grid {
+      max-height: none;
+      overflow: visible;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+  </style>
+<script src="/js/device-detect.js"></script>
+  <!-- wren-shell-v2.js intentionally NOT loaded: login is a standalone screen and the v2 shell
+       auto-builds a left sidebar (no isEY gate), which made the EY login look non-EyLog. -->
+
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="wren-logo">
+        <span class="logo-w">w</span><span class="logo-ren">ren</span>
+        <span class="logo-edition">LADN</span>
+      </div>
+      <p id="org-name">Early Years</p>
+    </div>
+
+    <!-- Step 1: Select staff -->
+    <div id="step-select">
+      <p style="font-size:.875rem;color:#64748b;text-align:center;margin-bottom:14px">Who are you?</p>
+      <div class="staff-grid" id="staff-grid">
+        <div class="loading-state"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- Step 2: Enter PIN -->
+    <div id="step-pin" style="display:none">
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--c-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:800;margin:0 auto 10px" id="pin-avatar">?</div>
+        <p style="font-weight:700;font-size:1.1rem;color:var(--c-navy)" id="pin-name">Enter your PIN</p>
+      </div>
+
+      <div class="pin-dots" id="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+
+      <div class="pin-pad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key" data-val="back" style="font-size:1rem">⌫</button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key" data-val="cancel" style="font-size:.75rem;color:#64748b">Cancel</button>
+      </div>
+
+      <p id="pin-error" style="color:var(--c-red);text-align:center;font-size:.875rem;margin-top:12px;display:none">Incorrect PIN</p>
+    </div>
+  </div>
+</div>
+
+<script>
+let selectedStaff = null;
+let pin = '';
+// Per-staff PIN length (4 or 6); set when a staff member is selected.
+// Defaults to 4 so existing 4-digit users behave exactly as before.
+let MAX_PIN = 4;
+
+async function loadStaff() {
+  try {
+    const res = await fetch('/api/auth/staff-list');
+    const staff = await res.json();
+    const grid = document.getElementById('staff-grid');
+    if (!staff.length) {
+      grid.innerHTML = '<p style="color:#64748b;font-size:.875rem;text-align:center">No staff found</p>';
+      return;
+    }
+    grid.innerHTML = staff.map(s => `
+      <div class="staff-select-card" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}" data-pinlen="${(s.pin_length === 6 ? 6 : 4)}">
+        <div class="staff-select-initial">${s.first_name.charAt(0)}${s.last_name.charAt(0)}</div>
+        <div class="staff-select-name">${s.preferred_name || s.first_name}</div>
+        <div class="staff-select-role">${s.role.replace('_',' ')}</div>
+      </div>
+    `).join('');
+    grid.querySelectorAll('.staff-select-card').forEach(card => {
+      card.onclick = () => selectStaff(card.dataset.id, card.dataset.name, card.dataset.pinlen);
+    });
+  } catch(e) {
+    document.getElementById('staff-grid').innerHTML = '<p style="color:var(--c-red)">Failed to load staff</p>';
+  }
+}
+
+function selectStaff(id, name, pinLen) {
+  selectedStaff = id;
+  MAX_PIN = (parseInt(pinLen, 10) === 6) ? 6 : 4;
+  renderDots(MAX_PIN);
+  document.getElementById('step-select').style.display = 'none';
+  document.getElementById('step-pin').style.display = 'block';
+  const initials = name.split(' ').map(w => w[0]).join('').toUpperCase();
+  document.getElementById('pin-avatar').textContent = initials;
+  document.getElementById('pin-name').textContent = name;
+  pin = '';
+  updateDots();
+}
+
+// Render the correct number of PIN dots for the selected staff member.
+function renderDots(n) {
+  const box = document.getElementById('pin-dots');
+  if (!box) return;
+  box.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const span = document.createElement('span');
+    span.className = 'pin-dot';
+    box.appendChild(span);
+  }
+}
+
+function updateDots() {
+  document.querySelectorAll('.pin-dot').forEach((dot, i) => {
+    dot.classList.toggle('filled', i < pin.length);
+  });
+}
+
+async function submitPin() {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staff_id: parseInt(selectedStaff), pin })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('pin-error').style.display = 'block';
+      pin = '';
+      updateDots();
+      return;
+    }
+    sessionStorage.setItem('wrenToken', data.token);
+    var _dest = (function() {
+      if (data.staff && data.staff.role === 'cook') return '/ey/kitchen';
+      var ret = new URLSearchParams(location.search).get('return');
+      return (ret && ret.startsWith('/')) ? ret : '/ey/home';
+    })();
+    window.location.href = _dest;
+  } catch(e) {
+    document.getElementById('pin-error').style.display = 'block';
+    pin = '';
+    updateDots();
+  }
+}
+
+document.querySelectorAll('.pin-key').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const val = btn.dataset.val;
+    document.getElementById('pin-error').style.display = 'none';
+    if (val === 'back') {
+      pin = pin.slice(0, -1);
+      updateDots();
+    } else if (val === 'cancel') {
+      selectedStaff = null;
+      pin = '';
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-select').style.display = 'block';
+    } else if (pin.length < MAX_PIN) {
+      pin += val;
+      updateDots();
+      if (pin.length === MAX_PIN) submitPin();
+    }
+  });
+});
+
+// Keyboard support
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('step-pin').style.display === 'none') return;
+  if (e.key >= '0' && e.key <= '9') {
+    const btn = document.querySelector(`.pin-key[data-val="${e.key}"]`);
+    if (btn) btn.click();
+  } else if (e.key === 'Backspace') {
+    document.querySelector('.pin-key[data-val="back"]').click();
+  } else if (e.key === 'Escape') {
+    document.querySelector('.pin-key[data-val="cancel"]').click();
+  }
+});
+
+// Check if already logged in
+(function() {
+  var t = sessionStorage.getItem('wrenToken');
+  if (!t) { loadStaff(); return; }
+  fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t } })
+    .then(function(r) {
+      if (r.ok) {
+        var ret = new URLSearchParams(location.search).get('return');
+        window.location.href = (ret && ret.startsWith('/')) ? ret : '/ey/home';
+      }
+      else { sessionStorage.removeItem('wrenToken'); loadStaff(); }
+    })
+    .catch(function() { sessionStorage.removeItem('wrenToken'); loadStaff(); });
+})();
+// Load edition name (demo badge)
+fetch('/api/edition').then(r => r.json()).then(d => {
+  if (d.demo) {
+    const demoEl = document.createElement('div');
+    demoEl.style.cssText = 'text-align:center;margin-top:12px';
+    demoEl.innerHTML = '<span class="badge badge-orange">Demo Mode — PIN: 1234</span>';
+    document.querySelector('.login-box').appendChild(demoEl);
+  }
+}).catch(() => {});
+</script>
+<div style="position:fixed;bottom:0;left:0;right:0;text-align:center;padding:8px 12px;font-size:.72rem;color:#94a3b8;background:rgba(15,23,42,.65);line-height:1.5">
+  Developmental statements are from <strong>Birth to 5 Matters</strong>, reproduced under licence from Early&nbsp;Education ·
+  <a href="https://www.birthto5matters.org.uk" target="_blank" rel="noopener" style="color:#4a9abf">birthto5matters.org.uk</a>
+</div>
+</body>
+</html>

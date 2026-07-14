@@ -1,0 +1,380 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Occupancy Sandbox · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .os-wrap{padding:18px;max-width:1500px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--bd);
+   border-radius:10px;padding:10px 12px;margin-bottom:14px}
+ .bar select,.bar input[type=text],.bar input[type=date]{background:#0b1428;border:1px solid var(--bd);color:var(--txt);
+   border-radius:6px;padding:6px 9px;font-size:.82rem}
+ .bar .grow{flex:1}
+ button{background:var(--blue);border:none;color:#06121f;border-radius:6px;padding:7px 13px;font-size:.82rem;
+   font-weight:700;cursor:pointer}
+ button:hover{opacity:.9}
+ button.ghost{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600}
+ button.danger{background:transparent;border:1px solid var(--bad);color:var(--bad);font-weight:600}
+ .cols{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;align-items:start}
+ @media(max-width:1050px){.cols{grid-template-columns:1fr}}
+ .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+ .panel h3{margin:0 0 8px;font-size:.95rem}
+ .panel .hint{color:var(--mut);font-size:.76rem;margin-bottom:8px}
+ table{width:100%;border-collapse:collapse;font-size:.8rem}
+ th{color:var(--mut);font-weight:600;text-align:left;padding:5px 6px;border-bottom:1px solid var(--bd);white-space:nowrap}
+ td{padding:3px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
+ .roster input[type=text]{width:100%;min-width:70px;background:#0b1428;border:1px solid var(--bd);color:var(--txt);
+   border-radius:5px;padding:4px 6px;font-size:.78rem}
+ .roster input[type=date]{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:5px;padding:3px 5px;font-size:.75rem}
+ .roster select{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:5px;padding:4px;font-size:.76rem}
+ .roster td.ck{text-align:center}
+ .roster input[type=checkbox]{cursor:pointer}
+ .rmv{background:transparent;border:none;color:var(--bad);font-size:1rem;cursor:pointer;padding:0 4px}
+ .add{margin-top:8px}
+ .totrow td{font-weight:700;border-top:1px solid var(--bd);color:var(--mut)}
+ /* results */
+ .weekgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+ @media(max-width:640px){.weekgrid{grid-template-columns:repeat(2,1fr)}}
+ .day{background:#0b1428;border:1px solid var(--bd);border-radius:9px;padding:9px;font-size:.78rem}
+ .day .dname{font-weight:700;font-size:.82rem}.day .ddate{color:var(--mut);font-size:.68rem;margin-bottom:5px}
+ .badge{display:inline-block;font-size:.68rem;font-weight:800;padding:2px 7px;border-radius:999px}
+ .badge.pass{background:rgba(34,197,94,.15);color:var(--ok)}
+ .badge.fail{background:rgba(239,68,68,.15);color:var(--bad)}
+ .day .kv{display:flex;justify-content:space-between;margin:2px 0;color:var(--mut)}
+ .day .kv b{color:var(--txt)}
+ .roomline{margin-top:5px;font-size:.72rem}
+ .cap{height:6px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;margin-top:2px}
+ .cap > i{display:block;height:100%;background:var(--blue)}
+ .cap.over > i{background:var(--bad)}
+ .over-tag{color:var(--bad);font-weight:700}
+ .staffov{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:8px 0}
+ .staffov input{width:44px;background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:5px;padding:4px;font-size:.75rem;text-align:center}
+ .staffov label{font-size:.7rem;color:var(--mut);display:flex;flex-direction:column;align-items:center;gap:2px}
+ .msg{font-size:.8rem;color:var(--warn);min-height:1.1em;margin:6px 0}
+ .ratios{font-size:.72rem;color:var(--mut);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="os-wrap">
+  <h1>Occupancy Sandbox</h1>
+  <div class="sub">Model what-if rosters — add, edit or remove children and see occupancy &amp; Ofsted ratios update live. <b>Nothing here changes real data.</b></div>
+
+  <div class="bar">
+    <select id="scenarioSel"><option value="">— Saved scenarios —</option></select>
+    <button class="ghost" id="btnSeed">New from today's roster</button>
+    <button class="ghost" id="btnBlank">New blank</button>
+    <span class="grow"></span>
+    <input type="text" id="scenName" placeholder="Scenario name" style="width:200px">
+    <button id="btnSave">Save</button>
+    <button class="danger" id="btnDelete">Delete</button>
+  </div>
+
+  <div class="cols">
+   <div class="leftcol">
+    <div class="panel">
+      <h3>Children <span id="rosterCount" class="hint"></span></h3>
+      <div class="hint">Tick the days each child attends. “Settling” children can be excluded from ratios.</div>
+      <div style="overflow-x:auto">
+      <table class="roster">
+        <thead><tr>
+          <th>Name</th><th>DOB</th><th>Room</th>
+          <th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th title="Settling — exclude from ratio">Set.</th><th></th>
+        </tr></thead>
+        <tbody id="rosterBody"></tbody>
+        <tfoot><tr class="totrow"><td colspan="3">Total children</td><td class="ck" id="tMon"></td><td class="ck" id="tTue"></td><td class="ck" id="tWed"></td><td class="ck" id="tThu"></td><td class="ck" id="tFri"></td><td></td><td></td></tr></tfoot>
+      </table>
+      </div>
+      <button class="ghost add" id="btnAdd">+ Add child</button>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <h3>Staff <span id="staffCount" class="hint"></span></h3>
+      <div class="hint">Who's on duty each day. Qualification level + PFA drive the qualification checks. Untick “Ratio” for staff who don't count (manager, cook).</div>
+      <div style="overflow-x:auto">
+      <table class="roster">
+        <thead><tr>
+          <th>Name</th><th>Role</th><th title="Qualification level">Qual</th><th title="Paediatric first aider">PFA</th><th title="Counts toward ratio">Ratio</th>
+          <th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th></th>
+        </tr></thead>
+        <tbody id="staffBody"></tbody>
+      </table>
+      </div>
+      <button class="ghost add" id="btnAddStaff">+ Add staff</button>
+    </div>
+   </div>
+
+    <div class="panel">
+      <h3>Simulation</h3>
+      <div class="hint">Week beginning (Mon) · staff/day override (blank = use real rota)</div>
+      <div class="staffov">
+        <input type="date" id="weekStart">
+      </div>
+      <div class="staffov" id="staffOv">
+        <label>Mon<input type="number" min="0" data-d="mon" placeholder="real"></label>
+        <label>Tue<input type="number" min="0" data-d="tue" placeholder="real"></label>
+        <label>Wed<input type="number" min="0" data-d="wed" placeholder="real"></label>
+        <label>Thu<input type="number" min="0" data-d="thu" placeholder="real"></label>
+        <label>Fri<input type="number" min="0" data-d="fri" placeholder="real"></label>
+        <button id="btnSim">Simulate</button>
+      </div>
+      <div class="msg" id="msg"></div>
+      <div class="weekgrid" id="results"></div>
+      <div class="ratios" id="ratiosNote"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var TOKEN = function(){ return sessionStorage.getItem('wrenToken'); };
+  var API = '/api/occupancy-sandbox';
+  var DAYS = ['mon','tue','wed','thu','fri'];
+  var DAYNAMES = {mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday'};
+  var roster = [];      // working children roster
+  var staff = [];       // working staff roster
+  var rooms = [];       // rooms meta
+  var scenarioId = null;
+  var simTimer = null;
+  var uidc = 0;
+  var QUALS = [[0,'None'],[2,'Level 2'],[3,'Level 3'],[6,'Graduate/EYT']];
+  var ROLES = ['manager','deputy_manager','room_leader','practitioner','apprentice','cook','other'];
+
+  function api(path, opts){
+    opts = opts || {};
+    return fetch(API + path, {
+      method: opts.method || 'GET',
+      headers: { 'Authorization': 'Bearer ' + TOKEN(), 'Content-Type': 'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function(r){ return r.json().then(function(j){ return { ok:r.ok, status:r.status, j:j }; }); });
+  }
+  function msg(t, cls){ var m=document.getElementById('msg'); m.textContent=t||''; m.style.color = cls==='ok' ? 'var(--ok)' : cls==='bad' ? 'var(--bad)' : 'var(--warn)'; }
+  function el(id){ return document.getElementById(id); }
+
+  // ── Monday of current week (local) ──
+  function mondayThisWeek(){
+    var d=new Date(); var day=d.getDay(); d.setDate(d.getDate() + (day===0?-6:1-day));
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+
+  function roomOptions(sel){
+    var s = '<option value="">—</option>';
+    rooms.forEach(function(r){ s += '<option value="'+r.id+'"'+(Number(sel)===r.id?' selected':'')+'>'+r.name+'</option>'; });
+    return s;
+  }
+
+  function renderRoster(){
+    var tb = el('rosterBody'); tb.innerHTML='';
+    roster.forEach(function(c, i){
+      var tr=document.createElement('tr');
+      tr.innerHTML =
+        '<td><input type="text" value="'+(c.first_name||'').replace(/"/g,'&quot;')+'" data-i="'+i+'" data-f="first_name" placeholder="name"></td>'+
+        '<td><input type="date" value="'+(c.dob||'')+'" data-i="'+i+'" data-f="dob"></td>'+
+        '<td><select data-i="'+i+'" data-f="room_id">'+roomOptions(c.room_id)+'</select></td>'+
+        DAYS.map(function(d){ return '<td class="ck"><input type="checkbox" '+(c.days&&c.days[d]?'checked':'')+' data-i="'+i+'" data-day="'+d+'"></td>'; }).join('')+
+        '<td class="ck"><input type="checkbox" '+(c.settling&&c.counts_on_ratio===false?'checked':'')+' data-i="'+i+'" data-settling="1"></td>'+
+        '<td><button class="rmv" data-rm="'+i+'" title="Remove">✕</button></td>';
+      tb.appendChild(tr);
+    });
+    el('rosterCount').textContent = '('+roster.length+')';
+    updateTotals();
+  }
+
+  function updateTotals(){
+    DAYS.forEach(function(d){
+      var n = roster.filter(function(c){ return c.days && c.days[d] && !(c.settling && c.counts_on_ratio===false); }).length;
+      el('t'+d.charAt(0).toUpperCase()+d.slice(1)).textContent = n;
+    });
+  }
+
+  // ── staff roster ──
+  function qualOptions(sel){
+    return QUALS.map(function(q){ return '<option value="'+q[0]+'"'+(Number(sel)===q[0]?' selected':'')+'>'+q[1]+'</option>'; }).join('');
+  }
+  function roleOptions(sel){
+    return ROLES.map(function(r){ return '<option value="'+r+'"'+(sel===r?' selected':'')+'>'+r.replace(/_/g,' ')+'</option>'; }).join('');
+  }
+  function renderStaff(){
+    var tb = el('staffBody'); tb.innerHTML='';
+    staff.forEach(function(s, i){
+      var tr=document.createElement('tr');
+      tr.innerHTML =
+        '<td><input type="text" value="'+(s.name||'').replace(/"/g,'&quot;')+'" data-si="'+i+'" data-f="name" placeholder="name"></td>'+
+        '<td><select data-si="'+i+'" data-f="role">'+roleOptions(s.role)+'</select></td>'+
+        '<td><select data-si="'+i+'" data-f="qual_level">'+qualOptions(s.qual_level)+'</select></td>'+
+        '<td class="ck"><input type="checkbox" '+(s.pfa?'checked':'')+' data-si="'+i+'" data-f="pfa"></td>'+
+        '<td class="ck"><input type="checkbox" '+(s.counts_in_ratio!==false?'checked':'')+' data-si="'+i+'" data-f="counts_in_ratio"></td>'+
+        DAYS.map(function(d){ return '<td class="ck"><input type="checkbox" '+(s.days&&s.days[d]?'checked':'')+' data-si="'+i+'" data-sday="'+d+'"></td>'; }).join('')+
+        '<td><button class="rmv" data-srm="'+i+'" title="Remove">✕</button></td>';
+      tb.appendChild(tr);
+    });
+    el('staffCount').textContent = '('+staff.length+')';
+  }
+  el('staffBody').addEventListener('input', function(e){
+    var t=e.target, i=t.getAttribute('data-si'); if(i===null) return; i=+i;
+    if(t.getAttribute('data-f')){
+      var f=t.getAttribute('data-f');
+      staff[i][f] = t.type==='checkbox' ? t.checked : (f==='qual_level'? Number(t.value) : t.value);
+    } else if(t.getAttribute('data-sday')){ staff[i].days=staff[i].days||{}; staff[i].days[t.getAttribute('data-sday')]=t.checked; }
+    scheduleSim();
+  });
+  el('staffBody').addEventListener('click', function(e){
+    var rm=e.target.getAttribute && e.target.getAttribute('data-srm'); if(rm===null||rm===undefined) return;
+    staff.splice(+rm,1); renderStaff(); scheduleSim();
+  });
+  el('btnAddStaff').addEventListener('click', function(){
+    staff.push({ sid:'ns'+(uidc++), name:'', role:'practitioner', qual_level:3, pfa:false, counts_in_ratio:true,
+      days:{mon:false,tue:false,wed:false,thu:false,fri:false} });
+    renderStaff();
+  });
+
+  // event delegation for roster edits
+  el('rosterBody').addEventListener('input', function(e){
+    var t=e.target, i=t.getAttribute('data-i'); if(i===null) return; i=+i;
+    if(t.getAttribute('data-f')){ roster[i][t.getAttribute('data-f')] = t.type==='checkbox'?t.checked:t.value; }
+    else if(t.getAttribute('data-day')){ roster[i].days = roster[i].days||{}; roster[i].days[t.getAttribute('data-day')] = t.checked; }
+    else if(t.getAttribute('data-settling')){ roster[i].settling = t.checked; roster[i].counts_on_ratio = t.checked ? false : true; }
+    updateTotals(); scheduleSim();
+  });
+  el('rosterBody').addEventListener('click', function(e){
+    var rm=e.target.getAttribute && e.target.getAttribute('data-rm'); if(rm===null||rm===undefined) return;
+    roster.splice(+rm,1); renderRoster(); scheduleSim();
+  });
+
+  el('btnAdd').addEventListener('click', function(){
+    roster.push({ cid:'n'+(uidc++), first_name:'', last_name:'', dob:null, room_id: rooms[0]?rooms[0].id:null,
+      days:{mon:false,tue:false,wed:false,thu:false,fri:false}, settling:false, counts_on_ratio:true });
+    renderRoster();
+  });
+
+  function scheduleSim(){ clearTimeout(simTimer); simTimer=setTimeout(simulate, 500); }
+
+  function staffOverride(){
+    var ov={}; var any=false;
+    document.querySelectorAll('#staffOv input[data-d]').forEach(function(inp){
+      if(inp.value!==''){ ov[inp.getAttribute('data-d')] = Number(inp.value); any=true; }
+    });
+    return any?ov:undefined;
+  }
+
+  function simulate(){
+    if(!roster.length){ el('results').innerHTML=''; msg('Add children to simulate.'); return; }
+    msg('Simulating…');
+    var body = { roster:roster, week_start: el('weekStart').value||undefined };
+    if(staff.length) body.staff = staff;          // staff roster wins over numeric override
+    else body.ratio_staff = staffOverride();
+    api('/simulate', { method:'POST', body:body })
+      .then(function(res){
+        if(!res.ok){ msg(res.j&&res.j.error||'Simulation failed','bad'); return; }
+        msg(''); renderResults(res.j);
+      }).catch(function(e){ msg('Error: '+e.message,'bad'); });
+  }
+
+  function qflag(ok,label){ return '<span style="color:'+(ok?'var(--ok)':'var(--bad)')+'">'+(ok?'✓':'✗')+' '+label+'</span>'; }
+  function renderResults(data){
+    el('ratiosNote').textContent = 'Ratios: under-2 1:'+data.ratios.under2+' · 2yr 1:'+data.ratios.two+' · 3yr+ 1:'+data.ratios.threePlus+' · +'+data.spare_buffer+' spare. '+
+      (data.staff_mode==='roster' ? 'Qual checks: ≥1 Level 3 on duty · ≥½ hold Level 2+ · ≥1 paediatric first aider.' : 'Add staff to the roster for qualification checks.');
+    var html = data.days.map(function(d){
+      var rooms = d.rooms.map(function(r){
+        var pct = r.capacity? Math.min(100, Math.round(r.occupancy/r.capacity*100)) : 0;
+        return '<div class="roomline">'+r.room_name+' <b>'+r.occupancy+'/'+r.capacity+'</b>'+(r.over_capacity?' <span class="over-tag">OVER</span>':'')+
+          '<div class="cap'+(r.over_capacity?' over':'')+'"><i style="width:'+pct+'%"></i></div></div>';
+      }).join('');
+      var qhtml='';
+      if(d.quals){
+        var q=d.quals;
+        qhtml = '<div style="margin-top:6px;font-size:.7rem;line-height:1.5">'+
+          qflag(q.level3_ok,'L3 ('+q.level3_count+')')+' · '+qflag(q.half_l2_ok,'½ L2+')+' · '+qflag(q.pfa_ok,'PFA ('+q.pfa_count+')')+'</div>';
+      }
+      var topBadge = d.staffing_ok ? '<span class="badge pass">ALL OK</span>'
+        : '<span class="badge fail">ISSUE</span>';
+      return '<div class="day">'+
+        '<div class="dname">'+DAYNAMES[d.weekday]+'</div><div class="ddate">'+d.date+'</div>'+
+        topBadge+
+        (d.ratio_pass?'':' <span class="badge fail">RATIO</span>')+
+        (d.any_over_capacity?' <span class="badge fail">OVER CAP</span>':'')+
+        '<div class="kv"><span>Children</span><b>'+d.total_children+'</b></div>'+
+        '<div class="kv"><span>Staff needed</span><b>'+d.required_staff+' +'+d.spare_buffer+' = '+d.staff_needed+'</b></div>'+
+        '<div class="kv"><span>Staff avail.</span><b>'+d.staff_available+' <small style="color:var(--mut)">('+d.staff_source+')</small></b></div>'+
+        qhtml + rooms +'</div>';
+    }).join('');
+    el('results').innerHTML = html;
+  }
+
+  // ── scenarios ──
+  function loadScenarios(sel){
+    api('/').then(function(res){
+      if(!res.ok) return;
+      var s='<option value="">— Saved scenarios —</option>';
+      res.j.forEach(function(x){ s+='<option value="'+x.id+'"'+(String(sel)===String(x.id)?' selected':'')+'>'+x.name+' ('+x.child_count+')</option>'; });
+      el('scenarioSel').innerHTML=s;
+    });
+  }
+  el('scenarioSel').addEventListener('change', function(){
+    var id=this.value; if(!id){ return; }
+    api('/'+id).then(function(res){
+      if(!res.ok){ msg('Load failed','bad'); return; }
+      scenarioId = res.j.id; roster = res.j.roster||[]; staff = res.j.staff||[]; el('scenName').value=res.j.name;
+      renderRoster(); renderStaff(); simulate();
+    });
+  });
+  el('btnSeed').addEventListener('click', function(){
+    msg('Loading real roster…');
+    api('/seed-real').then(function(res){
+      if(!res.ok){ msg('Seed failed','bad'); return; }
+      roster = res.j.children||[]; staff = res.j.staff||[]; scenarioId=null;
+      el('scenName').value='What-if '+new Date().toLocaleDateString('en-GB');
+      el('scenarioSel').value=''; renderRoster(); renderStaff(); simulate();
+    });
+  });
+  el('btnBlank').addEventListener('click', function(){
+    roster=[]; staff=[]; scenarioId=null; el('scenName').value=''; el('scenarioSel').value=''; renderRoster(); renderStaff(); el('results').innerHTML=''; msg('Blank scenario — add children & staff.');
+  });
+  el('btnSave').addEventListener('click', function(){
+    var name=el('scenName').value.trim(); if(!name){ msg('Give the scenario a name first.','bad'); return; }
+    if(scenarioId){
+      api('/'+scenarioId, { method:'PUT', body:{ name:name, roster:roster, staff:staff } }).then(function(res){
+        if(!res.ok){ msg(res.j&&res.j.error||'Save failed','bad'); return; }
+        msg('Saved.','ok'); loadScenarios(scenarioId);
+      });
+    } else {
+      api('/', { method:'POST', body:{ name:name, roster:roster, staff:staff } }).then(function(res){
+        if(!res.ok){ msg(res.j&&res.j.error||'Save failed','bad'); return; }
+        scenarioId=res.j.id; msg('Saved.','ok'); loadScenarios(scenarioId);
+      });
+    }
+  });
+  el('btnDelete').addEventListener('click', function(){
+    if(!scenarioId){ msg('Nothing saved to delete.'); return; }
+    if(!confirm('Delete this scenario?')) return;
+    api('/'+scenarioId, { method:'DELETE' }).then(function(res){
+      if(!res.ok){ msg('Delete failed','bad'); return; }
+      scenarioId=null; el('scenName').value=''; loadScenarios(); msg('Deleted.','ok');
+    });
+  });
+  el('btnSim').addEventListener('click', simulate);
+  el('weekStart').addEventListener('change', simulate);
+  document.querySelectorAll('#staffOv input[data-d]').forEach(function(i){ i.addEventListener('input', scheduleSim); });
+
+  function init(){
+    el('weekStart').value = mondayThisWeek();
+    api('/rooms').then(function(res){
+      rooms = res.ok ? res.j : [];
+      loadScenarios();
+      // Start seeded from real data so it's immediately useful.
+      api('/seed-real').then(function(r2){
+        if(r2.ok){ roster=r2.j.children||[]; staff=r2.j.staff||[]; el('scenName').value='What-if '+new Date().toLocaleDateString('en-GB'); }
+        renderRoster(); renderStaff(); simulate();
+      });
+    });
+  }
+  document.addEventListener('wren:ready', init);
+  // Fallback if shell doesn't fire (page opened standalone)
+  if(window.Wren && Wren._ready) init();
+})();
+</script>
+</body></html>

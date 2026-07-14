@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Daily Diary — Wren EYFS</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Header strip ── */
+    .diary-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; gap: 10px; flex-wrap: wrap;
+    }
+    .diary-title { font-size: 1.15rem; font-weight: 700; color: var(--c-text, #f1f5f9); }
+    .diary-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .date-input {
+      background: var(--c-card, #1e293b); border: 1px solid var(--c-border, #2d3748);
+      color: var(--c-text, #f1f5f9); border-radius: 8px; padding: 6px 10px;
+      font-size: .82rem; font-family: inherit; cursor: pointer;
+    }
+    .room-filter {
+      background: var(--c-card, #1e293b); border: 1px solid var(--c-border, #2d3748);
+      color: var(--c-text, #f1f5f9); border-radius: 8px; padding: 6px 10px;
+      font-size: .82rem; font-family: inherit; cursor: pointer;
+    }
+
+    /* ── Child timeline cards ── */
+    .child-tl-card {
+      background: var(--c-card, #1e293b); border: 1px solid var(--c-border, #2d3748);
+      border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+    }
+    .child-tl-header {
+      display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+      border-bottom: 1px solid var(--c-border, #2d3748); cursor: pointer;
+      transition: background .15s;
+    }
+    .child-tl-header:hover { background: rgba(74,154,191,.05); }
+    .child-avatar {
+      width: 38px; height: 38px; border-radius: 50%; background: #4a9abf;
+      color: #fff; font-size: .9rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .child-name { font-weight: 700; font-size: .9rem; color: var(--c-text, #f1f5f9); flex: 1; }
+    .child-room { font-size: .72rem; color: var(--c-muted, #94a3b8); }
+    .add-entry-btn {
+      background: rgba(74,154,191,.15); color: #4a9abf; border: 1px solid rgba(74,154,191,.3);
+      border-radius: 8px; padding: 5px 12px; font-size: .78rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: background .15s;
+      white-space: nowrap;
+    }
+    .add-entry-btn:hover { background: rgba(74,154,191,.25); }
+
+    /* ── Timeline strip ── */
+    .tl-strip {
+      padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 44px;
+      align-items: center;
+    }
+    .tl-empty { font-size: .78rem; color: var(--c-muted, #94a3b8); font-style: italic; }
+    .tl-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #0f172a; border: 1px solid var(--c-border, #2d3748);
+      border-radius: 20px; padding: 4px 10px; font-size: .75rem; cursor: pointer;
+      transition: border-color .15s; white-space: nowrap;
+    }
+    .tl-badge:hover { border-color: #4a9abf; }
+    .tl-badge.sleep  { border-color: rgba(139,92,246,.4); color: #a78bfa; }
+    .tl-badge.nappy  { border-color: rgba(245,158,11,.4); color: #f59e0b; }
+    .tl-badge.food   { border-color: rgba(34,197,94,.4);  color: #22c55e; }
+    .tl-badge.drink  { border-color: rgba(59,130,246,.4); color: #60a5fa; }
+    .tl-badge.note   { border-color: rgba(100,116,139,.4);color: #94a3b8; }
+
+    /* ── Modal overlay ── */
+    .entry-modal-bg {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 3000; align-items: center; justify-content: center; padding: 16px;
+    }
+    .entry-modal-bg.open { display: flex; }
+    .entry-modal {
+      background: #1e293b; border: 1px solid #2d3748; border-radius: 16px;
+      width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 16px 48px rgba(0,0,0,.6);
+    }
+    .modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 18px; border-bottom: 1px solid #2d3748;
+    }
+    .modal-head-title { font-weight: 700; font-size: 1rem; color: #f1f5f9; }
+    .modal-close {
+      background: none; border: none; color: #64748b; font-size: 1.2rem;
+      cursor: pointer; padding: 4px; line-height: 1;
+    }
+    .modal-body { padding: 16px 18px; }
+
+    /* ── Type tabs ── */
+    .type-tabs { display: flex; gap: 4px; margin-bottom: 18px; flex-wrap: wrap; }
+    .type-tab {
+      flex: 1; min-width: 60px; padding: 8px 6px; border-radius: 8px; border: 1.5px solid #2d3748;
+      background: transparent; color: #94a3b8; font-size: .75rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; text-align: center; transition: all .15s;
+    }
+    .type-tab.active { border-color: #4a9abf; background: rgba(74,154,191,.15); color: #4a9abf; }
+
+    /* ── Form fields ── */
+    .field-row { margin-bottom: 14px; }
+    .field-label { font-size: .72rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;
+      letter-spacing: .05em; margin-bottom: 6px; }
+    .pill-group { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pill-btn {
+      padding: 6px 12px; border-radius: 14px; border: 1.5px solid #2d3748;
+      background: transparent; color: #94a3b8; font-size: .78rem; cursor: pointer;
+      font-family: inherit; transition: all .15s;
+    }
+    .pill-btn.sel { border-color: #4a9abf; background: rgba(74,154,191,.15); color: #4a9abf; font-weight: 600; }
+    .form-input {
+      width: 100%; background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 8px 10px; font-size: .85rem; font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-input-sm { width: 100px; }
+    .inline-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .form-textarea {
+      width: 100%; background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 8px 10px; font-size: .85rem; font-family: inherit;
+      resize: vertical; min-height: 64px; box-sizing: border-box;
+    }
+    .share-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: .82rem; color: #94a3b8; }
+    .modal-foot { padding: 12px 18px; border-top: 1px solid #2d3748; display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ── Batch-mode header ── */
+    .batch-notice {
+      background: rgba(74,154,191,.1); border: 1px solid rgba(74,154,191,.25);
+      border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+      font-size: .82rem; color: #4a9abf; font-weight: 600;
+    }
+
+    /* ── Detail panel (entry detail inside tl-badge click) ── */
+    .entry-detail-popup {
+      position: fixed; background: #1e293b; border: 1px solid #2d3748; border-radius: 12px;
+      padding: 14px; z-index: 4000; min-width: 220px; max-width: 300px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5); font-size: .82rem; color: #f1f5f9;
+    }
+    .edp-title { font-weight: 700; margin-bottom: 8px; color: #4a9abf; }
+    .edp-row { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+    .edp-label { color: #94a3b8; }
+    .edp-del { margin-top: 10px; text-align: right; }
+    .edp-del button { background: rgba(239,68,68,.15); color: #ef4444; border: none; border-radius: 6px;
+      padding: 4px 10px; font-size: .75rem; cursor: pointer; font-family: inherit; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="diary-header">
+    <div>
+      <div class="diary-title">📖 Daily Diary</div>
+    </div>
+    <div class="diary-controls">
+      <input type="date" id="diary-date" class="date-input">
+      <select id="room-filter" class="room-filter">
+        <option value="">All rooms</option>
+        <option value="baby">Baby Room</option>
+        <option value="preschool">Pre-school</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="openAddModal(null,'bulk')">+ Batch entry</button>
+    </div>
+  </div>
+
+  <!-- Batch mode notice (shows when ?children= param is set) -->
+  <div class="batch-notice" id="batch-notice" style="display:none">
+    📋 Batch mode: <span id="batch-names"></span>
+    <button onclick="openAddModal(null,'batch')" class="btn btn-primary btn-sm" style="margin-left:8px;font-size:.75rem">Quick log for all selected →</button>
+  </div>
+
+  <div id="diary-area">
+    <div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>
+  </div>
+
+</div>
+
+<!-- ── Entry modal ── -->
+<div class="entry-modal-bg" id="entry-modal-bg" onclick="if(event.target===this)closeModal()">
+  <div class="entry-modal">
+    <div class="modal-head">
+      <span class="modal-head-title" id="modal-title">Log entry</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Type tabs -->
+      <div class="type-tabs" id="type-tabs">
+        <button class="type-tab active" data-type="sleep"  onclick="switchType('sleep')">🛏️ Sleep</button>
+        <button class="type-tab"        data-type="nappy"  onclick="switchType('nappy')">🧷 Nappy</button>
+        <button class="type-tab"        data-type="food"   onclick="switchType('food')">🍽️ Food</button>
+        <button class="type-tab"        data-type="drink"  onclick="switchType('drink')">🍼 Drink</button>
+        <button class="type-tab"        data-type="note"   onclick="switchType('note')">📝 Note</button>
+      </div>
+
+      <!-- Time field (common) -->
+      <div class="field-row">
+        <div class="field-label">Time</div>
+        <input type="time" id="f-time" class="form-input" style="width:130px">
+      </div>
+
+      <!-- Sleep fields -->
+      <div id="f-sleep">
+        <div class="field-row">
+          <div class="field-label">Sleep end (optional)</div>
+          <input type="time" id="f-sleep-end" class="form-input" style="width:130px">
+          <div style="font-size:.72rem;color:#64748b;margin-top:4px">Duration calculated automatically</div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Quality</div>
+          <div class="pill-group" id="pg-sleep-quality">
+            <button class="pill-btn" data-val="sound"    onclick="pickPill(this,'sleep_quality')">Sound</button>
+            <button class="pill-btn" data-val="restless" onclick="pickPill(this,'sleep_quality')">Restless</button>
+            <button class="pill-btn" data-val="woke"     onclick="pickPill(this,'sleep_quality')">Woke early</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Nappy fields -->
+      <div id="f-nappy" style="display:none">
+        <div class="field-row">
+          <div class="field-label">Nappy / Toileting</div>
+          <div class="pill-group" id="pg-nappy-state">
+            <button class="pill-btn" data-val="clean"   onclick="pickPill(this,'nappy_state')">Clean</button>
+            <button class="pill-btn" data-val="wet"     onclick="pickPill(this,'nappy_state')">Wet</button>
+            <button class="pill-btn" data-val="soiled"  onclick="pickPill(this,'nappy_state')">Soiled</button>
+            <button class="pill-btn" data-val="toilet"  onclick="pickPill(this,'nappy_state')">Used toilet</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Food fields -->
+      <div id="f-food" style="display:none">
+        <div class="field-row">
+          <div class="field-label">Meal</div>
+          <div class="pill-group" id="pg-food-meal">
+            <button class="pill-btn" data-val="breakfast" onclick="pickPill(this,'food_meal')">Breakfast</button>
+            <button class="pill-btn" data-val="snack-am"  onclick="pickPill(this,'food_meal')">AM Snack</button>
+            <button class="pill-btn" data-val="lunch"     onclick="pickPill(this,'food_meal')">Lunch</button>
+            <button class="pill-btn" data-val="snack-pm"  onclick="pickPill(this,'food_meal')">PM Snack</button>
+            <button class="pill-btn" data-val="tea"       onclick="pickPill(this,'food_meal')">Tea</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Amount eaten</div>
+          <div class="pill-group" id="pg-food-amount">
+            <button class="pill-btn" data-val="all"     onclick="pickPill(this,'food_amount')">All</button>
+            <button class="pill-btn" data-val="most"    onclick="pickPill(this,'food_amount')">Most</button>
+            <button class="pill-btn" data-val="some"    onclick="pickPill(this,'food_amount')">Some</button>
+            <button class="pill-btn" data-val="refused" onclick="pickPill(this,'food_amount')">Refused</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drink fields -->
+      <div id="f-drink" style="display:none">
+        <div class="field-row">
+          <div class="field-label">Drink type</div>
+          <div class="pill-group" id="pg-drink-type">
+            <button class="pill-btn" data-val="formula" onclick="pickPill(this,'drink_type')">Formula</button>
+            <button class="pill-btn" data-val="EBM"     onclick="pickPill(this,'drink_type')">Breast milk</button>
+            <button class="pill-btn" data-val="cow"     onclick="pickPill(this,'drink_type')">Cow milk</button>
+            <button class="pill-btn" data-val="water"   onclick="pickPill(this,'drink_type')">Water</button>
+            <button class="pill-btn" data-val="other"   onclick="pickPill(this,'drink_type')">Other</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Amount (ml)</div>
+          <input type="number" id="f-drink-ml" class="form-input" style="width:100px" min="0" max="500" placeholder="ml">
+        </div>
+      </div>
+
+      <!-- Notes (all types) -->
+      <div class="field-row">
+        <div class="field-label">Note <span style="font-weight:400;text-transform:none">(optional)</span></div>
+        <textarea id="f-notes" class="form-textarea" maxlength="300" placeholder="Brief note…"></textarea>
+      </div>
+
+      <!-- Share with parents toggle -->
+      <div class="share-row">
+        <input type="checkbox" id="f-share" checked style="width:16px;height:16px;cursor:pointer">
+        <label for="f-share" style="cursor:pointer">Share with parents</label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="modal-save-btn" onclick="saveEntry()">Save entry</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allChildren = [];
+let entriesByChild = {};
+let currentDate = new Date().toISOString().slice(0,10);
+let modalChildIds = [];
+let currentType = 'sleep';
+let pillValues = {};
+
+// Pre-select children from URL ?children= (EyLog home multi-select)
+const urlParams = new URLSearchParams(window.location.search);
+const preSelected = urlParams.get('children') ? urlParams.get('children').split(',').map(Number).filter(Boolean) : [];
+
+// Init date picker
+const datePicker = document.getElementById('diary-date');
+datePicker.value = currentDate;
+datePicker.onchange = () => { currentDate = datePicker.value; loadEntries(); };
+document.getElementById('room-filter').onchange = renderArea;
+
+document.addEventListener('wren:ready', async () => {
+  try {
+    allChildren = await Wren.api('/api/children/attendance/today');
+    if (!Array.isArray(allChildren)) allChildren = [];
+  } catch(e) { allChildren = []; }
+  await loadEntries();
+
+  if (preSelected.length) {
+    const names = preSelected.map(id => {
+      const c = allChildren.find(x => x.id === id);
+      return c ? c.first_name : '';
+    }).filter(Boolean);
+    document.getElementById('batch-notice').style.display = '';
+    document.getElementById('batch-names').textContent = names.join(', ');
+  }
+});
+
+async function loadEntries() {
+  document.getElementById('diary-area').innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const room = document.getElementById('room-filter').value;
+    const params = new URLSearchParams({ date: currentDate });
+    if (room) params.set('room', room);
+    const rows = await Wren.api('/api/diary/entries?' + params);
+    entriesByChild = {};
+    rows.forEach(r => {
+      if (!entriesByChild[r.child_id]) entriesByChild[r.child_id] = { info: r, entries: [] };
+      entriesByChild[r.child_id].entries.push(r);
+    });
+    renderArea();
+  } catch(e) {
+    document.getElementById('diary-area').innerHTML = '<div style="color:#ef4444;padding:24px">Failed to load entries</div>';
+  }
+}
+
+function renderArea() {
+  const room = document.getElementById('room-filter').value;
+  let kids = [...allChildren];
+  if (room) kids = kids.filter(c => (c.room_name||'').toLowerCase().includes(room));
+  if (!kids.length) {
+    document.getElementById('diary-area').innerHTML = '<div style="padding:32px;text-align:center;color:#64748b">No children found for this filter</div>';
+    return;
+  }
+  document.getElementById('diary-area').innerHTML = kids.map(c => {
+    const cdata = entriesByChild[c.id];
+    const entries = cdata ? cdata.entries : [];
+    const init = c.first_name[0] + c.last_name[0];
+    const badges = entries.length
+      ? entries.map(e => renderBadge(e)).join('')
+      : '<span class="tl-empty">No entries yet today</span>';
+    return `<div class="child-tl-card">
+      <div class="child-tl-header" onclick="openAddModal(${c.id})">
+        <div class="child-avatar">${init}</div>
+        <div style="flex:1">
+          <div class="child-name">${c.first_name} ${c.last_name}</div>
+          <div class="child-room">${c.room_name || ''}</div>
+        </div>
+        <button class="add-entry-btn" onclick="event.stopPropagation();openAddModal(${c.id})">+ Add</button>
+      </div>
+      <div class="tl-strip">${badges}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderBadge(e) {
+  const t = e.entry_type;
+  const icons = { sleep:'🛏️', nappy:'🧷', food:'🍽️', drink:'🍼', note:'📝' };
+  const time = e.occurred_at ? new Date(e.occurred_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
+  let detail = '';
+  if (t === 'sleep' && e.duration_minutes) detail = ` ${e.duration_minutes}min`;
+  else if (t === 'nappy' && e.nappy_state) detail = ` ${e.nappy_state}`;
+  else if (t === 'food') detail = (e.food_meal ? ` ${e.food_meal}` : '') + (e.food_amount ? ` · ${e.food_amount}` : '');
+  else if (t === 'drink') detail = (e.drink_ml ? ` ${e.drink_ml}ml` : '') + (e.drink_type ? ` ${e.drink_type}` : '');
+  return `<span class="tl-badge ${t}" onclick="showEntryDetail(event,${JSON.stringify(JSON.stringify(e)).slice(1,-1)})" title="${t}">${icons[t]} ${time}${detail}</span>`;
+}
+
+function showEntryDetail(evt, jsonStr) {
+  evt.stopPropagation();
+  document.querySelectorAll('.entry-detail-popup').forEach(el => el.remove());
+  let e;
+  try { e = JSON.parse(jsonStr); } catch { return; }
+  const popup = document.createElement('div');
+  popup.className = 'entry-detail-popup';
+  const t = e.entry_type;
+  const icons = { sleep:'🛏️', nappy:'🧷', food:'🍽️', drink:'🍼', note:'📝' };
+  const time = e.occurred_at ? new Date(e.occurred_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '—';
+  let rows = `<div class="edp-row"><span class="edp-label">Type</span><span>${icons[t]} ${t}</span></div>`;
+  rows += `<div class="edp-row"><span class="edp-label">Time</span><span>${time}</span></div>`;
+  if (t === 'sleep') {
+    if (e.duration_minutes) rows += `<div class="edp-row"><span class="edp-label">Duration</span><span>${e.duration_minutes}min</span></div>`;
+    if (e.sleep_quality) rows += `<div class="edp-row"><span class="edp-label">Quality</span><span>${e.sleep_quality}</span></div>`;
+  } else if (t === 'nappy') {
+    if (e.nappy_state) rows += `<div class="edp-row"><span class="edp-label">State</span><span>${e.nappy_state}</span></div>`;
+  } else if (t === 'food') {
+    if (e.food_meal) rows += `<div class="edp-row"><span class="edp-label">Meal</span><span>${e.food_meal}</span></div>`;
+    if (e.food_amount) rows += `<div class="edp-row"><span class="edp-label">Amount</span><span>${e.food_amount}</span></div>`;
+  } else if (t === 'drink') {
+    if (e.drink_type) rows += `<div class="edp-row"><span class="edp-label">Type</span><span>${e.drink_type}</span></div>`;
+    if (e.drink_ml) rows += `<div class="edp-row"><span class="edp-label">Amount</span><span>${e.drink_ml}ml</span></div>`;
+  }
+  if (e.notes) rows += `<div class="edp-row"><span class="edp-label">Note</span><span>${e.notes}</span></div>`;
+  if (e.staff_name) rows += `<div class="edp-row"><span class="edp-label">By</span><span>${e.staff_name}</span></div>`;
+  popup.innerHTML = `<div class="edp-title">${e.first_name || ''} — ${t} entry</div>${rows}
+    <div class="edp-del"><button onclick="deleteEntry(${e.id},this.closest('.entry-detail-popup'))">Delete</button></div>`;
+  document.body.appendChild(popup);
+  const rect = evt.target.getBoundingClientRect();
+  popup.style.left = Math.min(rect.left, window.innerWidth - 310) + 'px';
+  popup.style.top = (rect.bottom + 6) + 'px';
+  setTimeout(() => document.addEventListener('click', () => popup.remove(), { once: true }), 50);
+}
+
+async function deleteEntry(id, popup) {
+  if (!confirm('Delete this entry?')) return;
+  try {
+    await Wren.api(`/api/diary/entries/${id}`, { method: 'DELETE' });
+    popup?.remove();
+    await loadEntries();
+  } catch(e) { Wren.toast && Wren.toast('Failed to delete', 'error'); }
+}
+
+// ── Modal ──
+function openAddModal(childId, mode) {
+  if (mode === 'batch' || mode === 'bulk') {
+    modalChildIds = mode === 'batch' ? [...preSelected] : allChildren.map(c => c.id);
+    document.getElementById('modal-title').textContent = `Batch entry — ${modalChildIds.length} children`;
+  } else {
+    modalChildIds = childId ? [childId] : [];
+    const c = allChildren.find(x => x.id === childId);
+    document.getElementById('modal-title').textContent = c ? `Add entry — ${c.first_name}` : 'Add entry';
+  }
+  switchType('sleep');
+  pillValues = {};
+  document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('f-notes').value = '';
+  document.getElementById('f-share').checked = true;
+  document.getElementById('f-drink-ml').value = '';
+  // Default time = now
+  const now = new Date();
+  document.getElementById('f-time').value = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('f-sleep-end').value = '';
+  document.getElementById('entry-modal-bg').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('entry-modal-bg').classList.remove('open');
+}
+
+function switchType(type) {
+  currentType = type;
+  ['sleep','nappy','food','drink'].forEach(t => {
+    document.getElementById('f-' + t).style.display = t === type ? '' : 'none';
+  });
+  document.querySelectorAll('.type-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.type === type);
+  });
+}
+
+function pickPill(btn, field) {
+  const grpMap = {
+    sleep_quality: 'pg-sleep-quality',
+    nappy_state:   'pg-nappy-state',
+    food_meal:     'pg-food-meal',
+    food_amount:   'pg-food-amount',
+    drink_type:    'pg-drink-type',
+  };
+  document.querySelectorAll('#' + grpMap[field] + ' .pill-btn').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  pillValues[field] = btn.dataset.val;
+}
+
+async function saveEntry() {
+  if (!modalChildIds.length) { Wren.toast && Wren.toast('No children selected', 'warning'); return; }
+  const timeVal = document.getElementById('f-time').value;
+  if (!timeVal) { Wren.toast && Wren.toast('Please set a time', 'warning'); return; }
+  const todayDate = currentDate;
+  const occurred_at = `${todayDate}T${timeVal}:00`;
+
+  let duration_minutes = null;
+  if (currentType === 'sleep') {
+    const endVal = document.getElementById('f-sleep-end').value;
+    if (endVal) {
+      const [sh, sm] = timeVal.split(':').map(Number);
+      const [eh, em] = endVal.split(':').map(Number);
+      duration_minutes = (eh * 60 + em) - (sh * 60 + sm);
+      if (duration_minutes < 0) duration_minutes += 1440;
+    }
+  }
+
+  const payload = {
+    child_ids: modalChildIds,
+    entry_type: currentType,
+    occurred_at,
+    duration_minutes: currentType === 'sleep' ? duration_minutes : null,
+    food_amount:   pillValues.food_amount || null,
+    food_meal:     pillValues.food_meal   || null,
+    nappy_state:   pillValues.nappy_state || null,
+    drink_ml:      currentType === 'drink' ? (parseInt(document.getElementById('f-drink-ml').value)||null) : null,
+    drink_type:    pillValues.drink_type  || null,
+    sleep_quality: pillValues.sleep_quality || null,
+    notes: document.getElementById('f-notes').value || null,
+    share_with_parents: document.getElementById('f-share').checked,
+  };
+
+  const saveBtn = document.getElementById('modal-save-btn');
+  saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+  try {
+    await Wren.api('/api/diary/entries', { method: 'POST', body: payload });
+    closeModal();
+    await loadEntries();
+    Wren.toast && Wren.toast('Entry saved', 'success');
+  } catch(e) {
+    Wren.toast && Wren.toast('Save failed', 'error');
+  } finally {
+    saveBtn.disabled = false; saveBtn.textContent = 'Save entry';
+  }
+}
+</script>
+</body>
+</html>

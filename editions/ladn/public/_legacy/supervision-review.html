@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="ladn">
+  <title>Supervision Review — Wren HR</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    :root {
+      --card-bg: #1e293b;
+      --border: #334155;
+      --muted: #64748b;
+      --text: #f1f5f9;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --green: #22c55e;
+    }
+    body { background: #0f172a; color: var(--text); font-family: system-ui, sans-serif; }
+    #review-wrapper { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+    .rev-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-bottom: 16px;
+    }
+    .rev-card h3 { margin: 0 0 12px; font-size: 0.95rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* Sentiment banner */
+    #sentiment-banner {
+      border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;
+      font-size: 0.85rem; font-weight: 600; display: none;
+    }
+    #sentiment-banner.red {
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5;
+      display: block;
+    }
+    #sentiment-banner.amber {
+      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.4); color: #fcd34d;
+      display: block;
+    }
+
+    /* Meta */
+    #meta-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+    .meta-chip {
+      font-size: 0.8rem; color: var(--muted);
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 999px; padding: 3px 10px;
+    }
+
+    /* Summary */
+    #overall-summary {
+      font-size: 0.9rem; line-height: 1.65; color: #cbd5e1;
+      background: #0f172a; border-radius: 8px; padding: 12px;
+      border: 1px solid var(--border);
+    }
+
+    /* Question slots */
+    .q-slot { margin-bottom: 16px; }
+    .q-slot-label {
+      font-size: 0.78rem; font-weight: 700; color: var(--muted);
+      margin-bottom: 5px; display: flex; align-items: center; gap: 8px;
+    }
+    .q-slot-label .q-num { color: #4a9abf; }
+    .q-slot-label .req-badge {
+      font-size: 0.68rem; color: var(--amber);
+      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+      border-radius: 999px; padding: 1px 6px;
+    }
+    .q-textarea {
+      width: 100%; background: #0f172a; border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 10px;
+      font-size: 0.85rem; line-height: 1.55; resize: vertical; min-height: 80px;
+      font-family: inherit; transition: border-color 0.15s;
+    }
+    .q-textarea:focus { outline: none; border-color: #4a9abf; }
+    .q-textarea.not-covered { color: var(--muted); font-style: italic; }
+
+    /* Action items */
+    #action-items-list { list-style: none; padding: 0; margin: 0; }
+    .action-item {
+      display: grid; grid-template-columns: 1fr auto auto;
+      gap: 8px; align-items: center;
+      padding: 10px; border-radius: 8px; margin-bottom: 8px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    }
+    .action-item input {
+      background: #0f172a; border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 0.82rem; font-family: inherit;
+    }
+    .action-item .action-text { grid-column: 1/-1; }
+    .action-del {
+      background: transparent; border: none; color: var(--muted);
+      cursor: pointer; font-size: 1rem; padding: 2px 6px; border-radius: 4px;
+    }
+    .action-del:hover { color: var(--red); background: rgba(239,68,68,0.1); }
+    #add-action-btn {
+      background: transparent; border: 1px dashed var(--border); color: var(--muted);
+      border-radius: 8px; padding: 8px; width: 100%; cursor: pointer; font-size: 0.82rem;
+      margin-top: 6px;
+    }
+    #add-action-btn:hover { border-color: #4a9abf; color: #4a9abf; }
+
+    /* Transcript */
+    #transcript-text {
+      font-size: 0.82rem; line-height: 1.65; color: #94a3b8;
+      background: #0f172a; border-radius: 8px; padding: 12px;
+      border: 1px solid var(--border); max-height: 300px; overflow-y: auto;
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* Footer actions */
+    #footer-actions {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      position: sticky; bottom: 0;
+      background: linear-gradient(to top, #0f172a 70%, transparent);
+      padding: 16px 0 4px;
+    }
+    .btn-confirm {
+      flex: 1; padding: 12px; background: var(--green); border: none;
+      color: #fff; border-radius: 10px; font-weight: 700; font-size: 0.95rem;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    .btn-confirm:hover { opacity: 0.9; }
+    .btn-revert {
+      padding: 12px 20px; background: transparent;
+      border: 1px solid var(--border); color: var(--muted);
+      border-radius: 10px; font-size: 0.85rem; cursor: pointer;
+    }
+    .btn-revert:hover { border-color: #94a3b8; color: var(--text); }
+    #save-status {
+      width: 100%; text-align: center; font-size: 0.8rem; color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .loading-text { color: var(--muted); font-size: 0.9rem; padding: 20px 0; text-align: center; }
+  </style>
+</head>
+<body>
+<div id="review-wrapper">
+  <div class="loading-text" id="loading">Loading supervision notes…</div>
+
+  <div id="review-content" style="display:none">
+
+    <!-- Sentiment banner -->
+    <div id="sentiment-banner"></div>
+
+    <!-- Meta -->
+    <div class="rev-card">
+      <div id="meta-row"></div>
+      <h2 id="staff-name" style="margin:8px 0 4px;font-size:1.1rem"></h2>
+      <div id="overall-summary"></div>
+    </div>
+
+    <!-- 14 question slots -->
+    <div class="rev-card" id="questions-card">
+      <h3>Supervision Notes — Edit if needed</h3>
+      <div id="questions-list"></div>
+    </div>
+
+    <!-- Action items -->
+    <div class="rev-card">
+      <h3>Action Items</h3>
+      <ul id="action-items-list"></ul>
+      <button id="add-action-btn" onclick="addActionItem()">+ Add action item</button>
+    </div>
+
+    <!-- Transcript (collapsible) -->
+    <div class="rev-card">
+      <h3 style="cursor:pointer" onclick="toggleTranscript()">
+        Full Transcript <span id="transcript-toggle" style="color:#4a9abf">▼ Show</span>
+      </h3>
+      <div id="transcript-text" style="display:none"></div>
+    </div>
+
+    <!-- Footer buttons -->
+    <div id="footer-actions">
+      <button class="btn-confirm" onclick="saveNotes('confirmed')">Save as Confirmed</button>
+      <button class="btn-revert" onclick="saveNotes('draft')">Revert to Draft</button>
+      <div id="save-status"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const QUESTION_LABELS = [
+  null, // 0-indexed placeholder
+  'How have you been since our last supervision?',
+  'Wellbeing — workload, stress, home life?',
+  'Key children — worries, observations, parent comms?',
+  'Safeguarding — concerns?',
+  'CPD progress',
+  'Goals from last supervision',
+  'Team dynamics',
+  'Equipment & resources',
+  'Parent relationships',
+  'Personal development',
+  'Health & wellbeing',
+  'Goals for next period',
+  'Manager observations & feedback',
+  'Action items agreed',
+];
+const REQUIRED_QS = [4, 5, 14];
+const SENTIMENT_KEYWORDS_RED = ['safeguarding','disclosure','concern','worried','abuse','neglect'];
+const SENTIMENT_KEYWORDS_AMBER = ['tired','stressed','overwhelmed','struggling','burnout','fatigue','anxious'];
+
+let supervisionId = null;
+let notesJson = {};
+let actionItems = [];
+
+function getToken() { return sessionStorage.getItem('wrenToken'); }
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json', ...(opts.headers||{}) }
+  });
+  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.statusText);
+  return r.json();
+}
+
+document.addEventListener('wren:ready', async () => {
+  const params = new URLSearchParams(location.search);
+  supervisionId = params.get('id');
+  if (!supervisionId) {
+    document.getElementById('loading').textContent = 'No supervision ID in URL.';
+    return;
+  }
+  try {
+    await loadReview();
+  } catch(e) {
+    document.getElementById('loading').textContent = `Error: ${e.message}`;
+  }
+});
+
+async function loadReview() {
+  const data = await api(`/api/supervisions/${supervisionId}/recording`);
+  notesJson = data.notes_json || {};
+  actionItems = notesJson.q14_action_items || [];
+
+  // Meta
+  document.getElementById('staff-name').textContent = data.staff_name || 'Staff member';
+  const meta = document.getElementById('meta-row');
+  const dur = data.duration_seconds
+    ? `${Math.floor(data.duration_seconds/60)}m ${data.duration_seconds%60}s`
+    : '—';
+  const fin = data.finalized_at
+    ? new Date(data.finalized_at).toLocaleString('en-GB', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})
+    : '—';
+  meta.innerHTML = `
+    <span class="meta-chip">Voice recording</span>
+    <span class="meta-chip">Duration: ${dur}</span>
+    <span class="meta-chip">Finalised: ${fin}</span>
+    ${data.audio_available ? '<span class="meta-chip" style="color:#22c55e">Audio available (30d)</span>' : ''}
+  `;
+
+  // Summary
+  document.getElementById('overall-summary').textContent =
+    notesJson.overall_summary || 'No AI summary generated.';
+
+  // Sentiment flags
+  const flags = notesJson.sentiment_flags || [];
+  const allFlagsText = flags.join(' ').toLowerCase();
+  const transcript = (data.transcript || '').toLowerCase();
+  const combined = allFlagsText + ' ' + transcript;
+  if (SENTIMENT_KEYWORDS_RED.some(k => combined.includes(k))) {
+    const banner = document.getElementById('sentiment-banner');
+    banner.className = 'red';
+    banner.innerHTML = '🔴 <b>Safeguarding flag detected.</b> Review safeguarding question carefully before confirming.';
+  } else if (SENTIMENT_KEYWORDS_AMBER.some(k => combined.includes(k))) {
+    const banner = document.getElementById('sentiment-banner');
+    banner.className = 'amber';
+    banner.innerHTML = '🟡 <b>Wellbeing concern flagged.</b> Check wellbeing notes — follow up may be needed.';
+  }
+
+  // Question slots
+  renderQSlots();
+
+  // Action items
+  renderActionItems();
+
+  // Transcript
+  document.getElementById('transcript-text').textContent = data.transcript || 'No transcript available.';
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('review-content').style.display = '';
+}
+
+function renderQSlots() {
+  const container = document.getElementById('questions-list');
+  container.innerHTML = '';
+  const keys = ['q1_lastsupervision','q2_wellbeing','q3_keychildren','q4_safeguarding',
+    'q5_cpd','q6_goals_prev','q7_team','q8_resources','q9_parents',
+    'q10_development','q11_health','q12_goals_next','q13_manager_feedback'];
+
+  keys.forEach((key, i) => {
+    const ordinal = i + 1;
+    const label = QUESTION_LABELS[ordinal];
+    const val = notesJson[key] || '';
+    const notCovered = !val || val.toLowerCase() === 'not covered';
+    const isReq = REQUIRED_QS.includes(ordinal);
+
+    const slot = document.createElement('div');
+    slot.className = 'q-slot';
+    slot.innerHTML = `
+      <div class="q-slot-label">
+        <span class="q-num">Q${ordinal}.</span>
+        <span>${label}</span>
+        ${isReq ? '<span class="req-badge">Required</span>' : ''}
+      </div>
+      <textarea class="q-textarea${notCovered ? ' not-covered' : ''}"
+        data-key="${key}" rows="3"
+        onfocus="this.classList.remove('not-covered')"
+        oninput="notesJson['${key}']=this.value"
+      >${val}</textarea>
+    `;
+    container.appendChild(slot);
+  });
+}
+
+function renderActionItems() {
+  const list = document.getElementById('action-items-list');
+  list.innerHTML = '';
+  actionItems.forEach((ai, i) => {
+    const li = document.createElement('li');
+    li.className = 'action-item';
+    li.innerHTML = `
+      <input class="action-text" type="text" value="${escHtml(ai.item||'')}"
+        oninput="actionItems[${i}].item=this.value" placeholder="Action description">
+      <input type="text" value="${escHtml(ai.owner||'')}" placeholder="Owner"
+        oninput="actionItems[${i}].owner=this.value" style="width:100px">
+      <input type="date" value="${ai.due_date||''}"
+        oninput="actionItems[${i}].due_date=this.value" style="width:130px">
+      <button class="action-del" onclick="removeAction(${i})" title="Remove">✕</button>
+    `;
+    list.appendChild(li);
+  });
+}
+
+function addActionItem() {
+  actionItems.push({ item: '', owner: '', due_date: null });
+  renderActionItems();
+}
+
+function removeAction(i) {
+  actionItems.splice(i, 1);
+  renderActionItems();
+}
+
+function toggleTranscript() {
+  const el = document.getElementById('transcript-text');
+  const tog = document.getElementById('transcript-toggle');
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    tog.textContent = '▲ Hide';
+  } else {
+    el.style.display = 'none';
+    tog.textContent = '▼ Show';
+  }
+}
+
+async function saveNotes(newStatus) {
+  // Collect all textarea values
+  document.querySelectorAll('.q-textarea').forEach(ta => {
+    notesJson[ta.dataset.key] = ta.value;
+  });
+  notesJson.q14_action_items = actionItems;
+
+  const statusEl = document.getElementById('save-status');
+  statusEl.textContent = 'Saving…';
+  try {
+    await api(`/api/supervisions/${supervisionId}/recording-notes`, {
+      method: 'PUT',
+      body: JSON.stringify({ notes_json: notesJson, status: newStatus })
+    });
+    statusEl.textContent = newStatus === 'confirmed'
+      ? '✓ Confirmed and saved.'
+      : '✓ Reverted to draft.';
+    statusEl.style.color = '#22c55e';
+  } catch(e) {
+    statusEl.textContent = `Error: ${e.message}`;
+    statusEl.style.color = '#fca5a5';
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

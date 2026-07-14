@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Dashboard</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+</head>
+<body>
+<template id="page">
+  <h1 class="hv-page-title">Good day</h1>
+  <p class="hv-page-sub" id="sub">Home overview</p>
+  <div class="hv-grid cols-4" id="stats"></div>
+  <div class="hv-grid cols-2" style="margin-top:16px">
+    <div class="hv-card"><h3>Care plan reviews due (7 days)</h3><div id="reviews"></div></div>
+    <div class="hv-card"><h3>Open incidents</h3><div id="incidents"></div></div>
+    <div class="hv-card"><h3>NEWS2 — residents needing attention</h3><div id="news2"></div></div>
+    <div class="hv-card"><h3>DoLS expiring within 30 days</h3><div id="dols"></div></div>
+  </div>
+  <div class="hv-card"><h3>Today's handover</h3><div id="handover"></div></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+if (Haven.guard()) {
+  Haven.shell('dashboard');
+  const u = Haven.user();
+  document.querySelector('.hv-page-title').textContent =
+    `${new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}, ${u.first_name}`;
+  document.getElementById('sub').textContent = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  load();
+}
+async function load() {
+  try {
+    const d = await Haven.api('/api/haven/dashboard');
+    const c = d.counts;
+    document.getElementById('stats').innerHTML = [
+      [c.residents, 'Residents', ''],
+      [c.active_care_plans, 'Active care plans', ''],
+      [c.overdue_care_plan_reviews, 'Care plan reviews overdue', c.overdue_care_plan_reviews > 0 ? 'warn' : ''],
+      [c.overdue_risk_reviews, 'Risk reviews overdue', c.overdue_risk_reviews > 0 ? 'warn' : ''],
+      [c.open_incidents, 'Open incidents', c.open_incidents > 0 ? 'warn' : ''],
+      [c.open_safeguarding, 'Open safeguarding', c.open_safeguarding > 0 ? 'bad' : ''],
+      [c.draft_cqc_notifications, 'Draft CQC notifications', c.draft_cqc_notifications > 0 ? 'warn' : ''],
+      [c.active_body_map_marks, 'Active body-map marks', ''],
+    ].map(([n, l, cls]) => `<div class="hv-stat"><div class="n ${cls}">${n}</div><div class="l">${l}</div></div>`).join('');
+
+    document.getElementById('reviews').innerHTML = d.care_plan_reviews_due.length
+      ? d.care_plan_reviews_due.map(r => `<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+          <a href="/resident?id=${r.resident_id}&tab=careplans">${Haven.esc(r.first_name)} ${Haven.esc(r.last_name)}</a>
+          — ${Haven.esc(r.title)} <span class="hv-note-meta">due ${Haven.fmtDate(r.next_review_due)}</span></div>`).join('')
+      : '<div class="hv-empty">Nothing due this week</div>';
+
+    document.getElementById('incidents').innerHTML = d.open_incidents.length
+      ? d.open_incidents.map(i => `<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+          ${Haven.badge(i.incident_type, 'neutral')} ${i.riddor_reportable ? Haven.badge('RIDDOR', 'red') : ''}
+          ${i.first_name ? Haven.esc(i.first_name + ' ' + i.last_name) : 'Non-resident'}
+          <span class="hv-note-meta">${Haven.fmtDateTime(i.occurred_at)}</span></div>`).join('')
+      : '<div class="hv-empty">No open incidents</div>';
+
+    document.getElementById('news2').innerHTML = d.news2_latest.length
+      ? d.news2_latest.map(x => `<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+          <a href="/resident?id=${x.resident_id}&tab=scores">${Haven.esc(x.first_name)} ${Haven.esc(x.last_name)}</a>
+          — NEWS2 ${x.score} ${Haven.badge(x.band, x.band)} <span class="hv-note-meta">${Haven.fmtDateTime(x.scored_at)}</span></div>`).join('')
+      : '<div class="hv-empty">No elevated NEWS2 scores</div>';
+
+    document.getElementById('dols').innerHTML = d.dols_expiring.length
+      ? d.dols_expiring.map(m => `<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+          <a href="/resident?id=${m.resident_id}&tab=mca">${Haven.esc(m.first_name)} ${Haven.esc(m.last_name)}</a>
+          — expires ${Haven.fmtDate(m.dols_expiry_date)}</div>`).join('')
+      : '<div class="hv-empty">No DoLS expiring soon</div>';
+
+    document.getElementById('handover').innerHTML = d.todays_handover.length
+      ? d.todays_handover.map(h => `<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+          ${Haven.badge(h.shift, 'accent')} ${Haven.badge(h.priority, h.priority)}
+          ${h.first_name ? '<b>' + Haven.esc(h.first_name + ' ' + h.last_name) + '</b> — ' : ''}${Haven.esc(h.note)}</div>`).join('')
+      : '<div class="hv-empty">No handover notes yet today — <a href="/handover">add one</a></div>';
+  } catch (e) { Haven.toast(e.message, true); }
+}
+</script>
+</body>
+</html>

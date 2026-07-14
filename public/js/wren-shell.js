@@ -147,7 +147,7 @@
   //
   const NAV = {
     // EY portal (Nest) — child/curriculum/teaching data only, NO HR items.
-    // REMOVED from this nav (redirect stubs in each edition → hr.example-nursery.co.uk):
+    // REMOVED from this nav (redirect stubs in each edition → hr.littleangelsealing.co.uk):
     //   CPD (all roles) — belongs in Seed/HR (my-cpd.html)
     //   Supervisions (manager) — belongs in Seed/HR (supervisions.html)
     //   Staff (manager) — full staff mgmt belongs in Seed/HR (staff.html)
@@ -183,7 +183,7 @@
         ]},
         { icon: '👤', label: 'My Account', openByDefault: false, children: [
           { label: 'My Profile',    href: '/profile.html' },
-          { label: 'HR & CPD →',   href: 'https://hr.example-nursery.co.uk/' },
+          { label: 'HR & CPD →',   href: 'https://hr.littleangelsealing.co.uk/' },
         ]},
       ],
       room_leader: [
@@ -217,7 +217,7 @@
         ]},
         { icon: '👤', label: 'My Account', openByDefault: false, children: [
           { label: 'My Profile',    href: '/profile.html' },
-          { label: 'HR & CPD →',   href: 'https://hr.example-nursery.co.uk/' },
+          { label: 'HR & CPD →',   href: 'https://hr.littleangelsealing.co.uk/' },
         ]},
       ],
       manager: [
@@ -256,7 +256,7 @@
         ]},
         { icon: '👤', label: 'My Account', openByDefault: false, children: [
           { label: 'My Profile',    href: '/profile.html' },
-          { label: 'HR portal →',   href: 'https://hr.example-nursery.co.uk/' },
+          { label: 'HR portal →',   href: 'https://hr.littleangelsealing.co.uk/' },
         ]},
       ],
     },
@@ -459,7 +459,7 @@
         {
           icon: '👥', label: 'Staff',
           children: [
-            { label: '→ HR portal',    href: 'https://hr.example-nursery.co.uk/' },
+            { label: '→ HR portal',    href: 'https://hr.littleangelsealing.co.uk/' },
             { label: '🤖 Absence AI',  href: '/staff/absence-mgmt.html' },
             { label: '📊 Staffing analysis', href: '/staff/smart-staffing.html' },
           ],

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>Staff Overview — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <h1 class="page-title">Staff Overview</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select class="form-control" id="filter-role" style="width:auto">
+        <option value="">All roles</option>
+        <option value="manager">Manager</option>
+        <option value="deputy_manager">Deputy Manager</option>
+        <option value="room_leader">Room Leader</option>
+        <option value="senior_practitioner">Senior Practitioner</option>
+        <option value="practitioner">Practitioner</option>
+        <option value="apprentice">Apprentice</option>
+      </select>
+      <select class="form-control" id="filter-room" style="width:auto">
+        <option value="">All rooms</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="staff-table-wrap" style="overflow-x:auto">
+    <div style="color:#94a3b8">Loading staff…</div>
+  </div>
+</div>
+
+<script>
+let allStaff = [];
+
+document.addEventListener('wren:ready', loadStaff);
+
+async function loadStaff() {
+  try {
+    const data = await Wren.api('/api/staff');
+    allStaff = data || [];
+
+    // Populate room filter
+    const rooms = [...new Set(allStaff.map(s => s.room_name).filter(Boolean))];
+    const roomSel = document.getElementById('filter-room');
+    rooms.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r; opt.textContent = r;
+      roomSel.appendChild(opt);
+    });
+
+    renderTable();
+  } catch (err) {
+    document.getElementById('staff-table-wrap').innerHTML = '<div style="color:#ef4444">Could not load staff</div>';
+  }
+}
+
+function renderTable() {
+  const roleFilter = document.getElementById('filter-role').value;
+  const roomFilter = document.getElementById('filter-room').value;
+  let staff = allStaff.filter(s => s.is_active !== false);
+  if (roleFilter) staff = staff.filter(s => s.role === roleFilter);
+  if (roomFilter) staff = staff.filter(s => s.room_name === roomFilter);
+
+  if (!staff.length) {
+    document.getElementById('staff-table-wrap').innerHTML = '<div style="color:#94a3b8;padding:32px;text-align:center">No staff match your filters.</div>';
+    return;
+  }
+
+  function dbsStatus(s) {
+    if (!s.dbs_expiry) return '<span style="color:#64748b">—</span>';
+    const expired = new Date(s.dbs_expiry) < new Date();
+    return `<span style="color:${expired ? '#ef4444' : '#22c55e'}">${expired ? '⚠ Expired' : '✓'} ${new Date(s.dbs_expiry).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'})}</span>`;
+  }
+
+  document.getElementById('staff-table-wrap').innerHTML = `
+    <table class="data-table" style="width:100%">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Room</th>
+          <th>Start Date</th>
+          <th>DBS</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${staff.map(s => `
+          <tr>
+            <td>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:34px;height:34px;border-radius:50%;background:#4a9abf;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0">${(s.name||'?').charAt(0).toUpperCase()}</div>
+                <div>
+                  <div style="font-weight:600;color:#f1f5f9">${escHtml(s.name||'')}</div>
+                  <div style="color:#94a3b8;font-size:.8rem">${escHtml(s.email||'')}</div>
+                </div>
+              </div>
+            </td>
+            <td style="text-transform:capitalize;color:#94a3b8">${(s.role||'').replace(/_/g,' ')}</td>
+            <td style="color:#94a3b8">${s.room_name||'—'}</td>
+            <td style="color:#94a3b8">${s.start_date ? new Date(s.start_date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
+            <td>${dbsStatus(s)}</td>
+            <td>
+              <a href="/performance.html?staff=${s.id}" class="btn btn-ghost" style="font-size:.8rem;padding:4px 10px">View</a>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+document.getElementById('filter-role').addEventListener('change', renderTable);
+document.getElementById('filter-room').addEventListener('change', renderTable);
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

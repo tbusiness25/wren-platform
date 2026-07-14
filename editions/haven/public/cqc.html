@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — CQC notifications</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+</head>
+<body>
+<template id="page">
+  <div class="hv-actions-bar">
+    <div><h1 class="hv-page-title">CQC statutory notifications</h1>
+      <p class="hv-page-sub" style="margin-bottom:0">Log of notifiable events (Registration Regulations 2009). Submission itself happens on the CQC provider portal — this is the evidence trail.</p></div>
+    <button class="hv-btn" id="addBtn">Log notification</button>
+  </div>
+  <div class="hv-card"><table class="hv-table"><thead><tr>
+    <th>Event date</th><th>Type</th><th>Resident</th><th>Summary</th><th>Regulation</th><th>Status</th><th></th>
+  </tr></thead><tbody id="rows"></tbody></table></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+let RESIDENTS = [];
+const TYPES = ['death','serious_injury','abuse_allegation','police_incident','deprivation_of_liberty','infectious_disease','absence_of_person','event_stopping_service','other'];
+if (Haven.guard()) { Haven.shell('cqc'); Haven.gateBtn('addBtn', 'senior_write'); load(); }
+async function load() {
+  try {
+    const [rows, residents] = await Promise.all([
+      Haven.api('/api/haven/cqc-notifications'),
+      Haven.api('/api/haven/residents'),
+    ]);
+    RESIDENTS = residents;
+    document.getElementById('rows').innerHTML = rows.map(x => `
+      <tr><td>${Haven.fmtDate(x.event_date)}</td>
+      <td>${Haven.badge(x.notification_type, 'amber')}</td>
+      <td>${x.first_name ? Haven.esc(x.first_name + ' ' + x.last_name) : '—'}</td>
+      <td style="max-width:360px">${Haven.esc(x.summary)}
+        ${x.cqc_reference ? `<div class="hv-note-meta">CQC ref: ${Haven.esc(x.cqc_reference)}</div>` : ''}</td>
+      <td>${Haven.esc(x.regulation || '—')}</td>
+      <td>${Haven.badge(x.status, x.status === 'draft' ? 'open' : 'green')}
+        ${x.submitted_at ? `<div class="hv-note-meta">${Haven.fmtDateTime(x.submitted_at)}</div>` : ''}</td>
+      <td>${x.status === 'draft' && Haven.can('senior_write') ? `<button class="hv-btn small" onclick="markSubmitted(${x.id})">Mark submitted</button>` : ''}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="hv-empty">No notifications logged</td></tr>';
+  } catch (e) { Haven.toast(e.message, true); }
+}
+function markSubmitted(id) {
+  Haven.modal('Mark as submitted to CQC', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Submitted via</label><select name="submitted_via">
+        <option>provider_portal</option><option>email</option><option>phone</option></select></div>
+      <div class="hv-field"><label>CQC reference (if given)</label><input name="cqc_reference"></div>
+    </div>`,
+    async fd => {
+      await Haven.api(`/api/haven/cqc-notifications/${id}`, { method: 'PATCH', body: { ...fd, mark_submitted: true } });
+      Haven.toast('Marked submitted'); load();
+    }, 'Mark submitted');
+}
+document.addEventListener('click', e => {
+  if (e.target.id !== 'addBtn') return;
+  Haven.modal('Log CQC notification', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Type *</label><select name="notification_type">${TYPES.map(t => `<option>${t}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>Event date *</label><input name="event_date" type="date" required></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Resident</label><select name="resident_id"><option value="">—</option>
+        ${RESIDENTS.map(r => `<option value="${r.id}">${Haven.esc(r.first_name + ' ' + r.last_name)}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>Regulation</label><input name="regulation" placeholder="e.g. Reg 16 (death)"></div>
+    </div>
+    <div class="hv-field"><label>Summary *</label><textarea name="summary" required></textarea></div>`,
+    async fd => {
+      await Haven.api('/api/haven/cqc-notifications', { method: 'POST', body: fd });
+      Haven.toast('Notification logged'); load();
+    }, 'Log');
+});
+</script>
+</body>
+</html>

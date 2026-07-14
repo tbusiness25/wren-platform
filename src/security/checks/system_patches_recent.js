@@ -52,7 +52,7 @@ module.exports = {
       return {
         status: 'warn',
         finding: `${securityPending} security update(s) pending in the Wren container: ${securityLines.slice(0, 5).map(l => l.split(' ')[1]).join(', ')}${securityPending > 5 ? ` and ${securityPending - 5} more` : ''}.`,
-        remediation: 'Rebuild and redeploy the Wren container: cd /app && docker compose -f docker/docker-compose.yml build wren-ladn && docker compose -f docker/docker-compose.yml up -d wren-ladn',
+        remediation: 'Rebuild and redeploy the Wren container: cd /home/toby/wren && docker compose -f docker/docker-compose.yml build wren-ladn && docker compose -f docker/docker-compose.yml up -d wren-ladn',
         evidence: { security_pending: securityPending, total_pending: totalPending, packages: securityLines.slice(0, 20) },
       };
     }

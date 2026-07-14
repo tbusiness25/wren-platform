@@ -1,0 +1,133 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PII Sanitiser · Wren</title>
+<link rel="stylesheet" href="/css/wren.css"><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .san-wrap{padding:18px;max-width:900px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 4px}
+ .sub{color:var(--mut);font-size:.85rem;margin-bottom:20px}
+ .box{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:14px 0}
+ .box h3{margin:0 0 10px;font-size:.95rem;color:var(--txt)}
+ textarea{width:100%;min-height:180px;background:var(--bg);border:1px solid var(--bd);
+   border-radius:8px;padding:12px;color:var(--txt);font-family:ui-monospace,monospace;
+   font-size:.85rem;resize:vertical}
+ .btn-row{display:flex;gap:10px;margin:12px 0}
+ .btn{background:var(--card);border:1px solid var(--bd);color:var(--txt);border-radius:10px;
+   padding:10px 16px;font-size:.85rem;cursor:pointer;font-weight:600}
+ .btn:hover{border-color:var(--blue)}
+ .btn.primary{background:var(--blue);border-color:var(--blue);color:#06121f}
+ .btn:disabled{opacity:.5;cursor:default}
+ #san-stats{font-size:.78rem;color:var(--mut);margin-top:8px}
+ .repl{margin-top:12px}
+ .repl-item{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:8px 12px;
+   margin:6px 0;font-size:.78rem;display:flex;gap:12px;align-items:center}
+ .repl-token{color:var(--warn);font-weight:700;font-family:ui-monospace,monospace}
+ .repl-type{color:var(--mut)}
+ #san-output:empty{display:none}
+ .warning{background:rgba(245,158,11,.1);border-color:var(--warn);color:var(--warn);
+   padding:8px 12px;border-radius:6px;margin:10px 0;font-size:.78rem}
+ .check-row{display:flex;align-items:center;gap:8px;margin:10px 0}
+ .check-row input{width:auto;margin:0}
+</style></head>
+<body data-portal="admin">
+<div class="san-wrap">
+  <h1>🔒 PII Sanitiser</h1>
+  <div class="sub">Strip identifying data from text before sending to cloud AI. Runs fully local — no data leaves the device until you copy the sanitised output.</div>
+
+  <div class="box">
+    <h3>1. Input text</h3>
+    <textarea id="san-input" placeholder="Paste text containing names, emails, phone numbers, postcodes, etc."></textarea>
+    <div class="check-row">
+      <input type="checkbox" id="san-deep">
+      <label for="san-deep">Deep mode (AI-assisted — requires local Ollama)</label>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" onclick="sanitise()">Sanitise</button>
+      <button class="btn" onclick="document.getElementById('san-input').value='';document.getElementById('san-output').innerHTML=''">Clear</button>
+    </div>
+    <div id="san-stats"></div>
+  </div>
+
+  <div id="san-output"></div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+document.addEventListener('wren:ready', init);
+
+function init() {
+  // Ready
+}
+
+async function sanitise() {
+  const input = document.getElementById('san-input').value.trim();
+  if (!input) {
+    alert('Please enter text to sanitise');
+    return;
+  }
+
+  const deep = document.getElementById('san-deep').checked;
+  const stats = document.getElementById('san-stats');
+  const outputDiv = document.getElementById('san-output');
+
+  stats.textContent = deep ? 'Sanitising (deep mode — may take 10s)...' : 'Sanitising...';
+  outputDiv.innerHTML = '';
+
+  try {
+    const response = await fetch('/api/sanitiser/text' + (deep ? '?deep=1' : ''), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionStorage.getItem('wrenToken')}`
+      },
+      body: JSON.stringify({ text: input })
+    });
+
+    if (!response.ok) {
+      throw new Error('Sanitisation failed');
+    }
+
+    const data = await response.json();
+
+    stats.textContent = `Sanitised — ${data.replacements.length} items replaced${data.deep_mode ? ' (deep mode)' : ''}`;
+
+    let html = '<div class="box"><h3>2. Sanitised output</h3>';
+    html += `<textarea id="san-result" readonly>${data.sanitised}</textarea>`;
+    html += '<div class="btn-row"><button class="btn primary" onclick="copyResult()">Copy sanitised text</button></div>';
+
+    if (data.warnings && data.warnings.length > 0) {
+      html += '<div class="warning">⚠️ ' + data.warnings.join('; ') + '</div>';
+    }
+
+    if (data.replacements.length > 0) {
+      html += '<div class="repl"><strong style="font-size:.85rem;color:var(--txt)">Replacements made:</strong>';
+      data.replacements.forEach(r => {
+        html += `<div class="repl-item">
+          <span class="repl-token">${r.token}</span>
+          <span class="repl-type">${r.type}</span>
+          <span style="color:var(--mut)">(was: ${r.original_masked})</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+    outputDiv.innerHTML = html;
+
+  } catch (e) {
+    stats.textContent = 'Error: ' + e.message;
+    console.error(e);
+  }
+}
+
+function copyResult() {
+  const result = document.getElementById('san-result');
+  result.select();
+  document.execCommand('copy');
+  alert('Sanitised text copied to clipboard');
+}
+</script>
+</body></html>

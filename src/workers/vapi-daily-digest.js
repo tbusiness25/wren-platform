@@ -71,7 +71,7 @@ async function runDailyDigest() {
   }
 
   if (unreviewed > 0) {
-    msg += `\nReview: admin.example-nursery.co.uk/admin/communications`;
+    msg += `\nReview: admin.littleangelsealing.co.uk/admin/communications`;
   }
 
   await sendTelegram(msg);

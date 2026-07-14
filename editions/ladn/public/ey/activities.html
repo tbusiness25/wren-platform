@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Activities">
+  <meta name="wren-app-chat"  content="on">
+  <title>Activities Bank · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-activities-page {
+      padding: 0 0 env(safe-area-inset-bottom, 16px);
+    }
+
+    #ey-activities-back {
+      width: 44px; height: 44px;
+      background: transparent; border: none;
+      color: var(--c-text); cursor: pointer;
+      border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #ey-activities-back:hover { background: rgba(255,255,255,0.06); }
+
+    /* Search + filter bar */
+    #act-search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--c-navy-mid);
+      border-bottom: 1px solid var(--c-border);
+    }
+    #act-search-input {
+      flex: 1;
+      height: 40px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      color: var(--c-text);
+      font-size: .92rem;
+      padding: 0 12px;
+      outline: none;
+    }
+    #act-search-input:focus { border-color: var(--c-blue); }
+    #act-search-input::placeholder { color: var(--c-muted); }
+
+    /* Filter chips scroll row */
+    #act-filter-row {
+      display: flex;
+      gap: 6px;
+      padding: 8px 12px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--c-border);
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    #act-filter-row::-webkit-scrollbar { display: none; }
+
+    .act-chip {
+      height: 30px;
+      padding: 0 12px;
+      border-radius: 15px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      color: var(--c-muted);
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .act-chip.active {
+      background: var(--c-blue);
+      border-color: var(--c-blue);
+      color: #fff;
+    }
+
+    /* Activity list */
+    #act-list {
+      padding: 10px 12px;
+    }
+
+    .act-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .act-card:hover   { border-color: var(--c-blue); }
+    .act-card:active  { background: rgba(255,255,255,0.04); }
+
+    .act-card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .act-card-title {
+      flex: 1;
+      font-size: .92rem;
+      font-weight: 700;
+      color: var(--c-text);
+      line-height: 1.3;
+    }
+    .act-card-duration {
+      font-size: .78rem;
+      color: var(--c-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .act-card-desc {
+      font-size: .85rem;
+      color: var(--c-muted);
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .act-card-tags {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+    .act-tag {
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 11px;
+      font-size: .72rem;
+      font-weight: 700;
+      background: rgba(91,143,255,0.12);
+      color: var(--c-blue);
+    }
+    .act-tag.age  { background: rgba(251,191,36,0.12); color: var(--c-amber); }
+    .act-tag.diff { background: rgba(52,211,153,0.12); color: var(--c-green); }
+
+    /* Footer count */
+    #act-footer {
+      text-align: center;
+      padding: 12px;
+      font-size: .8rem;
+      color: var(--c-muted);
+    }
+
+    .act-empty {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--c-muted);
+    }
+    .act-empty-icon  { font-size: 2.5rem; margin-bottom: 12px; }
+    .act-empty-title { font-size: 1rem; font-weight: 700; color: var(--c-text); margin-bottom: 6px; }
+
+    /* ── Activity detail sheet ───────────────────────────────────────────── */
+    #act-detail-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 200;
+      opacity: 0; pointer-events: none;
+      transition: opacity .25s;
+    }
+    #act-detail-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    #act-detail-sheet {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      max-height: 88vh;
+      background: var(--c-navy-mid);
+      border-top-left-radius: 18px;
+      border-top-right-radius: 18px;
+      border-top: 1px solid var(--c-border);
+      z-index: 201;
+      display: flex; flex-direction: column;
+      transform: translateY(100%);
+      transition: transform .3s cubic-bezier(.32,1,.52,1);
+      will-change: transform;
+    }
+    #act-detail-sheet.open { transform: translateY(0); }
+
+    #act-detail-handle {
+      width: 36px; height: 4px;
+      background: var(--c-border); border-radius: 2px;
+      margin: 10px auto 0; flex-shrink: 0;
+    }
+
+    #act-detail-scroll {
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding: 12px 16px 8px;
+      flex: 1;
+    }
+
+    #act-detail-title {
+      font-size: 1.08rem; font-weight: 700;
+      color: var(--c-text); margin: 4px 0 10px; line-height: 1.3;
+    }
+
+    .act-detail-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+    .act-detail-badge {
+      height: 24px; padding: 0 10px; border-radius: 12px;
+      font-size: .75rem; font-weight: 700;
+      display: inline-flex; align-items: center;
+    }
+    .act-detail-badge.age  { background: rgba(251,191,36,0.12); color: var(--c-amber); }
+    .act-detail-badge.diff { background: rgba(52,211,153,0.12); color: var(--c-green); }
+    .act-detail-badge.dur  { background: rgba(91,143,255,0.12); color: var(--c-blue); }
+    .act-detail-badge.set  { background: rgba(168,85,247,0.12); color: #c084fc; }
+
+    #act-detail-desc {
+      font-size: .9rem; color: var(--c-text); line-height: 1.6;
+      margin-bottom: 14px; white-space: pre-wrap; word-break: break-word;
+    }
+
+    .act-detail-section { margin-bottom: 14px; }
+    .act-detail-label {
+      font-size: .7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--c-muted); margin-bottom: 6px; display: block;
+    }
+    .act-detail-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .act-detail-chip {
+      height: 26px; padding: 0 10px;
+      background: rgba(91,143,255,0.12);
+      border-radius: 13px; color: var(--c-blue);
+      font-size: .78rem; font-weight: 600;
+      display: inline-flex; align-items: center;
+    }
+    .act-detail-list { list-style: none; padding: 0; margin: 0; }
+    .act-detail-list li {
+      font-size: .88rem; color: var(--c-text);
+      padding: 3px 0 3px 16px; position: relative; line-height: 1.45;
+    }
+    .act-detail-list li::before { content: '·'; position: absolute; left: 4px; color: var(--c-muted); }
+    .act-detail-text {
+      font-size: .88rem; color: var(--c-text);
+      line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+    }
+
+    #act-detail-actions {
+      display: flex; gap: 8px;
+      padding: 10px 16px env(safe-area-inset-bottom, 16px);
+      border-top: 1px solid var(--c-border);
+      background: var(--c-navy-mid);
+      flex-shrink: 0;
+    }
+    #act-detail-plan-btn {
+      flex: 1; height: 48px;
+      background: var(--c-blue); border: none; border-radius: 12px;
+      color: #fff; font-size: .95rem; font-weight: 700;
+      cursor: pointer; transition: opacity .15s;
+    }
+    #act-detail-plan-btn:hover { opacity: .88; }
+    #act-detail-plan-btn:disabled { opacity: .5; cursor: default; }
+    #act-detail-close-btn {
+      height: 48px; padding: 0 20px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border); border-radius: 12px;
+      color: var(--c-text); font-size: .9rem; font-weight: 600;
+      cursor: pointer; transition: border-color .15s;
+    }
+    #act-detail-close-btn:hover { border-color: var(--c-blue); }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-activities-page">
+
+  <div id="act-search-bar">
+    <input type="search" id="act-search-input"
+           placeholder="Search activities…"
+           autocomplete="off" aria-label="Search activities">
+  </div>
+
+  <div id="act-filter-row" role="toolbar" aria-label="Filter activities">
+    <button class="act-chip active" data-area="">All Areas</button>
+    <button class="act-chip" data-area="Communication and Language">Comm &amp; Lang</button>
+    <button class="act-chip" data-area="Physical Development">Physical</button>
+    <button class="act-chip" data-area="Personal, Social and Emotional Development">PSED</button>
+    <button class="act-chip" data-area="Literacy">Literacy</button>
+    <button class="act-chip" data-area="Mathematics">Maths</button>
+    <button class="act-chip" data-area="Understanding the World">World</button>
+    <button class="act-chip" data-area="Expressive Arts and Design">Arts</button>
+  </div>
+
+  <div id="act-list" role="list" aria-live="polite" aria-label="Activities">
+    <div class="app-skeleton" style="height:100px;border-radius:12px;margin-bottom:8px"></div>
+    <div class="app-skeleton" style="height:100px;border-radius:12px;margin-bottom:8px"></div>
+    <div class="app-skeleton" style="height:100px;border-radius:12px;margin-bottom:8px"></div>
+  </div>
+  <div id="act-footer"></div>
+
+</div><!-- #ey-activities-page -->
+
+<!-- ── Activity detail slide-up sheet ──────────────────────────────────── -->
+<div id="act-detail-backdrop" role="presentation" aria-hidden="true"></div>
+<div id="act-detail-sheet" role="dialog" aria-modal="true"
+     aria-label="Activity detail" aria-hidden="true">
+  <div id="act-detail-handle" aria-hidden="true"></div>
+  <div id="act-detail-scroll">
+    <div id="act-detail-loading">
+      <div class="app-skeleton" style="height:28px;border-radius:8px;margin-bottom:8px"></div>
+      <div class="app-skeleton" style="height:20px;width:55%;border-radius:6px;margin-bottom:14px"></div>
+      <div class="app-skeleton" style="height:72px;border-radius:8px;margin-bottom:10px"></div>
+      <div class="app-skeleton" style="height:44px;border-radius:8px"></div>
+    </div>
+    <div id="act-detail-content" hidden>
+      <h2 id="act-detail-title"></h2>
+      <div class="act-detail-badges" id="act-detail-badges"></div>
+      <p  id="act-detail-desc"></p>
+      <div id="act-detail-eyfs-section"      class="act-detail-section" hidden>
+        <span class="act-detail-label">EYFS Learning Areas</span>
+        <div class="act-detail-chips" id="act-detail-eyfs"></div>
+      </div>
+      <div id="act-detail-goals-section"     class="act-detail-section" hidden>
+        <span class="act-detail-label">Learning Goals</span>
+        <ul class="act-detail-list" id="act-detail-goals"></ul>
+      </div>
+      <div id="act-detail-resources-section" class="act-detail-section" hidden>
+        <span class="act-detail-label">Resources Needed</span>
+        <ul class="act-detail-list" id="act-detail-resources"></ul>
+      </div>
+      <div id="act-detail-steps-section"     class="act-detail-section" hidden>
+        <span class="act-detail-label">Steps</span>
+        <p class="act-detail-text" id="act-detail-steps"></p>
+      </div>
+    </div>
+  </div>
+  <div id="act-detail-actions">
+    <button id="act-detail-plan-btn"  type="button">Plan this activity</button>
+    <button id="act-detail-close-btn" type="button">Close</button>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var _search          = '';
+  var _areaFilter      = '';
+  var _searchTimer     = null;
+  var _currentActivity = null;
+  var _currentUser     = null;
+
+  /* ── HTML escape ────────────────────────────────────────────────────────────── */
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /* ── Render activities ──────────────────────────────────────────────────────── */
+  function _render(data) {
+    var list   = document.getElementById('act-list');
+    var footer = document.getElementById('act-footer');
+    if (!list) return;
+
+    var activities = (data && data.activities) ? data.activities : [];
+    var total      = (data && data.total)      ? data.total      : activities.length;
+
+    if (!activities.length) {
+      list.innerHTML =
+        '<div class="act-empty">' +
+        '  <div class="act-empty-icon">🎨</div>' +
+        '  <div class="act-empty-title">No activities found</div>' +
+        '  <div>Try adjusting your search or filter.</div>' +
+        '</div>';
+      if (footer) footer.textContent = '';
+      return;
+    }
+
+    list.innerHTML = activities.map(function (a) {
+      var areas = Array.isArray(a.eyfs_areas) ? a.eyfs_areas : [];
+      var tags  = [
+        a.age_group  ? '<span class="act-tag age">' + _esc(a.age_group) + '</span>'  : '',
+        a.difficulty ? '<span class="act-tag diff">' + _esc(a.difficulty) + '</span>' : '',
+      ].concat(areas.map(function (ar) {
+        var short = (ar || '').split(' ')[0].replace(/[^A-Za-z]/g, '');
+        return '<span class="act-tag">' + _esc(short) + '</span>';
+      })).filter(Boolean).slice(0, 4).join('');
+
+      var dur = a.duration_minutes ? a.duration_minutes + ' min' : '';
+
+      return '<div class="act-card" role="listitem" tabindex="0"' +
+             '     data-id="' + a.id + '" aria-label="' + _esc(a.title) + '">' +
+             '  <div class="act-card-top">' +
+             '    <span class="act-card-title">' + _esc(a.title) + '</span>' +
+             (dur ? '    <span class="act-card-duration">⏱ ' + _esc(dur) + '</span>' : '') +
+             '  </div>' +
+             (a.description ? '  <div class="act-card-desc">' + _esc(a.description) + '</div>' : '') +
+             '  <div class="act-card-tags">' + tags + '</div>' +
+             '</div>';
+    }).join('');
+
+    if (footer) footer.textContent = activities.length + ' of ' + total + ' activities';
+
+    /* Card tap → navigate to activity detail (admin portal for now) */
+    list.querySelectorAll('.act-card').forEach(function (card) {
+      function _go() {
+        var id = card.dataset.id;
+        _openDetail(id);
+      }
+      card.addEventListener('click', _go);
+      card.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _go(); }
+      });
+    });
+  }
+
+  /* ── Load from API ──────────────────────────────────────────────────────────── */
+  function _load() {
+    var list = document.getElementById('act-list');
+    if (!list) return;
+
+    list.innerHTML =
+      '<div class="app-skeleton" style="height:100px;border-radius:12px;margin-bottom:8px"></div>'.repeat(3);
+
+    var url = '/api/activity-bank?limit=40';
+    if (_search)     url += '&search=' + encodeURIComponent(_search);
+    if (_areaFilter) url += '&eyfs_area=' + encodeURIComponent(_areaFilter);
+
+    Wren.api(url).then(_render).catch(function () {
+      if (list) list.innerHTML =
+        '<div class="act-empty"><div class="act-empty-icon">⚠️</div>' +
+        '<div class="act-empty-title">Could not load activities</div></div>';
+    });
+  }
+
+  /* ── Activity detail sheet ──────────────────────────────────────────────────── */
+  function _openDetail(id) {
+    var sheet    = document.getElementById('act-detail-sheet');
+    var backdrop = document.getElementById('act-detail-backdrop');
+    var loading  = document.getElementById('act-detail-loading');
+    var content  = document.getElementById('act-detail-content');
+    var planBtn  = document.getElementById('act-detail-plan-btn');
+    var scroll   = document.getElementById('act-detail-scroll');
+    if (!sheet) return;
+
+    _currentActivity = null;
+    if (loading) { loading.hidden = false; loading.innerHTML =
+      '<div class="app-skeleton" style="height:28px;border-radius:8px;margin-bottom:8px"></div>' +
+      '<div class="app-skeleton" style="height:20px;width:55%;border-radius:6px;margin-bottom:14px"></div>' +
+      '<div class="app-skeleton" style="height:72px;border-radius:8px;margin-bottom:10px"></div>' +
+      '<div class="app-skeleton" style="height:44px;border-radius:8px"></div>';
+    }
+    if (content) content.hidden = true;
+    if (planBtn) { planBtn.disabled = false; planBtn.textContent = 'Plan this activity'; }
+    if (scroll)  scroll.scrollTop = 0;
+
+    sheet.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(function () {
+      if (backdrop) backdrop.classList.add('open');
+      sheet.classList.add('open');
+    });
+
+    Wren.api('/api/activity-bank/' + id)
+      .then(function (act) {
+        _currentActivity = act;
+        _populateSheet(act);
+      })
+      .catch(function () {
+        if (loading) loading.innerHTML =
+          '<div class="act-empty"><div class="act-empty-icon">⚠️</div>' +
+          '<div class="act-empty-title">Could not load activity</div></div>';
+      });
+  }
+
+  function _closeDetail() {
+    var sheet    = document.getElementById('act-detail-sheet');
+    var backdrop = document.getElementById('act-detail-backdrop');
+    if (!sheet) return;
+    sheet.style.transform = '';
+    sheet.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('open');
+    setTimeout(function () { sheet.setAttribute('aria-hidden', 'true'); }, 300);
+  }
+
+  function _populateSheet(act) {
+    var loading = document.getElementById('act-detail-loading');
+    var content = document.getElementById('act-detail-content');
+    if (loading) loading.hidden = true;
+    if (content) content.hidden = false;
+
+    var titleEl = document.getElementById('act-detail-title');
+    if (titleEl) titleEl.textContent = act.title || 'Activity';
+
+    var badgesEl = document.getElementById('act-detail-badges');
+    if (badgesEl) {
+      var badges = [];
+      if (act.age_group)        badges.push('<span class="act-detail-badge age">'  + _esc(act.age_group)       + '</span>');
+      if (act.difficulty)       badges.push('<span class="act-detail-badge diff">' + _esc(act.difficulty)      + '</span>');
+      if (act.duration_minutes) badges.push('<span class="act-detail-badge dur">⏱ ' + _esc(act.duration_minutes) + ' min</span>');
+      var settings = Array.isArray(act.setting) ? act.setting : [];
+      if (settings.length)      badges.push('<span class="act-detail-badge set">'  + _esc(settings.join(' / ')) + '</span>');
+      if (act.group_size)       badges.push('<span class="act-detail-badge set">'  + _esc(act.group_size)      + '</span>');
+      badgesEl.innerHTML = badges.join('');
+    }
+
+    var descEl = document.getElementById('act-detail-desc');
+    if (descEl) descEl.textContent = act.description || '';
+
+    var eyfsSection = document.getElementById('act-detail-eyfs-section');
+    var eyfsEl      = document.getElementById('act-detail-eyfs');
+    var areas = Array.isArray(act.eyfs_areas) ? act.eyfs_areas : [];
+    if (eyfsSection) eyfsSection.hidden = !areas.length;
+    if (eyfsEl && areas.length) {
+      eyfsEl.innerHTML = areas.map(function (a) {
+        return '<span class="act-detail-chip">' + _esc(a) + '</span>';
+      }).join('');
+    }
+
+    var goalsSection = document.getElementById('act-detail-goals-section');
+    var goalsEl      = document.getElementById('act-detail-goals');
+    var goals = Array.isArray(act.learning_objectives) ? act.learning_objectives : [];
+    if (goalsSection) goalsSection.hidden = !goals.length;
+    if (goalsEl && goals.length) {
+      goalsEl.innerHTML = goals.map(function (g) { return '<li>' + _esc(g) + '</li>'; }).join('');
+    }
+
+    var resSection = document.getElementById('act-detail-resources-section');
+    var resEl      = document.getElementById('act-detail-resources');
+    var resources = Array.isArray(act.materials_needed) ? act.materials_needed : [];
+    if (resSection) resSection.hidden = !resources.length;
+    if (resEl && resources.length) {
+      resEl.innerHTML = resources.map(function (r) { return '<li>' + _esc(r) + '</li>'; }).join('');
+    }
+
+    var stepsSection = document.getElementById('act-detail-steps-section');
+    var stepsEl      = document.getElementById('act-detail-steps');
+    if (stepsSection) stepsSection.hidden = !act.step_by_step;
+    if (stepsEl && act.step_by_step) stepsEl.textContent = act.step_by_step;
+  }
+
+  function _planActivity() {
+    if (!_currentActivity) return;
+    var planBtn = document.getElementById('act-detail-plan-btn');
+    if (planBtn) { planBtn.disabled = true; planBtn.textContent = 'Adding…'; }
+
+    var today  = new Date().toISOString().slice(0, 10);
+    var roomId = _currentUser ? _currentUser.room_id : null;
+
+    Wren.api('/api/planned-activities', {
+      method: 'POST',
+      body: {
+        scope:       'group',
+        slot:        'morning',
+        room_id:     roomId || undefined,
+        plan_date:   today,
+        activity_id: _currentActivity.id,
+        title:       _currentActivity.title
+      }
+    }).then(function () {
+      Wren.toast("Added to today's plan ✓", 'success', 3000);
+      _closeDetail();
+    }).catch(function (err) {
+      if (planBtn) { planBtn.disabled = false; planBtn.textContent = 'Plan this activity'; }
+      Wren.toast((err && err.error) || 'Could not add to plan', 'error', 3000);
+    });
+  }
+
+  function _initSheet() {
+    var backdrop = document.getElementById('act-detail-backdrop');
+    var closeBtn = document.getElementById('act-detail-close-btn');
+    var planBtn  = document.getElementById('act-detail-plan-btn');
+    var sheet    = document.getElementById('act-detail-sheet');
+    var handle   = document.getElementById('act-detail-handle');
+    if (backdrop) backdrop.addEventListener('click', _closeDetail);
+    if (closeBtn) closeBtn.addEventListener('click', _closeDetail);
+    if (planBtn)  planBtn.addEventListener('click',  _planActivity);
+
+    /* Swipe-down handle to dismiss */
+    if (!sheet || !handle) return;
+    var _startY = 0, _dragging = false;
+    handle.addEventListener('touchstart', function (e) {
+      _startY = e.touches[0].clientY; _dragging = true;
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (!_dragging) return;
+      var dy = e.touches[0].clientY - _startY;
+      if (dy > 0) sheet.style.transform = 'translateY(' + dy + 'px)';
+    }, { passive: true });
+    document.addEventListener('touchend', function (e) {
+      if (!_dragging) return;
+      _dragging = false;
+      var dy = e.changedTouches[0].clientY - _startY;
+      sheet.style.transform = '';
+      if (dy > 80) _closeDetail();
+    });
+  }
+
+  /* ── Filter chips ───────────────────────────────────────────────────────────── */
+  function _initFilters() {
+    document.querySelectorAll('#act-filter-row .act-chip').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        _areaFilter = btn.dataset.area;
+        document.querySelectorAll('#act-filter-row .act-chip').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.area === _areaFilter);
+        });
+        _load();
+      });
+    });
+  }
+
+  /* ── Search ─────────────────────────────────────────────────────────────────── */
+  function _initSearch() {
+    var inp = document.getElementById('act-search-input');
+    if (!inp) return;
+    inp.addEventListener('input', function () {
+      clearTimeout(_searchTimer);
+      _search = inp.value.trim();
+      _searchTimer = setTimeout(_load, 350);
+    });
+  }
+
+  /* ── Back button ────────────────────────────────────────────────────────────── */
+  function _injectBack() {
+    var topbar    = document.getElementById('wren-app-topbar');
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (!topbar || !hamburger) return;
+
+    var btn = document.createElement('button');
+    btn.id   = 'ey-activities-back';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Back to More');
+    btn.innerHTML =
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+      '     stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+    btn.addEventListener('click', function () {
+      if (history.length > 1) history.back();
+      else location.href = '/ey/more';
+    });
+    hamburger.parentNode.insertBefore(btn, hamburger);
+    hamburger.style.display = 'none';
+  }
+
+  /* ── Boot ───────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function (e) {
+    _currentUser = (e && e.detail) ? e.detail.user : null;
+    _injectBack();
+    _initFilters();
+    _initSearch();
+    _initSheet();
+    _load();
+  });
+}());
+</script>
+</body>
+</html>

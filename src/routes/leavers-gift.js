@@ -57,7 +57,7 @@ router.post('/gift/:child_id/generate', mgtOnly, async (req, res) => {
     await db.query(`UPDATE leavers_gift_packages SET status='revoked' WHERE child_id=$1 AND status='active'`, [childId]);
 
     const token = newToken();
-    const title = `${snap.child.display_name} — My Your Nursery Memory Book`;
+    const title = `${snap.child.display_name} — My Little Angels Memory Book`;
     const { rows } = await db.query(
       `INSERT INTO leavers_gift_packages
          (child_id, token, status, title, snapshot, media_count, expires_at, created_by, created_by_name)

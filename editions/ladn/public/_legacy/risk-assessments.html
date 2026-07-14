@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Risk Assessments — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📋 Risk Assessments</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-ghost" onclick="raShowExpiring()">Due for review</button>
+      <button class="btn btn-sm btn-ghost" onclick="raShowRiddor()">RIDDOR reportable</button>
+      <button class="btn btn-primary" onclick="raNew()">+ New RA</button>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <select id="ra-filter-status" class="v2-sort-select" onchange="raLoad()" aria-label="Filter by status">
+      <option value="">All statuses</option>
+      <option value="draft">Draft</option>
+      <option value="submitted">Submitted</option>
+      <option value="reviewed">Reviewed</option>
+      <option value="approved">Approved</option>
+    </select>
+    <select id="ra-filter-cat" class="v2-sort-select" onchange="raLoad()" aria-label="Filter by category">
+      <option value="">All categories</option>
+      <option value="school_trip">School / Nursery Trip</option>
+      <option value="kitchen">Kitchen</option>
+      <option value="pe">Outdoor / PE</option>
+      <option value="allergy">Allergy Management</option>
+      <option value="coshh">COSHH</option>
+      <option value="fire">Fire Evacuation</option>
+      <option value="lockdown">Lockdown</option>
+      <option value="general">General</option>
+    </select>
+  </div>
+
+  <div id="ra-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', init);
+
+let ras = [];
+let templates = [];
+let currentRA = null;
+
+async function init() {
+  [templates] = await Promise.all([
+    Wren.api('/api/risk-assessments/templates').catch(()=>[]),
+    raLoad(),
+  ]);
+
+  // If ?id= param, open that RA
+  const id = new URLSearchParams(location.search).get('id');
+  if (id) {
+    await raOpen(parseInt(id));
+    history.replaceState({}, '', location.pathname);
+  }
+}
+
+async function raLoad() {
+  const status = document.getElementById('ra-filter-status')?.value;
+  const cat    = document.getElementById('ra-filter-cat')?.value;
+  const area   = document.getElementById('ra-area');
+  area.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const qs = [];
+  if (status) qs.push('status='+status);
+  if (cat)    qs.push('category='+cat);
+  ras = await Wren.api('/api/risk-assessments?' + qs.join('&')).catch(()=>[]);
+
+  if (!ras.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <h3>No risk assessments</h3>
+      <p>Create from a template or start blank.</p>
+      <button class="btn btn-primary" onclick="raNew()">+ New Risk Assessment</button>
+    </div>`;
+    return;
+  }
+
+  const isManager = ['manager','deputy_manager','admin'].includes(Wren.user?.role);
+
+  area.innerHTML = `<div class="wren-table-wrap"><table class="wren-table" style="width:100%">
+    <thead><tr>
+      <th>Title</th><th>Category</th><th>Status</th><th>Review due</th>
+      <th>Hazards</th><th>Created by</th><th></th>
+    </tr></thead>
+    <tbody>${ras.map(ra => {
+      const expired  = ra.is_expired;
+      const dueSoon  = ra.review_due_soon;
+      const dateCol  = expired ? 'color:#ef4444' : dueSoon ? 'color:#f59e0b' : 'color:#64748b';
+      const statusBadge = { draft:'badge-yellow', submitted:'badge-blue', reviewed:'badge-purple', approved:'badge-green' };
+      return `<tr style="cursor:pointer" onclick="raOpen(${ra.id})">
+        <td style="padding:10px;font-weight:600">${esc(ra.title)}</td>
+        <td style="padding:10px;font-size:.82rem;color:#94a3b8">${esc(ra.category)}</td>
+        <td style="padding:10px"><span class="badge ${statusBadge[ra.status]||'badge-blue'}" style="font-size:.72rem">${ra.status}</span></td>
+        <td style="padding:10px;font-size:.82rem;${dateCol}">${ra.review_date ? new Date(ra.review_date).toLocaleDateString('en-GB') : '—'} ${expired ? '⚠️' : ''}</td>
+        <td style="padding:10px;font-size:.82rem;text-align:center">${ra.hazard_count||0}</td>
+        <td style="padding:10px;font-size:.8rem;color:#94a3b8">${esc(ra.created_by_name||'—')}</td>
+        <td style="padding:10px">
+          ${ra.status==='draft' ? `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();raSubmit(${ra.id})">Submit</button>` : ''}
+          ${isManager && ra.status==='submitted' ? `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();raApprove(${ra.id})">Approve</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
+async function raNew() {
+  Wren.modal('New Risk Assessment', `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <label class="wren-label">Template (optional)</label>
+        <select class="wren-select" id="ran-tmpl" style="width:100%">
+          <option value="">— blank —</option>
+          ${templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="wren-label">Title <span style="color:#ef4444">*</span></label>
+        <input class="wren-input" id="ran-title" placeholder="e.g. Pre-school Garden Trip" style="width:100%">
+      </div>
+      <div>
+        <label class="wren-label">Location / activity</label>
+        <input class="wren-input" id="ran-loc" placeholder="e.g. Walpole Park" style="width:100%">
+      </div>
+      <div>
+        <label class="wren-label">Review date</label>
+        <input type="date" class="wren-input" id="ran-review" style="width:100%">
+      </div>
+    </div>
+  `, [
+    { label: 'Create', class: 'btn-primary', close: false, action: async () => {
+      const title = document.getElementById('ran-title')?.value?.trim();
+      const tmpl  = document.getElementById('ran-tmpl')?.value;
+      const loc   = document.getElementById('ran-loc')?.value?.trim();
+      const rev   = document.getElementById('ran-review')?.value;
+      if (!title) { Wren.toast('Title required', 'error'); return; }
+      const ra = await Wren.api('/api/risk-assessments', { method:'POST', body:{
+        title, template_id: tmpl ? parseInt(tmpl) : undefined,
+        location: loc||null, review_date: rev||null
+      }});
+      Wren.toast('Created', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      await raLoad();
+      raOpen(ra.id);
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+async function raOpen(id) {
+  const area = document.getElementById('ra-area');
+  area.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  try {
+    const ra = await Wren.api(`/api/risk-assessments/${id}`);
+    currentRA = ra;
+    const isManager = ['manager','deputy_manager','admin'].includes(Wren.user?.role);
+    const editable  = ra.status === 'draft';
+
+    const statusBadge = { draft:'badge-yellow',submitted:'badge-blue',reviewed:'badge-purple',approved:'badge-green' };
+
+    area.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-ghost" onclick="raLoad()">← All RAs</button>
+        <h2 style="margin:0;flex:1;font-size:1rem">${esc(ra.title)}</h2>
+        <span class="badge ${statusBadge[ra.status]||'badge-blue'}">${ra.status}</span>
+        ${editable ? `<button class="btn btn-sm btn-primary" onclick="raSubmit(${ra.id})">Submit for review</button>` : ''}
+        ${isManager && ra.status==='submitted' ? `<button class="btn btn-sm btn-ghost" onclick="raReview(${ra.id})">Review</button>` : ''}
+        ${isManager && ra.status==='reviewed' ? `<button class="btn btn-sm btn-primary" onclick="raApprove(${ra.id})">Approve</button>` : ''}
+        <button class="btn btn-sm btn-ghost" onclick="window.print()">Print</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+        <div class="v2-card">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:8px">Details</div>
+          <div style="font-size:.85rem;display:flex;flex-direction:column;gap:6px">
+            <div><span style="color:#64748b">Category:</span> ${esc(ra.category)}</div>
+            <div><span style="color:#64748b">Location:</span> ${esc(ra.location||'—')}</div>
+            <div><span style="color:#64748b">Activity:</span> ${esc(ra.activity||'—')}</div>
+            <div><span style="color:#64748b">Assessment date:</span> ${ra.assessment_date ? new Date(ra.assessment_date).toLocaleDateString('en-GB') : '—'}</div>
+            <div><span style="color:#64748b">Review due:</span> <span style="${ra.is_expired?'color:#ef4444':''}">
+              ${ra.review_date ? new Date(ra.review_date).toLocaleDateString('en-GB') : '—'} ${ra.is_expired?'⚠️ EXPIRED':''}
+            </span></div>
+            <div><span style="color:#64748b">Created by:</span> ${esc(ra.created_by_name||'—')}</div>
+            ${ra.approved_by_name ? `<div><span style="color:#64748b">Approved by:</span> ${esc(ra.approved_by_name)} on ${new Date(ra.approved_at).toLocaleDateString('en-GB')}</div>` : ''}
+          </div>
+        </div>
+        <div class="v2-card">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:8px">Persons at risk</div>
+          ${ra.persons_at_risk?.length
+            ? ra.persons_at_risk.map(p=>`<span class="badge badge-blue" style="margin:2px">${esc(p)}</span>`).join('')
+            : '<div style="font-size:.82rem;color:#64748b">Not specified</div>'}
+          ${ra.notes ? `<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:#64748b;margin:12px 0 4px">Notes</div>
+            <div style="font-size:.82rem;line-height:1.5">${esc(ra.notes)}</div>` : ''}
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0;font-size:.95rem">Hazards (${ra.hazards?.length||0})</h3>
+        ${editable ? `<button class="btn btn-sm btn-primary" onclick="raAddHazard(${ra.id})">+ Add Hazard</button>` : ''}
+      </div>
+
+      <div id="ra-hazards-list">
+        ${ra.hazards?.length ? renderHazards(ra.hazards, editable, ra.id) : `<div style="font-size:.85rem;color:#64748b;padding:16px 0">No hazards yet. Add from the button above.</div>`}
+      </div>
+
+      <p style="font-size:.72rem;color:#475569;margin-top:20px;text-align:center">
+        This is a controlled health &amp; safety record. Unauthorised distribution is a data breach.
+      </p>`;
+  } catch(e) {
+    area.innerHTML = `<div class="empty-state"><h3>Load failed</h3><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+function renderHazards(hazards, editable, raId) {
+  const riskColor = { low:'#22c55e', medium:'#f59e0b', high:'#ef4444' };
+  return `<table class="wren-table" style="width:100%">
+    <thead><tr>
+      <th>#</th><th>Hazard</th><th>Who at risk</th><th>Existing controls</th>
+      <th>Residual risk</th><th>Additional controls</th><th>Responsible</th>
+      ${editable ? '<th></th>' : ''}
+    </tr></thead>
+    <tbody>${hazards.map((h, i) => `
+      <tr>
+        <td style="padding:8px;font-size:.8rem;color:#64748b">${i+1}</td>
+        <td style="padding:8px;font-size:.85rem;font-weight:600">${esc(h.hazard)}</td>
+        <td style="padding:8px;font-size:.82rem">${esc(h.who_at_risk||'—')}</td>
+        <td style="padding:8px;font-size:.82rem">${esc(h.existing_controls||'—')}</td>
+        <td style="padding:8px"><span style="font-size:.8rem;font-weight:700;color:${riskColor[h.residual_risk]||'#94a3b8'}">${h.residual_risk||'—'}</span></td>
+        <td style="padding:8px;font-size:.82rem">${esc(h.additional_controls||'—')}</td>
+        <td style="padding:8px;font-size:.82rem;color:#64748b">${esc(h.responsible_person||'—')}</td>
+        ${editable ? `<td style="padding:8px"><button class="btn btn-sm btn-ghost" onclick="raEditHazard(${raId},${h.id})">Edit</button></td>` : ''}
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function raAddHazard(raId) {
+  Wren.modal('Add Hazard', hazardForm(), [
+    { label: 'Add hazard', class: 'btn-primary', close: false, action: async () => {
+      const data = getHazardForm();
+      if (!data.hazard) { Wren.toast('Hazard description required', 'error'); return; }
+      await Wren.api(`/api/risk-assessments/${raId}/hazards`, { method:'POST', body: data });
+      Wren.toast('Hazard added', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      raOpen(raId);
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+async function raEditHazard(raId, hId) {
+  const h = currentRA?.hazards?.find(x => x.id === hId);
+  Wren.modal('Edit Hazard', hazardForm(h), [
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      const data = getHazardForm();
+      await Wren.api(`/api/risk-assessments/${raId}/hazards/${hId}`, { method:'PUT', body: data });
+      Wren.toast('Saved', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      raOpen(raId);
+    }},
+    { label: 'Remove', class: 'btn-danger', close: false, action: async () => {
+      if (!confirm('Remove this hazard?')) return;
+      await Wren.api(`/api/risk-assessments/${raId}/hazards/${hId}`, { method:'DELETE' });
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      raOpen(raId);
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+function hazardForm(h={}) {
+  return `<div style="display:flex;flex-direction:column;gap:10px">
+    <div>
+      <label class="wren-label">Hazard description <span style="color:#ef4444">*</span></label>
+      <input class="wren-input" id="hf-hazard" value="${esc(h.hazard||'')}" placeholder="Describe the hazard" style="width:100%">
+    </div>
+    <div>
+      <label class="wren-label">Who is at risk</label>
+      <input class="wren-input" id="hf-who" value="${esc(h.who_at_risk||'')}" placeholder="e.g. Children, staff, visitors" style="width:100%">
+    </div>
+    <div>
+      <label class="wren-label">Existing controls</label>
+      <textarea class="wren-textarea" id="hf-existing" placeholder="Controls already in place…" style="width:100%;min-height:60px">${esc(h.existing_controls||'')}</textarea>
+    </div>
+    <div>
+      <label class="wren-label">Residual risk level</label>
+      <select class="wren-select" id="hf-risk" style="width:100%">
+        <option value="low" ${h.residual_risk==='low'?'selected':''}>Low</option>
+        <option value="medium" ${(!h.residual_risk||h.residual_risk==='medium')?'selected':''}>Medium</option>
+        <option value="high" ${h.residual_risk==='high'?'selected':''}>High</option>
+      </select>
+    </div>
+    <div>
+      <label class="wren-label">Additional controls required</label>
+      <textarea class="wren-textarea" id="hf-additional" placeholder="Further controls needed…" style="width:100%;min-height:60px">${esc(h.additional_controls||'')}</textarea>
+    </div>
+    <div>
+      <label class="wren-label">Responsible person</label>
+      <input class="wren-input" id="hf-person" value="${esc(h.responsible_person||'')}" placeholder="Name or role" style="width:100%">
+    </div>
+  </div>`;
+}
+
+function getHazardForm() {
+  return {
+    hazard:               document.getElementById('hf-hazard')?.value?.trim(),
+    who_at_risk:          document.getElementById('hf-who')?.value?.trim() || null,
+    existing_controls:    document.getElementById('hf-existing')?.value?.trim() || null,
+    residual_risk:        document.getElementById('hf-risk')?.value || 'medium',
+    additional_controls:  document.getElementById('hf-additional')?.value?.trim() || null,
+    responsible_person:   document.getElementById('hf-person')?.value?.trim() || null,
+  };
+}
+
+async function raSubmit(id) {
+  if (!confirm('Submit this risk assessment for manager review?')) return;
+  await Wren.api(`/api/risk-assessments/${id}/submit`, { method:'POST' });
+  Wren.toast('Submitted for review', 'success');
+  await raLoad();
+}
+
+async function raReview(id) {
+  Wren.modal('Review Risk Assessment', `
+    <p style="margin-bottom:8px;font-size:.85rem">Add review notes (optional).</p>
+    <textarea class="wren-textarea" id="ra-rev-notes" placeholder="Review notes…" style="width:100%;min-height:80px"></textarea>
+  `, [
+    { label: 'Mark as reviewed', class: 'btn-primary', close: false, action: async () => {
+      const notes = document.getElementById('ra-rev-notes')?.value?.trim();
+      await Wren.api(`/api/risk-assessments/${id}/review`, { method:'POST', body:{ notes } });
+      Wren.toast('Marked as reviewed', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      raOpen(id);
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+async function raApprove(id) {
+  if (!confirm('Approve this risk assessment?')) return;
+  await Wren.api(`/api/risk-assessments/${id}/approve`, { method:'POST' });
+  Wren.toast('Approved', 'success');
+  raOpen(id);
+}
+
+async function raShowExpiring() {
+  const rows = await Wren.api('/api/risk-assessments/expiring/list?days=60').catch(()=>[]);
+  Wren.modal('Due for Review (next 60 days)', rows.length
+    ? `<table style="width:100%;font-size:.82rem"><thead><tr><th>Title</th><th>Review due</th><th>Status</th></tr></thead><tbody>${
+        rows.map(r => `<tr style="cursor:pointer" onclick="document.querySelector('.modal-close').click();raOpen(${r.id})">
+          <td style="padding:6px">${esc(r.title)}</td>
+          <td style="padding:6px;color:${r.days_until_expiry<0?'#ef4444':'#f59e0b'}">${new Date(r.review_date).toLocaleDateString('en-GB')}</td>
+          <td style="padding:6px">${r.status}</td>
+        </tr>`).join('')}
+      </tbody></table>`
+    : '<p style="color:#22c55e">✅ No risk assessments due in the next 60 days.</p>', [
+    { label: 'Close', class: 'btn-ghost' },
+  ]);
+}
+
+async function raShowRiddor() {
+  const rows = await Wren.api('/api/risk-assessments/riddor/reportable').catch(()=>[]);
+  Wren.modal('RIDDOR-Reportable Incidents', rows.length
+    ? `<p style="font-size:.83rem;color:#f59e0b;margin-bottom:10px">⚠️ These incidents may require reporting to HSE. Confirm with manager before submitting.</p>
+      <table style="width:100%;font-size:.82rem"><thead><tr><th>Child</th><th>Date</th><th>Injury</th><th>Notified</th></tr></thead><tbody>${
+        rows.map(r => `<tr>
+          <td style="padding:6px">${esc(r.child_name||'—')}</td>
+          <td style="padding:6px">${new Date(r.incident_date||r.created_at).toLocaleDateString('en-GB')}</td>
+          <td style="padding:6px;font-size:.78rem">${esc(r.injury_description||'—')}</td>
+          <td style="padding:6px">${r.riddor_notified_at ? '✅ '+new Date(r.riddor_notified_at).toLocaleDateString('en-GB') : '⚠️ Pending'}</td>
+        </tr>`).join('')}
+      </tbody></table>`
+    : '<p style="color:#22c55e">✅ No RIDDOR-reportable incidents.</p>', [
+    { label: 'Close', class: 'btn-ghost' },
+  ]);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Fire Safety — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🔥 Fire Safety</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-ghost" id="btn-fire-equipment">Equipment log</button>
+      <button class="btn btn-primary" id="btn-fire-drill-new">Log fire drill</button>
+    </div>
+  </div>
+
+  <div id="fire-summary-area" style="margin-bottom:20px">
+    <div class="tab-skeleton"><div class="tab-sk-row w80"></div></div>
+  </div>
+
+  <h3 style="font-size:.95rem;margin-bottom:12px">Fire Drill Log</h3>
+  <div id="fire-drills-area">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', function() {
+  document.getElementById('btn-fire-equipment').addEventListener('click', fireEquipment);
+  document.getElementById('btn-fire-drill-new').addEventListener('click', fireDrillNew);
+  // Delegation for summary area (equipment alert button) and drills table
+  document.getElementById('fire-summary-area').addEventListener('click', function(e) {
+    if (e.target.closest('[data-action="fire-equipment"]')) fireEquipment();
+  });
+  document.getElementById('fire-drills-area').addEventListener('click', function(e) {
+    const signoff = e.target.closest('[data-action="fire-signoff"]');
+    if (signoff) { fireSignoff(parseInt(signoff.dataset.id)); return; }
+    const view = e.target.closest('[data-action="fire-view-drill"]');
+    if (view) fireViewDrill(decodeURIComponent(view.dataset.row));
+  });
+  // Document-level delegation for modal "Add equipment" button
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-action="fire-add-equipment"]')) fireAddEquipment();
+  });
+  init();
+});
+
+async function init() {
+  await Promise.all([loadSummary(), loadDrills()]);
+}
+
+async function loadSummary() {
+  const el = document.getElementById('fire-summary-area');
+  const s  = await Wren.api('/api/fire-safety/summary').catch(()=>null);
+  if (!s) { el.innerHTML = ''; return; }
+
+  const drillColor  = s.drill_overdue ? '#ef4444' : '#22c55e';
+  const equip_color = s.equipment_issues > 0 ? '#ef4444' : '#22c55e';
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+      <div class="v2-card" style="border-color:${drillColor};text-align:center">
+        <div style="font-size:1.6rem;font-weight:800;color:${drillColor}">${s.days_since_drill??'—'}</div>
+        <div style="font-size:.75rem;color:#64748b">Days since last drill</div>
+        ${s.drill_overdue ? `<div style="font-size:.72rem;color:#ef4444;margin-top:4px">DRILL OVERDUE</div>` : ''}
+      </div>
+      <div class="v2-card" style="border-color:${equip_color};text-align:center">
+        <div style="font-size:1.6rem;font-weight:800;color:${equip_color}">${s.equipment_issues}</div>
+        <div style="font-size:.75rem;color:#64748b">Equipment issues</div>
+      </div>
+      <div class="v2-card" style="text-align:center">
+        <div style="font-size:1.6rem;font-weight:800;color:${s.equipment_service_overdue>0?'#f59e0b':'#22c55e'}">${s.equipment_service_overdue}</div>
+        <div style="font-size:.75rem;color:#64748b">Service overdue</div>
+      </div>
+      ${s.last_drill ? `
+      <div class="v2-card" style="text-align:center">
+        <div style="font-size:1.6rem;font-weight:800">${s.last_drill.evacuation_time_seconds ? s.last_drill.evacuation_time_seconds+'s' : '—'}</div>
+        <div style="font-size:.75rem;color:#64748b">Last evacuation time</div>
+      </div>` : ''}
+    </div>
+    ${s.equipment_issues > 0 || s.equipment_service_overdue > 0
+      ? `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 14px;margin-top:12px;font-size:.83rem;color:#ef4444">
+          ⚠️ Fire equipment issues require attention. <button class="btn btn-sm btn-ghost" style="margin-left:8px;color:#ef4444;border-color:#ef4444" data-action="fire-equipment">View equipment log →</button>
+        </div>` : ''}`;
+}
+
+async function loadDrills() {
+  const el = document.getElementById('fire-drills-area');
+  const rows = await Wren.api('/api/fire-safety/drills').catch(()=>[]);
+  const isManager = ['manager','deputy_manager','admin'].includes(Wren.user?.role);
+
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🔥</div>
+      <h3>No fire drills recorded</h3>
+      <p>Fire drills should be conducted termly (at least 3 times per year). Log the first one above.</p>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = `<div class="wren-table-wrap"><table class="wren-table" style="width:100%">
+    <thead><tr>
+      <th>Date</th><th>Time</th><th>Evacuation</th><th>Headcount</th>
+      <th>All accounted</th><th>Issues</th><th>Signed off</th><th></th>
+    </tr></thead>
+    <tbody>${rows.map(d => `<tr>
+      <td style="padding:10px">${new Date(d.drill_date).toLocaleDateString('en-GB')}</td>
+      <td style="padding:10px">${d.drill_time ? d.drill_time.slice(0,5) : '—'}</td>
+      <td style="padding:10px;font-weight:700;color:${d.evacuation_time_seconds>120?'#f59e0b':'#22c55e'}">${d.evacuation_time_seconds ? d.evacuation_time_seconds+'s' : '—'}</td>
+      <td style="padding:10px;font-size:.82rem">${[d.children_count ? d.children_count+'c' : '', d.staff_count ? d.staff_count+'s' : ''].filter(Boolean).join(' + ') || '—'}</td>
+      <td style="padding:10px">${d.all_accounted ? '✅ Yes' : '❌ No'}</td>
+      <td style="padding:10px;font-size:.8rem;color:#64748b">${d.issues_raised ? esc(d.issues_raised.substring(0,60))+'…' : 'None'}</td>
+      <td style="padding:10px">${d.signed_off_at ? `✅ ${esc(d.signed_off_by_name||'')}` : '<span style="color:#f59e0b">Pending</span>'}</td>
+      <td style="padding:10px">
+        ${isManager && !d.signed_off_at ? `<button class="btn btn-sm btn-ghost" data-action="fire-signoff" data-id="${d.id}">Sign off</button>` : ''}
+        <button class="btn btn-sm btn-ghost" data-action="fire-view-drill" data-row="${encodeURIComponent(JSON.stringify(d))}">View</button>
+      </td>
+    </tr>`).join('')}
+    </tbody>
+  </table></div>
+  <p style="font-size:.72rem;color:#475569;margin-top:12px;text-align:center">Drills should be conducted at least termly. Next drill due: ${rows[0]?.next_drill_due ? new Date(rows[0].next_drill_due).toLocaleDateString('en-GB') : 'not set'}</p>`;
+}
+
+function fireDrillNew() {
+  const now = new Date();
+  Wren.modal('Log Fire Drill', `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:8px">
+        <div style="flex:1"><label class="wren-label">Date</label>
+          <input type="date" class="wren-input" id="fd-date" value="${now.toISOString().split('T')[0]}" style="width:100%"></div>
+        <div style="flex:1"><label class="wren-label">Time</label>
+          <input type="time" class="wren-input" id="fd-time" value="${now.toTimeString().slice(0,5)}" style="width:100%"></div>
+      </div>
+      <div>
+        <label class="wren-label">Evacuation time (seconds)</label>
+        <input type="number" class="wren-input" id="fd-evac" placeholder="e.g. 95" style="width:100%">
+      </div>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1"><label class="wren-label">Children on site</label>
+          <input type="number" class="wren-input" id="fd-children" style="width:100%"></div>
+        <div style="flex:1"><label class="wren-label">Staff on site</label>
+          <input type="number" class="wren-input" id="fd-staff" style="width:100%"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="fd-all" checked style="accent-color:#22c55e"> All persons accounted for
+      </label>
+      <div>
+        <label class="wren-label">Issues raised</label>
+        <textarea class="wren-textarea" id="fd-issues" placeholder="Any issues or observations from this drill…" style="width:100%;min-height:70px"></textarea>
+      </div>
+      <div>
+        <label class="wren-label">Action taken</label>
+        <textarea class="wren-textarea" id="fd-action" placeholder="Actions taken to address issues…" style="width:100%;min-height:50px"></textarea>
+      </div>
+      <div>
+        <label class="wren-label">Notes</label>
+        <textarea class="wren-textarea" id="fd-notes" placeholder="Additional notes…" style="width:100%;min-height:40px"></textarea>
+      </div>
+    </div>
+  `, [
+    { label: 'Log drill', class: 'btn-primary', close: false, action: async () => {
+      const date  = document.getElementById('fd-date')?.value;
+      const time  = document.getElementById('fd-time')?.value;
+      const evac  = document.getElementById('fd-evac')?.value;
+      const all   = document.getElementById('fd-all')?.checked;
+      const issues= document.getElementById('fd-issues')?.value?.trim();
+      const action= document.getElementById('fd-action')?.value?.trim();
+      const notes = document.getElementById('fd-notes')?.value?.trim();
+      const nc    = document.getElementById('fd-children')?.value;
+      const ns    = document.getElementById('fd-staff')?.value;
+      if (!date || !time) { Wren.toast('Date and time required', 'error'); return; }
+      await Wren.api('/api/fire-safety/drills', { method:'POST', body:{
+        drill_date: date, drill_time: time,
+        evacuation_time_seconds: evac ? parseInt(evac) : null,
+        all_accounted: all,
+        issues_raised: issues||null,
+        action_taken: action||null,
+        notes: notes||null,
+        children_count: nc ? parseInt(nc) : null,
+        staff_count: ns ? parseInt(ns) : null,
+      }});
+      Wren.toast('Fire drill logged', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      await init();
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+async function fireSignoff(id) {
+  if (!confirm('Sign off this fire drill record?')) return;
+  await Wren.api(`/api/fire-safety/drills/${id}/signoff`, { method:'POST' });
+  Wren.toast('Signed off', 'success');
+  loadDrills();
+}
+
+function fireViewDrill(dOrStr) {
+  const d = typeof dOrStr === 'string' ? JSON.parse(dOrStr) : dOrStr;
+  Wren.openDrawer(`
+    <div>
+      <div class="drawer-info-grid">
+        <div class="drawer-info-row"><span>Date</span><span>${new Date(d.drill_date).toLocaleDateString('en-GB')}</span></div>
+        <div class="drawer-info-row"><span>Time</span><span>${d.drill_time ? d.drill_time.slice(0,5) : '—'}</span></div>
+        <div class="drawer-info-row"><span>Evacuation time</span><span>${d.evacuation_time_seconds ? d.evacuation_time_seconds+'s' : '—'}</span></div>
+        <div class="drawer-info-row"><span>Children</span><span>${d.children_count||'—'}</span></div>
+        <div class="drawer-info-row"><span>Staff</span><span>${d.staff_count||'—'}</span></div>
+        <div class="drawer-info-row"><span>All accounted</span><span>${d.all_accounted ? '✅ Yes' : '❌ No'}</span></div>
+        <div class="drawer-info-row"><span>Conducted by</span><span>${esc(d.conducted_by_name||'—')}</span></div>
+        ${d.signed_off_at ? `<div class="drawer-info-row"><span>Signed off by</span><span>${esc(d.signed_off_by_name||'—')} on ${new Date(d.signed_off_at).toLocaleDateString('en-GB')}</span></div>` : ''}
+      </div>
+      ${d.issues_raised ? `<h4 style="font-size:.78rem;text-transform:uppercase;color:#64748b;margin:14px 0 6px">Issues raised</h4><p style="font-size:.85rem;line-height:1.5">${esc(d.issues_raised)}</p>` : ''}
+      ${d.action_taken ? `<h4 style="font-size:.78rem;text-transform:uppercase;color:#64748b;margin:14px 0 6px">Action taken</h4><p style="font-size:.85rem;line-height:1.5">${esc(d.action_taken)}</p>` : ''}
+      ${d.notes ? `<h4 style="font-size:.78rem;text-transform:uppercase;color:#64748b;margin:14px 0 6px">Notes</h4><p style="font-size:.85rem;line-height:1.5">${esc(d.notes)}</p>` : ''}
+    </div>
+  `, `🔥 Fire Drill — ${new Date(d.drill_date).toLocaleDateString('en-GB')}`);
+}
+
+async function fireEquipment() {
+  const isManager = ['manager','deputy_manager','admin'].includes(Wren.user?.role);
+  const rows = await Wren.api('/api/fire-safety/equipment').catch(()=>[]);
+
+  Wren.modal('Fire Equipment Log', `
+    ${isManager ? `<button class="btn btn-sm btn-primary" style="margin-bottom:12px" data-action="fire-add-equipment">+ Add equipment</button>` : ''}
+    ${rows.length
+      ? `<table style="width:100%;font-size:.82rem"><thead><tr>
+          <th style="text-align:left;padding:6px;font-size:.7rem;color:#64748b">Type</th>
+          <th style="text-align:left;padding:6px;font-size:.7rem;color:#64748b">Location</th>
+          <th style="text-align:left;padding:6px;font-size:.7rem;color:#64748b">Last service</th>
+          <th style="text-align:left;padding:6px;font-size:.7rem;color:#64748b">Next service</th>
+          <th style="text-align:left;padding:6px;font-size:.7rem;color:#64748b">Status</th>
+        </tr></thead><tbody>
+          ${rows.map(e=>`<tr>
+            <td style="padding:6px">${esc(e.equipment_type)}</td>
+            <td style="padding:6px;color:#94a3b8">${esc(e.location)}</td>
+            <td style="padding:6px;color:#94a3b8">${e.last_serviced ? new Date(e.last_serviced).toLocaleDateString('en-GB') : '—'}</td>
+            <td style="padding:6px;color:${e.service_overdue?'#ef4444':'#94a3b8'}">${e.next_service ? new Date(e.next_service).toLocaleDateString('en-GB') : '—'} ${e.service_overdue?'⚠️':''}</td>
+            <td style="padding:6px"><span style="font-size:.72rem;font-weight:700;color:${e.status==='ok'?'#22c55e':'#ef4444'}">${e.status}</span></td>
+          </tr>`).join('')}
+        </tbody></table>`
+      : '<p style="color:#64748b;font-size:.85rem">No equipment logged yet.</p>'}
+  `, [{ label: 'Close', class: 'btn-ghost' }]);
+}
+
+async function fireAddEquipment() {
+  document.querySelector('.wren-modal-overlay .modal-close')?.click();
+  const types = ['extinguisher','alarm_panel','smoke_detector','emergency_light','fire_door','heat_detector'];
+  Wren.modal('Add Fire Equipment', `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <select class="wren-select" id="fe-type" style="width:100%">
+        <option value="">Equipment type *</option>
+        ${types.map(t=>`<option value="${t}">${t.replace(/_/g,' ')}</option>`).join('')}
+      </select>
+      <input class="wren-input" id="fe-loc" placeholder="Location (e.g. Kitchen, Main entrance)" style="width:100%">
+      <div style="display:flex;gap:8px">
+        <div style="flex:1"><label class="wren-label" style="font-size:.78rem">Last serviced</label>
+          <input type="date" class="wren-input" id="fe-last" style="width:100%"></div>
+        <div style="flex:1"><label class="wren-label" style="font-size:.78rem">Next service due</label>
+          <input type="date" class="wren-input" id="fe-next" style="width:100%"></div>
+      </div>
+      <input class="wren-input" id="fe-company" placeholder="Service company" style="width:100%">
+      <select class="wren-select" id="fe-status" style="width:100%">
+        <option value="ok">OK — in service</option>
+        <option value="needs_attention">Needs attention</option>
+        <option value="out_of_service">Out of service</option>
+      </select>
+    </div>
+  `, [
+    { label: 'Add', class: 'btn-primary', close: false, action: async () => {
+      const type  = document.getElementById('fe-type')?.value;
+      const loc   = document.getElementById('fe-loc')?.value?.trim();
+      if (!type || !loc) { Wren.toast('Type and location required', 'error'); return; }
+      await Wren.api('/api/fire-safety/equipment', { method:'POST', body:{
+        equipment_type: type, location: loc,
+        last_serviced: document.getElementById('fe-last')?.value || null,
+        next_service: document.getElementById('fe-next')?.value || null,
+        service_company: document.getElementById('fe-company')?.value?.trim() || null,
+        status: document.getElementById('fe-status')?.value || 'ok',
+      }});
+      Wren.toast('Equipment added', 'success');
+      document.querySelector('.wren-modal-overlay .modal-close')?.click();
+      loadSummary();
+    }},
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

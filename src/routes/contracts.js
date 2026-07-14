@@ -358,7 +358,7 @@ router.post('/:id/send', ...managerOnly, async (req, res) => {
     const signToken = crypto.randomBytes(32).toString('hex');
 
     // Resolve signing URL base
-    const baseUrl = process.env.ADMIN_URL || 'https://admin.example-nursery.co.uk';
+    const baseUrl = process.env.ADMIN_URL || 'https://admin.littleangelsealing.co.uk';
     const signUrl = `${baseUrl}/contract-sign.html?id=${cid}&token=${signToken}`;
 
     // Resolve current handbook
@@ -392,9 +392,9 @@ router.post('/:id/send', ...managerOnly, async (req, res) => {
       }
 
       await transport.sendMail({
-        from:    process.env.SMTP_FROM || 'Your Nursery <admissions@example-nursery.co.uk>',
+        from:    process.env.SMTP_FROM || 'Little Angels Day Nursery <admissions@littleangelsealing.co.uk>',
         to:      toEmail,
-        subject: `Your Contract of Employment — Your Nursery`,
+        subject: `Your Contract of Employment — Little Angels Day Nursery`,
         html: `
           <p>Dear ${row.first_name},</p>
           <p>Please find your contract of employment attached to this email${hbRow ? ', along with our Staff Handbook' : ''}.</p>
@@ -404,8 +404,8 @@ router.post('/:id/send', ...managerOnly, async (req, res) => {
           </a></p>
           <p>If the button doesn't work, copy this link into your browser:<br>
           <small>${signUrl}</small></p>
-          <p>If you have any questions, please contact us at ${process.env.SMTP_FROM || 'admissions@example-nursery.co.uk'} or call 01234 567890.</p>
-          <p>Kind regards,<br>Nursery Manager<br>Manager</p>
+          <p>If you have any questions, please contact us at ${process.env.SMTP_FROM || 'admissions@littleangelsealing.co.uk'} or call 020 8051 0349.</p>
+          <p>Kind regards,<br>Toby Jones<br>Manager, Little Angels Day Nursery</p>
         `,
         attachments,
       });
@@ -435,7 +435,7 @@ router.post('/:id/send', ...managerOnly, async (req, res) => {
     // Also notify staff via Telegram if linked
     if (row.telegram_chat_id) {
       await sendTelegramDirect(row.telegram_chat_id,
-        `Hi ${row.first_name}! Your contract of employment from Your Nursery has been sent to your email. Please check your inbox to review and sign.`
+        `Hi ${row.first_name}! Your contract of employment from Little Angels Day Nursery has been sent to your email. Please check your inbox to review and sign.`
       );
     }
 

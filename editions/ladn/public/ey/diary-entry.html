@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="diary">
+  <meta name="wren-app-title" content="Diary Entry">
+  <meta name="wren-app-chat"  content="on">
+  <title>Diary Entry · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #de-page {
+      padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 80px);
+    }
+
+    /* ── Mode toggle ─────────────────────────────────────────────────────────── */
+    #de-mode-bar {
+      display: flex;
+      gap: 0;
+      background: var(--c-surface);
+      border-bottom: 1px solid var(--c-border);
+    }
+    .de-mode-btn {
+      flex: 1;
+      height: 44px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--c-muted);
+      font-size: .88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .de-mode-btn.active {
+      color: var(--c-blue);
+      border-bottom-color: var(--c-blue);
+    }
+    .de-mode-btn:hover:not(.active) { color: var(--c-text); }
+
+    /* ── Section blocks ─────────────────────────────────────────────────────── */
+    .de-section {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--c-border);
+    }
+    .de-section-label {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--c-muted);
+      margin-bottom: 8px;
+    }
+
+    /* ── Room chips ─────────────────────────────────────────────────────────── */
+    .de-chip-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .de-chip {
+      height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--c-border);
+      border-radius: 18px;
+      background: transparent;
+      color: var(--c-muted);
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s, color .15s, border-color .15s;
+      min-width: 44px;
+    }
+    .de-chip:hover { background: rgba(255,255,255,0.05); color: var(--c-text); }
+    .de-chip.active {
+      background: var(--c-blue);
+      border-color: var(--c-blue);
+      color: #fff;
+    }
+    .de-chip.active-orange {
+      background: var(--c-orange);
+      border-color: var(--c-orange);
+      color: #fff;
+    }
+
+    /* ── Entry type icons ───────────────────────────────────────────────────── */
+    .de-type-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .de-type-row::-webkit-scrollbar { display: none; }
+    .de-type-btn {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 10px;
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--c-muted);
+      font-size: .75rem;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 60px;
+      min-height: 64px;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .de-type-btn .type-icon { font-size: 1.5rem; }
+    .de-type-btn:hover { background: rgba(255,255,255,0.05); color: var(--c-text); }
+    .de-type-btn.active {
+      background: rgba(74,154,191,0.15);
+      border-color: var(--c-blue);
+      color: var(--c-blue);
+    }
+
+    /* ── Meal type chips ────────────────────────────────────────────────────── */
+    .de-meal-chip {
+      height: 36px;
+      padding: 0 16px;
+      border: 1px solid var(--c-border);
+      border-radius: 18px;
+      background: transparent;
+      color: var(--c-muted);
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .de-meal-chip.active {
+      background: var(--c-blue);
+      border-color: var(--c-blue);
+      color: #fff;
+    }
+
+    /* ── Menu dish card ─────────────────────────────────────────────────────── */
+    #de-dish-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: rgba(74,154,191,0.08);
+      border: 1px solid rgba(74,154,191,0.22);
+      border-radius: 10px;
+      margin-top: 2px;
+    }
+    #de-dish-card.hidden { display: none; }
+    #de-dish-icon { font-size: 1.4rem; flex-shrink: 0; }
+    #de-dish-name {
+      font-size: .9rem;
+      font-weight: 600;
+      color: var(--c-blue);
+    }
+    #de-dish-allergens {
+      font-size: .76rem;
+      color: var(--c-muted);
+      margin-top: 1px;
+    }
+
+    /* ── Children list (group mode) ─────────────────────────────────────────── */
+    #de-children-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .de-child-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--c-border);
+    }
+    .de-child-row:last-child { border-bottom: none; }
+    .de-child-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .de-child-name {
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--c-text);
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .de-child-name-small {
+      font-size: .72rem;
+      color: var(--c-muted);
+      margin-top: 1px;
+    }
+
+    /* ── 4-segment amount control ───────────────────────────────────────────── */
+    .de-amount-ctrl {
+      display: flex;
+      gap: 0;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .de-amount-btn {
+      flex: 1;
+      height: 44px;
+      min-width: 44px;
+      padding: 0 6px;
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--c-border);
+      color: var(--c-muted);
+      font-size: .78rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .12s, color .12s;
+      text-align: center;
+    }
+    .de-amount-btn:last-child { border-right: none; }
+    .de-amount-btn:hover { background: rgba(255,255,255,0.06); color: var(--c-text); }
+    .de-amount-btn.sel {
+      background: var(--c-orange);
+      color: #fff;
+    }
+    .de-refused-btn {
+      height: 36px;
+      padding: 0 10px;
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--c-muted);
+      font-size: .75rem;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+      margin-left: 6px;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .de-refused-btn.sel {
+      background: rgba(239,68,68,0.15);
+      border-color: #ef4444;
+      color: #ef4444;
+    }
+
+    /* ── Non-food per-child controls ────────────────────────────────────────── */
+    .de-child-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    /* ── Individual mode form ───────────────────────────────────────────────── */
+    .de-field-label {
+      font-size: .78rem;
+      font-weight: 700;
+      color: var(--c-muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 5px;
+    }
+    .de-field { margin-bottom: 14px; }
+    .de-input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      color: var(--c-text);
+      font-size: .9rem;
+      box-sizing: border-box;
+    }
+    .de-input:focus { border-color: var(--c-blue); outline: none; }
+    textarea.de-input { resize: vertical; min-height: 80px; }
+
+    /* ── Time row ───────────────────────────────────────────────────────────── */
+    .de-time-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .de-time-row .de-field { flex: 1; margin-bottom: 0; }
+    input[type=time].de-input { height: 44px; }
+    input[type=number].de-input { height: 44px; }
+    select.de-input { height: 44px; cursor: pointer; }
+
+    /* ── Stepper ────────────────────────────────────────────────────────────── */
+    .de-stepper {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      overflow: hidden;
+      height: 44px;
+    }
+    .de-step-btn {
+      width: 44px;
+      height: 44px;
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--c-border);
+      color: var(--c-text);
+      font-size: 1.3rem;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    .de-step-btn:last-child { border-right: none; border-left: 1px solid var(--c-border); }
+    .de-step-btn:active { background: rgba(255,255,255,0.06); }
+    .de-step-value {
+      flex: 1;
+      text-align: center;
+      font-size: .95rem;
+      font-weight: 700;
+      color: var(--c-text);
+    }
+
+    /* ── Mood selector ─────────────────────────────────────────────────────── */
+    .de-mood-row {
+      display: flex;
+      gap: 6px;
+    }
+    .de-mood-btn {
+      flex: 1;
+      height: 52px;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      transition: background .12s, border-color .12s;
+    }
+    .de-mood-btn .mood-em { font-size: 1.4rem; }
+    .de-mood-btn .mood-lbl { font-size: .68rem; font-weight: 700; color: var(--c-muted); }
+    .de-mood-btn.sel {
+      background: rgba(74,154,191,0.14);
+      border-color: var(--c-blue);
+    }
+    .de-mood-btn.sel .mood-lbl { color: var(--c-blue); }
+
+    /* ── Nappy state ────────────────────────────────────────────────────────── */
+    .de-nappy-row {
+      display: flex;
+      gap: 6px;
+    }
+    .de-nappy-btn {
+      flex: 1;
+      height: 44px;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      background: transparent;
+      color: var(--c-muted);
+      font-size: .82rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .de-nappy-btn.sel {
+      background: rgba(74,154,191,0.14);
+      border-color: var(--c-blue);
+      color: var(--c-blue);
+    }
+
+    /* ── Submit button ──────────────────────────────────────────────────────── */
+    #de-submit-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 10px);
+      background: var(--c-navy);
+      border-top: 1px solid var(--c-border);
+      z-index: 60;
+    }
+    #de-submit-btn {
+      width: 100%;
+      height: 50px;
+      border-radius: 12px;
+      background: var(--c-blue);
+      border: none;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s, background .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #de-submit-btn:hover { opacity: .9; }
+    #de-submit-btn:disabled { opacity: .5; cursor: not-allowed; }
+    #de-submit-btn.saving { background: var(--c-muted); }
+
+    /* ── Offline badge ──────────────────────────────────────────────────────── */
+    #de-offline-badge {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: .78rem;
+      color: var(--c-amber);
+      font-weight: 600;
+      padding: 6px 14px;
+      background: rgba(245,158,11,0.1);
+      border-bottom: 1px solid rgba(245,158,11,0.2);
+    }
+    #de-offline-badge.show { display: flex; }
+
+    /* ── Skeleton ───────────────────────────────────────────────────────────── */
+    .de-skeleton {
+      background: var(--c-border);
+      border-radius: 8px;
+      animation: de-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes de-pulse {
+      0%,100% { opacity: .6; }
+      50%      { opacity: .3; }
+    }
+
+    /* ── Back button ────────────────────────────────────────────────────────── */
+    #de-back-btn {
+      width: 44px; height: 44px;
+      background: transparent; border: none;
+      color: var(--c-text); cursor: pointer;
+      border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #de-back-btn:hover { background: rgba(255,255,255,0.06); }
+
+    /* ── Hidden ─────────────────────────────────────────────────────────────── */
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="de-page">
+
+  <!-- Offline warning -->
+  <div id="de-offline-badge">
+    <span>📶</span> Offline — entry will sync when back online
+  </div>
+
+  <!-- Mode toggle: Group Room / Single Child -->
+  <div id="de-mode-bar" role="tablist" aria-label="Entry mode">
+    <button class="de-mode-btn active" id="de-mode-group" role="tab" aria-selected="true">
+      👥 Group Entry
+    </button>
+    <button class="de-mode-btn" id="de-mode-single" role="tab" aria-selected="false">
+      👤 Single Child
+    </button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       GROUP MODE
+       ═════════════════════════════════════════════════════════════════ -->
+  <div id="de-group-panel">
+
+    <!-- Room selector -->
+    <div class="de-section">
+      <div class="de-section-label">Room</div>
+      <div class="de-chip-row" id="de-room-chips" role="group" aria-label="Select room">
+        <button class="de-chip" data-room-id="1" data-room-slug="baby_room">Baby Room</button>
+        <button class="de-chip" data-room-id="2" data-room-slug="pre_school">Pre-school</button>
+      </div>
+    </div>
+
+    <!-- Entry type -->
+    <div class="de-section">
+      <div class="de-section-label">Entry type</div>
+      <div class="de-type-row" role="group" aria-label="Entry type">
+        <button class="de-type-btn active" data-type="food">
+          <span class="type-icon">🍽</span>Food
+        </button>
+        <button class="de-type-btn" data-type="sleep">
+          <span class="type-icon">😴</span>Sleep
+        </button>
+        <button class="de-type-btn" data-type="nappy">
+          <span class="type-icon">🧷</span>Nappy
+        </button>
+        <button class="de-type-btn" data-type="bottle">
+          <span class="type-icon">🍼</span>Bottle
+        </button>
+        <button class="de-type-btn" data-type="notes">
+          <span class="type-icon">📝</span>Notes
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Food controls ─── -->
+    <div id="de-food-section">
+
+      <!-- Meal type chips -->
+      <div class="de-section">
+        <div class="de-section-label">Meal</div>
+        <div class="de-chip-row" id="de-meal-chips" role="group" aria-label="Meal type">
+          <button class="de-meal-chip" data-meal="breakfast">Breakfast</button>
+          <button class="de-meal-chip" data-meal="lunch">Lunch</button>
+          <button class="de-meal-chip" data-meal="tea">Tea</button>
+          <button class="de-meal-chip" data-meal="snack">Snack</button>
+        </div>
+      </div>
+
+      <!-- Menu dish card -->
+      <div class="de-section">
+        <div id="de-dish-card" class="hidden">
+          <span id="de-dish-icon">🍽</span>
+          <div>
+            <div id="de-dish-name">Loading…</div>
+            <div id="de-dish-allergens"></div>
+          </div>
+        </div>
+        <div id="de-dish-loading" class="de-skeleton" style="height:52px;border-radius:10px" hidden></div>
+      </div>
+
+    </div><!-- #de-food-section -->
+
+    <!-- ── Sleep group controls ─── -->
+    <div id="de-sleep-section" hidden>
+      <div class="de-section">
+        <div class="de-section-label">Sleep time</div>
+        <div class="de-time-row">
+          <div class="de-field">
+            <div class="de-field-label">From</div>
+            <select id="de-grp-sleep-from" class="de-input time-sel" aria-label="Sleep from"></select>
+          </div>
+          <div class="de-field">
+            <div class="de-field-label">To</div>
+            <select id="de-grp-sleep-to" class="de-input time-sel" aria-label="Sleep to"></select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Nappy group controls ─── -->
+    <div id="de-nappy-section" hidden>
+      <div class="de-section">
+        <div class="de-section-label">Time</div>
+        <select id="de-grp-nappy-time" class="de-input time-sel" aria-label="Nappy time"></select>
+      </div>
+    </div>
+
+    <!-- ── Bottle group controls ─── -->
+    <div id="de-bottle-section" hidden>
+      <div class="de-section">
+        <div class="de-section-label">Milk type</div>
+        <div class="de-chip-row" id="de-milk-type-chips">
+          <button class="de-chip" data-milk="formula">Formula</button>
+          <button class="de-chip" data-milk="EBM">Breast milk</button>
+          <button class="de-chip" data-milk="cow">Cow's milk</button>
+          <button class="de-chip" data-milk="water">Water</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes (global for group) -->
+    <div class="de-section">
+      <div class="de-section-label">Notes (optional)</div>
+      <textarea id="de-grp-notes" class="de-input" rows="2" placeholder="Any notes for the whole group…"></textarea>
+    </div>
+
+    <!-- Children list -->
+    <div class="de-section" style="padding-left:0;padding-right:0;padding-bottom:0">
+      <div class="de-section-label" style="padding:0 14px 8px">
+        Children — <span id="de-children-count">select a room</span>
+      </div>
+      <div id="de-children-loading" style="padding:0 14px">
+        <div class="de-skeleton" style="height:56px;margin-bottom:8px;border-radius:8px"></div>
+        <div class="de-skeleton" style="height:56px;margin-bottom:8px;border-radius:8px"></div>
+      </div>
+      <ul id="de-children-list" hidden role="list" aria-label="Children list"></ul>
+      <div id="de-children-empty" hidden style="padding:24px 14px;text-align:center;color:var(--c-muted);font-size:.88rem">
+        Select a room above to see children
+      </div>
+    </div>
+
+  </div><!-- #de-group-panel -->
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       SINGLE CHILD MODE
+       ═════════════════════════════════════════════════════════════════ -->
+  <div id="de-single-panel" hidden>
+
+    <!-- Child card (if pre-loaded from ?child= param) -->
+    <div id="de-single-child-card" class="de-section" style="display:flex;gap:12px;align-items:center" hidden>
+      <div id="de-sc-avatar" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700;color:#fff;flex-shrink:0"></div>
+      <div>
+        <div id="de-sc-name" style="font-size:.95rem;font-weight:700;color:var(--c-text)"></div>
+        <div id="de-sc-room" style="font-size:.78rem;color:var(--c-blue);font-weight:600"></div>
+      </div>
+    </div>
+
+    <!-- Entry type -->
+    <div class="de-section">
+      <div class="de-section-label">Entry type</div>
+      <div class="de-type-row" role="group" aria-label="Entry type">
+        <button class="de-type-btn active" data-single-type="food">
+          <span class="type-icon">🍽</span>Food
+        </button>
+        <button class="de-type-btn" data-single-type="sleep">
+          <span class="type-icon">😴</span>Sleep
+        </button>
+        <button class="de-type-btn" data-single-type="nappy">
+          <span class="type-icon">🧷</span>Nappy
+        </button>
+        <button class="de-type-btn" data-single-type="bottle">
+          <span class="type-icon">🍼</span>Bottle/Milk
+        </button>
+        <button class="de-type-btn" data-single-type="notes">
+          <span class="type-icon">📝</span>Notes/Mood
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Single: Food ─── -->
+    <div id="de-sf-food" class="de-section">
+      <div class="de-field">
+        <div class="de-field-label">Meal</div>
+        <div class="de-chip-row" id="de-sf-meal-chips">
+          <button class="de-meal-chip" data-sf-meal="breakfast">Breakfast</button>
+          <button class="de-meal-chip" data-sf-meal="lunch">Lunch</button>
+          <button class="de-meal-chip" data-sf-meal="tea">Tea</button>
+          <button class="de-meal-chip" data-sf-meal="snack">Snack</button>
+        </div>
+      </div>
+      <div class="de-field">
+        <div id="de-sf-dish-card" class="hidden" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(74,154,191,0.08);border:1px solid rgba(74,154,191,0.22);border-radius:10px;margin-bottom:8px">
+          <span style="font-size:1.2rem">🍽</span>
+          <span id="de-sf-dish-name" style="font-size:.88rem;font-weight:600;color:var(--c-blue)"></span>
+        </div>
+      </div>
+      <div class="de-field">
+        <div class="de-field-label">Amount eaten</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="de-amount-ctrl" role="group" aria-label="Amount eaten">
+            <button class="de-amount-btn" data-amt="none">None</button>
+            <button class="de-amount-btn" data-amt="some">Some</button>
+            <button class="de-amount-btn" data-amt="most">Most</button>
+            <button class="de-amount-btn" data-amt="all">All</button>
+          </div>
+          <button class="de-refused-btn" id="de-sf-refused">Refused</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Single: Sleep ─── -->
+    <div id="de-sf-sleep" class="de-section" hidden>
+      <div class="de-time-row">
+        <div class="de-field">
+          <div class="de-field-label">From</div>
+          <select id="de-sf-sleep-from" class="de-input time-sel"></select>
+        </div>
+        <div class="de-field">
+          <div class="de-field-label">To</div>
+          <select id="de-sf-sleep-to" class="de-input time-sel"></select>
+        </div>
+      </div>
+      <div class="de-field" style="margin-top:10px">
+        <div class="de-field-label">Quality</div>
+        <div class="de-chip-row">
+          <button class="de-chip" data-sq="sound">Settled</button>
+          <button class="de-chip" data-sq="restless">Restless</button>
+          <button class="de-chip" data-sq="woke">Woke up</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Single: Nappy ─── -->
+    <div id="de-sf-nappy" class="de-section" hidden>
+      <div class="de-field">
+        <div class="de-field-label">Nappy / Toilet</div>
+        <div class="de-nappy-row">
+          <button class="de-nappy-btn" data-ns="clean">Clean 👌</button>
+          <button class="de-nappy-btn" data-ns="wet">Wet 💧</button>
+          <button class="de-nappy-btn" data-ns="soiled">Soiled ☁️</button>
+          <button class="de-nappy-btn" data-ns="toilet">Toilet 🚽</button>
+        </div>
+      </div>
+      <div class="de-field">
+        <div class="de-field-label">Time</div>
+        <select id="de-sf-nappy-time" class="de-input time-sel" style="height:44px;max-width:160px"></select>
+      </div>
+    </div>
+
+    <!-- ── Single: Bottle / Milk ─── -->
+    <div id="de-sf-bottle" class="de-section" hidden>
+      <div class="de-field">
+        <div class="de-field-label">Amount (ml)</div>
+        <div class="de-stepper">
+          <button class="de-step-btn" id="de-sf-ml-minus" type="button">−</button>
+          <span class="de-step-value" id="de-sf-ml-val">150</span>
+          <button class="de-step-btn" id="de-sf-ml-plus" type="button">＋</button>
+        </div>
+      </div>
+      <div class="de-field">
+        <div class="de-field-label">Type</div>
+        <div class="de-chip-row" id="de-sf-milk-type-chips">
+          <button class="de-chip" data-milk="formula">Formula</button>
+          <button class="de-chip" data-milk="EBM">Breast milk</button>
+          <button class="de-chip" data-milk="cow">Cow's milk</button>
+          <button class="de-chip" data-milk="water">Water</button>
+        </div>
+      </div>
+      <div class="de-field">
+        <div class="de-field-label">Time</div>
+        <select id="de-sf-bottle-time" class="de-input time-sel" style="height:44px;max-width:160px"></select>
+      </div>
+    </div>
+
+    <!-- ── Single: Notes / Mood ─── -->
+    <div id="de-sf-notes" class="de-section" hidden>
+      <div class="de-field">
+        <div class="de-field-label">Mood</div>
+        <div class="de-mood-row">
+          <button class="de-mood-btn" data-mood="happy">
+            <span class="mood-em">😊</span><span class="mood-lbl">Happy</span>
+          </button>
+          <button class="de-mood-btn" data-mood="unsettled">
+            <span class="mood-em">😟</span><span class="mood-lbl">Unsettled</span>
+          </button>
+          <button class="de-mood-btn" data-mood="tired">
+            <span class="mood-em">😴</span><span class="mood-lbl">Tired</span>
+          </button>
+          <button class="de-mood-btn" data-mood="poorly">
+            <span class="mood-em">🤒</span><span class="mood-lbl">Poorly</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes (always shown in single mode) -->
+    <div class="de-section">
+      <div class="de-section-label">Notes</div>
+      <textarea id="de-sf-notes-text" class="de-input" rows="3" placeholder="Additional notes…"></textarea>
+    </div>
+
+  </div><!-- #de-single-panel -->
+
+</div><!-- #de-page -->
+
+<!-- Submit bar (always visible) -->
+<div id="de-submit-bar">
+  <button id="de-submit-btn" type="button">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    Save Entry
+  </button>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script src="/js/wren-diary-outbox.js?v=20260610" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ── Config & state ──────────────────────────────────────────────────────── */
+  var AVATAR_COLORS = ['#4a9abf','#e07820','#22c55e','#a855f7','#ef4444','#06b6d4','#f59e0b','#10b981'];
+  function _color(name) { return AVATAR_COLORS[(name||'A').charCodeAt(0) % AVATAR_COLORS.length]; }
+  function _e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function _nowTime() {
+    var d = new Date();
+    return (d.getHours()<10?'0':'')+d.getHours()+':'+(d.getMinutes()<10?'0':'')+d.getMinutes();
+  }
+  function _todayStr() {
+    var d = new Date();
+    return d.getFullYear()+'-'+(d.getMonth()<9?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate();
+  }
+
+  // Parse ?child= and ?room= params
+  var _params = new URLSearchParams(location.search);
+  var _childId  = _params.get('child')  ? parseInt(_params.get('child'), 10)  : null;
+  var _roomParam = _params.get('room');  // 'baby' or 'pre'
+  // Group selection carried from the /ey/home child grid (?children=1,2,3). When
+  // present we open group mode pre-scoped to exactly those children (mirrors the
+  // observation flow) instead of the whole room.
+  var _childIds = (_params.get('children') || '').split(',')
+                    .map(function(n){ return parseInt(n, 10); })
+                    .filter(function(n){ return !!n; });
+
+  // Group state
+  var _groupRoom     = null;   // { id, slug, name }
+  var _groupType     = 'food';
+  var _groupMeal     = null;
+  var _groupDish     = null;   // { dish_name, allergens, recipe_id }
+  var _groupMilkType = null;
+  var _childStates   = {};     // child_id → { amount:'all', refused:false }
+  var _nappyStates   = {};     // child_id → { state:'wet' }
+  var _bottleAmts    = {};     // child_id → ml
+
+  // Single state
+  var _singleType    = 'food';
+  var _sfMeal        = null;
+  var _sfDish        = null;
+  var _sfFoodAmt     = null;
+  var _sfRefused     = false;
+  var _sfSleepQ      = null;
+  var _sfNappyState  = null;
+  var _sfMilkType    = null;
+  var _sfMilkMl      = 150;
+  var _sfMood        = null;
+
+  var _mode = 'group';  // 'group' | 'single'
+  var _saving = false;
+
+  /* ── Install back button ─────────────────────────────────────────────────── */
+  function _installBack() {
+    var h = document.getElementById('wren-app-hamburger');
+    if (!h) return;
+    var btn = document.createElement('button');
+    btn.id = 'de-back-btn';
+    btn.setAttribute('aria-label', 'Back');
+    btn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+    btn.addEventListener('click', function() {
+      if (history.length > 1) history.back();
+      else Wren.navigate('/ey/diary');
+    });
+    h.parentNode.insertBefore(btn, h);
+    h.style.display = 'none';
+  }
+
+  /* ── Mode toggle ─────────────────────────────────────────────────────────── */
+  function _switchMode(mode) {
+    _mode = mode;
+    var isGroup = mode === 'group';
+    document.getElementById('de-mode-group').classList.toggle('active', isGroup);
+    document.getElementById('de-mode-group').setAttribute('aria-selected', String(isGroup));
+    document.getElementById('de-mode-single').classList.toggle('active', !isGroup);
+    document.getElementById('de-mode-single').setAttribute('aria-selected', String(!isGroup));
+    document.getElementById('de-group-panel').hidden  = !isGroup;
+    document.getElementById('de-single-panel').hidden = isGroup;
+    var titleEl = document.getElementById('wren-app-title');
+    if (titleEl) titleEl.textContent = isGroup ? 'Group Diary Entry' : 'Diary Entry';
+  }
+
+  /* ── Room selector ───────────────────────────────────────────────────────── */
+  function _initRoomChips() {
+    document.querySelectorAll('#de-room-chips .de-chip').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('#de-room-chips .de-chip').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        _groupRoom = { id: parseInt(btn.dataset.roomId,10), slug: btn.dataset.roomSlug, name: btn.textContent.trim() };
+        _loadChildren();
+        if (_groupType === 'food' && _groupMeal) _fetchDish();
+      });
+    });
+    // Pre-select from ?room= param
+    if (_roomParam) {
+      var match = document.querySelector('[data-room-slug*="' + (_roomParam === 'baby' ? 'baby' : 'pre') + '"]');
+      if (match) match.click();
+    }
+  }
+
+  /* ── Entry type buttons (group) ──────────────────────────────────────────── */
+  function _initGroupTypeButtons() {
+    document.querySelectorAll('[data-type]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-type]').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        _groupType = btn.dataset.type;
+        _toggleGroupTypeSections();
+        _reRenderChildren();
+      });
+    });
+  }
+
+  function _toggleGroupTypeSections() {
+    document.getElementById('de-food-section').hidden    = (_groupType !== 'food');
+    document.getElementById('de-sleep-section').hidden   = (_groupType !== 'sleep');
+    document.getElementById('de-nappy-section').hidden   = (_groupType !== 'nappy');
+    document.getElementById('de-bottle-section').hidden  = (_groupType !== 'bottle');
+  }
+
+  /* ── Meal type chips (group) ─────────────────────────────────────────────── */
+  function _initMealChips() {
+    document.querySelectorAll('#de-meal-chips .de-meal-chip').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('#de-meal-chips .de-meal-chip').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        _groupMeal = btn.dataset.meal;
+        if (_groupRoom) _fetchDish();
+      });
+    });
+    // Default: lunch
+    var lunchBtn = document.querySelector('#de-meal-chips [data-meal="lunch"]');
+    if (lunchBtn) {
+      var h = parseInt(new Date().getHours(), 10);
+      var defaultMeal = h < 9 ? 'breakfast' : h < 14 ? 'lunch' : h < 16 ? 'snack' : 'tea';
+      var auto = document.querySelector('#de-meal-chips [data-meal="' + defaultMeal + '"]');
+      if (auto) auto.click(); else lunchBtn.click();
+    }
+  }
+
+  /* ── Meal chips (single) ─────────────────────────────────────────────────── */
+  function _initSingleMealChips() {
+    document.querySelectorAll('#de-sf-meal-chips .de-meal-chip').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('#de-sf-meal-chips .de-meal-chip').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        _sfMeal = btn.dataset.sfMeal;
+        _fetchSingleDish();
+      });
+    });
+    var h = parseInt(new Date().getHours(), 10);
+    var dm = h < 9 ? 'breakfast' : h < 14 ? 'lunch' : h < 16 ? 'snack' : 'tea';
+    var auto = document.querySelector('#de-sf-meal-chips [data-sf-meal="' + dm + '"]');
+    if (auto) auto.click();
+  }
+
+  /* ── Fetch today's dish (group) ──────────────────────────────────────────── */
+  function _fetchDish() {
+    if (!_groupMeal) return;
+    var dishCard    = document.getElementById('de-dish-card');
+    var dishLoading = document.getElementById('de-dish-loading');
+    dishCard.classList.add('hidden');
+    dishLoading.hidden = false;
+
+    var qp = '?meal_type=' + encodeURIComponent(_groupMeal);
+    if (_groupRoom) qp += '&room=' + encodeURIComponent(_groupRoom.slug);
+
+    Wren.api('/api/menu/today' + qp)
+      .then(function(rows) {
+        dishLoading.hidden = true;
+        var row = Array.isArray(rows) ? rows[0] : null;
+        if (!row || !row.dish_name) { dishCard.classList.add('hidden'); _groupDish = null; return; }
+        _groupDish = row;
+        document.getElementById('de-dish-name').textContent = row.dish_name;
+        var alls = (row.allergen_codes_display || row.allergens || []);
+        document.getElementById('de-dish-allergens').textContent = alls.length ? 'Allergens: ' + alls.join(', ') : '';
+        dishCard.classList.remove('hidden');
+      }).catch(function() {
+        dishLoading.hidden = true;
+        _groupDish = null;
+      });
+  }
+
+  /* ── Fetch today's dish (single) ─────────────────────────────────────────── */
+  function _fetchSingleDish() {
+    if (!_sfMeal) return;
+    var qp = '?meal_type=' + encodeURIComponent(_sfMeal);
+    Wren.api('/api/menu/today' + qp)
+      .then(function(rows) {
+        var row = Array.isArray(rows) ? rows[0] : null;
+        var card = document.getElementById('de-sf-dish-card');
+        if (!row || !row.dish_name) { card.classList.add('hidden'); _sfDish = null; return; }
+        _sfDish = row;
+        document.getElementById('de-sf-dish-name').textContent = row.dish_name;
+        card.classList.remove('hidden');
+      }).catch(function() { _sfDish = null; });
+  }
+
+  /* ── Load children for selected room ────────────────────────────────────── */
+  function _loadChildren() {
+    if (!_groupRoom) return;
+    var loading = document.getElementById('de-children-loading');
+    var list    = document.getElementById('de-children-list');
+    var empty   = document.getElementById('de-children-empty');
+    loading.hidden = false;
+    list.hidden    = true;
+    empty.hidden   = true;
+
+    Wren.api('/api/diary/group/room-children?room_id=' + _groupRoom.id + '&date=' + _todayStr())
+      .then(function(children) {
+        loading.hidden = true;
+        if (!children || !children.length) { empty.hidden = false; return; }
+        _childStates = {};
+        children.forEach(function(c) { _childStates[c.id] = { amount: 'all', refused: false }; });
+        _nappyStates = {};
+        children.forEach(function(c) { _nappyStates[c.id] = { state: 'wet' }; });
+        _bottleAmts  = {};
+        children.forEach(function(c) { _bottleAmts[c.id]  = 150; });
+
+        var countEl = document.getElementById('de-children-count');
+        if (countEl) countEl.textContent = children.length + ' child' + (children.length > 1 ? 'ren' : '');
+
+        _renderChildren(children);
+        list.hidden = false;
+      }).catch(function() {
+        loading.hidden = true;
+        empty.hidden = false;
+      });
+  }
+
+  /* ── Load a specific set of children (from ?children= home-grid selection) ── */
+  function _loadChildrenByIds() {
+    var loading = document.getElementById('de-children-loading');
+    var list    = document.getElementById('de-children-list');
+    var empty   = document.getElementById('de-children-empty');
+    loading.hidden = false; list.hidden = true; empty.hidden = true;
+
+    Wren.api('/api/children').then(function(rows) {
+      loading.hidden = true;
+      rows = Array.isArray(rows) ? rows : (rows && (rows.data || rows.children || rows.rows)) || [];
+      var picked = rows.filter(function(c) { return _childIds.indexOf(c.id) !== -1; });
+      if (!picked.length) { empty.hidden = false; return; }
+
+      // Derive the room from the first picked child so meal-menu lookup + the
+      // room-food validation still work (selection is usually one room).
+      var rid = picked[0].room_id;
+      var chip = rid ? document.querySelector('#de-room-chips .de-chip[data-room-id="' + rid + '"]') : null;
+      if (chip) {
+        document.querySelectorAll('#de-room-chips .de-chip').forEach(function(b) { b.classList.remove('active'); });
+        chip.classList.add('active');
+        _groupRoom = { id: parseInt(chip.dataset.roomId, 10), slug: chip.dataset.roomSlug, name: chip.textContent.trim() };
+      } else {
+        _groupRoom = { id: rid || 0, slug: (picked[0].room_slug || ''), name: picked[0].room_name || 'Selected' };
+      }
+
+      _childStates = {}; _nappyStates = {}; _bottleAmts = {};
+      picked.forEach(function(c) {
+        _childStates[c.id] = { amount: 'all', refused: false };
+        _nappyStates[c.id] = { state: 'wet' };
+        _bottleAmts[c.id]  = 150;
+      });
+
+      var countEl = document.getElementById('de-children-count');
+      if (countEl) countEl.textContent = picked.length + ' child' + (picked.length > 1 ? 'ren' : '') + ' selected';
+
+      _renderChildren(picked);
+      list.hidden = false;
+      if (_groupType === 'food' && _groupMeal && _groupRoom.slug) _fetchDish();
+    }).catch(function() {
+      loading.hidden = true; empty.hidden = false;
+    });
+  }
+
+  /* ── Render children list ────────────────────────────────────────────────── */
+  function _renderChildren(children) {
+    var list = document.getElementById('de-children-list');
+    list.innerHTML = '';
+    children.forEach(function(child) {
+      var li = _makeChildRow(child);
+      list.appendChild(li);
+    });
+  }
+
+  function _reRenderChildren() {
+    // Re-render without re-fetching — toggle control types
+    var rows = document.querySelectorAll('.de-child-row');
+    rows.forEach(function(row) {
+      var cid = parseInt(row.dataset.childId, 10);
+      var ctrl = row.querySelector('.de-child-controls');
+      if (ctrl) ctrl.innerHTML = _controlsHtml(cid);
+      _bindControlEvents(row, cid);
+    });
+  }
+
+  function _controlsHtml(cid) {
+    if (_groupType === 'food') {
+      var st = _childStates[cid] || { amount: 'all', refused: false };
+      var amts = ['none','some','most','all'];
+      var btns = amts.map(function(a) {
+        var sel = !st.refused && st.amount === a ? ' sel' : '';
+        var lbl = a.charAt(0).toUpperCase() + a.slice(1);
+        return '<button class="de-amount-btn' + sel + '" data-amt="' + a + '" aria-pressed="' + (sel?'true':'false') + '">' + lbl + '</button>';
+      }).join('');
+      var rSel = st.refused ? ' sel' : '';
+      return '<div class="de-amount-ctrl" role="group" aria-label="Amount for this child">' + btns + '</div>' +
+             '<button class="de-refused-btn' + rSel + '" aria-pressed="' + (st.refused?'true':'false') + '">Refused</button>';
+    }
+    if (_groupType === 'sleep') {
+      return '<div style="display:flex;gap:6px;align-items:center"><select class="de-input grp-sleep-end time-sel" style="height:44px;width:110px" aria-label="Wake time for this child">' + _timeOptionsHtml(_nearestFive()) + '</select></div>';
+    }
+    if (_groupType === 'nappy') {
+      var ns = _nappyStates[cid] || { state: 'wet' };
+      var nOpts = [['clean','Clean'],['wet','Wet'],['soiled','Soiled'],['toilet','Toilet']];
+      return '<div class="de-nappy-row">' + nOpts.map(function(o) {
+        var sel = ns.state === o[0] ? ' sel' : '';
+        return '<button class="de-nappy-btn' + sel + '" data-ns="' + o[0] + '">' + o[1] + '</button>';
+      }).join('') + '</div>';
+    }
+    if (_groupType === 'bottle') {
+      var ml = _bottleAmts[cid] || 150;
+      return '<div class="de-stepper"><button class="de-step-btn grp-ml-minus" type="button">−</button>' +
+             '<span class="de-step-value grp-ml-val">' + ml + 'ml</span>' +
+             '<button class="de-step-btn grp-ml-plus" type="button">＋</button></div>';
+    }
+    return ''; // notes: no per-child control
+  }
+
+  function _makeChildRow(child) {
+    var li   = document.createElement('li');
+    li.className    = 'de-child-row';
+    li.dataset.childId = child.id;
+
+    var name = (child.preferred_name || child.first_name) + ' ' + child.last_name;
+    var init = (child.preferred_name || child.first_name || 'X').charAt(0).toUpperCase();
+    var col  = _color(init);
+
+    li.innerHTML =
+      '<div class="de-child-avatar" style="background:' + col + '">' + _e(init) + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="de-child-name">' + _e(name) + '</div>' +
+        (child.allergies ? '<div class="de-child-name-small" style="color:var(--c-red)">⚠ ' + _e(child.allergies) + '</div>' : '') +
+      '</div>' +
+      '<div class="de-child-controls">' + _controlsHtml(child.id) + '</div>';
+
+    _bindControlEvents(li, child.id);
+    return li;
+  }
+
+  function _bindControlEvents(row, cid) {
+    // Food amount buttons
+    row.querySelectorAll('.de-amount-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (!_childStates[cid]) _childStates[cid] = { amount: 'all', refused: false };
+        _childStates[cid].amount  = btn.dataset.amt;
+        _childStates[cid].refused = false;
+        row.querySelectorAll('.de-amount-btn').forEach(function(b) {
+          b.classList.toggle('sel', b.dataset.amt === btn.dataset.amt);
+          b.setAttribute('aria-pressed', String(b.dataset.amt === btn.dataset.amt));
+        });
+        var rb = row.querySelector('.de-refused-btn');
+        if (rb) { rb.classList.remove('sel'); rb.setAttribute('aria-pressed','false'); }
+      });
+    });
+    // Refused button
+    var refusedBtn = row.querySelector('.de-refused-btn');
+    if (refusedBtn) {
+      refusedBtn.addEventListener('click', function() {
+        if (!_childStates[cid]) _childStates[cid] = { amount: 'all', refused: false };
+        _childStates[cid].refused = !_childStates[cid].refused;
+        refusedBtn.classList.toggle('sel', _childStates[cid].refused);
+        refusedBtn.setAttribute('aria-pressed', String(_childStates[cid].refused));
+        if (_childStates[cid].refused) {
+          row.querySelectorAll('.de-amount-btn').forEach(function(b) {
+            b.classList.remove('sel');
+            b.setAttribute('aria-pressed','false');
+          });
+        }
+      });
+    }
+    // Nappy state
+    row.querySelectorAll('.de-nappy-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (!_nappyStates[cid]) _nappyStates[cid] = { state: 'wet' };
+        _nappyStates[cid].state = btn.dataset.ns;
+        row.querySelectorAll('.de-nappy-btn').forEach(function(b) {
+          b.classList.toggle('sel', b.dataset.ns === btn.dataset.ns);
+        });
+      });
+    });
+    // Bottle ml stepper
+    var mlMinus = row.querySelector('.grp-ml-minus');
+    var mlPlus  = row.querySelector('.grp-ml-plus');
+    var mlVal   = row.querySelector('.grp-ml-val');
+    if (mlMinus && mlPlus && mlVal) {
+      mlMinus.addEventListener('click', function() {
+        _bottleAmts[cid] = Math.max(0, (_bottleAmts[cid]||150) - 10);
+        mlVal.textContent = _bottleAmts[cid] + 'ml';
+      });
+      mlPlus.addEventListener('click', function() {
+        _bottleAmts[cid] = Math.min(500, (_bottleAmts[cid]||150) + 10);
+        mlVal.textContent = _bottleAmts[cid] + 'ml';
+      });
+    }
+  }
+
+  /* ── Milk type chips (group) ─────────────────────────────────────────────── */
+  function _initMilkTypeChips(containerId) {
+    document.querySelectorAll('#' + containerId + ' .de-chip').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('#' + containerId + ' .de-chip').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        if (containerId === 'de-milk-type-chips')    _groupMilkType = btn.dataset.milk;
+        if (containerId === 'de-sf-milk-type-chips') _sfMilkType    = btn.dataset.milk;
+      });
+    });
+    var firstBtn = document.querySelector('#' + containerId + ' .de-chip');
+    if (firstBtn) firstBtn.click();
+  }
+
+  /* ── Single entry type buttons ───────────────────────────────────────────── */
+  function _initSingleTypeButtons() {
+    document.querySelectorAll('[data-single-type]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-single-type]').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        _singleType = btn.dataset.singleType;
+        _toggleSingleSections();
+      });
+    });
+  }
+
+  function _toggleSingleSections() {
+    var sections = { food:'de-sf-food', sleep:'de-sf-sleep', nappy:'de-sf-nappy', bottle:'de-sf-bottle', notes:'de-sf-notes' };
+    Object.keys(sections).forEach(function(k) {
+      var el = document.getElementById(sections[k]);
+      if (el) el.hidden = (_singleType !== k);
+    });
+  }
+
+  /* ── Single food amount buttons ──────────────────────────────────────────── */
+  function _initSingleFoodAmt() {
+    document.querySelectorAll('#de-sf-food .de-amount-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        _sfFoodAmt = btn.dataset.amt;
+        _sfRefused = false;
+        document.querySelectorAll('#de-sf-food .de-amount-btn').forEach(function(b) {
+          b.classList.toggle('sel', b.dataset.amt === btn.dataset.amt);
+        });
+        var rb = document.getElementById('de-sf-refused');
+        if (rb) { rb.classList.remove('sel'); rb.setAttribute('aria-pressed','false'); }
+      });
+    });
+    var refBtn = document.getElementById('de-sf-refused');
+    if (refBtn) {
+      refBtn.addEventListener('click', function() {
+        _sfRefused = !_sfRefused;
+        refBtn.classList.toggle('sel', _sfRefused);
+        refBtn.setAttribute('aria-pressed', String(_sfRefused));
+        if (_sfRefused) {
+          _sfFoodAmt = null;
+          document.querySelectorAll('#de-sf-food .de-amount-btn').forEach(function(b) { b.classList.remove('sel'); });
+        }
+      });
+    }
+    // Default: All
+    var allBtn = document.querySelector('#de-sf-food [data-amt="all"]');
+    if (allBtn) allBtn.click();
+  }
+
+  /* ── Single sleep quality ────────────────────────────────────────────────── */
+  function _initSingleSleepQ() {
+    document.querySelectorAll('[data-sq]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-sq]').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        _sfSleepQ = btn.dataset.sq;
+      });
+    });
+    var soundBtn = document.querySelector('[data-sq="sound"]');
+    if (soundBtn) soundBtn.click();
+  }
+
+  /* ── Single nappy ────────────────────────────────────────────────────────── */
+  function _initSingleNappy() {
+    document.querySelectorAll('[data-ns]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-ns]').forEach(function(b) { b.classList.remove('sel'); });
+        btn.classList.add('sel');
+        _sfNappyState = btn.dataset.ns;
+      });
+    });
+    var wetBtn = document.querySelector('[data-ns="wet"]');
+    if (wetBtn) wetBtn.click();
+  }
+
+  /* ── Single bottle ml stepper ────────────────────────────────────────────── */
+  function _initSingleBottle() {
+    var inp   = document.getElementById('de-sf-bottle-time');
+    var minus = document.getElementById('de-sf-ml-minus');
+    var plus  = document.getElementById('de-sf-ml-plus');
+    var val   = document.getElementById('de-sf-ml-val');
+    if (inp && inp.tagName === 'SELECT' && !inp.options.length) inp.innerHTML = _timeOptionsHtml(_nearestFive());
+    if (minus) minus.addEventListener('click', function() {
+      _sfMilkMl = Math.max(0, _sfMilkMl - 10);
+      if (val) val.textContent = _sfMilkMl;
+    });
+    if (plus) plus.addEventListener('click', function() {
+      _sfMilkMl = Math.min(500, _sfMilkMl + 10);
+      if (val) val.textContent = _sfMilkMl;
+    });
+  }
+
+  /* ── Single mood ─────────────────────────────────────────────────────────── */
+  function _initSingleMood() {
+    document.querySelectorAll('[data-mood]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-mood]').forEach(function(b) { b.classList.remove('sel'); });
+        btn.classList.add('sel');
+        _sfMood = btn.dataset.mood;
+      });
+    });
+  }
+
+  /* ── Time select helpers ─────────────────────────────────────────────────── */
+  function _p2(n) { return (n < 10 ? '0' : '') + n; }
+  function _nearestFive() {
+    var now = new Date();
+    var mins = Math.round((now.getHours() * 60 + now.getMinutes()) / 5) * 5;
+    if (mins > 1435) mins = 1435;
+    return _p2(Math.floor(mins / 60)) + ':' + _p2(mins % 60);
+  }
+  function _timeOptionsHtml(selectedVal) {
+    var html = '';
+    for (var m = 0; m < 1440; m += 5) {
+      var v = _p2(Math.floor(m / 60)) + ':' + _p2(m % 60);
+      html += '<option value="' + v + '"' + (v === selectedVal ? ' selected' : '') + '>' + v + '</option>';
+    }
+    return html;
+  }
+  function _initTimeSelects() {
+    var def = _nearestFive();
+    document.querySelectorAll('select.time-sel').forEach(function(sel) {
+      if (!sel.options.length) sel.innerHTML = _timeOptionsHtml(def);
+    });
+  }
+
+  /* ── Set default times ───────────────────────────────────────────────────── */
+  function _setDefaultTimes() {
+    var now = _nearestFive();
+    ['de-grp-sleep-from','de-grp-sleep-to','de-grp-nappy-time',
+     'de-sf-sleep-from','de-sf-sleep-to','de-sf-nappy-time'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = now;
+    });
+  }
+
+  /* ── Load pre-selected child (single mode from child.html) ──────────────── */
+  function _loadSingleChild() {
+    if (!_childId) return;
+    Wren.api('/api/children/' + _childId + '/profile')
+      .then(function(c) {
+        var card = document.getElementById('de-single-child-card');
+        if (!card) return;
+        var init = (c.first_name || 'X').charAt(0).toUpperCase();
+        var col  = _color(init);
+        document.getElementById('de-sc-avatar').style.background = col;
+        document.getElementById('de-sc-avatar').textContent = init;
+        document.getElementById('de-sc-name').textContent = (c.first_name||'') + ' ' + (c.last_name||'');
+        document.getElementById('de-sc-room').textContent = c.room_name || '';
+        card.hidden = false;
+      }).catch(function() {});
+  }
+
+  /* ── Offline indicator ───────────────────────────────────────────────────── */
+  function _updateOfflineBadge() {
+    var badge = document.getElementById('de-offline-badge');
+    if (badge) badge.classList.toggle('show', !navigator.onLine);
+  }
+
+  /* ── Build group submission payload ─────────────────────────────────────── */
+  function _buildGroupPayload() {
+    var date     = _todayStr();
+    var notes    = (document.getElementById('de-grp-notes') || {}).value || null;
+    var entries  = [];
+
+    if (_groupType === 'food') {
+      Object.keys(_childStates).forEach(function(cid) {
+        var st = _childStates[cid];
+        entries.push({ child_id: parseInt(cid,10), amount: st.amount, refused: !!st.refused, notes: notes });
+      });
+      return {
+        date:      date,
+        meal_type: _groupMeal || 'lunch',
+        recipe_id: _groupDish ? _groupDish.recipe_id : null,
+        dish_name: _groupDish ? _groupDish.dish_name : null,
+        entries:   entries,
+      };
+    }
+
+    // Non-food types — use the daily-diary-group endpoint via per_child
+    var common = {};
+    var per_child = {};
+
+    if (_groupType === 'sleep') {
+      common.start  = (document.getElementById('de-grp-sleep-from')||{}).value || _nowTime();
+      common.status = 'sound';
+      Object.keys(_childStates).forEach(function(cid) {
+        var endEl = document.querySelector('[data-child-id="'+cid+'"] .grp-sleep-end');
+        per_child[cid] = { end: endEl ? endEl.value : common.start };
+      });
+    } else if (_groupType === 'nappy') {
+      common.time = (document.getElementById('de-grp-nappy-time')||{}).value || _nowTime();
+      Object.keys(_nappyStates).forEach(function(cid) {
+        per_child[cid] = { state: _nappyStates[cid].state };
+      });
+    } else if (_groupType === 'bottle') {
+      common.time       = _nowTime();
+      common.drink_type = _groupMilkType || 'formula';
+      Object.keys(_bottleAmts).forEach(function(cid) {
+        per_child[cid] = { amount_ml: _bottleAmts[cid] };
+      });
+    }
+
+    return {
+      _useGroupEndpoint: true,
+      child_ids: Object.keys(_childStates).map(function(id) { return parseInt(id,10); }),
+      type:      _groupType,
+      date:      date,
+      common:    common,
+      per_child: per_child,
+      notes:     notes || null,
+    };
+  }
+
+  /* ── Build single submission payload ────────────────────────────────────── */
+  function _buildSinglePayload() {
+    if (!_childId) return null;
+    var date  = _todayStr();
+    var notes = (document.getElementById('de-sf-notes-text')||{}).value || null;
+
+    var entry = {
+      child_ids:  [_childId],
+      entry_type: 'food',
+      occurred_at: new Date().toISOString(),
+      notes: notes,
+      share_with_parents: true,
+    };
+
+    switch (_singleType) {
+      case 'food':
+        entry.entry_type = 'food';
+        entry.food_meal   = _sfMeal || 'lunch';
+        entry.food_amount = _sfRefused ? 'refused' : (_sfFoodAmt || 'all');
+        if (_sfDish) { entry.notes = [_sfDish.dish_name, notes].filter(Boolean).join(' — ') || null; }
+        break;
+      case 'sleep':
+        entry.entry_type       = 'sleep';
+        entry.sleep_quality    = _sfSleepQ || 'sound';
+        var sf = (document.getElementById('de-sf-sleep-from')||{}).value;
+        var st = (document.getElementById('de-sf-sleep-to')||{}).value;
+        if (sf) entry.occurred_at = new Date(date+'T'+sf+':00').toISOString();
+        if (sf && st) {
+          var dm = (new Date(date+'T'+st+':00').getTime() - new Date(date+'T'+sf+':00').getTime()) / 60000;
+          if (dm > 0) entry.duration_minutes = Math.round(dm);
+        }
+        break;
+      case 'nappy':
+        entry.entry_type  = 'nappy';
+        entry.nappy_state = _sfNappyState || 'wet';
+        var nt = (document.getElementById('de-sf-nappy-time')||{}).value;
+        if (nt) entry.occurred_at = new Date(date+'T'+nt+':00').toISOString();
+        break;
+      case 'bottle':
+        entry.entry_type  = 'drink';
+        entry.drink_ml    = _sfMilkMl;
+        entry.drink_type  = _sfMilkType || 'formula';
+        var bt = (document.getElementById('de-sf-bottle-time')||{}).value;
+        if (bt) entry.occurred_at = new Date(date+'T'+bt+':00').toISOString();
+        break;
+      case 'notes':
+        entry.entry_type = 'note';
+        entry.notes      = [_sfMood ? 'Mood: '+_sfMood : null, notes].filter(Boolean).join(' — ') || null;
+        break;
+    }
+
+    return entry;
+  }
+
+  /* ── Submit ──────────────────────────────────────────────────────────────── */
+  function _submit() {
+    if (_saving) return;
+
+    var btn = document.getElementById('de-submit-btn');
+    btn.disabled = true;
+    btn.classList.add('saving');
+    btn.textContent = 'Saving…';
+    _saving = true;
+
+    var isGroup  = (_mode === 'group');
+    var payload  = isGroup ? _buildGroupPayload() : _buildSinglePayload();
+
+    if (!payload) {
+      Wren.toast('Select a child first', 'warning');
+      btn.disabled = false; btn.classList.remove('saving'); btn.innerHTML = '&#x2192; Save Entry'; _saving = false;
+      return;
+    }
+    if (isGroup && !_groupRoom) {
+      Wren.toast('Select a room first', 'warning');
+      btn.disabled = false; btn.classList.remove('saving'); btn.innerHTML = '&#x2192; Save Entry'; _saving = false;
+      return;
+    }
+    if (isGroup && _groupType === 'food' && !_groupMeal) {
+      Wren.toast('Select a meal type first', 'warning');
+      btn.disabled = false; btn.classList.remove('saving'); btn.innerHTML = '&#x2192; Save Entry'; _saving = false;
+      return;
+    }
+
+    var url = '/api/diary/group';
+    if (isGroup && payload._useGroupEndpoint) {
+      delete payload._useGroupEndpoint;
+      url = '/api/daily-diary/group';
+    } else if (!isGroup) {
+      url = '/api/diary/entries';
+    }
+
+    function _doSave() {
+      return Wren.api(url, { method: 'POST', body: JSON.stringify(payload) });
+    }
+
+    if (!navigator.onLine) {
+      // Offline: queue in IndexedDB
+      var outboxPayload = isGroup ? Object.assign({}, payload, { _url: url }) : payload;
+      if (window.WrenDiaryOutbox) {
+        WrenDiaryOutbox.queue({ url: url, body: payload }).then(function() {
+          Wren.toast('Saved offline — will sync when back online', 'warning');
+          _afterSave();
+        });
+      } else {
+        Wren.toast('Offline — could not save (no outbox)', 'error');
+        _afterSave();
+      }
+      return;
+    }
+
+    _doSave().then(function(result) {
+      var count = result && (result.created || result.ids && result.ids.length || 1);
+      Wren.toast((count||'') + ' entr' + (count === 1 ? 'y' : 'ies') + ' saved', 'success');
+      _afterSave();
+    }).catch(function(err) {
+      // Network failure: queue for offline retry
+      if (window.WrenDiaryOutbox) {
+        WrenDiaryOutbox.queue({ url: url, body: payload }).then(function() {
+          Wren.toast('Network error — saved offline, will retry', 'warning');
+          _afterSave();
+        });
+      } else {
+        console.error('[diary-entry submit]', err);
+        Wren.toast('Failed to save. Please try again.', 'error');
+        btn.disabled = false; btn.classList.remove('saving');
+        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Save Entry';
+        _saving = false;
+      }
+    });
+  }
+
+  function _afterSave() {
+    _saving = false;
+    if (_childId) {
+      Wren.navigate('/ey/child/' + _childId + '#diary');
+    } else {
+      Wren.navigate('/ey/diary');
+    }
+  }
+
+  /* ── Boot ────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function() {
+    _installBack();
+
+    // Offline status
+    _updateOfflineBadge();
+    window.addEventListener('online',  _updateOfflineBadge);
+    window.addEventListener('offline', _updateOfflineBadge);
+
+    // Mode toggle
+    document.getElementById('de-mode-group').addEventListener('click', function() { _switchMode('group'); });
+    document.getElementById('de-mode-single').addEventListener('click', function() { _switchMode('single'); });
+
+    // Group controls
+    _initRoomChips();
+    _initGroupTypeButtons();
+    _initMealChips();
+    _initMilkTypeChips('de-milk-type-chips');
+
+    // Single controls
+    _initSingleTypeButtons();
+    _initSingleMealChips();
+    _initSingleFoodAmt();
+    _initSingleSleepQ();
+    _initSingleNappy();
+    _initSingleBottle();
+    _initSingleMood();
+    _initMilkTypeChips('de-sf-milk-type-chips');
+
+    _initTimeSelects();
+    _setDefaultTimes();
+
+    // Submit
+    document.getElementById('de-submit-btn').addEventListener('click', _submit);
+
+    // If ?child= param: open single mode, pre-load child
+    if (_childId) {
+      _switchMode('single');
+      _loadSingleChild();
+    } else if (_childIds.length) {
+      // ?children= from the home-grid group selection → group mode, those children
+      _switchMode('group');
+      _loadChildrenByIds();
+    } else {
+      _switchMode('group');
+      // Pre-select room from ?room= param — handled in _initRoomChips
+      // If no room param: show first room chip for easy start
+      if (!_roomParam) {
+        var firstRoom = document.querySelector('#de-room-chips .de-chip');
+        if (firstRoom) firstRoom.click();
+      }
+    }
+  });
+
+}());
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
-// Your Nursery — Parents PWA service worker.
-// Origin-scoped (parents.example-nursery.co.uk only — registered solely by /pwa.js
+// Little Angels — Parents PWA service worker.
+// Origin-scoped (parents.littleangelsealing.co.uk only — registered solely by /pwa.js
 // which guards on the parents origin). Behind Cloudflare Access (email OTP).
 //
 // PII SAFETY (non-negotiable):
@@ -94,7 +94,7 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let data = {};
   try { data = e.data ? e.data.json() : {}; } catch (_) { data = { body: e.data && e.data.text ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(data.title || 'Your Nursery', {
+  e.waitUntil(self.registration.showNotification(data.title || 'Little Angels', {
     body: data.body || '',
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',

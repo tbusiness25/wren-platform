@@ -541,7 +541,7 @@ function buildRewardData(type, module, childName) {
       module_title: module.title,
       category: categoryLabels[module.category] || module.category,
       issued_date: new Date().toLocaleDateString('en-GB'),
-      message: `${name} has completed the "${module.title}" module on the Your Nursery Parent Learning Portal.`
+      message: `${name} has completed the "${module.title}" module on the Little Angels Parent Learning Portal.`
     };
   }
   if (type === 'sticker') {
@@ -612,7 +612,7 @@ async function generateRewardPDF(reward) {
     const DARK   = '#0f172a';
     const MUTED  = '#64748b';
 
-    const logoPath = '/app/little-angels-logo.png';
+    const logoPath = '/home/toby/little-angels-logo.png';
     const hasLogo  = fs.existsSync(logoPath);
 
     // Header bar
@@ -621,10 +621,10 @@ async function generateRewardPDF(reward) {
       try { doc.image(logoPath, 30, 15, { height: 50 }); } catch (_) {}
     }
     doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22)
-       .text('Your Nursery', hasLogo ? 200 : 30, 22)
+       .text('Little Angels', hasLogo ? 200 : 30, 22)
        .fillColor(ORANGE).text(' Day Nursery', { continued: false });
     doc.fillColor(MUTED).font('Helvetica').fontSize(9)
-       .text('1A Example Lane, Ealing, W13 9LU', hasLogo ? 200 : 30, 52);
+       .text('1A Dudley Gardens, Ealing, W13 9LU', hasLogo ? 200 : 30, 52);
     doc.y = 110;
 
     const d = reward.reward_data || {};
@@ -647,13 +647,13 @@ async function generateRewardPDF(reward) {
          .text(d.module_title || reward.module_title || 'Parent Learning Module', { align: 'center' });
       doc.moveDown(0.5);
       doc.fillColor(MUTED).font('Helvetica').fontSize(11)
-         .text('on the Your Nursery Parent Learning Portal', { align: 'center' });
+         .text('on the Little Angels Parent Learning Portal', { align: 'center' });
       doc.moveDown();
       doc.fillColor(MUTED).fontSize(10)
          .text(`Issued: ${d.issued_date || new Date().toLocaleDateString('en-GB')}`, { align: 'center' });
       doc.moveDown(2);
       doc.fillColor(DARK).font('Helvetica-Bold').fontSize(11)
-         .text('Nursery Manager — Manager', { align: 'center' });
+         .text('Toby Jones — Manager, Little Angels Day Nursery', { align: 'center' });
 
     } else if (reward.reward_type === 'sticker') {
       doc.fillColor(BLUE).font('Helvetica-Bold').fontSize(24)
@@ -721,7 +721,7 @@ async function generateRewardPDF(reward) {
     // Footer
     doc.rect(0, doc.page.height - 40, doc.page.width, 40).fill(DARK);
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
-       .text('Your Nursery | 1A Example Lane, Ealing W13 9LU | 01234 567890 | example-nursery.co.uk',
+       .text('Little Angels Day Nursery | 1A Dudley Gardens, Ealing W13 9LU | 020 8051 0349 | littleangelsealing.co.uk',
              30, doc.page.height - 28, { align: 'center' });
 
     doc.end();

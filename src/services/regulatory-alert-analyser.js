@@ -115,10 +115,10 @@ async function getManagerChatIds(db, schema) {
        WHERE role IN ('manager','deputy_manager') AND telegram_chat_id IS NOT NULL`
     );
     const ids = rows.map(r => r.telegram_chat_id).filter(Boolean);
-    if (!ids.length) ids.push(''); // fallback to Toby's known ID
+    if (!ids.length) ids.push('7565744160'); // fallback to Toby's known ID
     return ids;
   } catch {
-    return [''];
+    return ['7565744160'];
   }
 }
 
@@ -187,7 +187,7 @@ Return ONLY valid JSON in this exact shape: \
       analysis.summary,
       affectedCount ? `_Affects ${affectedCount} existing policy/policies_` : '',
       analysis.suggested_action ? `→ ${analysis.suggested_action}` : '',
-      `\nhttps://admin.example-nursery.co.uk/admin/regulatory/alerts/${alert.id}`,
+      `\nhttps://admin.littleangelsealing.co.uk/admin/regulatory/alerts/${alert.id}`,
     ].filter(Boolean).join('\n');
 
     for (const chatId of managerChatIds) {

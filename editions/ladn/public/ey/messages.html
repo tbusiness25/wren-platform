@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="messages">
+  <meta name="wren-app-title" content="Messages">
+  <meta name="wren-app-chat"  content="on">
+  <title>Messages · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-messages-page { padding: 0 0 calc(64px + env(safe-area-inset-bottom, 16px)); }
+
+    /* ── List view ─────────────────────────────────────────────────────────── */
+    #ey-msg-toolbar {
+      display: flex; gap: 8px; align-items: center;
+      padding: 12px 14px 8px; position: sticky; top: 0;
+      background: var(--c-navy, #0f172a); z-index: 5;
+    }
+    #ey-msg-search {
+      flex: 1; background: var(--c-surface, #1e293b); border: 1.5px solid var(--c-border, #2d3748);
+      border-radius: 12px; padding: 10px 14px; color: var(--c-text, #f1f5f9);
+      font-size: .9rem; outline: none; min-height: 44px; transition: border-color .15s;
+    }
+    #ey-msg-search:focus { border-color: var(--c-blue, #4a9abf); }
+    .ey-msg-newbtn {
+      flex-shrink: 0; background: var(--c-orange, #e07820); border: none; border-radius: 12px;
+      color: #fff; font-weight: 700; font-size: .85rem; padding: 0 14px; min-height: 44px;
+      cursor: pointer; transition: background .15s;
+    }
+    .ey-msg-newbtn:hover { background: var(--c-orange-dark, #c96810); }
+
+    #ey-msg-threads { padding: 4px 14px 14px; }
+    .ey-thread-card {
+      background: var(--c-surface, #1e293b); border: 1px solid var(--c-border, #2d3748);
+      border-radius: 12px; padding: 13px 14px; margin-bottom: 10px; cursor: pointer;
+      transition: border-color .15s; position: relative; display: block; width: 100%; text-align: left;
+    }
+    .ey-thread-card:hover { border-color: var(--c-blue, #4a9abf); }
+    .ey-thread-card.unread { border-left: 3px solid var(--c-blue, #4a9abf); }
+    .ey-thread-child { font-size: .92rem; font-weight: 700; color: var(--c-text, #f1f5f9); margin-bottom: 2px; display: flex; align-items: center; gap: 8px; padding-right: 56px; }
+    .ey-thread-subject { font-size: .82rem; color: var(--c-muted, #94a3b8); line-height: 1.4; }
+    .ey-thread-meta { font-size: .72rem; color: var(--c-muted, #94a3b8); margin-top: 6px; }
+    .ey-thread-badge { background: var(--c-blue, #4a9abf); color: #fff; border-radius: 99px; font-size: .65rem; padding: 2px 8px; font-weight: 700; flex-shrink: 0; }
+    .ey-thread-tag { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--c-muted, #94a3b8); background: rgba(148,163,184,.12); border-radius: 6px; padding: 1px 6px; }
+    .ey-thread-dot { position: absolute; top: 14px; right: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--c-blue, #4a9abf); }
+
+    /* ── Thread view ───────────────────────────────────────────────────────── */
+    #ey-msg-thread-view { display: none; flex-direction: column; }
+    #ey-msg-thread-view.show { display: flex; }
+    .ey-msg-backbar {
+      display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+      border-bottom: 1px solid var(--c-border, #2d3748); position: sticky; top: 0;
+      background: var(--c-navy, #0f172a); z-index: 5;
+    }
+    .ey-msg-back { background: none; border: none; color: var(--c-blue, #4a9abf); cursor: pointer; font-size: .9rem; min-height: 44px; padding: 0 6px 0 0; display: flex; align-items: center; gap: 4px; }
+    .ey-msg-thread-title { flex: 1; min-width: 0; }
+    .ey-msg-thread-title .t-child { font-size: .95rem; font-weight: 700; color: var(--c-text, #f1f5f9); line-height: 1.2; }
+    .ey-msg-thread-title .t-subject { font-size: .76rem; color: var(--c-muted, #94a3b8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .ey-convo { display: flex; flex-direction: column; gap: 10px; padding: 14px; min-height: 120px; }
+    .ey-bubble { max-width: 84%; padding: 11px 14px; border-radius: 14px; font-size: .88rem; line-height: 1.6; word-wrap: break-word; }
+    /* staff = self (right), parent = other (left) */
+    .ey-bubble.parent { background: var(--c-surface, #1e293b); border: 1px solid var(--c-border, #2d3748); align-self: flex-start; border-bottom-left-radius: 4px; }
+    .ey-bubble.staff  { background: rgba(74,154,191,.18); border: 1px solid rgba(74,154,191,.35); align-self: flex-end; border-bottom-right-radius: 4px; }
+    .ey-bubble-name { font-size: .7rem; color: var(--c-muted, #94a3b8); margin-bottom: 3px; font-weight: 600; }
+    .ey-bubble-time { font-size: .65rem; color: #64748b; margin-top: 5px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+    .ey-bubble-read { font-size: .62rem; color: var(--c-green, #22c55e); }
+    .ey-bubble img { max-width: 100%; border-radius: 8px; margin-top: 6px; display: block; }
+    .ey-bubble-pending { font-size: .7rem; color: var(--c-amber, #f59e0b); margin-top: 4px; }
+
+    .ey-reply-area {
+      position: sticky; bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+      background: var(--c-navy, #0f172a); padding: 10px 14px 8px;
+      border-top: 1px solid var(--c-border, #2d3748);
+    }
+    .ey-reply-row { display: flex; gap: 8px; align-items: flex-end; }
+    .ey-reply-input {
+      flex: 1; background: var(--c-surface, #1e293b); border: 1.5px solid var(--c-border, #2d3748);
+      border-radius: 12px; padding: 10px 14px; color: var(--c-text, #f1f5f9); font-size: .9rem;
+      resize: none; height: 48px; max-height: 120px; outline: none; font-family: inherit; line-height: 1.4;
+    }
+    .ey-reply-input:focus { border-color: var(--c-blue, #4a9abf); }
+    .ey-send-btn { background: var(--c-orange, #e07820); border: none; border-radius: 12px; color: #fff; padding: 0 18px; font-weight: 700; cursor: pointer; min-height: 48px; font-size: .9rem; flex-shrink: 0; transition: background .15s; }
+    .ey-send-btn:hover { background: var(--c-orange-dark, #c96810); }
+    .ey-send-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .ey-photo-btn { background: var(--c-surface, #1e293b); border: 1.5px solid var(--c-border, #2d3748); border-radius: 12px; color: var(--c-blue, #4a9abf); padding: 0 14px; cursor: pointer; min-height: 48px; font-size: 1.1rem; flex-shrink: 0; }
+    .ey-photo-btn:hover { border-color: var(--c-blue, #4a9abf); }
+    .ey-photo-preview { display: none; padding: 6px 0; align-items: center; gap: 8px; }
+    .ey-photo-preview.show { display: flex; }
+    .ey-photo-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid var(--c-border, #2d3748); }
+    .ey-photo-remove { background: none; border: none; color: var(--c-red, #ef4444); cursor: pointer; font-size: .85rem; padding: 4px; }
+    .ey-reply-hint { font-size: .68rem; color: var(--c-muted, #94a3b8); margin-top: 5px; text-align: right; }
+
+    .ey-msg-empty { text-align: center; padding: 44px 20px; color: var(--c-muted, #94a3b8); }
+    .ey-msg-empty .icon { font-size: 3rem; display: block; margin-bottom: 12px; }
+    .ey-msg-spinner { text-align: center; padding: 40px; color: var(--c-blue, #4a9abf); font-size: 2rem; }
+
+    /* Compose modal fields (reuses Wren.modal shell) */
+    .ey-compose-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+    .ey-compose-field label { font-size: .75rem; font-weight: 700; color: var(--c-muted, #94a3b8); }
+    .ey-compose-field select, .ey-compose-field input, .ey-compose-field textarea {
+      background: var(--c-navy, #0f172a); border: 1px solid var(--c-border, #2d3748); border-radius: 8px;
+      padding: 9px 12px; color: var(--c-text, #f1f5f9); font-size: .88rem; font-family: inherit; outline: none; width: 100%; box-sizing: border-box;
+    }
+    .ey-compose-field textarea { resize: vertical; min-height: 80px; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-messages-page">
+
+  <!-- LIST VIEW -->
+  <div id="ey-msg-list-view">
+    <div id="ey-msg-toolbar">
+      <input type="search" id="ey-msg-search" placeholder="Search by child or subject…" aria-label="Search messages">
+      <button class="ey-msg-newbtn" id="ey-msg-new-btn" type="button">＋ New</button>
+    </div>
+    <div id="ey-msg-threads">
+      <div class="ey-msg-spinner">⏳</div>
+    </div>
+  </div>
+
+  <!-- THREAD VIEW -->
+  <div id="ey-msg-thread-view">
+    <div class="ey-msg-backbar">
+      <button class="ey-msg-back" id="ey-msg-back-btn" type="button">‹ Back</button>
+      <div class="ey-msg-thread-title">
+        <div class="t-child" id="ey-msg-thread-child"></div>
+        <div class="t-subject" id="ey-msg-thread-subject"></div>
+      </div>
+    </div>
+    <div class="ey-convo" id="ey-msg-convo"><div class="ey-msg-spinner">⏳</div></div>
+    <div class="ey-reply-area">
+      <div class="ey-photo-preview" id="ey-msg-photo-preview">
+        <img class="ey-photo-thumb" id="ey-msg-photo-thumb" src="" alt="">
+        <span id="ey-msg-photo-name" style="font-size:.78rem;color:var(--c-muted,#94a3b8);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <button class="ey-photo-remove" id="ey-msg-photo-remove" type="button">✕</button>
+      </div>
+      <div class="ey-reply-row">
+        <button class="ey-photo-btn" id="ey-msg-attach-btn" type="button" title="Attach photo">📎</button>
+        <textarea class="ey-reply-input" id="ey-msg-reply-input" placeholder="Write a reply…" rows="2"></textarea>
+        <button class="ey-send-btn" id="ey-msg-send-btn" type="button">Send</button>
+      </div>
+      <div class="ey-reply-hint">Ctrl+Enter to send · photos are reviewed by a manager before the parent sees them · Max 5MB (JPEG/PNG)</div>
+    </div>
+  </div>
+
+</div>
+
+<input type="file" id="ey-msg-photo-input" accept="image/jpeg,image/png" style="display:none">
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var _threads = [];
+  var _currentThreadId = null;
+  var _currentThread = null;      // { child_name, subject }
+  var _photoFile = null;
+
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function fmtDate(d) {
+    if (!d) return '';
+    var dt = new Date(d);
+    if (isNaN(dt)) return String(d);
+    var now = new Date();
+    var diffDays = Math.floor((now - dt) / 86400000);
+    if (diffDays === 0) return dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return dt.toLocaleDateString('en-GB', { weekday: 'short' });
+    return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+
+  function relRead(ts) {
+    if (!ts) return '';
+    var diff = Date.now() - new Date(ts).getTime();
+    var m = Math.floor(diff / 60000);
+    if (m < 1) return 'Read';
+    if (m < 60) return 'Read ' + m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return 'Read ' + h + 'h ago';
+    return 'Read ' + fmtDate(ts);
+  }
+
+  // Bare fetch for FormData (Wren.api forces JSON content-type)
+  function apiForm(url, formData) {
+    var token = sessionStorage.getItem('wrenToken');
+    return fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: formData })
+      .then(function (r) { return r.ok ? r.json() : r.json().then(function (e) { return Promise.reject(e); }); });
+  }
+
+  // ── List view ────────────────────────────────────────────────────────────
+  function showList() {
+    _currentThreadId = null; _currentThread = null; _photoFile = null;
+    document.getElementById('ey-msg-thread-view').classList.remove('show');
+    document.getElementById('ey-msg-list-view').style.display = '';
+  }
+
+  function loadThreads() {
+    var wrap = document.getElementById('ey-msg-threads');
+    wrap.innerHTML = '<div class="ey-msg-spinner">⏳</div>';
+    Wren.api('/api/messages/threads').then(function (data) {
+      _threads = Array.isArray(data) ? data : (data && data.threads ? data.threads : []);
+      renderThreads();
+    }).catch(function (e) {
+      wrap.innerHTML = '<div class="ey-msg-empty"><span class="icon">⚠️</span>Couldn\'t load messages.<br><small style="color:var(--c-red,#ef4444)">' + esc((e && (e.error || e.message)) || 'Unknown error') + '</small></div>';
+    });
+  }
+
+  function renderThreads() {
+    var wrap = document.getElementById('ey-msg-threads');
+    var q = (document.getElementById('ey-msg-search').value || '').toLowerCase().trim();
+    var list = _threads;
+    if (q) list = list.filter(function (t) {
+      return (String(t.child_name || '').toLowerCase().indexOf(q) !== -1)
+          || (String(t.subject || '').toLowerCase().indexOf(q) !== -1);
+    });
+    if (!list.length) {
+      wrap.innerHTML = q
+        ? '<div class="ey-msg-empty"><span class="icon">🔍</span>No threads match “' + esc(q) + '”.</div>'
+        : '<div class="ey-msg-empty"><span class="icon">💬</span>No parent message threads yet.<br><small>Start one with ＋ New, or reply here when a parent messages the nursery.</small></div>';
+      return;
+    }
+    var html = '';
+    list.forEach(function (t) {
+      var unread = parseInt(t.unread_count) || 0;
+      var tag = '';
+      if (t.recipient_type === 'key_person') tag = '<span class="ey-thread-tag">Key person</span>';
+      else if (t.recipient_type === 'manager') tag = '<span class="ey-thread-tag">Manager</span>';
+      html += '<button class="ey-thread-card ' + (unread ? 'unread' : '') + '" type="button" data-action="open" data-id="' + t.id + '">'
+        + '<div class="ey-thread-child">' + esc(t.child_name || 'Child') + (unread ? '<span class="ey-thread-badge">' + unread + ' new</span>' : '') + tag + '</div>'
+        + '<div class="ey-thread-subject">' + esc(t.subject || 'Message') + '</div>'
+        + '<div class="ey-thread-meta">' + (t.last_message_at ? fmtDate(t.last_message_at) : '') + '</div>'
+        + (unread ? '<div class="ey-thread-dot"></div>' : '')
+        + '</button>';
+    });
+    wrap.innerHTML = html;
+  }
+
+  // ── Thread view ──────────────────────────────────────────────────────────
+  function openThread(id) {
+    var t = _threads.find(function (x) { return String(x.id) === String(id); }) || {};
+    _currentThreadId = id;
+    _currentThread = { child_name: t.child_name || 'Child', subject: t.subject || 'Message' };
+    _photoFile = null;
+    clearPhoto();
+
+    document.getElementById('ey-msg-list-view').style.display = 'none';
+    document.getElementById('ey-msg-thread-view').classList.add('show');
+    document.getElementById('ey-msg-thread-child').textContent = _currentThread.child_name;
+    document.getElementById('ey-msg-thread-subject').textContent = _currentThread.subject;
+    document.getElementById('ey-msg-convo').innerHTML = '<div class="ey-msg-spinner">⏳</div>';
+    window.scrollTo(0, 0);
+
+    // Mark parent messages as read
+    Wren.api('/api/messages/thread/' + id + '/read', { method: 'POST' }).then(function () {
+      // reflect locally so the badge clears when we go back
+      var th = _threads.find(function (x) { return String(x.id) === String(id); });
+      if (th) th.unread_count = 0;
+    }).catch(function () {});
+
+    Wren.api('/api/messages/thread/' + id).then(function (data) {
+      var msgs = Array.isArray(data) ? data : (data && data.messages ? data.messages : []);
+      renderConvo(msgs);
+    }).catch(function (e) {
+      document.getElementById('ey-msg-convo').innerHTML = '<div class="ey-msg-empty"><span class="icon">⚠️</span>Couldn\'t load.<br><small style="color:var(--c-red,#ef4444)">' + esc((e && (e.error || e.message)) || 'Unknown error') + '</small></div>';
+    });
+  }
+
+  function renderConvo(msgs) {
+    var convo = document.getElementById('ey-msg-convo');
+    if (!msgs.length) { convo.innerHTML = '<div class="ey-msg-empty"><span class="icon">💬</span>No messages yet — write the first reply below.</div>'; return; }
+    var html = '';
+    msgs.forEach(function (m) {
+      var isStaff = m.sender_type === 'staff';          // staff = self (right)
+      var name = isStaff ? esc(m.staff_name || m.sender_name || 'Nursery team') : esc(m.parent_name || m.sender_name || 'Parent');
+      // read receipt on OUR (staff) messages once the parent has read them
+      var readStr = isStaff && m.read_at ? '<span class="ey-bubble-read">✓✓ ' + esc(relRead(m.read_at)) + '</span>' : '';
+      var photo = m.attachment_path ? '<img src="' + esc(m.attachment_path) + '" alt="Attached photo" loading="lazy" onerror="this.style.display=\'none\'">' : '';
+      var pending = (isStaff && m.pending_review) ? '<div class="ey-bubble-pending">⏳ Awaiting manager review before the parent sees this</div>' : '';
+      html += '<div class="ey-bubble ' + (isStaff ? 'staff' : 'parent') + '">'
+        + '<div class="ey-bubble-name">' + name + '</div>'
+        + esc(m.body || '')
+        + photo
+        + pending
+        + '<div class="ey-bubble-time">' + fmtDate(m.created_at) + readStr + '</div>'
+        + '</div>';
+    });
+    convo.innerHTML = html;
+    convo.scrollTop = convo.scrollHeight;
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  // ── Photo attach ─────────────────────────────────────────────────────────
+  function clearPhoto() {
+    _photoFile = null;
+    var wrap = document.getElementById('ey-msg-photo-preview');
+    if (wrap) wrap.classList.remove('show');
+  }
+
+  function onPhotoPicked(input) {
+    var file = input.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { if (window.Wren) Wren.toast('Photo must be under 5MB', 'error'); input.value = ''; return; }
+    _photoFile = file;
+    var thumb = document.getElementById('ey-msg-photo-thumb');
+    var nameEl = document.getElementById('ey-msg-photo-name');
+    var wrap = document.getElementById('ey-msg-photo-preview');
+    var reader = new FileReader();
+    reader.onload = function (e) { thumb.src = e.target.result; };
+    reader.readAsDataURL(file);
+    nameEl.textContent = file.name;
+    wrap.classList.add('show');
+    input.value = '';
+  }
+
+  // ── Send reply ───────────────────────────────────────────────────────────
+  function sendReply() {
+    var input = document.getElementById('ey-msg-reply-input');
+    var btn = document.getElementById('ey-msg-send-btn');
+    var body = (input.value || '').trim();
+    if (!body && !_photoFile) return;
+    if (!_currentThreadId) return;
+
+    input.disabled = true; btn.disabled = true; btn.textContent = '…';
+    var id = _currentThreadId;
+
+    var send;
+    if (_photoFile) {
+      var fd = new FormData();
+      fd.append('photo', _photoFile);
+      if (body) fd.append('body', body);
+      send = apiForm('/api/messages/thread/' + id + '/reply-photo', fd);
+    } else {
+      send = Wren.api('/api/messages/thread/' + id + '/reply', { method: 'POST', body: { body: body } });
+    }
+
+    send.then(function (res) {
+      input.value = ''; clearPhoto();
+      if (res && res.status === 'pending_review' && window.Wren) Wren.toast('Photo sent for manager review', 'info');
+      openThread(id);   // reload conversation
+    }).catch(function (e) {
+      input.disabled = false; btn.disabled = false; btn.textContent = 'Send';
+      var msg = (e && (e.error || e.message)) || 'Unknown error';
+      if (window.Wren) Wren.toast('Failed to send: ' + msg, 'error');
+    }).then(function () {
+      input.disabled = false; btn.disabled = false; btn.textContent = 'Send';
+    });
+  }
+
+  // ── Compose new thread ───────────────────────────────────────────────────
+  function openCompose() {
+    Wren.api('/api/messages/recipients').then(function (r) {
+      var parents = (r && r.parents) ? r.parents : [];
+      var body = document.createElement('div');
+      var opts = parents.map(function (p) {
+        return '<option value="' + p.child_id + '">' + esc(p.child_name) + (p.parent_name ? ' — ' + esc(p.parent_name) : '') + '</option>';
+      }).join('');
+      body.innerHTML =
+        '<div class="ey-compose-field"><label>Child</label><select id="ey-compose-child">' +
+          (opts || '<option value="">No parent contacts found</option>') + '</select></div>' +
+        '<div class="ey-compose-field"><label>Send to</label><select id="ey-compose-to">' +
+          '<option value="nursery">The nursery (general)</option>' +
+          '<option value="key_person">Key person</option>' +
+          '<option value="manager">Manager</option></select></div>' +
+        '<div class="ey-compose-field"><label>Subject</label><input id="ey-compose-subject" placeholder="e.g. Settling-in update" maxlength="120"></div>' +
+        '<div class="ey-compose-field"><label>Message</label><textarea id="ey-compose-body" placeholder="Write your message to the parent…"></textarea></div>' +
+        '<p id="ey-compose-err" style="color:var(--c-red,#ef4444);font-size:.8rem;display:none;margin:0"></p>';
+      Wren.modal('New message to a parent', body, [
+        { label: 'Cancel', class: 'btn-ghost' },
+        { label: 'Send', class: 'btn-primary', close: false, action: function () {
+          var childId = document.getElementById('ey-compose-child').value;
+          var recipient_type = document.getElementById('ey-compose-to').value;
+          var subject = document.getElementById('ey-compose-subject').value.trim();
+          var text = document.getElementById('ey-compose-body').value.trim();
+          var err = document.getElementById('ey-compose-err');
+          if (!childId) { err.textContent = 'Please choose a child.'; err.style.display = 'block'; return; }
+          if (!subject || !text) { err.textContent = 'Subject and message are required.'; err.style.display = 'block'; return; }
+          Wren.api('/api/messages/thread', { method: 'POST', body: { child_id: parseInt(childId), subject: subject, body: text, recipient_type: recipient_type } })
+            .then(function () {
+              var closer = document.querySelector('.wren-modal-overlay .modal-close, .wren-modal-close');
+              if (closer) closer.click();
+              if (window.Wren) Wren.toast('Message sent', 'success');
+              loadThreads();
+            }).catch(function (e) {
+              err.textContent = (e && (e.error || e.message)) || 'Could not send.'; err.style.display = 'block';
+            });
+        }},
+      ]);
+    }).catch(function () {
+      if (window.Wren) Wren.toast('Could not load parent contacts', 'error');
+    });
+  }
+
+  // ── Wire up ──────────────────────────────────────────────────────────────
+  document.addEventListener('wren:ready', function () {
+    document.getElementById('ey-msg-threads').addEventListener('click', function (e) {
+      var card = e.target.closest('[data-action="open"]');
+      if (card) openThread(card.dataset.id);
+    });
+    document.getElementById('ey-msg-search').addEventListener('input', renderThreads);
+    document.getElementById('ey-msg-new-btn').addEventListener('click', openCompose);
+    document.getElementById('ey-msg-back-btn').addEventListener('click', showList);
+    document.getElementById('ey-msg-send-btn').addEventListener('click', sendReply);
+    document.getElementById('ey-msg-attach-btn').addEventListener('click', function () { document.getElementById('ey-msg-photo-input').click(); });
+    document.getElementById('ey-msg-photo-input').addEventListener('change', function () { onPhotoPicked(this); });
+    document.getElementById('ey-msg-photo-remove').addEventListener('click', clearPhoto);
+    document.getElementById('ey-msg-reply-input').addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') sendReply();
+    });
+
+    loadThreads();
+
+    // Deep link: /ey/messages?thread=ID
+    try {
+      var tid = new URLSearchParams(location.search).get('thread');
+      if (tid) setTimeout(function () { openThread(tid); }, 300);
+    } catch (_) {}
+  });
+}());
+</script>
+</body>
+</html>

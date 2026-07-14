@@ -27,7 +27,7 @@ module.exports = {
       return {
         status: 'warn',
         finding: 'No restore-test result file found. The weekly restore test has not been configured or has not run yet.',
-        remediation: 'Set up a weekly restore-test cron job. It should: restore the latest backup to a test database, verify row counts match, then write results to /var/backups/wren/restore-test-result.json. See /app/docs/security-dashboard.md for a sample script.',
+        remediation: 'Set up a weekly restore-test cron job. It should: restore the latest backup to a test database, verify row counts match, then write results to /var/backups/wren/restore-test-result.json. See /home/toby/wren/docs/security-dashboard.md for a sample script.',
         evidence: { paths_checked: RESULT_PATHS },
       };
     }

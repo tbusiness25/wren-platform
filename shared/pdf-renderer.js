@@ -26,9 +26,9 @@ const NURSERY = IS_DEMO
   ? { name1: 'Wren Demo', name2: ' Nursery',
       headerLine: 'A Wren demonstration setting  ·  Mon–Fri 8am–6pm',
       footerLine: 'Wren Demo Nursery  ·  A Wren demonstration setting' }
-  : { name1: 'Your Nursery', name2: ' Day Nursery',
-      headerLine: '1A Example Lane, Ealing, W13 9LU  ·  01234 567890  ·  Mon–Fri 8am–6pm',
-      footerLine: 'Your Nursery  ·  1A Example Lane, Ealing, W13 9LU  ·  Established 1990' };
+  : { name1: 'Little Angels', name2: ' Day Nursery',
+      headerLine: '1A Dudley Gardens, Ealing, W13 9LU  ·  020 8051 0349  ·  Mon–Fri 8am–6pm',
+      footerLine: 'Little Angels Day Nursery  ·  1A Dudley Gardens, Ealing, W13 9LU  ·  Established 1990' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

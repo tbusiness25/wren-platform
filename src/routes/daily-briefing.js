@@ -11,7 +11,7 @@ let cache = { bullets: [], priority: '', timestamp: 0 };
 async function buildContext() {
   const db = getPool();
   const today = new Date().toISOString().split('T')[0];
-  let ctx = `Today is ${today} (UK nursery: Your Nursery, Ealing).\n\n`;
+  let ctx = `Today is ${today} (UK nursery: Little Angels Day Nursery, Ealing).\n\n`;
 
   try {
     const { rows } = await db.query(

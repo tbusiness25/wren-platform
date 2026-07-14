@@ -9,8 +9,8 @@ const authenticate = require('../middleware/auth');
 
 // searxng runs on the docker bridge network published at host :8082 — not
 // resolvable by container name from wren-net, so go via the host.
-const SEARXNG_URL = process.env.SEARXNG_URL || 'http://your-server:8082';
-const DRIVE_MIRROR_DIR = process.env.DRIVE_MIRROR_DIR || '/data/drive-mirror';
+const SEARXNG_URL = process.env.SEARXNG_URL || 'http://100.126.215.7:8082';
+const DRIVE_MIRROR_DIR = process.env.DRIVE_MIRROR_DIR || '/home/toby/drive-mirror';
 
 // Rate limit: 30 requests per minute per staff
 const limiter = rateLimit({
@@ -76,7 +76,7 @@ router.post('/chat', authenticate, limiter, async (req, res) => {
     if (fs.existsSync(DRIVE_MIRROR_DIR)) await walk(DRIVE_MIRROR_DIR);
 
     // 3. Build system prompt for Ollama
-    const systemPrompt = `You are a helpful research assistant for Your Nursery staff. Use the provided SearXNG results and any matching Twinkl files to answer the user's question. Cite sources as [SearXNG] or [Twinkl] with title and URL. If you cannot find an answer, say so honestly.`;
+    const systemPrompt = `You are a helpful research assistant for Little Angels Day Nursery staff. Use the provided SearXNG results and any matching Twinkl files to answer the user's question. Cite sources as [SearXNG] or [Twinkl] with title and URL. If you cannot find an answer, say so honestly.`;
     const userContent = `Question: ${message}\n\nSearXNG results:\n${JSON.stringify(topResults, null, 2)}\n\nTwinkl matches:\n${JSON.stringify(driveMatches, null, 2)}`;
     const reply = await callOllama([{ role: 'user', content: userContent }], systemPrompt);
 
@@ -108,7 +108,7 @@ router.post('/fetch', authenticate, limiter, async (req, res) => {
       if (!resp.ok) throw new Error('Fetch failed');
       const buffer = await resp.buffer();
       const fname = path.basename(new URL(url).pathname) || 'download';
-      const outDir = '/app/uploads/research-fetches';
+      const outDir = '/home/toby/uploads/research-fetches';
       await require('fs').promises.mkdir(outDir, { recursive: true });
       fetchedPath = path.join(outDir, `${Date.now()}_${fname}`);
       await require('fs').promises.writeFile(fetchedPath, buffer);

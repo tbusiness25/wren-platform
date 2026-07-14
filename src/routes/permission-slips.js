@@ -380,7 +380,7 @@ router.get('/:id/calendar.ics', authenticate, async (req, res) => {
     if (!sl.length) return res.status(404).json({ error: 'Not found' });
     const slip = sl[0];
 
-    const uid = `wren-trip-${slip.id}@example-nursery.co.uk`;
+    const uid = `wren-trip-${slip.id}@littleangelsealing.co.uk`;
     const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
     // Build date strings — full day event if no departure time
@@ -415,7 +415,7 @@ router.get('/:id/calendar.ics', authenticate, async (req, res) => {
     const ics = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Wren//Your Nursery//EN',
+      'PRODID:-//Wren//Little Angels Day Nursery//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'BEGIN:VEVENT',

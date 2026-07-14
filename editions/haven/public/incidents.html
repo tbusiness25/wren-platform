@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Incidents</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+</head>
+<body>
+<template id="page">
+  <div class="hv-actions-bar">
+    <div><h1 class="hv-page-title">Incidents</h1>
+      <p class="hv-page-sub" style="margin-bottom:0">Accidents, falls, near misses — with RIDDOR flagging</p></div>
+    <button class="hv-btn" id="addBtn">Report incident</button>
+  </div>
+  <div class="hv-card"><table class="hv-table"><thead><tr>
+    <th>When</th><th>Resident</th><th>Type</th><th>Description</th><th>Flags</th><th>Status</th><th></th>
+  </tr></thead><tbody id="rows"></tbody></table></div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+let RESIDENTS = [];
+if (Haven.guard()) { Haven.shell('incidents'); load(); }
+async function load() {
+  try {
+    const [rows, residents] = await Promise.all([
+      Haven.api('/api/haven/incidents'),
+      Haven.api('/api/haven/residents'),
+    ]);
+    RESIDENTS = residents;
+    document.getElementById('rows').innerHTML = rows.map(i => `
+      <tr><td>${Haven.fmtDateTime(i.occurred_at)}</td>
+      <td>${i.first_name ? Haven.esc(i.first_name + ' ' + i.last_name) : '<span class="hv-note-meta">non-resident</span>'}</td>
+      <td>${Haven.badge(i.incident_type, 'neutral')}</td>
+      <td style="max-width:340px">${Haven.esc(i.description)}${i.injury_sustained ? `<div class="hv-note-meta">Injury: ${Haven.esc(i.injury_details || 'yes')}</div>` : ''}</td>
+      <td>${i.riddor_reportable ? Haven.badge('RIDDOR', 'red') : ''} ${i.cqc_notification_required ? Haven.badge('CQC', 'amber') : ''}
+          ${i.nok_informed ? Haven.badge('NoK told', 'green') : ''} ${i.gp_informed ? Haven.badge('GP told', 'green') : ''}</td>
+      <td>${Haven.badge(i.status, i.status === 'closed' ? 'closed' : 'open')}</td>
+      <td>${i.status !== 'closed' && Haven.can('admin_write') ? `<button class="hv-btn small secondary" onclick="closeIncident(${i.id})">Close</button>` : ''}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="hv-empty">No incidents recorded</td></tr>';
+  } catch (e) { Haven.toast(e.message, true); }
+}
+async function closeIncident(id) {
+  Haven.modal('Close incident', `
+    <div class="hv-field"><label>Actions taken / outcome</label><textarea name="actions_taken"></textarea></div>`,
+    async fd => {
+      await Haven.api(`/api/haven/incidents/${id}`, { method: 'PATCH', body: { ...fd, status: 'closed' } });
+      Haven.toast('Incident closed'); load();
+    }, 'Close incident');
+}
+document.addEventListener('click', e => {
+  if (e.target.id !== 'addBtn') return;
+  Haven.modal('Report incident', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Resident (blank if staff/visitor)</label><select name="resident_id">
+        <option value="">— none —</option>
+        ${RESIDENTS.map(r => `<option value="${r.id}">${Haven.esc(r.first_name + ' ' + r.last_name)}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>When *</label><input name="occurred_at" type="datetime-local" required></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Type *</label><select name="incident_type">
+        ${['fall','injury','medication_error','absconding','behaviour','choking','near_miss','equipment','other'].map(t => `<option>${t}</option>`).join('')}</select></div>
+      <div class="hv-field"><label>Location</label><input name="location"></div>
+    </div>
+    <div class="hv-field"><label>What happened *</label><textarea name="description" required></textarea></div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label><input type="checkbox" name="injury_sustained" style="width:auto;margin-right:8px">Injury sustained</label></div>
+      <div class="hv-field"><label>Injury details</label><input name="injury_details"></div>
+    </div>
+    <div class="hv-field"><label>Treatment given</label><input name="treatment_given"></div>
+    <div class="hv-field"><label>Witnesses</label><input name="witnesses"></div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label><input type="checkbox" name="riddor_reportable" style="width:auto;margin-right:8px">RIDDOR reportable</label></div>
+      <div class="hv-field"><label><input type="checkbox" name="cqc_notification_required" style="width:auto;margin-right:8px">CQC notification needed</label></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label><input type="checkbox" name="nok_informed" style="width:auto;margin-right:8px">Next of kin informed</label></div>
+      <div class="hv-field"><label><input type="checkbox" name="gp_informed" style="width:auto;margin-right:8px">GP informed</label></div>
+    </div>`,
+    async fd => {
+      await Haven.api('/api/haven/incidents', { method: 'POST', body: fd });
+      Haven.toast('Incident reported'); load();
+    }, 'Report');
+});
+</script>
+</body>
+</html>

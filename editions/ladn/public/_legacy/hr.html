@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn-hr">
+  <title>HR Portal — Little Angels</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    body { background: #0f172a; }
+    #wren-content { max-width: 1100px; margin: 0 auto; }
+    .hr-tab-bar { display:flex; gap:4px; margin-bottom:24px; background:#1e293b; border-radius:10px; padding:4px; flex-wrap:wrap; }
+    .hr-tab { flex:1; min-width:90px; padding:9px 8px; border-radius:8px; border:none; background:transparent; color:#94a3b8; font-size:13px; cursor:pointer; transition:.15s; font-family:inherit; font-weight:500; white-space:nowrap; }
+    .hr-tab.active { background:#4a9abf; color:#fff; font-weight:700; }
+    .hr-pane { display:none; }
+    .hr-pane.active { display:block; }
+    /* Dark cards */
+    .hr-card { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:16px; margin-bottom:14px; }
+    .hr-card-title { font-size:13px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px; }
+    /* Rota */
+    .rota-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-top:8px; }
+    .rota-day { background:#0f172a; border:1px solid #2d3748; border-radius:8px; padding:10px 8px; text-align:center; }
+    .rota-day.today { border-color:#4a9abf; background:rgba(74,154,191,.1); }
+    .rota-day.absent { border-color:#ef4444; background:rgba(239,68,68,.07); }
+    .rota-day-name { font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; margin-bottom:4px; }
+    .rota-day-date { font-size:13px; font-weight:700; color:#f1f5f9; margin-bottom:4px; }
+    .rota-times { font-size:11px; color:#4a9abf; }
+    /* Absence card */
+    .abs-pill { font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px; text-transform:uppercase; display:inline-block; }
+    .abs-pending { background:rgba(245,158,11,.15); color:#f59e0b; }
+    .abs-approved { background:rgba(34,197,94,.15); color:#22c55e; }
+    .abs-declined { background:rgba(239,68,68,.15); color:#ef4444; }
+    /* Entitlement bar */
+    .ent-bar { height:8px; background:#2d3748; border-radius:4px; margin-top:6px; }
+    .ent-fill { height:8px; border-radius:4px; background:#4a9abf; transition:.3s; }
+    /* Bradford */
+    .bradford-circle { width:72px; height:72px; border-radius:50%; border:4px solid #22c55e; display:flex; align-items:center; justify-content:center; flex-direction:column; }
+    .bradford-circle.amber { border-color:#f59e0b; }
+    .bradford-circle.red { border-color:#ef4444; }
+    /* Hours */
+    .clock-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2d3748; font-size:13px; }
+    .clock-row:last-child { border-bottom:none; }
+    /* CPD */
+    .cpd-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid #2d3748; }
+    .cpd-row:last-child { border-bottom:none; }
+    .rag-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .rag-green { background:#22c55e; }
+    .rag-amber { background:#f59e0b; }
+    .rag-red { background:#ef4444; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title" style="color:#f1f5f9">HR Portal</div>
+      <div class="page-subtitle" id="hr-greeting" style="color:#94a3b8">Loading...</div>
+    </div>
+    <button class="btn btn-primary" onclick="hrSetTab('absences')">+ Request Leave</button>
+  </div>
+
+  <div class="hr-tab-bar">
+    <button class="hr-tab active" data-tab="dashboard"    onclick="hrSetTab('dashboard',this)">Dashboard</button>
+    <button class="hr-tab"        data-tab="rota"         onclick="hrSetTab('rota',this)">My Rota</button>
+    <button class="hr-tab"        data-tab="absences"     onclick="hrSetTab('absences',this)">Absences</button>
+    <button class="hr-tab"        data-tab="hours"        onclick="hrSetTab('hours',this)">My Hours</button>
+    <button class="hr-tab"        data-tab="cpd"          onclick="hrSetTab('cpd',this)">CPD</button>
+    <button class="hr-tab"        data-tab="supervisions" onclick="hrSetTab('supervisions',this)">Supervisions</button>
+    <button class="hr-tab"        data-tab="documents"    onclick="hrSetTab('documents',this)">Documents</button>
+    <button class="hr-tab"        data-tab="profile"      onclick="hrSetTab('profile',this)">My Profile</button>
+  </div>
+
+  <!-- ─── DASHBOARD ─── -->
+  <div class="hr-pane active" id="hr-pane-dashboard">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:20px">
+      <div class="hr-card">
+        <div class="hr-card-title">Today's Shift</div>
+        <div id="d-shift" style="color:#f1f5f9;font-size:1rem;font-weight:700">Loading...</div>
+      </div>
+      <div class="hr-card">
+        <div class="hr-card-title">Hours This Week</div>
+        <div id="d-hours-week" style="color:#4a9abf;font-size:1.6rem;font-weight:800">—</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px" id="d-contracted">of — contracted</div>
+      </div>
+      <div class="hr-card">
+        <div class="hr-card-title">Leave Balance</div>
+        <div id="d-leave" style="color:#22c55e;font-size:1.6rem;font-weight:800">—</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px">days remaining</div>
+      </div>
+      <div class="hr-card">
+        <div class="hr-card-title">Next Supervision</div>
+        <div id="d-supervision" style="color:#f1f5f9;font-size:.95rem;font-weight:600">—</div>
+      </div>
+    </div>
+    <div class="hr-card" id="d-outstanding" style="display:none">
+      <div class="hr-card-title">Outstanding Actions</div>
+      <div id="d-outstanding-list"></div>
+    </div>
+  </div>
+
+  <!-- ─── MY ROTA ─── -->
+  <div class="hr-pane" id="hr-pane-rota">
+    <div class="hr-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="hr-card-title" style="margin-bottom:0">Week of <span id="rota-week-label"></span></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="rotaWeek(-1)">← Prev</button>
+          <button class="btn btn-ghost btn-sm" onclick="rotaWeek(0)">This week</button>
+          <button class="btn btn-ghost btn-sm" onclick="rotaWeek(1)">Next →</button>
+        </div>
+      </div>
+      <div class="rota-grid" id="rota-grid">
+        <div style="color:#64748b;text-align:center;padding:20px;grid-column:1/-1">Loading...</div>
+      </div>
+    </div>
+    <div class="hr-card">
+      <div class="hr-card-title">Approved Absences — Next 4 Weeks</div>
+      <div id="rota-absences"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- ─── MY ABSENCES ─── -->
+  <div class="hr-pane" id="hr-pane-absences">
+    <!-- Entitlement -->
+    <div class="hr-card" id="abs-entitlement-card" style="display:none">
+      <div class="hr-card-title">Annual Leave Entitlement</div>
+      <div id="abs-ent-content"></div>
+      <div id="abs-ent-breakdown" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px"></div>
+    </div>
+    <!-- Request form -->
+    <div class="hr-card" style="margin-bottom:14px">
+      <div class="hr-card-title">Request Absence</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px">From *</div><input type="date" class="form-control" id="abs-start" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9"></div>
+        <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px">To *</div><input type="date" class="form-control" id="abs-end" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9"></div>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Type</div>
+        <select class="form-control" id="abs-type" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+          <option value="holiday">Annual Leave</option>
+          <option value="sick">Sick Leave</option>
+          <option value="compassionate">Compassionate Leave</option>
+          <option value="training">Training / CPD</option>
+          <option value="maternity">Maternity Leave</option>
+          <option value="paternity">Paternity Leave</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Notes</div>
+        <textarea class="form-control" id="abs-notes" rows="2" placeholder="Optional notes..." style="background:#0f172a;border-color:#2d3748;color:#f1f5f9"></textarea>
+      </div>
+      <button class="btn btn-primary" id="abs-submit-btn" onclick="absSubmit()">Submit Request</button>
+      <div id="abs-ai-result" style="display:none;margin-top:14px;border-radius:10px;padding:14px 16px;font-size:13px;line-height:1.6"></div>
+    </div>
+    <!-- My requests list -->
+    <div class="hr-card-title" style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">My Requests</div>
+    <div id="abs-my-list"><div style="color:#64748b;font-size:13px;padding:12px">Loading...</div></div>
+  </div>
+
+  <!-- ─── MY HOURS ─── -->
+  <div class="hr-pane" id="hr-pane-hours">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px">
+      <div class="hr-card" style="text-align:center">
+        <div class="hr-card-title">Contracted</div>
+        <div id="h-contracted" style="font-size:1.6rem;font-weight:800;color:#4a9abf">—</div>
+        <div style="font-size:11px;color:#64748b">hrs/week</div>
+      </div>
+      <div class="hr-card" style="text-align:center">
+        <div class="hr-card-title">This Week</div>
+        <div id="h-this-week" style="font-size:1.6rem;font-weight:800;color:#22c55e">—</div>
+        <div style="font-size:11px;color:#64748b">hrs logged</div>
+      </div>
+      <div class="hr-card" style="text-align:center">
+        <div class="hr-card-title">This Month</div>
+        <div id="h-this-month" style="font-size:1.6rem;font-weight:800;color:#f59e0b">—</div>
+        <div style="font-size:11px;color:#64748b">hrs total</div>
+      </div>
+    </div>
+    <div class="hr-card">
+      <div class="hr-card-title">Clock Records — This Month</div>
+      <div id="h-records"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- ─── CPD & TRAINING ─── -->
+  <div class="hr-pane" id="hr-pane-cpd">
+    <div class="hr-card">
+      <div class="hr-card-title">Mandatory Training Status</div>
+      <div id="cpd-mandatory"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+    <div class="hr-card">
+      <div class="hr-card-title">CPD Records</div>
+      <div id="cpd-records"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+    <div class="hr-card">
+      <div class="hr-card-title">AI Course Builder</div>
+      <div style="margin-bottom:10px">
+        <textarea class="form-control" id="cpd-prompt" rows="3" placeholder="Describe the training topic or competency gap you want to address..." style="background:#0f172a;border-color:#2d3748;color:#f1f5f9"></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="buildCpdCourse()">Generate Course Plan</button>
+      <div id="cpd-result" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- ─── SUPERVISIONS ─── -->
+  <div class="hr-pane" id="hr-pane-supervisions">
+    <div class="hr-card">
+      <div class="hr-card-title">Upcoming Supervision</div>
+      <div id="sup-upcoming"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+    <div class="hr-card">
+      <div class="hr-card-title">My Targets</div>
+      <div id="sup-targets"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+    <div class="hr-card">
+      <div class="hr-card-title">Supervision History</div>
+      <div id="sup-history"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- ─── DOCUMENTS ─── -->
+  <div class="hr-pane" id="hr-pane-documents">
+    <div class="hr-card">
+      <div class="hr-card-title">My Documents</div>
+      <div id="doc-list"><div style="color:#64748b;font-size:13px">Loading...</div></div>
+    </div>
+    <div class="hr-card" style="background:rgba(74,154,191,.06);border-color:rgba(74,154,191,.2)">
+      <div style="font-size:13px;color:#94a3b8;margin-bottom:4px">Payslips, contract amendments, and other documents uploaded by your manager appear here.</div>
+      <div style="font-size:12px;color:#64748b">To request a document, contact your manager.</div>
+    </div>
+  </div>
+
+  <!-- ─── MY PROFILE ─── -->
+  <div class="hr-pane" id="hr-pane-profile">
+    <div class="hr-card">
+      <div class="hr-card-title">Contact Details</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Mobile</div>
+          <input class="form-control" id="prof-phone" placeholder="07xxx..." style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+        </div>
+        <div>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Personal email</div>
+          <input class="form-control" id="prof-email" type="email" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+        </div>
+      </div>
+      <div class="hr-card-title" style="margin-bottom:8px">Emergency Contact</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+        <div>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Name</div>
+          <input class="form-control" id="prof-ec-name" placeholder="Full name" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+        </div>
+        <div>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Phone</div>
+          <input class="form-control" id="prof-ec-phone" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+        </div>
+        <div>
+          <div style="font-size:12px;color:#94a3b8;margin-bottom:4px">Relation</div>
+          <input class="form-control" id="prof-ec-rel" placeholder="e.g. Partner" style="background:#0f172a;border-color:#2d3748;color:#f1f5f9">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+    </div>
+    <div class="hr-card">
+      <div class="hr-card-title">Account</div>
+      <div style="font-size:13px;color:#94a3b8;margin-bottom:10px">To change your PIN, use the kiosk clock-in device or contact your manager.</div>
+      <button class="btn btn-ghost btn-sm" onclick="Wren.logout()" style="color:#ef4444;border-color:#ef444440">Sign Out</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let hrUser = null, myStaffId = null, rotaWeekOffset = 0;
+let hrData = {};
+
+// ── Tab navigation ──────────────────────────────────────────────────────────
+function hrSetTab(tab, el) {
+  document.querySelectorAll('.hr-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.hr-pane').forEach(p => p.classList.remove('active'));
+  if (el) {
+    el.classList.add('active');
+  } else {
+    const btn = document.querySelector(`[data-tab="${tab}"]`);
+    if (btn) btn.classList.add('active');
+  }
+  const pane = document.getElementById(`hr-pane-${tab}`);
+  if (pane) pane.classList.add('active');
+  if (tab === 'rota') renderRota();
+  if (tab === 'hours' && myStaffId) loadHours();
+  if (tab === 'cpd' && myStaffId) loadCpd();
+  if (tab === 'supervisions' && myStaffId) loadSupervisions();
+  if (tab === 'documents' && myStaffId) loadDocuments();
+  if (tab === 'profile') loadProfile();
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+async function hrInit() {
+  hrUser = Wren.user;
+  if (!hrUser) return;
+  myStaffId = hrUser.id;
+  document.getElementById('hr-greeting').textContent =
+    (hrUser.first_name || hrUser.name || '') + ' · Little Angels Day Nursery';
+
+  // Check hash for deep-link
+  const hash = location.hash.replace('#', '');
+  if (hash && document.querySelector(`[data-tab="${hash}"]`)) hrSetTab(hash);
+
+  // Load dashboard data in parallel
+  await loadDashboard();
+}
+
+// ── Dashboard ───────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const [abs, ent, attendance, supervision, rotaShifts] = await Promise.all([
+    Wren.api('/api/absence/my').catch(() => []),
+    Wren.api('/api/absence/entitlement/my').catch(() => null),
+    Wren.api(`/api/attendance/staff/${myStaffId}`).catch(() => []),
+    Wren.api('/api/supervisions/my-targets').catch(() => null),
+    Wren.api('/api/rota/my').catch(() => [])
+  ]);
+  hrData.absences = abs || [];
+  hrData.entitlement = ent;
+  hrData.attendance = attendance || [];
+
+  // Today's shift — show planned rota shift + clock status
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayRota = (rotaShifts || []).find(s => s.shift_date?.split('T')[0] === todayStr);
+  const todayRec = hrData.attendance.find(r => r.date?.split('T')[0] === todayStr);
+  const ci = todayRec?.clock_in ? new Date(todayRec.clock_in).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : null;
+  if (todayRota) {
+    const ps = todayRota.planned_start ? String(todayRota.planned_start).substring(0,5) : null;
+    const pe = todayRota.planned_end   ? String(todayRota.planned_end).substring(0,5)   : null;
+    const room = todayRota.room_name || '';
+    let shiftText = ps ? `${ps}${pe?' – '+pe:''}` : 'Scheduled';
+    if (room) shiftText += ` · ${room}`;
+    if (ci) shiftText += ` (clocked in ${ci})`;
+    document.getElementById('d-shift').textContent = shiftText;
+    document.getElementById('d-shift').style.color = ci ? '#22c55e' : '#f1f5f9';
+  } else if (ci) {
+    const co = todayRec.clock_out ? new Date(todayRec.clock_out).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : null;
+    document.getElementById('d-shift').textContent = ci + (co ? ` – ${co}` : ' (clocked in)');
+    document.getElementById('d-shift').style.color = '#22c55e';
+  } else {
+    document.getElementById('d-shift').textContent = 'Not yet clocked in';
+    document.getElementById('d-shift').style.color = '#64748b';
+  }
+
+  // Hours this week
+  const weekStart = getWeekStart(new Date());
+  const weekHrs = (hrData.attendance || [])
+    .filter(r => new Date(r.date) >= weekStart)
+    .reduce((s, r) => s + (parseFloat(r.hours_worked) || 0), 0);
+  document.getElementById('d-hours-week').textContent = weekHrs.toFixed(1);
+  const contracted = hrUser.contracted_hours || null;
+  document.getElementById('d-contracted').textContent = contracted ? `of ${contracted} contracted` : 'hrs this week';
+
+  // Leave balance
+  if (ent) {
+    const total     = parseFloat(ent.entitlement_days) || 28;
+    const remaining = parseFloat(ent.remaining_days)   ?? Math.max(0, total - (parseFloat(ent.taken_days) || 0));
+    document.getElementById('d-leave').textContent = remaining.toFixed(1);
+    document.getElementById('d-leave').style.color = remaining < 5 ? '#ef4444' : remaining < 10 ? '#f59e0b' : '#22c55e';
+  }
+
+  // Next supervision
+  if (supervision?.next_date) {
+    const d = new Date(supervision.next_date);
+    document.getElementById('d-supervision').textContent = d.toLocaleDateString('en-GB', {weekday:'long',day:'numeric',month:'long'});
+  } else {
+    document.getElementById('d-supervision').textContent = 'None scheduled';
+    document.getElementById('d-supervision').style.color = '#64748b';
+  }
+
+  // Outstanding: CPD or other
+  const outstanding = [];
+  const hasPending = hrData.absences.filter(a => a.status === 'pending');
+  if (hasPending.length) outstanding.push(`${hasPending.length} absence request${hasPending.length > 1 ? 's' : ''} pending approval`);
+  if (outstanding.length) {
+    document.getElementById('d-outstanding').style.display = '';
+    document.getElementById('d-outstanding-list').innerHTML = outstanding.map(o =>
+      `<div style="font-size:13px;color:#f59e0b;padding:6px 0;border-bottom:1px solid #2d3748">${o}</div>`
+    ).join('');
+  }
+}
+
+// ── Rota ────────────────────────────────────────────────────────────────────
+function getWeekStart(d, offset = 0) {
+  const dt = new Date(d);
+  const day = dt.getDay();
+  const diff = (day === 0 ? -6 : 1 - day);
+  dt.setDate(dt.getDate() + diff + offset * 7);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+async function rotaWeek(delta) {
+  if (delta === 0) rotaWeekOffset = 0; else rotaWeekOffset += delta;
+  renderRota();
+}
+
+async function renderRota() {
+  const weekStart = getWeekStart(new Date(), rotaWeekOffset);
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 4);
+  document.getElementById('rota-week-label').textContent =
+    weekStart.toLocaleDateString('en-GB', {day:'numeric',month:'short'}) + ' – ' +
+    weekEnd.toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'});
+
+  const days = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(weekStart); d.setDate(d.getDate() + i);
+    days.push(d);
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri'];
+
+  // Fetch published rota shifts + absences
+  const [rotaShifts, absences] = await Promise.all([
+    Wren.api('/api/rota/my').catch(() => []),
+    Wren.api('/api/absence/my').catch(() => [])
+  ]);
+
+  const grid = document.getElementById('rota-grid');
+  grid.innerHTML = days.map((d, i) => {
+    const isToday = d.getTime() === today.getTime();
+    const isoDate = d.toISOString().split('T')[0];
+    const shift = (rotaShifts || []).find(s => s.shift_date?.split('T')[0] === isoDate);
+    const isAbsent = (absences || []).some(a =>
+      a.status === 'approved' &&
+      new Date(a.start_date) <= d && d <= new Date(a.end_date)
+    );
+    const start = shift?.planned_start ? String(shift.planned_start).substring(0,5) : null;
+    const end   = shift?.planned_end   ? String(shift.planned_end).substring(0,5)   : null;
+    return `<div class="rota-day${isToday ? ' today' : ''}${isAbsent ? ' absent' : ''}">
+      <div class="rota-day-name">${DAYS[i]}</div>
+      <div class="rota-day-date">${d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>
+      ${isAbsent
+        ? `<div style="font-size:10px;color:#ef4444">Absent</div>`
+        : shift
+          ? `<div class="rota-times">${start||''}${end?' – '+end:''}</div>${shift.room_name?`<div style="font-size:9px;color:#64748b">${shift.room_name}</div>`:''}`
+          : `<div style="font-size:10px;color:#64748b">Off / Not set</div>`
+      }
+    </div>`;
+  }).join('');
+
+  // Upcoming approved absences
+  const raEl = document.getElementById('rota-absences');
+  const upcoming = (absences || []).filter(a =>
+    a.status === 'approved' && new Date(a.end_date) >= today
+  ).slice(0, 8);
+  if (!upcoming.length) {
+    raEl.innerHTML = '<div style="color:#64748b;font-size:13px">No approved absences in next 4 weeks.</div>';
+  } else {
+    raEl.innerHTML = upcoming.map(a => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2d3748;font-size:13px">
+        <span style="color:#f1f5f9">${a.request_type?.replace('_',' ')||'Leave'}</span>
+        <span style="color:#94a3b8">${new Date(a.start_date).toLocaleDateString('en-GB')} – ${new Date(a.end_date).toLocaleDateString('en-GB')}</span>
+        <span class="abs-pill abs-approved">Approved</span>
+      </div>
+    `).join('');
+  }
+}
+
+// ── Absences ─────────────────────────────────────────────────────────────────
+async function loadAbsenceTab() {
+  const [abs, ent] = await Promise.all([
+    Wren.api('/api/absence/my').catch(() => []),
+    Wren.api('/api/absence/entitlement/my').catch(() => null)
+  ]);
+  hrData.absences = abs || [];
+  hrData.entitlement = ent;
+
+  if (ent) {
+    const card = document.getElementById('abs-entitlement-card');
+    card.style.display = '';
+    const total     = parseFloat(ent.entitlement_days)      || 28;
+    const taken     = parseFloat(ent.taken_days)             || 0;
+    const upcoming  = parseFloat(ent.upcoming_days)          || 0;
+    const remaining = parseFloat(ent.remaining_days)         ?? Math.max(0, total - taken);
+    const carried   = parseFloat(ent.carried_over_days)      || 0;
+    const pct = Math.min(100, Math.round((total - remaining) / total * 100));
+    document.getElementById('abs-ent-content').innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:13px;color:#f1f5f9">${(total - remaining).toFixed(1)} days used of ${total}</div>
+        <div style="font-size:13px;font-weight:700;color:${remaining<5?'#ef4444':remaining<10?'#f59e0b':'#22c55e'}">${remaining.toFixed(1)} days remaining</div>
+      </div>
+      <div class="ent-bar"><div class="ent-fill" style="width:${pct}%"></div></div>`;
+    document.getElementById('abs-ent-breakdown').innerHTML = [
+      { label: 'Entitlement', val: total.toFixed(1), col: '#4a9abf' },
+      { label: 'Taken', val: taken.toFixed(1), col: '#94a3b8' },
+      { label: 'Upcoming', val: upcoming.toFixed(1), col: '#f59e0b' },
+      { label: 'Remaining', val: remaining.toFixed(1), col: remaining < 5 ? '#ef4444' : remaining < 10 ? '#f59e0b' : '#22c55e' },
+    ].map(({ label, val, col }) => `
+      <div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:1.1rem;font-weight:800;color:${col}">${val}</div>
+        <div style="font-size:10px;color:#64748b;margin-top:2px">${label}</div>
+      </div>`).join('');
+    if (carried > 0) {
+      document.getElementById('abs-ent-content').innerHTML += `<div style="font-size:11px;color:#64748b;margin-top:4px">${carried.toFixed(1)} days carried over from previous year</div>`;
+    }
+  }
+
+  renderAbsenceList();
+}
+
+function renderAbsenceList() {
+  const area = document.getElementById('abs-my-list');
+  if (!hrData.absences.length) {
+    area.innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px">No absence requests yet.</div>';
+    return;
+  }
+  area.innerHTML = hrData.absences.map(a => {
+    const st = a.status || 'pending';
+    const days = a.duration_days ? `${a.duration_days} day${a.duration_days > 1 ? 's' : ''}` : '';
+    return `<div class="hr-card" style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700;color:#f1f5f9">${(a.request_type||'leave').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}${days?' ('+days+')':''}</div>
+          <div style="font-size:12px;color:#94a3b8">${new Date(a.start_date).toLocaleDateString('en-GB')} – ${new Date(a.end_date).toLocaleDateString('en-GB')}</div>
+          ${a.notes ? `<div style="font-size:12px;color:#64748b;margin-top:2px">${a.notes}</div>` : ''}
+        </div>
+        <span class="abs-pill abs-${st}">${st.replace('_',' ')}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+const AI_MESSAGES = {
+  auto_approve:          { icon: '✅', label: 'Approved', bg: 'rgba(34,197,94,.12)',   border: '#22c55e' },
+  conditional_approve:   { icon: '✅', label: 'Approved (flagged)', bg: 'rgba(245,158,11,.12)', border: '#f59e0b' },
+  manual_review:         { icon: '🕐', label: 'Sent for review', bg: 'rgba(74,154,191,.12)', border: '#4a9abf' },
+  decline_clash:         { icon: '❌', label: 'Cannot approve', bg: 'rgba(239,68,68,.12)',  border: '#ef4444' },
+  decline_no_entitlement:{ icon: '❌', label: 'Insufficient leave', bg: 'rgba(239,68,68,.12)', border: '#ef4444' },
+};
+
+async function absSubmit() {
+  const start = document.getElementById('abs-start').value;
+  const end = document.getElementById('abs-end').value;
+  if (!start || !end) return Wren.toast('Please select dates', 'error');
+
+  const btn = document.getElementById('abs-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+
+  try {
+    const result = await Wren.api('/api/absence/request', { method: 'POST', body: {
+      start_date: start, end_date: end,
+      request_type: document.getElementById('abs-type').value,
+      notes: document.getElementById('abs-notes').value || null
+    }});
+
+    const decision = result.ai_decision || 'manual_review';
+    const m = AI_MESSAGES[decision] || AI_MESSAGES.manual_review;
+    const resultEl = document.getElementById('abs-ai-result');
+    resultEl.style.display = '';
+    resultEl.style.background = m.bg;
+    resultEl.style.border = `1px solid ${m.border}`;
+    resultEl.innerHTML = `
+      <div style="font-weight:700;font-size:14px;color:#f1f5f9;margin-bottom:6px">${m.icon} ${m.label}</div>
+      <div style="color:#cbd5e1">${result.ai_reason || ''}</div>`;
+
+    document.getElementById('abs-start').value = '';
+    document.getElementById('abs-end').value = '';
+    document.getElementById('abs-notes').value = '';
+    await loadAbsenceTab();
+  } catch(e) {
+    Wren.toast('Error: ' + (e.error || 'unknown'), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit Request';
+  }
+}
+
+// ── Hours ────────────────────────────────────────────────────────────────────
+async function loadHours() {
+  const area = document.getElementById('h-records');
+  area.innerHTML = '<div style="color:#64748b;font-size:13px">Loading...</div>';
+  try {
+    const records = await Wren.api(`/api/attendance/staff/${myStaffId}`);
+    const today = new Date();
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const weekStart = getWeekStart(today);
+    const monthly = (records || []).filter(r => new Date(r.date) >= monthStart);
+    const weekly = (records || []).filter(r => new Date(r.date) >= weekStart);
+    const monthTotal = monthly.reduce((s,r) => s + (parseFloat(r.hours_worked)||0), 0);
+    const weekTotal = weekly.reduce((s,r) => s + (parseFloat(r.hours_worked)||0), 0);
+    document.getElementById('h-contracted').textContent = hrUser.contracted_hours || '—';
+    document.getElementById('h-this-week').textContent = weekTotal.toFixed(1);
+    document.getElementById('h-this-month').textContent = monthTotal.toFixed(1);
+
+    if (!monthly.length) { area.innerHTML = '<div style="color:#64748b;font-size:13px">No clock records this month.</div>'; return; }
+    area.innerHTML = `<div class="table-wrapper"><table style="color:#f1f5f9">
+      <thead><tr>
+        <th style="background:#0f172a;color:#64748b">Date</th>
+        <th style="background:#0f172a;color:#64748b">Clock In</th>
+        <th style="background:#0f172a;color:#64748b">Clock Out</th>
+        <th style="background:#0f172a;color:#64748b">Hours</th>
+      </tr></thead>
+      <tbody>
+      ${monthly.slice().reverse().map(r => `<tr>
+        <td>${new Date(r.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</td>
+        <td>${r.clock_in ? new Date(r.clock_in).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+        <td>${r.clock_out ? new Date(r.clock_out).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+        <td style="color:${r.hours_worked?'#22c55e':'#64748b'}">${r.hours_worked ? parseFloat(r.hours_worked).toFixed(2)+'h' : '—'}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  } catch(e) {
+    area.innerHTML = '<div style="color:#ef4444;font-size:13px">Could not load clock records.</div>';
+  }
+}
+
+// ── CPD ───────────────────────────────────────────────────────────────────────
+async function loadCpd() {
+  const [mandatory, records] = await Promise.all([
+    Wren.api(`/api/cpd/mandatory-status/${myStaffId}`).catch(() => []),
+    Wren.api(`/api/cpd/records?staff_id=${myStaffId}`).catch(() => [])
+  ]);
+
+  const mandEl = document.getElementById('cpd-mandatory');
+  if (!mandatory?.length) {
+    mandEl.innerHTML = '<div style="color:#64748b;font-size:13px">No mandatory training records found.</div>';
+  } else {
+    mandEl.innerHTML = mandatory.map(m => {
+      const expiry = m.expiry_date ? new Date(m.expiry_date) : null;
+      const daysLeft = expiry ? Math.floor((expiry - new Date()) / 86400000) : null;
+      const rag = !expiry ? 'green' : daysLeft < 0 ? 'red' : daysLeft < 90 ? 'amber' : 'green';
+      const expiryStr = expiry ? expiry.toLocaleDateString('en-GB') : 'No expiry';
+      return `<div class="cpd-row">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="rag-dot rag-${rag}"></div>
+          <div>
+            <div style="font-size:13px;color:#f1f5f9">${m.training_name||m.name}</div>
+            <div style="font-size:11px;color:#64748b">${expiryStr}</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:${rag==='red'?'#ef4444':rag==='amber'?'#f59e0b':'#22c55e'}">
+          ${rag === 'red' ? 'EXPIRED' : daysLeft !== null ? `${daysLeft}d left` : 'Valid'}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const recEl = document.getElementById('cpd-records');
+  if (!(records||[]).length) {
+    recEl.innerHTML = '<div style="color:#64748b;font-size:13px">No CPD records yet.</div>';
+  } else {
+    recEl.innerHTML = records.map(r => `
+      <div class="cpd-row">
+        <div>
+          <div style="font-size:13px;color:#f1f5f9">${r.title||r.training_name}</div>
+          <div style="font-size:11px;color:#64748b">${r.completed_date ? new Date(r.completed_date).toLocaleDateString('en-GB') : ''} · ${r.hours||0}h</div>
+        </div>
+        <span style="font-size:11px;color:#22c55e">✓ Complete</span>
+      </div>
+    `).join('');
+  }
+}
+
+async function buildCpdCourse() {
+  const prompt = document.getElementById('cpd-prompt').value.trim();
+  if (!prompt) return Wren.toast('Please describe the topic', 'error');
+  const res = document.getElementById('cpd-result');
+  res.innerHTML = '<div style="color:#64748b;font-size:13px">Generating course plan...</div>';
+  try {
+    const r = await Wren.api('/api/ai/build-cpd-course', { method: 'POST', body: { prompt, staff_id: myStaffId } });
+    res.innerHTML = `<div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:14px;font-size:13px;color:#f1f5f9;white-space:pre-wrap">${r.course||r.result||JSON.stringify(r,null,2)}</div>`;
+  } catch(e) {
+    res.innerHTML = '<div style="color:#ef4444;font-size:13px">AI unavailable — try again later.</div>';
+  }
+}
+
+// ── Supervisions ─────────────────────────────────────────────────────────────
+async function loadSupervisions() {
+  const targets = await Wren.api('/api/supervisions/my-targets').catch(() => null);
+  const history = await Wren.api('/api/supervisions/my-history').catch(() => []);
+
+  const upEl = document.getElementById('sup-upcoming');
+  if (targets?.next_date) {
+    const d = new Date(targets.next_date);
+    upEl.innerHTML = `<div style="font-size:15px;font-weight:700;color:#4a9abf">${d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+      ${targets.form_token ? `<a href="/supervision-form.html?token=${targets.form_token}" class="btn btn-primary btn-sm" style="margin-top:10px">Complete Pre-Supervision Questionnaire</a>` : ''}`;
+  } else {
+    upEl.innerHTML = '<div style="color:#64748b;font-size:13px">No supervision scheduled. Contact your manager.</div>';
+  }
+
+  const tgEl = document.getElementById('sup-targets');
+  if (targets?.targets?.length) {
+    tgEl.innerHTML = targets.targets.map(t => `
+      <div style="padding:8px 0;border-bottom:1px solid #2d3748;font-size:13px">
+        <div style="color:#f1f5f9;font-weight:600">${t.target_text||t.description}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">Due: ${t.due_date ? new Date(t.due_date).toLocaleDateString('en-GB') : '—'} · Status: ${t.status||'in progress'}</div>
+      </div>
+    `).join('');
+  } else {
+    tgEl.innerHTML = '<div style="color:#64748b;font-size:13px">No targets set yet.</div>';
+  }
+
+  const hiEl = document.getElementById('sup-history');
+  if (!(history||[]).length) {
+    hiEl.innerHTML = '<div style="color:#64748b;font-size:13px">No supervision history.</div>';
+  } else {
+    hiEl.innerHTML = history.map(s => `
+      <div style="padding:10px 0;border-bottom:1px solid #2d3748;font-size:13px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="color:#f1f5f9;font-weight:600">${s.scheduled_date ? new Date(s.scheduled_date).toLocaleDateString('en-GB') : '—'}</div>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(34,197,94,.15);color:#22c55e">Completed</span>
+        </div>
+        ${s.summary ? `<div style="font-size:12px;color:#94a3b8;margin-top:4px">${s.summary.substring(0,120)}${s.summary.length>120?'…':''}</div>` : ''}
+      </div>
+    `).join('');
+  }
+}
+
+// ── Documents ────────────────────────────────────────────────────────────────
+async function loadDocuments() {
+  const docEl = document.getElementById('doc-list');
+  try {
+    const docs = await Wren.api(`/api/staff/${myStaffId}/documents`);
+    if (!(docs||[]).length) {
+      docEl.innerHTML = '<div style="color:#64748b;font-size:13px">No documents uploaded yet.</div>';
+    } else {
+      docEl.innerHTML = docs.map(d => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #2d3748;font-size:13px">
+          <span style="color:#f1f5f9">📄 ${d.name||d.filename}</span>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:11px;color:#64748b">${d.created_at ? new Date(d.created_at).toLocaleDateString('en-GB') : ''}</span>
+            <a href="/api/staff/documents/${d.id}/download" class="btn btn-ghost btn-sm" target="_blank">↓</a>
+          </div>
+        </div>
+      `).join('');
+    }
+  } catch {
+    docEl.innerHTML = '<div style="color:#64748b;font-size:13px">Could not load documents.</div>';
+  }
+}
+
+// ── Profile ──────────────────────────────────────────────────────────────────
+async function loadProfile() {
+  try {
+    const staff = await Wren.api(`/api/staff/${myStaffId}`);
+    if (staff) {
+      document.getElementById('prof-phone').value = staff.phone || '';
+      document.getElementById('prof-email').value = staff.email || '';
+      document.getElementById('prof-ec-name').value = staff.emergency_contact_name || '';
+      document.getElementById('prof-ec-phone').value = staff.emergency_contact_phone || '';
+      document.getElementById('prof-ec-rel').value = staff.emergency_contact_relation || '';
+    }
+  } catch {}
+}
+
+async function saveProfile() {
+  try {
+    await Wren.api(`/api/staff/${myStaffId}`, { method: 'PUT', body: {
+      phone: document.getElementById('prof-phone').value,
+      email: document.getElementById('prof-email').value,
+      emergency_contact_name: document.getElementById('prof-ec-name').value,
+      emergency_contact_phone: document.getElementById('prof-ec-phone').value,
+      emergency_contact_relation: document.getElementById('prof-ec-rel').value
+    }});
+    Wren.toast('Profile saved', 'success');
+  } catch(e) { Wren.toast('Failed to save: ' + (e.error||''), 'error'); }
+}
+
+// Listen for shell ready, then also load absence tab data proactively
+document.addEventListener('wren:ready', hrInit);
+document.addEventListener('DOMContentLoaded', () => {
+  // Load absence tab data when switching to it
+  document.querySelector('[data-tab="absences"]')?.addEventListener('click', loadAbsenceTab);
+});
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

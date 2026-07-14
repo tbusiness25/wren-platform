@@ -27,6 +27,9 @@
     operations:     { id: 'operations',     icon: '🔧', label: 'Operations',      tabs: ['kitchen', 'repairs', 'clock-in-out', 'compliance', 'health-safety'] },
     modules:        { id: 'modules',        icon: '🧩', label: 'Module Builder',  tabs: ['list', 'builder', 'records'] },
     system:         { id: 'system',         icon: '⚙️', label: 'System',          tabs: ['settings', 'integrations', 'backups', 'tech', 'support', 'docs', 'security', 'permissions', 'approvals', 'audit-log'], requiresRole: 'manager' },
+    // Standalone tool pages (full-page nav via href, not SPA fragments).
+    'occupancy-sandbox': { id: 'occupancy-sandbox', icon: '🧪', label: 'Occupancy Sandbox', href: '/occupancy-sandbox.html', requiresRole: 'manager' },
+    'competitor-intel':  { id: 'competitor-intel',  icon: '🔭', label: 'Competitor Intel',  href: '/competitor-intel.html', requiresRole: 'manager' },
   };
 
   // ── Sidebar navigation groups ────────────────────────────────────────────────
@@ -38,6 +41,7 @@
     { label: 'OPERATIONS', sections: ['operations', 'finance', 'inspection'] },
     { label: 'COMMS',      sections: ['communications'] },
     { label: 'BUILDER',    sections: ['modules'] },
+    { label: 'INTELLIGENCE', sections: ['occupancy-sandbox', 'competitor-intel'] },
     { label: 'SYSTEM',     sections: ['system'] },
   ];
 
@@ -184,6 +188,16 @@
         .filter(id => !(SECTIONS[id].requiresRole === 'manager' && !isMgr))
         .map(id => {
           const s = SECTIONS[id];
+          // Standalone tool pages navigate via a normal link (no data-section, so
+          // the SPA section handler ignores them → full-page load).
+          if (s.href) {
+            return `<li role="none">
+            <a class="as-nav-btn" href="${s.href}" aria-label="${s.label}" title="${s.label}" role="menuitem">
+              <span class="as-nav-icon" aria-hidden="true">${s.icon}</span>
+              <span class="as-label">${s.label}</span>
+            </a>
+          </li>`;
+          }
           return `<li role="none">
             <button class="as-nav-btn" data-section="${s.id}" aria-label="${s.label}" title="${s.label}" role="menuitem">
               <span class="as-nav-icon" aria-hidden="true">${s.icon}</span>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enquire — Little Angels Day Nursery</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --card: #161b27; --border: #2d3748;
+    --text: #f1f5f9; --muted: #64748b; --green: #5dd68a; --blue: #4a9abf;
+    --orange: #e07820; --red: #ef4444;
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; max-width: 520px; width: 100%; }
+  .logo { font-size: 1.5rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .logo span { color: var(--orange); }
+  .subtitle { color: var(--muted); font-size: .88rem; margin-bottom: 28px; }
+  label { display: block; font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; margin-top: 16px; }
+  label.required::after { content: ' *'; color: var(--orange); }
+  input, textarea, select {
+    width: 100%; background: #0f1117; border: 1px solid var(--border); border-radius: 7px;
+    color: var(--text); font-size: .9rem; padding: 9px 12px; outline: none;
+    transition: border-color .15s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--blue); }
+  textarea { resize: vertical; min-height: 90px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .btn { margin-top: 24px; width: 100%; background: var(--orange); color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: .95rem; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+  .btn:hover { opacity: .88; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .success { display: none; text-align: center; padding: 20px 0; }
+  .success .icon { font-size: 2.4rem; margin-bottom: 10px; }
+  .success h2 { font-size: 1.15rem; margin-bottom: 6px; }
+  .success p { color: var(--muted); font-size: .88rem; }
+  .err { color: var(--red); font-size: .8rem; margin-top: 8px; display: none; }
+  .privacy { font-size: .72rem; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">Little <span>Angels</span></div>
+  <div class="subtitle">Enquire about a place at our nursery in Ealing, West London</div>
+
+  <!-- Fields render dynamically from Settings → Enquiry Form (2026-07-07) -->
+  <form id="enquiry-form">
+    <div id="dynamic-fields"><p style="color:#94a3b8;font-size:.9rem">Loading form…</p></div>
+    <div class="err" id="form-err">Something went wrong — please try again.</div>
+    <button type="submit" class="btn" id="submit-btn">Send enquiry</button>
+    <p class="privacy">Your information is stored securely on our own servers and used only to respond to your enquiry. We do not share it with third parties.</p>
+  </form>
+
+  <div class="success" id="success-msg">
+    <div class="icon">✅</div>
+    <h2>Enquiry received!</h2>
+    <p>Thank you — a member of our team will be in touch shortly.</p>
+  </div>
+</div>
+
+<script>
+let FORM_FIELDS = [];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function renderField(f) {
+  const req = f.required ? 'required' : '';
+  const star = f.required ? '<span aria-hidden="true"> *</span>' : '';
+  const help = f.help_text ? `<div style="font-size:.78rem;color:#94a3b8;margin:-4px 0 8px">${esc(f.help_text)}</div>` : '';
+  const lab = `<label ${f.required ? 'class="required"' : ''} for="ef_${f.field_key}">${esc(f.label)}${star}</label>`;
+  let ctrl = '';
+  if (f.field_type === 'textarea') {
+    ctrl = `<textarea id="ef_${f.field_key}" name="${f.field_key}" ${req} placeholder="${esc(f.placeholder||'')}"></textarea>`;
+  } else if (f.field_type === 'select') {
+    ctrl = `<select id="ef_${f.field_key}" name="${f.field_key}" ${req}><option value="">— choose —</option>` +
+      (f.options||[]).map(o => `<option>${esc(o)}</option>`).join('') + `</select>`;
+  } else if (f.field_type === 'multiselect') {
+    ctrl = `<div id="ef_${f.field_key}" class="ef-multi" style="display:flex;flex-wrap:wrap;gap:8px">` +
+      (f.options||[]).map(o => `<label style="display:flex;align-items:center;gap:6px;font-weight:400;background:#f1f5f9;padding:6px 10px;border-radius:8px;cursor:pointer">
+        <input type="checkbox" name="${f.field_key}" value="${esc(o)}" style="width:auto;margin:0"> ${esc(o)}</label>`).join('') + `</div>`;
+  } else if (f.field_type === 'checkbox') {
+    ctrl = `<label style="display:flex;align-items:center;gap:8px;font-weight:400"><input type="checkbox" id="ef_${f.field_key}" name="${f.field_key}" value="yes" style="width:auto" ${req}> ${esc(f.placeholder||'Yes')}</label>`;
+    return `<div class="ef-row">${ctrl}${help}</div>`;
+  } else {
+    const t = ['email','tel','date'].includes(f.field_type) ? f.field_type : 'text';
+    ctrl = `<input type="${t}" id="ef_${f.field_key}" name="${f.field_key}" ${req} placeholder="${esc(f.placeholder||'')}" autocomplete="off">`;
+  }
+  return `<div class="ef-row">${lab}${help}${ctrl}</div>`;
+}
+
+async function loadForm() {
+  try {
+    const r = await fetch('/api/enquiry-form/public');
+    const d = await r.json();
+    FORM_FIELDS = d.fields || [];
+  } catch { FORM_FIELDS = []; }
+  const host = document.getElementById('dynamic-fields');
+  if (!FORM_FIELDS.length) { host.innerHTML = '<p style="color:#ef4444">Could not load the form. Please email us instead.</p>'; return; }
+  host.innerHTML = FORM_FIELDS.map(renderField).join('');
+}
+
+function collect() {
+  const data = { source: 'ladn_site' };
+  for (const f of FORM_FIELDS) {
+    if (f.field_type === 'multiselect') {
+      const vals = Array.from(document.querySelectorAll(`input[name="${f.field_key}"]:checked`)).map(x => x.value);
+      if (vals.length) data[f.field_key] = vals;
+    } else if (f.field_type === 'checkbox') {
+      const el = document.getElementById('ef_' + f.field_key);
+      if (el && el.checked) data[f.field_key] = 'Yes';
+    } else {
+      const el = document.getElementById('ef_' + f.field_key);
+      const v = el && el.value.trim();
+      if (v) data[f.field_key] = v;
+    }
+  }
+  // Map the two hard-required keys the API expects
+  if (data.parent_name) data.name = data.parent_name;
+  if (data.parent_email) data.email = data.parent_email;
+  return data;
+}
+
+document.getElementById('enquiry-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const errEl = document.getElementById('form-err');
+  // enforce required multiselects (native required doesn't cover our checkbox groups)
+  for (const f of FORM_FIELDS) {
+    if (f.required && f.field_type === 'multiselect') {
+      if (!document.querySelectorAll(`input[name="${f.field_key}"]:checked`).length) {
+        errEl.textContent = `Please choose ${f.label.toLowerCase()}.`; errEl.style.display = 'block'; return;
+      }
+    }
+  }
+  btn.disabled = true; btn.textContent = 'Sending…'; errEl.style.display = 'none';
+  errEl.textContent = 'Something went wrong — please try again.';
+  try {
+    const r = await fetch('/api/enquiry', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collect()),
+    });
+    if (!r.ok) throw new Error('server error');
+    document.getElementById('enquiry-form').style.display = 'none';
+    document.getElementById('success-msg').style.display = 'block';
+  } catch {
+    errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Send enquiry';
+  }
+});
+
+loadForm();
+</script>
+</body>
+</html>

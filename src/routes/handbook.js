@@ -203,11 +203,11 @@ async function generateHandbookPDF(outPath, contentMd, version, title) {
 
     // Cover-style header
     doc.fillColor('#4a9abf').fontSize(18).font('Helvetica-Bold')
-       .text('Your Nursery', { align: 'center' });
+       .text('Little Angels Day Nursery', { align: 'center' });
     doc.fillColor('#e07820').fontSize(14).font('Helvetica-Bold')
        .text(title, { align: 'center' });
     doc.fillColor('#94a3b8').fontSize(10).font('Helvetica')
-       .text(`Version ${version}  |  1A Example Lane, Ealing, London W13 9LU`, { align: 'center' });
+       .text(`Version ${version}  |  1A Dudley Gardens, Ealing, London W13 9LU`, { align: 'center' });
     doc.moveDown(2);
 
     const lines = contentMd.split('\n');

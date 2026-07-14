@@ -23,11 +23,11 @@ const INLINE_IMG_CAP = 10 * 1024 * 1024;   // 10MB per image inlined as base64
 const INLINE_VID_CAP = 30 * 1024 * 1024;   // 30MB per video inlined
 
 const NURSERY = {
-  name: 'Your Nursery',
-  address: '1A Example Lane, Ealing, W13 9LU',
-  phone: '01234 567890',
-  email: 'admissions@example-nursery.co.uk',
-  website: 'www.example-nursery.co.uk',
+  name: 'Little Angels Day Nursery',
+  address: '1A Dudley Gardens, Ealing, W13 9LU',
+  phone: '020 8051 0349',
+  email: 'admissions@littleangelsealing.co.uk',
+  website: 'www.littleangelsealing.co.uk',
   established: '1990',
 };
 
@@ -458,7 +458,7 @@ ${extraHead}
 function renderStandaloneBook(snapshot) {
   const uris = inlineAllMedia(snapshot);
   const inner = renderBookInner(snapshot, b => uris[b] || null);
-  return wrapDocument(inner, `${snapshot.child.display_name} — My Your Nursery Memory Book`);
+  return wrapDocument(inner, `${snapshot.child.display_name} — My Little Angels Memory Book`);
 }
 
 // Book fragment for the PWA (media via the token endpoint, e.g. "./media?b=<basename>").
@@ -554,7 +554,7 @@ function renderBookPDF(snapshot) {
       }
 
       doc.moveDown(1);
-      doc.fillColor('#e07820').fontSize(11).font('Helvetica-Bold').text('Made with love by everyone at Your Nursery 💛', { align: 'center' });
+      doc.fillColor('#e07820').fontSize(11).font('Helvetica-Bold').text('Made with love by everyone at Little Angels Day Nursery 💛', { align: 'center' });
       doc.fillColor('#8a7a70').fontSize(8.5).font('Helvetica').text(`${NURSERY.address} · ${NURSERY.phone} · ${NURSERY.website}`, { align: 'center' });
       doc.end();
     } catch (e) { reject(e); }

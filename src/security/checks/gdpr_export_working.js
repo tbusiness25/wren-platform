@@ -27,7 +27,7 @@ module.exports = {
       return {
         status: 'warn',
         finding: 'No SAR test result file found. The weekly GDPR export smoke test has not been configured or has not run yet.',
-        remediation: 'Set up a weekly SAR test cron job that: creates a synthetic child record in the test schema, calls GET /api/children/:id/sar-export, verifies the response contains all required GDPR fields (name, dob, observations, attendance, messages), then deletes the test record and writes results to /var/backups/wren/sar-test-result.json. See /app/docs/security-dashboard.md.',
+        remediation: 'Set up a weekly SAR test cron job that: creates a synthetic child record in the test schema, calls GET /api/children/:id/sar-export, verifies the response contains all required GDPR fields (name, dob, observations, attendance, messages), then deletes the test record and writes results to /var/backups/wren/sar-test-result.json. See /home/toby/wren/docs/security-dashboard.md.',
         evidence: { paths_checked: RESULT_PATHS },
       };
     }

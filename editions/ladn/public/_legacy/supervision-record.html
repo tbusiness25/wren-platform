@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="ladn">
+  <title>Voice Supervision — Wren HR</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    :root {
+      --rec-red: #ef4444;
+      --rec-red-glow: rgba(239,68,68,0.25);
+      --amber: #f59e0b;
+      --green: #22c55e;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --muted: #64748b;
+      --text: #f1f5f9;
+    }
+    body { background: #0f172a; color: var(--text); font-family: system-ui, sans-serif; }
+
+    #sv-wrapper {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      padding: 16px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    @media (min-width: 800px) {
+      #sv-wrapper { grid-template-columns: 60fr 40fr; }
+    }
+
+    .sv-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    /* ── LEFT PANEL ── */
+    #sv-header { margin-bottom: 16px; }
+    #sv-header h2 { margin: 0 0 4px; font-size: 1.15rem; }
+    #sv-header .sub { color: var(--muted); font-size: 0.85rem; }
+
+    #staff-select-row { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    #staff-select { flex: 1; background: #0f172a; border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; }
+
+    /* Record button */
+    #rec-btn {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--card-bg); border: 2px solid var(--border);
+      color: var(--text); border-radius: 999px;
+      padding: 14px 28px; font-size: 1rem; font-weight: 700;
+      cursor: pointer; transition: all 0.2s; margin-bottom: 12px;
+      width: 100%;
+    }
+    #rec-btn:hover { border-color: #4a9abf; }
+    #rec-btn.recording {
+      border-color: var(--rec-red);
+      background: rgba(239,68,68,0.1);
+      box-shadow: 0 0 0 4px var(--rec-red-glow);
+    }
+    .rec-dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--muted); flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    #rec-btn.recording .rec-dot {
+      background: var(--rec-red);
+      animation: pulse 1s ease infinite;
+    }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 var(--rec-red-glow); }
+      50%      { box-shadow: 0 0 0 6px transparent; }
+    }
+
+    #timer {
+      font-size: 1.8rem; font-weight: 800; font-variant-numeric: tabular-nums;
+      color: var(--muted); margin-bottom: 16px; letter-spacing: 2px;
+    }
+    #timer.active { color: var(--rec-red); }
+
+    /* Transcript area */
+    #transcript-box {
+      min-height: 200px; max-height: 360px; overflow-y: auto;
+      background: #0f172a; border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px;
+      font-size: 0.85rem; line-height: 1.6;
+      color: #94a3b8;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .transcript-chunk { margin-bottom: 6px; }
+    .transcript-chunk .ts { color: var(--muted); font-size: 0.75rem; margin-right: 6px; }
+    .transcript-chunk .txt { color: #cbd5e1; }
+
+    /* Q coverage from transcript */
+    #detected-qs {
+      margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .q-badge {
+      padding: 3px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+      background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.4);
+      color: var(--green);
+    }
+
+    /* Custom question form */
+    #custom-q-form { margin-top: 16px; display: flex; gap: 8px; }
+    #custom-q-input {
+      flex: 1; background: #0f172a; border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 0.85rem;
+    }
+    #custom-q-btn {
+      background: #4a9abf; border: none; color: #fff;
+      border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 0.85rem;
+    }
+
+    /* Status bar */
+    #status-bar {
+      margin-top: 12px; padding: 8px 12px; border-radius: 8px;
+      font-size: 0.82rem; background: rgba(74,154,191,0.1);
+      border: 1px solid rgba(74,154,191,0.3); color: #7dd3fc;
+      display: none;
+    }
+    #status-bar.visible { display: block; }
+
+    /* ── RIGHT PANEL ── */
+    #checklist-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
+    }
+    #checklist-header h3 { margin: 0; font-size: 0.95rem; }
+    #coverage-count { font-size: 0.82rem; color: var(--muted); }
+
+    .q-item {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 8px 10px; border-radius: 8px; margin-bottom: 6px;
+      border: 1px solid transparent; transition: border-color 0.2s, background 0.2s;
+      cursor: pointer;
+    }
+    .q-item:hover { border-color: var(--border); background: rgba(255,255,255,0.03); }
+    .q-item.covered { background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.3); }
+    .q-item.required.uncovered { border-color: rgba(245,158,11,0.4); }
+
+    .q-check {
+      width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0; margin-top: 2px;
+      border: 2px solid var(--border); background: transparent; cursor: pointer;
+      transition: all 0.15s; display: flex; align-items: center; justify-content: center;
+    }
+    .q-item.covered .q-check {
+      background: var(--green); border-color: var(--green); color: #fff;
+    }
+    .q-num { font-size: 0.72rem; color: var(--muted); flex-shrink: 0; width: 22px; padding-top: 3px; }
+    .q-text { font-size: 0.85rem; line-height: 1.4; flex: 1; }
+    .q-req-badge {
+      font-size: 0.68rem; color: var(--amber); background: rgba(245,158,11,0.1);
+      border: 1px solid rgba(245,158,11,0.3); border-radius: 999px;
+      padding: 1px 6px; flex-shrink: 0;
+    }
+    .q-auto-badge {
+      font-size: 0.68rem; background: rgba(34,197,94,0.15);
+      border: 1px solid rgba(34,197,94,0.4); color: var(--green);
+      border-radius: 999px; padding: 1px 6px; flex-shrink: 0;
+    }
+    .q-warn { font-size: 0.7rem; color: var(--amber); margin-top: 2px; display: none; }
+    .q-item.required.uncovered .q-warn { display: block; }
+
+    /* Custom questions */
+    #custom-q-list { margin-top: 12px; }
+    .custom-q-item {
+      display: flex; gap: 8px; align-items: flex-start;
+      padding: 6px 10px; border-radius: 8px; margin-bottom: 5px;
+      background: rgba(74,154,191,0.05); border: 1px solid rgba(74,154,191,0.2);
+    }
+    .custom-q-check {
+      width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;
+      border: 2px solid rgba(74,154,191,0.4); background: transparent; cursor: pointer;
+      transition: all 0.15s; margin-top: 2px;
+    }
+    .custom-q-check.checked {
+      background: #4a9abf; border-color: #4a9abf;
+    }
+    .custom-q-text { font-size: 0.82rem; flex: 1; color: #94a3b8; }
+
+    /* Finalize */
+    #finalize-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+    #action-items-input {
+      width: 100%; background: #0f172a; border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 10px;
+      font-size: 0.85rem; min-height: 80px; resize: vertical; font-family: inherit;
+    }
+    #finalize-btn {
+      width: 100%; margin-top: 12px; padding: 12px;
+      background: #4a9abf; border: none; color: #fff;
+      border-radius: 10px; font-size: 0.95rem; font-weight: 700;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    #finalize-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #finalize-btn.processing { background: var(--amber); }
+
+    #req-warning {
+      margin-top: 8px; font-size: 0.78rem; color: var(--amber);
+      display: none;
+    }
+    #req-warning.visible { display: block; }
+  </style>
+</head>
+<body>
+<div id="sv-wrapper">
+
+  <!-- LEFT: Recording panel -->
+  <div class="sv-card" id="left-panel">
+    <div id="sv-header">
+      <h2>Voice Supervision Recording</h2>
+      <div class="sub">Mic → Whisper → AI structured notes. Manager eyes only.</div>
+    </div>
+
+    <div id="staff-select-row">
+      <select id="staff-select">
+        <option value="">Select staff member…</option>
+      </select>
+    </div>
+
+    <button id="rec-btn" disabled>
+      <span class="rec-dot"></span>
+      <span id="rec-btn-label">Start Recording</span>
+    </button>
+
+    <div id="timer">00:00</div>
+
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:6px">Live transcript</div>
+    <div id="transcript-box"><span style="color:#334155">Recording will appear here…</span></div>
+    <div id="detected-qs"></div>
+
+    <div id="custom-q-form" style="display:none">
+      <input type="text" id="custom-q-input" placeholder="Add a custom question covered…" maxlength="200">
+      <button id="custom-q-btn">Add</button>
+    </div>
+
+    <div id="status-bar"></div>
+  </div>
+
+  <!-- RIGHT: Questions checklist -->
+  <div class="sv-card" id="right-panel">
+    <div id="checklist-header">
+      <h3>14 Supervision Questions</h3>
+      <span id="coverage-count">0 / 14 covered</span>
+    </div>
+
+    <div id="question-list">
+      <!-- Populated by JS -->
+    </div>
+
+    <div id="custom-q-list"></div>
+
+    <div id="finalize-section">
+      <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:6px">
+        Action items (optional — will be parsed by AI)
+      </label>
+      <textarea id="action-items-input" placeholder="e.g. Toby to book first-aid refresher by end of month…"></textarea>
+      <div id="req-warning">⚠ Required questions not covered: </div>
+      <button id="finalize-btn" disabled>Finalize &amp; Generate Notes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────
+const CHUNK_INTERVAL_MS = 20000;
+let sessionId = null;
+let staffId = null;
+let mediaRecorder = null;
+let isRecording = false;
+let timerInterval = null;
+let timerSecs = 0;
+let chunkIndex = 0;
+let coveredByTranscript = new Set();
+let coveredManual = new Set();
+let customQuestions = [];
+let questions = [];
+
+// Token
+function getToken() { return sessionStorage.getItem('wrenToken'); }
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json', ...(opts.headers || {}) }
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error(err.error || r.statusText);
+  }
+  return r.json();
+}
+
+// ── Init ──────────────────────────────────────────────
+document.addEventListener('wren:ready', async () => {
+  document.getElementById('rec-btn').addEventListener('click', toggleRecording);
+  document.getElementById('custom-q-btn').addEventListener('click', addCustomQ);
+  document.getElementById('finalize-btn').addEventListener('click', finalize);
+  document.getElementById('custom-q-list').addEventListener('click', function(e) {
+    const el = e.target.closest('[data-action="toggle-custom-q"]');
+    if (!el) return;
+    toggleCustomQ(parseInt(el.dataset.idx));
+  });
+  await loadStaff();
+  questions = await api('/api/supervisions/question-templates');
+  renderChecklist();
+});
+
+async function loadStaff() {
+  try {
+    const staff = await api('/api/staff?active=true');
+    const sel = document.getElementById('staff-select');
+    (Array.isArray(staff) ? staff : (staff.staff || [])).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `${s.first_name} ${s.last_name}`;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', () => {
+      staffId = sel.value || null;
+      document.getElementById('rec-btn').disabled = !staffId;
+    });
+  } catch(e) { console.warn('Staff load error', e); }
+}
+
+// ── Checklist ─────────────────────────────────────────
+function renderChecklist() {
+  const container = document.getElementById('question-list');
+  container.innerHTML = '';
+  questions.forEach(q => {
+    const covered = coveredManual.has(q.ordinal) || coveredByTranscript.has(q.ordinal);
+    const div = document.createElement('div');
+    div.className = `q-item${covered ? ' covered' : ''}${q.is_required && !covered ? ' required uncovered' : ''}`;
+    div.dataset.ord = q.ordinal;
+    div.innerHTML = `
+      <div class="q-check">${covered ? '✓' : ''}</div>
+      <span class="q-num">${q.ordinal}.</span>
+      <div style="flex:1">
+        <div class="q-text">${q.question_text}</div>
+        <div class="q-warn">Required — mark as covered when discussed</div>
+        ${covered && coveredByTranscript.has(q.ordinal) ? '<span class="q-auto-badge">auto-detected</span>' : ''}
+      </div>
+      ${q.is_required ? '<span class="q-req-badge">Required</span>' : ''}
+    `;
+    div.addEventListener('click', () => toggleManual(q.ordinal));
+    container.appendChild(div);
+  });
+  updateCoverageCount();
+}
+
+function toggleManual(ordinal) {
+  if (coveredManual.has(ordinal)) coveredManual.delete(ordinal);
+  else coveredManual.add(ordinal);
+  renderChecklist();
+}
+
+function updateCoverageCount() {
+  const total = questions.length;
+  const covered = new Set([...coveredManual, ...coveredByTranscript]);
+  document.getElementById('coverage-count').textContent = `${covered.size} / ${total} covered`;
+  const minCovered = covered.size >= 5;
+  const finBtn = document.getElementById('finalize-btn');
+  finBtn.disabled = !minCovered || isRecording;
+}
+
+// ── Timer ─────────────────────────────────────────────
+function startTimer() {
+  timerSecs = 0;
+  const el = document.getElementById('timer');
+  el.classList.add('active');
+  timerInterval = setInterval(() => {
+    timerSecs++;
+    const m = String(Math.floor(timerSecs / 60)).padStart(2, '0');
+    const s = String(timerSecs % 60).padStart(2, '0');
+    el.textContent = `${m}:${s}`;
+  }, 1000);
+}
+function stopTimer() {
+  clearInterval(timerInterval);
+  document.getElementById('timer').classList.remove('active');
+}
+
+// ── Recording ─────────────────────────────────────────
+async function toggleRecording() {
+  if (!staffId) return;
+  if (isRecording) await stopRecording();
+  else await startRecording();
+}
+
+async function startRecording() {
+  try {
+    // Create session
+    if (!sessionId) {
+      setStatus('Creating session…');
+      const r = await api('/api/supervisions/recording/start', {
+        method: 'POST',
+        body: JSON.stringify({ staff_id: staffId })
+      });
+      sessionId = r.session_id;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus' : 'audio/webm';
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    let chunkBuffer = [];
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunkBuffer.push(e.data);
+    };
+
+    // Send every CHUNK_INTERVAL_MS
+    let sendInterval = setInterval(async () => {
+      if (!chunkBuffer.length) return;
+      const blob = new Blob(chunkBuffer, { type: mimeType });
+      chunkBuffer = [];
+      await sendChunk(blob);
+    }, CHUNK_INTERVAL_MS);
+
+    mediaRecorder.onstop = () => { clearInterval(sendInterval); stream.getTracks().forEach(t => t.stop()); };
+    mediaRecorder.start(CHUNK_INTERVAL_MS);
+
+    isRecording = true;
+    document.getElementById('rec-btn').classList.add('recording');
+    document.getElementById('rec-btn-label').textContent = 'Stop Recording';
+    document.getElementById('custom-q-form').style.display = 'flex';
+    document.getElementById('finalize-btn').disabled = true;
+    document.getElementById('transcript-box').innerHTML = '';
+    startTimer();
+    setStatus('Recording — speaking will be transcribed every 20 seconds');
+
+  } catch(e) {
+    setStatus(`Mic error: ${e.message}`, true);
+  }
+}
+
+async function stopRecording() {
+  isRecording = false;
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  document.getElementById('rec-btn').classList.remove('recording');
+  document.getElementById('rec-btn-label').textContent = 'Resume Recording';
+  stopTimer();
+  updateCoverageCount();
+  setStatus('Recording stopped. Review questions then Finalize.');
+}
+
+async function sendChunk(blob) {
+  try {
+    const form = new FormData();
+    form.append('chunk', blob, `chunk-${String(chunkIndex).padStart(4,'0')}.webm`);
+    form.append('chunk_index', String(chunkIndex));
+    chunkIndex++;
+
+    const resp = await fetch(`/api/supervisions/recording/${sessionId}/audio-chunk`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: form
+    });
+    if (!resp.ok) { console.warn('Chunk upload failed'); return; }
+    const data = await resp.json();
+
+    // Append to transcript display
+    if (data.partial_transcript) {
+      const box = document.getElementById('transcript-box');
+      const ts = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const chunk = document.createElement('div');
+      chunk.className = 'transcript-chunk';
+      chunk.innerHTML = `<span class="ts">[${ts}]</span><span class="txt">${data.partial_transcript}</span>`;
+      box.appendChild(chunk);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    // Update auto-detected questions
+    if (data.detected_topics && data.detected_topics.length) {
+      data.detected_topics.forEach(id => coveredByTranscript.add(id));
+      renderChecklist();
+      renderDetectedBadges();
+    }
+  } catch(e) { console.warn('sendChunk error', e); }
+}
+
+function renderDetectedBadges() {
+  const container = document.getElementById('detected-qs');
+  container.innerHTML = '';
+  if (coveredByTranscript.size === 0) return;
+  const label = document.createElement('span');
+  label.style.cssText = 'font-size:0.75rem;color:var(--muted);margin-right:6px';
+  label.textContent = 'Auto-detected:';
+  container.appendChild(label);
+  [...coveredByTranscript].sort((a,b)=>a-b).forEach(id => {
+    const badge = document.createElement('span');
+    badge.className = 'q-badge';
+    badge.textContent = `Q${id}`;
+    container.appendChild(badge);
+  });
+}
+
+// ── Custom questions ──────────────────────────────────
+function addCustomQ() {
+  const input = document.getElementById('custom-q-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const q = { text, covered: false, id: Date.now() };
+  customQuestions.push(q);
+  renderCustomQs();
+  input.value = '';
+  updateCoverageCount();
+}
+
+function renderCustomQs() {
+  const list = document.getElementById('custom-q-list');
+  if (!customQuestions.length) { list.innerHTML = ''; return; }
+  list.innerHTML = customQuestions.map((q, i) => `
+    <div class="custom-q-item">
+      <div class="custom-q-check${q.covered ? ' checked' : ''}" data-action="toggle-custom-q" data-idx="${i}"></div>
+      <span class="custom-q-text">${q.text}</span>
+    </div>
+  `).join('');
+}
+
+function toggleCustomQ(i) {
+  customQuestions[i].covered = !customQuestions[i].covered;
+  renderCustomQs();
+}
+
+// ── Status ────────────────────────────────────────────
+function setStatus(msg, isErr = false) {
+  const bar = document.getElementById('status-bar');
+  bar.textContent = msg;
+  bar.className = 'status-bar visible';
+  bar.style.background = isErr
+    ? 'rgba(239,68,68,0.1)' : 'rgba(74,154,191,0.1)';
+  bar.style.borderColor = isErr
+    ? 'rgba(239,68,68,0.3)' : 'rgba(74,154,191,0.3)';
+  bar.style.color = isErr ? '#fca5a5' : '#7dd3fc';
+}
+
+// ── Finalize ──────────────────────────────────────────
+async function finalize() {
+  if (!sessionId) { setStatus('No session — please start recording first.', true); return; }
+
+  const covered = new Set([...coveredManual, ...coveredByTranscript]);
+  const reqMissing = questions.filter(q => q.is_required && !covered.has(q.ordinal));
+  if (reqMissing.length) {
+    const warn = document.getElementById('req-warning');
+    warn.textContent = `⚠ Required questions not covered: ${reqMissing.map(q => `Q${q.ordinal}`).join(', ')}`;
+    warn.classList.add('visible');
+    if (!confirm(`Required questions Q${reqMissing.map(q=>q.ordinal).join(', Q')} not ticked.\nContinue anyway?`)) return;
+  }
+
+  const btn = document.getElementById('finalize-btn');
+  btn.disabled = true;
+  btn.classList.add('processing');
+  btn.textContent = 'Generating AI notes… (may take 30–60 s)';
+  setStatus('Sending to AI for structured note generation…');
+
+  try {
+    const body = {
+      manually_ticked_question_ids: [...coveredManual],
+      custom_questions: customQuestions,
+      action_items_text: document.getElementById('action-items-input').value.trim()
+    };
+    const result = await fetch(`/api/supervisions/recording/${sessionId}/finalize`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!result.ok) throw new Error((await result.json()).error || result.statusText);
+    const data = await result.json();
+    setStatus('Notes generated! Redirecting to review…');
+    setTimeout(() => {
+      window.location.href = `/supervision-review.html?id=${data.supervision_id}`;
+    }, 1200);
+  } catch(e) {
+    btn.disabled = false;
+    btn.classList.remove('processing');
+    btn.textContent = 'Finalize & Generate Notes';
+    setStatus(`Finalize failed: ${e.message}`, true);
+  }
+}
+</script>
+</body>
+</html>

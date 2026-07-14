@@ -255,7 +255,7 @@ router.post('/:id/ai-draft', authenticate, managerOnly, async (req, res) => {
   const { section_id, raw_notes, section_type, context } = req.body;
   if (!raw_notes) return res.status(400).json({ error: 'raw_notes required' });
 
-  const system = `You are a professional nursery newsletter writer for Your Nursery in Ealing, West London. Write in warm, professional British English. Use UK spelling throughout (e.g. recognise not recognize, colour not color). Your writing should be friendly, reassuring, and appropriate for parents of young children aged 6 months to 5 years. Never use Americanisms. Write in flowing paragraphs — 2–3 paragraphs maximum. Do not use bullet points unless specifically asked. Be concise and warm.`;
+  const system = `You are a professional nursery newsletter writer for Little Angels Day Nursery in Ealing, West London. Write in warm, professional British English. Use UK spelling throughout (e.g. recognise not recognize, colour not color). Your writing should be friendly, reassuring, and appropriate for parents of young children aged 6 months to 5 years. Never use Americanisms. Write in flowing paragraphs — 2–3 paragraphs maximum. Do not use bullet points unless specifically asked. Be concise and warm.`;
 
   const hints = {
     text:          'Expand these notes into 2–3 warm, engaging paragraphs for a parent newsletter.',
@@ -367,7 +367,7 @@ router.post('/:id/send', authenticate, managerOnly, async (req, res) => {
       recipientRows = emailRows.filter((_, i) => checks[i]);
     }
 
-    const subject = newsletter.subject || newsletter.title || 'Newsletter — Your Nursery';
+    const subject = newsletter.subject || newsletter.title || 'Newsletter — Little Angels Day Nursery';
     const smtpOk  = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
     const sent   = [];
@@ -550,7 +550,7 @@ router.post('/:id/pull-planning', authenticate, managerOnly, async (req, res) =>
       ? reminders.map(r => `- ${r.note}`).join('\n')
       : '';
 
-    const sys = `You are writing a warm, professional nursery newsletter for Your Nursery in Ealing, West London. Use British English. Write in 2-3 flowing paragraphs per section. Never use bullet points. Be warm, reassuring, and engaging for parents.`;
+    const sys = `You are writing a warm, professional nursery newsletter for Little Angels Day Nursery in Ealing, West London. Use British English. Write in 2-3 flowing paragraphs per section. Never use bullet points. Be warm, reassuring, and engaging for parents.`;
 
     const prompt = `Write TWO newsletter sections based on this week's planning:
 
@@ -669,7 +669,7 @@ router.post('/auto-draft', authenticate, managerOnly, async (req, res) => {
     const reminderText = remindersRes.rows.map(r => r.note).join('\n');
     const birthdayText = birthdaysRes.rows.map(r => `${r.first_name}`).join(', ');
 
-    const sys = `You are writing a warm, professional weekly nursery newsletter for Your Nursery, Ealing. ${toneNotes}. Use British English. Never use bullet points in the newsletter body. Write in flowing paragraphs.`;
+    const sys = `You are writing a warm, professional weekly nursery newsletter for Little Angels Day Nursery, Ealing. ${toneNotes}. Use British English. Never use bullet points in the newsletter body. Write in flowing paragraphs.`;
 
     const prompt = `Create a complete newsletter for the week beginning ${weekStr}.
 

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>My Wellbeing — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <h1 class="page-title">Wellbeing Check-In</h1>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;background:#0f2d1e;border-color:#22c55e44">
+    <p style="color:#86efac;font-size:.9rem;margin:0">
+      💚 Your check-ins are <strong>private</strong> — only you can see your own history.
+      Managers can see a team overview but <strong>never your individual notes</strong> unless you flag a concern.
+    </p>
+  </div>
+
+  <!-- Check-in form -->
+  <div class="card" id="checkin-form">
+    <h3 style="margin:0 0 20px;color:#f1f5f9">Monthly Check-In</h3>
+    <p style="color:#94a3b8;font-size:.9rem;margin-bottom:24px" id="last-checkin-msg"></p>
+
+    <div class="form-group">
+      <label class="form-label">How is your mood overall? (1 = Low, 5 = Great)</label>
+      <div class="score-row" id="mood-row">
+        <button class="score-btn" data-score="1" data-group="mood">1</button>
+        <button class="score-btn" data-score="2" data-group="mood">2</button>
+        <button class="score-btn" data-score="3" data-group="mood">3</button>
+        <button class="score-btn" data-score="4" data-group="mood">4</button>
+        <button class="score-btn" data-score="5" data-group="mood">5</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">How manageable is your workload? (1 = Very heavy, 5 = Manageable)</label>
+      <div class="score-row" id="workload-row">
+        <button class="score-btn" data-score="1" data-group="workload">1</button>
+        <button class="score-btn" data-score="2" data-group="workload">2</button>
+        <button class="score-btn" data-score="3" data-group="workload">3</button>
+        <button class="score-btn" data-score="4" data-group="workload">4</button>
+        <button class="score-btn" data-score="5" data-group="workload">5</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Do you feel supported by the team? (1 = Not at all, 5 = Very supported)</label>
+      <div class="score-row" id="supported-row">
+        <button class="score-btn" data-score="1" data-group="supported">1</button>
+        <button class="score-btn" data-score="2" data-group="supported">2</button>
+        <button class="score-btn" data-score="3" data-group="supported">3</button>
+        <button class="score-btn" data-score="4" data-group="supported">4</button>
+        <button class="score-btn" data-score="5" data-group="supported">5</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Anything you'd like to note? (optional — private)</label>
+      <textarea class="form-control" id="wb-notes" rows="3" placeholder="How are things going? Anything on your mind?"></textarea>
+    </div>
+
+    <div class="form-group" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="wb-concern" style="width:18px;height:18px">
+      <label for="wb-concern" style="color:#f59e0b;cursor:pointer">
+        Flag this to the manager — I would like to talk to someone
+      </label>
+    </div>
+
+    <button class="btn btn-primary" id="submit-wb-btn" style="min-width:160px">Submit Check-In</button>
+  </div>
+
+  <!-- History -->
+  <h2 class="section-title" style="margin-top:24px">My History</h2>
+  <div id="wb-history" style="display:flex;flex-direction:column;gap:8px">
+    <div style="color:#94a3b8">Loading…</div>
+  </div>
+</div>
+
+<style>
+.score-row { display:flex;gap:10px;margin-top:8px }
+.score-btn {
+  width:48px;height:48px;border:2px solid #2d3748;border-radius:50%;background:#0f172a;
+  color:#94a3b8;font-size:1.1rem;font-weight:700;cursor:pointer;transition:.15s;
+}
+.score-btn:hover { border-color:#4a9abf;color:#f1f5f9 }
+.score-btn.selected { border-color:#4a9abf;background:#4a9abf;color:#fff }
+</style>
+
+<script>
+const scores = { mood: 0, workload: 0, supported: 0 };
+
+document.addEventListener('wren:ready', async () => {
+  try {
+    const last = await Wren.api('/api/wellbeing/my/last');
+    if (last.last_checkin) {
+      const d = new Date(last.last_checkin);
+      const days = Math.floor((Date.now() - d) / 86400000);
+      document.getElementById('last-checkin-msg').textContent =
+        days === 0 ? 'You already checked in today.' :
+        `Last check-in: ${d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})} (${days} day${days > 1 ? 's' : ''} ago)`;
+    } else {
+      document.getElementById('last-checkin-msg').textContent = 'No check-ins yet — please complete your first one below.';
+    }
+  } catch {}
+  loadHistory();
+});
+
+document.querySelectorAll('.score-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const group = btn.dataset.group;
+    const score = parseInt(btn.dataset.score);
+    scores[group] = score;
+    document.querySelectorAll(`.score-btn[data-group="${group}"]`).forEach(b => {
+      b.classList.toggle('selected', parseInt(b.dataset.score) === score);
+    });
+  });
+});
+
+document.getElementById('submit-wb-btn').addEventListener('click', async () => {
+  if (!scores.mood || !scores.workload || !scores.supported) {
+    Wren.toast('Please select a score for each question', 'error'); return;
+  }
+  try {
+    await Wren.api('/api/wellbeing/checkin', {
+      method: 'POST',
+      body: {
+        mood_score: scores.mood,
+        workload_score: scores.workload,
+        supported_score: scores.supported,
+        notes: document.getElementById('wb-notes').value,
+        is_concern: document.getElementById('wb-concern').checked,
+      }
+    });
+    Wren.toast('Check-in saved — thank you!', 'success');
+    // Reset form
+    scores.mood = scores.workload = scores.supported = 0;
+    document.querySelectorAll('.score-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById('wb-notes').value = '';
+    document.getElementById('wb-concern').checked = false;
+    loadHistory();
+  } catch (err) {
+    Wren.toast(err.error || 'Could not save check-in', 'error');
+  }
+});
+
+async function loadHistory() {
+  const el = document.getElementById('wb-history');
+  try {
+    const records = await Wren.api('/api/wellbeing/my');
+    if (!records || !records.length) {
+      el.innerHTML = '<div class="card" style="color:#94a3b8;text-align:center;padding:32px">No check-ins yet.</div>';
+      return;
+    }
+    el.innerHTML = records.map(r => {
+      const avg = ((r.mood_score + r.workload_score + r.supported_score) / 3).toFixed(1);
+      const colour = avg >= 4 ? '#22c55e' : avg >= 3 ? '#f59e0b' : '#ef4444';
+      return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="color:#94a3b8;font-size:.875rem">${new Date(r.checked_in_at).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
+          <div style="font-size:.8rem;color:#64748b;margin-top:2px">Mood ${r.mood_score} · Workload ${r.workload_score} · Support ${r.supported_score}</div>
+        </div>
+        <div style="font-size:1.25rem;font-weight:700;color:${colour}">Avg ${avg}</div>
+      </div>`;
+    }).join('');
+  } catch {}
+}
+</script>
+</body>
+</html>

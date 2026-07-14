@@ -158,6 +158,16 @@ router.post('/mandatory', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// DELETE /mandatory/:id — remove a mandatory training record (manager only)
+router.delete('/mandatory/:id', async (req, res) => {
+  if (!['manager','deputy_manager'].includes(req.user.role)) return res.status(403).json({ error: 'Manager access required' });
+  try {
+    const { rows } = await getPool().query(`DELETE FROM mandatory_training WHERE id=$1 RETURNING id`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, deleted_id: rows[0].id });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // PUT /:id/quiz — save quiz score
 router.put('/:id/quiz', async (req, res) => {
   const { quiz_score } = req.body;

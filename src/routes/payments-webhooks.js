@@ -139,7 +139,7 @@ async function handleStripePaymentFailed(db, paymentIntent) {
   if (rows[0]?.bill_payer_email) {
     await sendEmail({
       to: rows[0].bill_payer_email,
-      subject: 'Payment failed — Your Nursery',
+      subject: 'Payment failed — Little Angels Day Nursery',
       html: `<p>Your payment of ${fmt(rows[0].amount_pence)} for ${rows[0].description || 'nursery fees'} did not go through. Please log in to the parent hub to try again.</p>`,
       text: `Your payment of ${fmt(rows[0].amount_pence)} for ${rows[0].description || 'nursery fees'} did not go through. Please log in to the parent hub to try again.`,
     });
@@ -237,7 +237,7 @@ async function handleGCPaymentEvent(db, evt) {
       const amount = fmt(payment.amount_pence);
       await sendEmail({
         to: payment.bill_payer_email,
-        subject: `Direct Debit collection failed — Your Nursery`,
+        subject: `Direct Debit collection failed — Little Angels`,
         html: `<p>We were unable to collect ${amount} by Direct Debit for ${payment.description || 'nursery fees'}. Please log in to your parent hub to make alternative payment arrangements.</p>`,
         text: `We were unable to collect ${amount} by Direct Debit for ${payment.description || 'nursery fees'}. Please log in to your parent hub.`,
       });
@@ -290,7 +290,7 @@ async function sendReceiptEmail(payment, amountPence, toEmail, method) {
   try {
     await sendEmail({
       to: toEmail,
-      subject: `Payment received — Your Nursery`,
+      subject: `Payment received — Little Angels Day Nursery`,
       html: `
         <p>Thank you for your payment.</p>
         <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
@@ -303,7 +303,7 @@ async function sendReceiptEmail(payment, amountPence, toEmail, method) {
           <tr><td style="padding:6px 12px;color:#666">Date</td>
               <td style="padding:6px 12px">${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</td></tr>
         </table>
-        <p style="margin-top:16px;font-size:12px;color:#999">Your Nursery, 1A Example Lane, London W13 9LU</p>
+        <p style="margin-top:16px;font-size:12px;color:#999">Little Angels Day Nursery, 1A Dudley Gardens, London W13 9LU</p>
       `,
       text: `Thank you for your payment of ${fmt(amountPence)} for ${payment.description || 'nursery fees'}. Paid by ${method}.`,
     });

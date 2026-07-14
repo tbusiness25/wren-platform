@@ -214,9 +214,9 @@ router.get('/:id/pdf', async (req, res) => {
       doc.on('error', reject);
 
       doc.fontSize(17).font('Helvetica-Bold')
-        .text('Your Nursery', { align: 'center' });
+        .text('Little Angels Day Nursery', { align: 'center' });
       doc.fontSize(10).font('Helvetica')
-        .text('1A Example Lane, Ealing, W13 9LU', { align: 'center' });
+        .text('1A Dudley Gardens, Ealing, W13 9LU', { align: 'center' });
       doc.moveDown(0.6);
       doc.fontSize(14).font('Helvetica-Bold')
         .text('Progress Check at Age Two', { align: 'center' });

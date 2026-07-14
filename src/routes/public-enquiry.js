@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Public website enquiry endpoint — UNAUTHENTICATED, rate-limited.
 // Mounted in editions/ladn/server-unified.js BEFORE the auth-gated routes.
-// Target of the Your Nursery public website registration form (via same-origin
+// Target of the Little Angels public website registration form (via same-origin
 // /api/enquiry nginx proxy on the nursery-website container).
 //
 // Inserts into enquiries with source='website', stage='new', status='new'.

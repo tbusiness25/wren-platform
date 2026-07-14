@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="diary">
+  <meta name="wren-app-title" content="Diary">
+  <meta name="wren-app-chat"  content="on">
+  <title>Diary · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-diary-page {
+      padding: 0 0 env(safe-area-inset-bottom, 16px);
+    }
+
+    /* ── Filter bar ─────────────────────────────────────────────────────────── */
+    #ey-diary-filters {
+      padding: 8px 12px 6px;
+      background: var(--c-navy-mid);
+      border-bottom: 1px solid var(--c-border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ey-diary-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .ey-chip {
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--c-border);
+      border-radius: 16px;
+      background: transparent;
+      color: var(--c-muted);
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s, color .15s, border-color .15s;
+      min-width: 44px;
+    }
+    .ey-chip:hover { background: rgba(255,255,255,0.06); color: var(--c-text); }
+    .ey-chip.active {
+      background: var(--c-blue);
+      border-color: var(--c-blue);
+      color: #fff;
+    }
+    .ey-date-stepper {
+      display: flex; align-items: center; gap: 2px; margin-left: auto;
+      background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px;
+    }
+    .ey-date-stepper button {
+      min-width: 44px; min-height: 44px; background: none; border: none;
+      color: var(--c-text); cursor: pointer; padding: 0 8px;
+    }
+    .ey-date-stepper #ey-date-prev, .ey-date-stepper #ey-date-next { font-size: 1.25rem; line-height: 1; }
+    .ey-date-stepper button:disabled { opacity: .3; cursor: default; }
+    #ey-date-label { font-size: .82rem; font-weight: 700; min-width: 80px; text-align: center; }
+    /* hidden native picker, opened by tapping the date label */
+    #ey-date-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+
+    /* ── Timeline ───────────────────────────────────────────────────────────── */
+    #ey-diary-list {
+      list-style: none;
+      margin: 0;
+      padding: 8px 12px;
+    }
+
+    .ey-diary-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background .15s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .ey-diary-entry:hover  { background: rgba(255,255,255,0.04); }
+    .ey-diary-entry:active { background: rgba(255,255,255,0.08); }
+    .ey-diary-entry:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
+
+    .ey-diary-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .ey-diary-body {
+      flex: 1;
+      min-width: 0;
+    }
+    .ey-diary-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .ey-diary-child-name {
+      font-size: .92rem;
+      font-weight: 600;
+      color: var(--c-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ey-diary-type-icon {
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    .ey-diary-type-label {
+      font-size: .8rem;
+      font-weight: 700;
+      color: var(--c-muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      flex-shrink: 0;
+    }
+    .ey-diary-detail {
+      font-size: .88rem;
+      color: var(--c-text);
+      margin-top: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ey-diary-meta {
+      font-size: .76rem;
+      color: var(--c-muted);
+      margin-top: 3px;
+    }
+
+    .ey-diary-time {
+      font-size: .8rem;
+      color: var(--c-muted);
+      flex-shrink: 0;
+      align-self: flex-start;
+      padding-top: 2px;
+    }
+
+    /* ── Skeleton ───────────────────────────────────────────────────────────── */
+    #ey-diary-skeleton {
+      padding: 8px 12px;
+    }
+    .ey-skeleton-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      margin-bottom: 8px;
+    }
+    .ey-skel-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--c-border);
+      flex-shrink: 0;
+    }
+    .ey-skel-lines {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 4px;
+    }
+    .ey-skel-line {
+      height: 12px;
+      border-radius: 6px;
+      background: var(--c-border);
+    }
+
+    /* ── Empty state ────────────────────────────────────────────────────────── */
+    #ey-diary-empty {
+      padding: 48px 24px;
+      text-align: center;
+      color: var(--c-muted);
+    }
+    #ey-diary-empty .empty-icon { font-size: 3rem; margin-bottom: 12px; }
+    #ey-diary-empty .empty-title { font-size: 1.05rem; font-weight: 600; color: var(--c-text); margin-bottom: 6px; }
+    #ey-diary-empty .empty-body  { font-size: .88rem; }
+
+    /* ── Add entry FAB ──────────────────────────────────────────────────────── */
+    #ey-diary-add-fab {
+      position: fixed;
+      bottom: calc(var(--bottom-nav-h, 64px) + 12px + env(safe-area-inset-bottom, 0px));
+      right: 16px;
+      width: 52px;
+      height: 52px;
+      background: var(--c-orange);
+      border: none;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 1.6rem;
+      font-weight: 400;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 55;
+      transition: transform .15s, opacity .15s;
+      text-decoration: none;
+    }
+    #ey-diary-add-fab:hover   { transform: scale(1.06); opacity: .95; }
+    #ey-diary-add-fab:active  { transform: scale(0.96); }
+    #ey-diary-add-fab span { pointer-events: none; line-height: 1; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-diary-page">
+
+  <div id="ey-diary-filters">
+    <!-- Room filter -->
+    <div class="ey-diary-filter-row" role="group" aria-label="Filter by room">
+      <button class="ey-chip" data-room="" aria-pressed="false">All</button>
+      <button class="ey-chip" data-room="baby" aria-pressed="false">Baby Room</button>
+      <button class="ey-chip" data-room="pre" aria-pressed="false">Pre-school</button>
+      <div class="ey-date-stepper" role="group" aria-label="Select date">
+        <button id="ey-date-prev" type="button" aria-label="Previous day">‹</button>
+        <button id="ey-date-label" type="button" aria-label="Change date">Today</button>
+        <button id="ey-date-next" type="button" aria-label="Next day">›</button>
+        <input type="date" id="ey-date-input" aria-hidden="true" tabindex="-1">
+      </div>
+    </div>
+    <!-- Type filter -->
+    <div class="ey-diary-filter-row" role="group" aria-label="Filter by entry type">
+      <button class="ey-chip" data-type="" aria-pressed="false">All</button>
+      <button class="ey-chip" data-type="sleep"  aria-pressed="false">😴 Sleep</button>
+      <button class="ey-chip" data-type="nappy"  aria-pressed="false">🧷 Nappies</button>
+      <button class="ey-chip" data-type="food"   aria-pressed="false">🍽 Food</button>
+      <button class="ey-chip" data-type="bottle" aria-pressed="false">🍼 Bottle</button>
+      <button class="ey-chip" data-type="toilet" aria-pressed="false">🚽 Toilet</button>
+      <button class="ey-chip" data-type="note"   aria-pressed="false">📝 Notes</button>
+    </div>
+  </div>
+
+  <!-- Skeleton loader -->
+  <div id="ey-diary-skeleton" aria-hidden="true">
+    <div class="ey-skeleton-row">
+      <div class="ey-skel-circle"></div>
+      <div class="ey-skel-lines">
+        <div class="ey-skel-line" style="width:55%"></div>
+        <div class="ey-skel-line" style="width:75%"></div>
+        <div class="ey-skel-line" style="width:40%"></div>
+      </div>
+    </div>
+    <div class="ey-skeleton-row">
+      <div class="ey-skel-circle"></div>
+      <div class="ey-skel-lines">
+        <div class="ey-skel-line" style="width:60%"></div>
+        <div class="ey-skel-line" style="width:80%"></div>
+        <div class="ey-skel-line" style="width:45%"></div>
+      </div>
+    </div>
+    <div class="ey-skeleton-row">
+      <div class="ey-skel-circle"></div>
+      <div class="ey-skel-lines">
+        <div class="ey-skel-line" style="width:50%"></div>
+        <div class="ey-skel-line" style="width:70%"></div>
+        <div class="ey-skel-line" style="width:35%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entries list (populated by JS) -->
+  <ul id="ey-diary-list" role="list" aria-label="Diary entries" aria-live="polite" hidden></ul>
+
+  <!-- Empty state -->
+  <div id="ey-diary-empty" hidden role="status" aria-live="polite">
+    <div class="empty-icon">📖</div>
+    <div class="empty-title" id="ey-diary-empty-title">No diary entries yet</div>
+    <div class="empty-body">Entries logged today will appear here.</div>
+  </div>
+
+</div><!-- #ey-diary-page -->
+
+<!-- ＋ Entry FAB → canonical daily diary tool (single + group), opened on the viewed date -->
+<a href="/ey/diary/entry" id="ey-diary-add-fab" aria-label="Log daily diary for the room" title="Log daily diary">
+  <span aria-hidden="true">＋</span>
+</a>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ── Constants ───────────────────────────────────────────────────────────── */
+  var AVATAR_COLORS = [
+    '#4a9abf','#e07820','#22c55e','#a855f7','#ef4444',
+    '#06b6d4','#f59e0b','#10b981','#ec4899','#3b82f6'
+  ];
+  var TYPE_ICON = {
+    sleep: '😴', nappy: '🧷', food: '🍽', bottle: '🍼', toilet: '🚽', note: '📝'
+  };
+  var TYPE_LABEL = {
+    sleep: 'Sleep', nappy: 'Nappy', food: 'Food', bottle: 'Bottle', toilet: 'Toilet', note: 'Note'
+  };
+
+  /* ── State ───────────────────────────────────────────────────────────────── */
+  var _all        = [];
+  var _roomFilter = localStorage.getItem('eyDiaryRoomFilter') || '';
+  var _typeFilter = '';
+  var _date       = _todayStr();
+
+  /* ── Helpers ─────────────────────────────────────────────────────────────── */
+  function _todayStr() {
+    var d = new Date();
+    return d.getFullYear() + '-' +
+      String(d.getMonth()+1).padStart(2,'0') + '-' +
+      String(d.getDate()).padStart(2,'0');
+  }
+  function _shiftDay(str, n) {
+    var d = new Date(str + 'T00:00:00'); d.setDate(d.getDate() + n);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function _updateDateLabel() {
+    var el = document.getElementById('ey-date-label'); if (!el) return;
+    if (_date === _todayStr()) { el.textContent = 'Today'; }
+    else { var d = new Date(_date + 'T00:00:00');
+      el.textContent = d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}).toUpperCase().replace(/ /g,'-'); }
+    var nb = document.getElementById('ey-date-next'); if (nb) nb.disabled = (_date >= _todayStr());
+  }
+
+  function _color(name) {
+    return AVATAR_COLORS[(name || 'A').charCodeAt(0) % AVATAR_COLORS.length];
+  }
+
+  function _e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _fmtTime(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function _detail(e) {
+    switch (e.entry_type) {
+      case 'sleep': {
+        var mins = parseInt(e.duration_minutes) || 0;
+        var dur  = mins ? (Math.floor(mins/60) > 0 ? Math.floor(mins/60)+'h ' : '') + (mins%60 > 0 ? mins%60+'m' : '') : '';
+        var qual = e.sleep_quality ? '(' + e.sleep_quality + ')' : '';
+        return [dur, qual].filter(Boolean).join(' ') || 'Sleep logged';
+      }
+      case 'nappy':
+        return e.nappy_state || 'Nappy change';
+      case 'food':
+        if ((e.food_amount || '').toLowerCase() === 'refused')
+          return (e.food_meal ? e.food_meal + ' · ' : '') + 'Refused';
+        return [e.food_meal, e.food_amount].filter(Boolean).join(' · ') || 'Meal logged';
+      case 'bottle':
+        return [e.drink_ml ? e.drink_ml + 'ml' : '', e.drink_type].filter(Boolean).join(' ') || 'Bottle logged';
+      case 'toilet':
+        return e.notes || 'Toilet visit';
+      case 'note':
+      default:
+        return e.notes || 'Note';
+    }
+  }
+
+  function _matchesRoom(e) {
+    if (!_roomFilter) return true;
+    var r = (e.room_name || '').toLowerCase();
+    if (_roomFilter === 'baby') return r.indexOf('baby') !== -1;
+    if (_roomFilter === 'pre')  return r.indexOf('pre')  !== -1;
+    return true;
+  }
+
+  function _matchesType(e) {
+    if (!_typeFilter) return true;
+    return e.entry_type === _typeFilter;
+  }
+
+  /* ── Render ──────────────────────────────────────────────────────────────── */
+  function _render() {
+    var list    = document.getElementById('ey-diary-list');
+    var empty   = document.getElementById('ey-diary-empty');
+    var emptyT  = document.getElementById('ey-diary-empty-title');
+
+    var filtered = _all.filter(function(e) {
+      return _matchesRoom(e) && _matchesType(e);
+    });
+
+    if (!filtered.length) {
+      list.hidden  = true;
+      var dateLabel = _date === _todayStr() ? 'today' : _date;
+      emptyT.textContent = 'No diary entries for ' + dateLabel + ' yet';
+      empty.hidden = false;
+      return;
+    }
+
+    empty.hidden = true;
+    list.hidden  = false;
+    list.innerHTML = '';
+
+    filtered.forEach(function(e) {
+      var childName = _e((e.first_name || '') + ' ' + (e.last_name || ''));
+      var initials  = (e.first_name || 'X').charAt(0).toUpperCase();
+      var color     = _color(e.first_name || 'X');
+      var icon      = TYPE_ICON[e.entry_type] || '📝';
+      var label     = TYPE_LABEL[e.entry_type] || e.entry_type;
+      var detail    = _e(_detail(e));
+      var time      = _fmtTime(e.occurred_at);
+      var by        = e.staff_name ? 'by ' + _e(e.staff_name) : '';
+
+      var li = document.createElement('li');
+      li.innerHTML =
+        '<a href="/ey/child/' + _e(e.child_id) + '#diary" class="ey-diary-entry" aria-label="' +
+        _e(label + ' entry for ' + childName) + '">' +
+          '<div class="ey-diary-avatar" style="background:' + color + '" aria-hidden="true">' +
+            initials +
+          '</div>' +
+          '<div class="ey-diary-body">' +
+            '<div class="ey-diary-top">' +
+              '<span class="ey-diary-child-name">' + childName + '</span>' +
+              '<span class="ey-diary-type-icon" aria-hidden="true">' + icon + '</span>' +
+              '<span class="ey-diary-type-label">' + _e(label) + '</span>' +
+            '</div>' +
+            (detail ? '<div class="ey-diary-detail">' + detail + '</div>' : '') +
+            '<div class="ey-diary-meta">' + by + '</div>' +
+          '</div>' +
+          '<div class="ey-diary-time" aria-label="logged at ' + _e(time) + '">' + _e(time) + '</div>' +
+        '</a>';
+      list.appendChild(li);
+    });
+  }
+
+  /* ── Fetch ───────────────────────────────────────────────────────────────── */
+  function _fetchEntries(date) {
+    var skel  = document.getElementById('ey-diary-skeleton');
+    var list  = document.getElementById('ey-diary-list');
+    var empty = document.getElementById('ey-diary-empty');
+
+    skel.removeAttribute('aria-hidden');
+    skel.style.display = '';
+    list.hidden  = true;
+    empty.hidden = true;
+
+    Wren.api('/api/diary/entries?date=' + date)
+      .then(function(data) {
+        _all = Array.isArray(data) ? data : [];
+        skel.style.display = 'none';
+        _render();
+      })
+      .catch(function() {
+        _all = [];
+        skel.style.display = 'none';
+        _render();
+      });
+  }
+
+  /* ── Filter chip helpers ─────────────────────────────────────────────────── */
+  function _activateChips(groupSel, activeVal) {
+    document.querySelectorAll(groupSel).forEach(function(btn) {
+      var val = btn.dataset.room !== undefined ? btn.dataset.room : btn.dataset.type;
+      var on  = val === activeVal;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+  }
+
+  /* ── Init ────────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function () {
+
+    /* Date stepper (EyLog-style; hidden native picker for jumping to older dates) */
+    var dateInput = document.getElementById('ey-date-input');
+    dateInput.value = _date;
+    dateInput.max   = _todayStr();
+    function _updateFab() {
+      var f = document.getElementById('ey-diary-add-fab');
+      if (f) f.href = '/ey/diary/entry?date=' + _date;
+    }
+    function _setDate(d) {
+      if (d > _todayStr()) d = _todayStr();
+      _date = d; dateInput.value = _date; _updateDateLabel(); _updateFab(); _fetchEntries(_date);
+    }
+    _updateFab();
+    document.getElementById('ey-date-prev').addEventListener('click', function(){ _setDate(_shiftDay(_date, -1)); });
+    document.getElementById('ey-date-next').addEventListener('click', function(){ _setDate(_shiftDay(_date, 1)); });
+    document.getElementById('ey-date-label').addEventListener('click', function(){
+      if (dateInput.showPicker) { try { dateInput.showPicker(); return; } catch(e){} }
+      dateInput.click();
+    });
+    dateInput.addEventListener('change', function(){ _setDate(this.value || _todayStr()); });
+    _updateDateLabel();
+
+    /* Room chips */
+    _activateChips('[data-room]', _roomFilter);
+    document.querySelectorAll('[data-room]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        _roomFilter = btn.dataset.room;
+        localStorage.setItem('eyDiaryRoomFilter', _roomFilter);
+        _activateChips('[data-room]', _roomFilter);
+        _render();
+      });
+    });
+
+    /* Type chips */
+    _activateChips('[data-type]', _typeFilter);
+    document.querySelectorAll('[data-type]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        _typeFilter = btn.dataset.type;
+        _activateChips('[data-type]', _typeFilter);
+        _render();
+      });
+    });
+
+    /* Initial fetch */
+    _fetchEntries(_date);
+  });
+
+}());
+</script>
+</body>
+</html>

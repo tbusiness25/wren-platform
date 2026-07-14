@@ -444,7 +444,7 @@ async function syncXero(providerId, triggeredBy = 'manual') {
 function sendTelegramAlert(message) {
   try {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId   = process.env.TELEGRAM_CHAT_ID || '';
+    const chatId   = process.env.TELEGRAM_CHAT_ID || '7565744160';
     if (!botToken) return;
     const body = JSON.stringify({ chat_id: chatId, text: message });
     const req = https.request({

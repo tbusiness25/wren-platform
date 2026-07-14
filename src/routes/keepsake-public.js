@@ -38,7 +38,7 @@ function goneResponse(res, why) {
   res.status(410).type('html').send(K.wrapDocument(
     `<div class="kbook"><section class="kcard" style="text-align:center;margin-top:40px">
        <h2>💛 This keepsake link is no longer available</h2>
-       <p class="kprose">This memory link has ${why === 'expired' ? 'expired' : 'been withdrawn'}. If you'd like it re-issued, please contact Your Nursery.</p>
+       <p class="kprose">This memory link has ${why === 'expired' ? 'expired' : 'been withdrawn'}. If you'd like it re-issued, please contact Little Angels Day Nursery.</p>
        <p class="kfoot-info">${K.esc(K.NURSERY.phone)} &middot; ${K.esc(K.NURSERY.email)}</p>
      </section></div>`, 'Keepsake unavailable'));
 }
@@ -70,7 +70,7 @@ router.get('/keepsake/:token/manifest.webmanifest', async (req, res) => {
   res.type('application/manifest+json').json({
     name: `${name} — Memory Book`,
     short_name: name.length > 12 ? name.slice(0, 12) : name,
-    description: `${name}'s Your Nursery keepsake — photos, memories and learning journey.`,
+    description: `${name}'s Little Angels keepsake — photos, memories and learning journey.`,
     id: `/keepsake/${req.params.token}/`,
     start_url: './',
     scope: './',
@@ -214,7 +214,7 @@ function APP_SHELL(name, title, token) {
 
 // ── The keepsake service worker (offline-first for a frozen gift) ──────────────
 const KEEPSAKE_SW = `
-// Your Nursery keepsake SW — offline-first for a single child's memory book.
+// Little Angels keepsake SW — offline-first for a single child's memory book.
 // Scope is /keepsake/<token>/ (set by this file's own path). Caching the child's
 // own media offline is the whole point of the gift ("yours to keep forever").
 const CACHE = 'la-keepsake-v20260702a';

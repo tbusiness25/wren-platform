@@ -243,7 +243,7 @@ async function generateProposedOutput(workspaceId) {
 // ── Telegram helper ───────────────────────────────────────────────────────────
 async function telegram(msg) {
   const token   = process.env.TELEGRAM_BOT_TOKEN;
-  const chat_id = process.env.TELEGRAM_CHAT_ID || '';
+  const chat_id = process.env.TELEGRAM_CHAT_ID || '7565744160';
   if (!token) return;
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {

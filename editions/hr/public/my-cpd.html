@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="hr">
+  <title>My CPD — HR Portal</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .tab-bar { display:flex; gap:4px; margin-bottom:20px; flex-wrap:wrap; }
+    .tab-bar button { padding:8px 16px; border:none; border-radius:8px; cursor:pointer; font-size:.875rem; font-weight:600; background:#1e293b; color:#94a3b8; transition:.15s; }
+    .tab-bar button.active { background:#4a9abf; color:#fff; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .course-card { background:#1e293b; border:1px solid #2d3748; border-radius:10px; padding:16px; margin-bottom:10px; }
+    .course-card.done { border-color:#166534; }
+    .cert-card { background:#1e293b; border:1px solid #166534; border-radius:10px; padding:16px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+    .progress-bar { background:#0f172a; border-radius:4px; height:6px; overflow:hidden; margin-top:6px; }
+    .progress-bar-fill { height:100%; background:#4a9abf; border-radius:4px; transition:.3s; }
+    .btn-start { padding:8px 18px; background:#4a9abf; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:.875rem; transition:.15s; }
+    .btn-start:hover { background:#3b82f6; }
+    .btn-retry { padding:8px 18px; background:#334155; color:#94a3b8; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:.875rem; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:1000; display:none; overflow-y:auto; }
+    .modal-backdrop.open { display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; }
+    .modal { background:#1e293b; border-radius:12px; padding:24px; max-width:640px; width:100%; }
+    .quiz-option { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:8px; background:#0f172a; margin-bottom:6px; cursor:pointer; border:2px solid transparent; transition:.15s; }
+    .quiz-option:hover { border-color:#4a9abf; }
+    .quiz-option.selected { border-color:#4a9abf; background:#0c2040; }
+    .quiz-option.correct { border-color:#22c55e; background:#052e16; }
+    .quiz-option.wrong { border-color:#ef4444; background:#2d0a0a; }
+    .section-content { background:#0f172a; border-radius:8px; padding:16px; margin:12px 0; font-size:.9rem; line-height:1.7; color:#e2e8f0; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <h1 class="page-title">My CPD &amp; Training</h1>
+  </div>
+
+  <!-- Stats strip -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:24px">
+    <div class="stat-card"><div class="stat-label">CPD Hours (this year)</div><div class="stat-value" id="cpd-hours">—</div></div>
+    <div class="stat-card"><div class="stat-label">Courses Completed</div><div class="stat-value" id="cpd-count">—</div></div>
+    <div class="stat-card"><div class="stat-label">Certificates Earned</div><div class="stat-value" id="cert-count">—</div></div>
+    <div class="stat-card"><div class="stat-label">Mandatory Training</div><div class="stat-value" id="mandatory-count" style="font-size:1rem">—</div></div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="active" data-tab="available">Available Courses</button>
+    <button data-tab="certificates">My Certificates</button>
+    <button data-tab="records">CPD Records</button>
+    <button data-tab="mandatory">Mandatory Training</button>
+  </div>
+
+  <!-- Tab 1: Available Courses -->
+  <div class="tab-panel active" id="tab-available">
+    <div id="courses-list"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab 2: Certificates -->
+  <div class="tab-panel" id="tab-certificates">
+    <div id="certs-list"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab 3: CPD Records -->
+  <div class="tab-panel" id="tab-records">
+    <div id="cpd-records-list"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+
+  <!-- Tab 4: Mandatory Training -->
+  <div class="tab-panel" id="tab-mandatory">
+    <div id="mandatory-list"><div style="color:#94a3b8">Loading…</div></div>
+  </div>
+</div>
+
+<!-- Course reader modal -->
+<div class="modal-backdrop" id="course-modal">
+  <div class="modal">
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', init);
+
+let courseCache = null;
+
+async function init() {
+  document.querySelectorAll('.tab-bar button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      loadTab(btn.dataset.tab);
+    });
+  });
+
+  document.getElementById('course-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  await loadStats();
+  await loadTab('available');
+}
+
+const loadedTab = {};
+async function loadTab(tab) {
+  if (loadedTab[tab]) return;
+  loadedTab[tab] = true;
+  if (tab === 'available') await loadAvailable();
+  if (tab === 'certificates') await loadCerts();
+  if (tab === 'records') await loadRecords();
+  if (tab === 'mandatory') await loadMandatory();
+}
+
+async function loadStats() {
+  try {
+    const [cpdData, certsData] = await Promise.allSettled([
+      Wren.api('/api/cpd'),
+      Wren.api('/api/courses/certificates'),
+    ]);
+    if (cpdData.status === 'fulfilled') {
+      const recs = cpdData.value || [];
+      const yr = new Date().getFullYear();
+      const yrRecs = recs.filter(r => r.completion_date && new Date(r.completion_date).getFullYear() === yr);
+      const hrs = yrRecs.reduce((s, r) => s + parseFloat(r.hours || 0), 0);
+      document.getElementById('cpd-hours').textContent = hrs.toFixed(1) + 'h';
+      document.getElementById('cpd-count').textContent = yrRecs.length;
+    }
+    if (certsData.status === 'fulfilled') {
+      document.getElementById('cert-count').textContent = (certsData.value || []).length;
+    }
+  } catch(e) {}
+}
+
+async function loadAvailable() {
+  const el = document.getElementById('courses-list');
+  try {
+    const courses = await Wren.api('/api/courses/my-courses');
+    courseCache = courses;
+    if (!courses || !courses.length) {
+      el.innerHTML = '<div class="card" style="text-align:center;padding:32px;color:#94a3b8">No courses available yet — ask your manager to publish them.</div>';
+      return;
+    }
+    el.innerHTML = courses.map(c => {
+      const done = !!c.passed;
+      const attempted = c.latest_attempt_id != null;
+      return `<div class="course-card ${done ? 'done' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+          <div style="flex:1;min-width:200px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              ${done ? '<span style="color:#22c55e;font-size:1.1rem">✅</span>' : ''}
+              <span style="font-weight:700;color:#f1f5f9">${esc(c.name)}</span>
+              ${c.is_mandatory ? '<span style="background:#312e81;color:#a5b4fc;font-size:.7rem;padding:2px 8px;border-radius:10px;font-weight:700">MANDATORY</span>' : ''}
+            </div>
+            <div style="color:#64748b;font-size:.8rem">
+              ${c.category ? esc(c.category) + ' · ' : ''}${c.duration_minutes||25} min · ${c.cpd_hours||0}h CPD · ${c.section_count||0} sections
+              ${attempted ? ` · Last score: <span style="color:${c.score_pct>=80?'#22c55e':'#ef4444'};font-weight:700">${c.score_pct}%</span>` : ''}
+            </div>
+          </div>
+          <div>
+            ${done
+              ? `<button class="btn-retry" onclick="openCourse(${c.id})">Retake</button>`
+              : `<button class="btn-start" onclick="openCourse(${c.id})">${attempted ? 'Retake' : 'Start Course'}</button>`
+            }
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load courses: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadCerts() {
+  const el = document.getElementById('certs-list');
+  try {
+    const certs = await Wren.api('/api/courses/certificates');
+    if (!certs || !certs.length) {
+      el.innerHTML = '<div class="card" style="text-align:center;padding:32px;color:#94a3b8">No certificates yet — complete a course quiz to earn one.</div>';
+      return;
+    }
+    el.innerHTML = certs.map(c => `
+      <div class="cert-card">
+        <div>
+          <div style="font-weight:700;color:#f1f5f9;margin-bottom:4px">🏅 ${esc(c.course_name)}</div>
+          <div style="color:#64748b;font-size:.8rem">
+            Issued: ${fmtDate(c.issued_at)} · ${c.cpd_hours||0}h CPD
+            ${c.expires_at ? ` · Expires: <span style="color:${new Date(c.expires_at)<new Date()?'#ef4444':'#f59e0b'}">${fmtDate(c.expires_at)}</span>` : ''}
+          </div>
+        </div>
+        <div style="color:#22c55e;font-weight:700;font-size:.9rem">Certificate #${c.uuid?.slice(0,8).toUpperCase() || c.id}</div>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load certificates: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadRecords() {
+  const el = document.getElementById('cpd-records-list');
+  try {
+    const recs = await Wren.api('/api/cpd');
+    if (!recs || !recs.length) {
+      el.innerHTML = '<div class="card" style="text-align:center;padding:32px;color:#94a3b8">No CPD records yet.</div>';
+      return;
+    }
+    el.innerHTML = recs.map(r => `
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <div style="font-weight:600;color:#f1f5f9">${esc(r.course_name||r.title||'Training')}</div>
+          <div style="color:#94a3b8;font-size:.8rem">${r.provider||''} ${r.completion_date ? '· ' + fmtDate(r.completion_date) : ''}</div>
+        </div>
+        <div style="text-align:right">
+          ${r.hours ? `<div style="color:#4a9abf;font-weight:600">${r.hours}h</div>` : ''}
+          ${r.expiry_date && new Date(r.expiry_date) < new Date()
+            ? `<div style="color:#ef4444;font-size:.8rem">Expired ${fmtDate(r.expiry_date)}</div>`
+            : r.expiry_date ? `<div style="color:#f59e0b;font-size:.8rem">Expires ${fmtDate(r.expiry_date)}</div>` : ''}
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load records: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadMandatory() {
+  const el = document.getElementById('mandatory-list');
+  try {
+    const user = Wren.user;
+    const items = await Wren.api('/api/staff/' + user.id + '/training').catch(() => []);
+    if (!items || !items.length) {
+      el.innerHTML = '<div class="card" style="text-align:center;padding:32px;color:#94a3b8">No mandatory training records on file.</div>';
+      return;
+    }
+    const current = items.filter(i => !i.expiry_date || new Date(i.expiry_date) > new Date()).length;
+    document.getElementById('mandatory-count').textContent = `${current}/${items.length}`;
+    el.innerHTML = items.map(i => {
+      const exp = i.expiry_date && new Date(i.expiry_date) < new Date();
+      return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <div style="font-weight:500;color:#f1f5f9">${esc(i.training_type||'Training')}</div>
+          ${i.expiry_date ? `<div style="color:#94a3b8;font-size:.8rem">Expires ${fmtDate(i.expiry_date)}</div>` : ''}
+        </div>
+        <span class="badge" style="background:${exp?'#7f1d1d':'#166534'};color:${exp?'#fca5a5':'#86efac'};padding:3px 10px;border-radius:12px;font-size:.75rem;font-weight:700">
+          ${exp ? 'Expired' : i.expiry_date ? 'Current' : 'On file'}
+        </span>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load mandatory training: ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Course reader ──────────────────────────────────────────────────────────
+
+async function openCourse(id) {
+  const modal = document.getElementById('course-modal');
+  const content = document.getElementById('modal-content');
+  modal.classList.add('open');
+  content.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:32px">Loading course…</div>';
+  try {
+    const course = await Wren.api('/api/courses/' + id);
+    showCourseReader(course);
+  } catch(e) {
+    content.innerHTML = `<div style="color:#ef4444">Could not load course: ${esc(e.message)}</div>
+      <button class="btn-start" onclick="closeModal()" style="margin-top:16px">Close</button>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('course-modal').classList.remove('open');
+}
+
+let quizState = {};
+
+function showCourseReader(course) {
+  const content = document.getElementById('modal-content');
+  quizState = { courseId: course.id, answers: {}, currentSection: 0, quizMode: false };
+
+  const sections = course.sections || [];
+  const questions = course.questions || [];
+
+  function renderSection(idx) {
+    quizState.currentSection = idx;
+    const s = sections[idx];
+    const isLast = idx === sections.length - 1;
+    content.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0;color:#f1f5f9;font-size:1.1rem">${esc(course.name)}</h2>
+        <button onclick="closeModal()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:1.2rem">✕</button>
+      </div>
+      <div style="color:#94a3b8;font-size:.8rem;margin-bottom:12px">Section ${idx+1} of ${sections.length}: <strong style="color:#4a9abf">${esc(s.title||'')}</strong></div>
+      <div class="progress-bar"><div class="progress-bar-fill" style="width:${Math.round(((idx+1)/sections.length)*100)}%"></div></div>
+      <div class="section-content">${esc(s.body||s.content||'')}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:20px">
+        <button class="btn-retry" onclick="${idx > 0 ? 'renderSection_'+course.id+'('+(idx-1)+')' : 'closeModal()'}">${idx > 0 ? '← Back' : 'Close'}</button>
+        <button class="btn-start" onclick="${isLast && questions.length ? 'startQuiz_'+course.id+'()' : isLast ? 'closeModal()' : 'renderSection_'+course.id+'('+(idx+1)+')'}">
+          ${isLast && questions.length ? 'Take Quiz →' : isLast ? 'Done' : 'Next →'}
+        </button>
+      </div>`;
+  }
+
+  // Attach named functions to window so onclick can reference them
+  window['renderSection_' + course.id] = renderSection;
+  window['startQuiz_' + course.id] = () => startQuiz(course, questions);
+
+  if (sections.length) {
+    renderSection(0);
+  } else if (questions.length) {
+    startQuiz(course, questions);
+  } else {
+    content.innerHTML = `<div style="color:#94a3b8;text-align:center;padding:32px">This course has no content yet.</div>
+      <button class="btn-start" onclick="closeModal()" style="margin-top:16px;display:block;margin-left:auto">Close</button>`;
+  }
+}
+
+function startQuiz(course, questions) {
+  const content = document.getElementById('modal-content');
+  quizState.quizAnswers = {};
+  quizState.quizSubmitted = false;
+  let currentQ = 0;
+
+  function renderQ(idx) {
+    currentQ = idx;
+    const q = questions[idx];
+    const opts = [
+      { key: 'a', text: q.option_a },
+      { key: 'b', text: q.option_b },
+      { key: 'c', text: q.option_c },
+      { key: 'd', text: q.option_d },
+    ].filter(o => o.text);
+
+    content.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0;color:#f1f5f9;font-size:1.1rem">Quiz: ${esc(course.name)}</h2>
+        <button onclick="closeModal()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:1.2rem">✕</button>
+      </div>
+      <div style="color:#94a3b8;font-size:.8rem;margin-bottom:12px">Question ${idx+1} of ${questions.length}</div>
+      <div class="progress-bar" style="margin-bottom:16px"><div class="progress-bar-fill" style="width:${Math.round(((idx+1)/questions.length)*100)}%"></div></div>
+      <p style="color:#f1f5f9;font-weight:600;margin-bottom:16px">${esc(q.question_text)}</p>
+      <div id="quiz-opts">
+        ${opts.map(o => `<div class="quiz-option" data-key="${o.key}" onclick="selectOpt(this,'${o.key}')">
+          <span style="width:24px;height:24px;border-radius:50%;background:#1e293b;border:2px solid #475569;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#94a3b8;flex-shrink:0">${o.key.toUpperCase()}</span>
+          <span style="color:#f1f5f9">${esc(o.text)}</span>
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:20px">
+        <button class="btn-retry" onclick="${idx>0?'renderQ_'+course.id+'('+(idx-1)+')':'closeModal()'}">${idx>0?'← Back':'Close'}</button>
+        <button class="btn-start" id="quiz-next-btn" onclick="${idx<questions.length-1?'advanceQ_'+course.id+'()':'submitQuiz_'+course.id+'()'}">
+          ${idx<questions.length-1?'Next →':'Submit Quiz'}
+        </button>
+      </div>`;
+
+    // Restore selected if navigating back
+    if (quizState.quizAnswers[q.id]) {
+      const prev = document.querySelector(`.quiz-option[data-key="${quizState.quizAnswers[q.id]}"]`);
+      if (prev) prev.classList.add('selected');
+    }
+  }
+
+  window['selectOpt'] = (el, key) => {
+    document.querySelectorAll('.quiz-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    quizState.quizAnswers[questions[currentQ].id] = key;
+  };
+  window['renderQ_' + course.id] = renderQ;
+  window['advanceQ_' + course.id] = () => {
+    const q = questions[currentQ];
+    if (!quizState.quizAnswers[q.id]) {
+      const nextBtn = document.getElementById('quiz-next-btn');
+      nextBtn.textContent = 'Select an answer first';
+      setTimeout(() => { nextBtn.textContent = 'Next →'; }, 1200);
+      return;
+    }
+    renderQ(currentQ + 1);
+  };
+  window['submitQuiz_' + course.id] = async () => {
+    const q = questions[currentQ];
+    if (!quizState.quizAnswers[q.id]) {
+      const nextBtn = document.getElementById('quiz-next-btn');
+      nextBtn.textContent = 'Select an answer first';
+      setTimeout(() => { nextBtn.textContent = 'Submit Quiz'; }, 1200);
+      return;
+    }
+    const btn = document.getElementById('quiz-next-btn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+    try {
+      const result = await Wren.api('/api/courses/' + course.id + '/attempt', {
+        method: 'POST',
+        body: JSON.stringify({ answers: quizState.quizAnswers }),
+      });
+      showQuizResult(result, course);
+    } catch(e) {
+      content.innerHTML = `<div style="color:#ef4444;text-align:center;padding:24px">Submit failed: ${esc(e.message)}</div>
+        <button class="btn-start" onclick="closeModal()" style="display:block;margin:16px auto">Close</button>`;
+    }
+  };
+
+  renderQ(0);
+}
+
+function showQuizResult(result, course) {
+  const content = document.getElementById('modal-content');
+  const passed = result.passed;
+  content.innerHTML = `
+    <div style="text-align:center;padding:24px 16px">
+      <div style="font-size:3rem;margin-bottom:12px">${passed ? '🏅' : '📝'}</div>
+      <h2 style="color:${passed?'#22c55e':'#f59e0b'};margin-bottom:8px">${passed ? 'Passed!' : 'Not quite'}</h2>
+      <div style="font-size:2rem;font-weight:900;color:#f1f5f9;margin-bottom:4px">${result.score_pct}%</div>
+      <div style="color:#64748b;font-size:.875rem;margin-bottom:20px">
+        ${passed ? `Certificate earned · ${course.cpd_hours||0}h CPD logged to your record` : `Pass mark is ${course.pass_mark_pct||80}% — you can retake anytime`}
+      </div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <button class="btn-start" onclick="closeModal(); loadedTab['available']=false; loadTab('available'); loadedTab['certificates']=false; loadStats()">Done</button>
+        ${!passed ? `<button class="btn-retry" onclick="closeModal(); openCourse(${course.id})">Retake Course</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'2-digit' });
+}
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

@@ -174,10 +174,10 @@ function renderSection(section) {
 // ── Main renderer ────────────────────────────────────────────────────────────
 
 function renderNewsletter(newsletter, sections) {
-  const title     = newsletter.title || 'Your Nursery Newsletter';
+  const title     = newsletter.title || 'Little Angels Newsletter';
   const term      = newsletter.term  || '';
-  const fromName  = newsletter.from_name || 'Nursery Manager';
-  const fromRole  = 'Manager';
+  const fromName  = newsletter.from_name || 'Toby Jones';
+  const fromRole  = 'Manager, Little Angels Day Nursery';
 
   const sorted = [...(sections || [])].sort((a, b) => (a.section_order || 0) - (b.section_order || 0));
 
@@ -210,14 +210,14 @@ function renderNewsletter(newsletter, sections) {
     <div class="nl-header" style="background:#0f172a;border-radius:16px 16px 0 0;padding:40px 44px 32px;text-align:center">
       <table width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr><td align="center" style="padding-bottom:20px">
-          <img src="https://staff.example-nursery.co.uk/little-angels-logo.png"
-               alt="Your Nursery" width="80" height="80"
+          <img src="https://staff.littleangelsealing.co.uk/little-angels-logo.png"
+               alt="Little Angels" width="80" height="80"
                style="border-radius:14px;background:#ffffff;padding:6px;display:block;margin:0 auto"
                onerror="this.style.display='none'">
         </td></tr>
         <tr><td align="center">
           <div style="font-family:'Playfair Display',Georgia,'Times New Roman',serif;font-size:30px;font-weight:700;line-height:1.2;color:#ffffff">
-            <span style="color:#4a9abf">Your Nursery</span><br>
+            <span style="color:#4a9abf">Little Angels</span><br>
             <span style="color:#e07820">Day Nursery</span>
           </div>
         </td></tr>
@@ -254,14 +254,14 @@ function renderNewsletter(newsletter, sections) {
         </td></tr>
         <tr><td align="center">
           <p style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;color:#64748b;line-height:2;margin:0">
-            1A Example Lane, Ealing, London W13 9LU<br>
-            <a href="tel:01234567890" style="color:#4a9abf;text-decoration:none">01234 567890</a>
+            1A Dudley Gardens, Ealing, London W13 9LU<br>
+            <a href="tel:02080510349" style="color:#4a9abf;text-decoration:none">020 8051 0349</a>
             &nbsp;·&nbsp;
-            <a href="mailto:admissions@example-nursery.co.uk" style="color:#4a9abf;text-decoration:none">admissions@example-nursery.co.uk</a><br>
+            <a href="mailto:admissions@littleangelsealing.co.uk" style="color:#4a9abf;text-decoration:none">admissions@littleangelsealing.co.uk</a><br>
             Mon–Fri 8:00am–6:00pm &nbsp;·&nbsp; Established 1990
           </p>
           <p style="margin:14px 0 0">
-            <a href="https://www.example-nursery.co.uk" style="color:#4a9abf;font-family:'DM Sans',Arial,sans-serif;font-size:12px;text-decoration:none">www.example-nursery.co.uk</a>
+            <a href="https://www.littleangelsealing.co.uk" style="color:#4a9abf;font-family:'DM Sans',Arial,sans-serif;font-size:12px;text-decoration:none">www.littleangelsealing.co.uk</a>
           </p>
         </td></tr>
       </table>

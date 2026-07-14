@@ -3,7 +3,7 @@
  * Runs every Sunday at 18:00 via cron or n8n.
  *
  * Cron install (inside container or host):
- *   0 18 * * 0  node /app/src/jobs/points-weekly-digest.js
+ *   0 18 * * 0  node /home/toby/wren/src/jobs/points-weekly-digest.js
  *
  * Env vars:
  *   PG_HOST / PG_PORT / PG_USER / PG_PASSWORD / PG_DATABASE

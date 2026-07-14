@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haven — Residents</title>
+<link rel="stylesheet" href="/css/wren.css">
+<link rel="stylesheet" href="/css/haven.css">
+</head>
+<body>
+<template id="page">
+  <div class="hv-actions-bar">
+    <div>
+      <h1 class="hv-page-title">Residents</h1>
+      <p class="hv-page-sub" style="margin-bottom:0" id="count"></p>
+    </div>
+    <button class="hv-btn" id="addBtn">Admit resident</button>
+  </div>
+  <div class="hv-card">
+    <table class="hv-table"><thead><tr>
+      <th>Name</th><th>Room</th><th>Age</th><th>Care level</th><th>Admitted</th>
+      <th>Care plans</th><th>Next review</th><th>Latest NEWS2</th>
+    </tr></thead><tbody id="rows"></tbody></table>
+  </div>
+</template>
+<script src="/js/haven.js"></script>
+<script>
+if (Haven.guard()) { Haven.shell('residents'); Haven.gateBtn('addBtn', 'admin_write'); load(); }
+async function load() {
+  try {
+    const rows = await Haven.api('/api/haven/residents');
+    document.getElementById('count').textContent = `${rows.length} residents in the home`;
+    document.getElementById('rows').innerHTML = rows.map(r => `
+      <tr class="clickable" onclick="location.href='/resident?id=${r.id}'">
+        <td><b>${Haven.esc(r.first_name)} ${Haven.esc(r.last_name)}</b>${r.preferred_name ? ` <span class="hv-note-meta">“${Haven.esc(r.preferred_name)}”</span>` : ''}</td>
+        <td>${Haven.esc(r.room_number || '—')}</td>
+        <td>${r.age ?? '—'}</td>
+        <td>${Haven.badge(r.care_level || 'unset', 'accent')}</td>
+        <td>${Haven.fmtDate(r.admission_date)}</td>
+        <td>${r.care_plan_count}</td>
+        <td>${Haven.fmtDate(r.next_care_plan_review)}</td>
+        <td>${r.latest_news2_band ? Haven.badge(r.latest_news2_band, r.latest_news2_band) : '—'}</td>
+      </tr>`).join('') || '<tr><td colspan="8" class="hv-empty">No residents yet</td></tr>';
+  } catch (e) { Haven.toast(e.message, true); }
+}
+document.addEventListener('click', e => {
+  if (e.target.id !== 'addBtn') return;
+  Haven.modal('Admit resident', `
+    <div class="hv-form-row">
+      <div class="hv-field"><label>First name *</label><input name="first_name" required></div>
+      <div class="hv-field"><label>Last name *</label><input name="last_name" required></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Date of birth *</label><input name="date_of_birth" type="date" required></div>
+      <div class="hv-field"><label>Sex</label><select name="sex"><option value="">—</option><option>female</option><option>male</option></select></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Room</label><input name="room_number"></div>
+      <div class="hv-field"><label>Care level</label><select name="care_level">
+        <option value="">—</option><option>residential</option><option>nursing</option><option>dementia</option><option>respite</option></select></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Admission date</label><input name="admission_date" type="date"></div>
+      <div class="hv-field"><label>NHS number</label><input name="nhs_number"></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>GP name</label><input name="gp_name"></div>
+      <div class="hv-field"><label>GP practice</label><input name="gp_practice"></div>
+    </div>
+    <div class="hv-form-row">
+      <div class="hv-field"><label>Next of kin</label><input name="nok_name"></div>
+      <div class="hv-field"><label>NoK phone</label><input name="nok_phone"></div>
+    </div>
+    <div class="hv-field"><label>Allergies</label><input name="allergies"></div>`,
+    async (fd) => {
+      await Haven.api('/api/haven/residents', { method: 'POST', body: fd });
+      Haven.toast('Resident admitted');
+      load();
+    }, 'Admit');
+});
+</script>
+</body>
+</html>

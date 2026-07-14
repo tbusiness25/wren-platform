@@ -209,6 +209,9 @@ window.__wrenShellLoaded = 'app';
     // (or an /ey/ path) so parents/HR/admin bottom navs are untouched.
     const isEY = document.body.dataset.portal === 'ey' || location.pathname.startsWith('/ey/');
     if (isEY) {
+      // EY bar has 5 destinations split 2-left / 3-right of the ＋ FAB, so the fixed
+      // FAB slot lands off-centre. Tag the bar so CSS can rebalance flex-grow (2026-07-11).
+      el.classList.add('is-ey');
       // EyLog mental model, 5 tabs (2026-07-03, Toby item 8):
       //   Children · Observation Tracker · ＋(log) · Framework · Messages · More
       //  - Diary tab removed: ADD via the ＋ FAB menu, VIEW from the child profile.
@@ -723,7 +726,7 @@ window.__wrenShellLoaded = 'app';
         _ensureHead('meta[name="theme-color"]', function () { return _makeMeta('theme-color', '#0f172a'); });
         _ensureHead('meta[name="apple-mobile-web-app-capable"]', function () { return _makeMeta('apple-mobile-web-app-capable', 'yes'); });
         _ensureHead('meta[name="apple-mobile-web-app-status-bar-style"]', function () { return _makeMeta('apple-mobile-web-app-status-bar-style', 'black-translucent'); });
-        _ensureHead('meta[name="apple-mobile-web-app-title"]', function () { return _makeMeta('apple-mobile-web-app-title', 'Your Nursery EY'); });
+        _ensureHead('meta[name="apple-mobile-web-app-title"]', function () { return _makeMeta('apple-mobile-web-app-title', 'Little Angels EY'); });
         _ensureHead('link[rel="apple-touch-icon"]', function () { var l = document.createElement('link'); l.rel = 'apple-touch-icon'; l.href = '/little-angels-logo.png'; return l; });
       } catch (e) { /* non-fatal */ }
     }

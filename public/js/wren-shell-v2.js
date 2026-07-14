@@ -19,8 +19,8 @@ window.__wrenShellLoaded = 'v2';
   // ── MPA nav definitions ──────────────────────────────────────────────────────
   // HR link is hostname-aware (2026-07-04): LADN staff go to the real HR portal;
   // demo/getwren hosts must never leak the production URL — they get the local page.
-  const HR_PORTAL_URL = /example-nursery\.co\.uk$/.test(location.hostname)
-    ? 'https://hr.example-nursery.co.uk/' : '/hr.html';
+  const HR_PORTAL_URL = /littleangelsealing\.co\.uk$/.test(location.hostname)
+    ? 'https://hr.littleangelsealing.co.uk/' : '/hr.html';
   const NAV_MPA = {
     hr: {
       practitioner: [
@@ -30,6 +30,7 @@ window.__wrenShellLoaded = 'v2';
         { icon: '🤝', label: 'Supervisions', href: '/my-supervisions.html' },
         { icon: '⏰', label: 'TOIL',         href: '/my-toil.html' },
         { icon: '🎓', label: 'CPD',          href: '/my-cpd.html' },
+        { icon: '🤝', label: 'Ealing EY Partnership', href: '/ealing-partnership.html' },
         { icon: '💚', label: 'Wellbeing',    href: '/my-wellbeing.html' },
         { icon: '📄', label: 'Policies',     href: '/policies.html' },
       ],
@@ -40,6 +41,7 @@ window.__wrenShellLoaded = 'v2';
         { icon: '🤝', label: 'Supervisions', href: '/my-supervisions.html' },
         { icon: '⏰', label: 'TOIL',         href: '/my-toil.html' },
         { icon: '🎓', label: 'CPD',          href: '/my-cpd.html' },
+        { icon: '🤝', label: 'Ealing EY Partnership', href: '/ealing-partnership.html' },
         { icon: '💚', label: 'Wellbeing',    href: '/my-wellbeing.html' },
         { icon: '📄', label: 'Policies',     href: '/policies.html' },
       ],
@@ -52,6 +54,7 @@ window.__wrenShellLoaded = 'v2';
           { label: 'My TOIL',         href: '/my-toil.html' },
           { label: 'My CPD',          href: '/my-cpd.html' },
           { label: 'AI CPD Creator',  href: '/cpd/ai-creator.html' },
+          { label: 'Ealing EY Partnership', href: '/ealing-partnership.html' },
           { label: 'My Wellbeing',    href: '/my-wellbeing.html' },
         ]},
         { icon: '👥', label: 'Team', children: [
@@ -346,6 +349,7 @@ window.__wrenShellLoaded = 'v2';
     children:       { id: 'children',       icon: '👶', label: 'Children',     tabs: ['list', 'reports'] },
     family:         { id: 'family',         icon: '👪', label: 'Family',       tabs: ['events', 'absences', 'consents'] },
     'next-steps':   { id: 'next-steps',     icon: '➡️', label: 'Next Steps',  tabs: ['list', 'completed', 'overdue'] },
+    'visual-schedules': { id: 'visual-schedules', icon: '🗓️', label: 'Visual Support', tabs: ['builder', 'saved'] },
     curriculum:     { id: 'curriculum',     icon: '📚', label: 'Curriculum',   tabs: ['planning', 'next-steps', 'events', 'trips', 'calendar'] },
     finance:        { id: 'finance',        icon: '💷', label: 'Finance',      tabs: ['dashboard', 'salary-per-room', 'funded-hours-recon', 'forecast', 'invoices', 'reconcile', 'payments', 'funding', 'wages', 'payroll'] },
     communications: { id: 'communications', icon: '💬', label: 'Comms',        tabs: ['inbox', 'messaging', 'newsletters', 'aria', 'content-creator', 'message-review', 'surveys', 'permission-slips', 'templates'] },
@@ -359,7 +363,36 @@ window.__wrenShellLoaded = 'v2';
     intelligence:   { id: 'intelligence',   icon: '📡', label: 'Intelligence',  tabs: ['workflows', 'search', 'ai-chat'], requiresRole: 'manager' },
     assistant:      { id: 'assistant',      icon: '🪺', label: 'Wren AI',       tabs: ['chat'], requiresRole: 'manager' },
     'data-governance': { id: 'data-governance', icon: '🗄️', label: 'Data Governance', tabs: ['dashboard', 'schedule', 'records-map', 'archives', 'data-requests'], requiresRole: 'manager' },
+    // Standalone tool pages — full-page nav via href (not SPA fragments). tabs:[] keeps
+    // the search index safe (it reads s.tabs).
+    'occupancy-sandbox': { id: 'occupancy-sandbox', icon: '🧪', label: 'Occupancy Sandbox', href: '/occupancy-sandbox.html', tabs: [], requiresRole: 'manager' },
+    'competitor-intel':  { id: 'competitor-intel',  icon: '🔭', label: 'Competitor Intel',  href: '/competitor-intel.html', tabs: [], requiresRole: 'manager' },
+    'cf-access':         { id: 'cf-access',         icon: '🔐', label: 'Access Control',    href: '/cf-access.html', tabs: [], requiresRole: 'manager' },
+    'nav-settings':      { id: 'nav-settings',      icon: '🎛️', label: 'Sidebar Layout',    href: '/nav-settings.html', tabs: [], requiresRole: 'manager' },
+    'website-builder':   { id: 'website-builder',   icon: '🌐', label: 'Website',           href: '/website-builder.html', tabs: [], requiresRole: 'manager' },
   };
+
+  // ── Sidebar grouping (2026-07-12): default layout + user-editable override ──
+  // The Sidebar Layout editor (/nav-settings.html) saves a reordered copy to
+  // localStorage['wrenNavGroups']; the shell reads it here. Unmapped sections fall
+  // into "More" at render time, so a stale saved layout can never hide a section.
+  const DEFAULT_NAV_GROUPS = [
+    { label: 'Home',             sections: ['cockpit'] },
+    { label: 'Children',         sections: ['children', 'family', 'next-steps', 'visual-schedules', 'action-plans', 'safeguarding'] },
+    { label: 'Staff',            sections: ['staff', 'cpd', 'review'] },
+    { label: 'Admissions',       sections: ['admissions', 'occupancy-sandbox'] },
+    { label: 'Finance',          sections: ['finance'] },
+    { label: 'Curriculum',       sections: ['curriculum', 'inspection', 'checklist'] },
+    { label: 'Comms',            sections: ['communications', 'website-builder'] },
+    { label: 'Operations',       sections: ['operations'] },
+    { label: 'AI & Intelligence', sections: ['intelligence', 'assistant', 'competitor-intel'] },
+    { label: 'System',           sections: ['system', 'data-governance', 'cf-access', 'nav-settings'] },
+  ];
+  function _resolveNavGroups() {
+    if (window.WREN_NAV_GROUPS) return window.WREN_NAV_GROUPS;
+    try { const sv = JSON.parse(localStorage.getItem('wrenNavGroups') || 'null'); if (Array.isArray(sv) && sv.length) return sv; } catch (e) { /* fall through */ }
+    return DEFAULT_NAV_GROUPS;
+  }
 
   // ── Default landing section ────────────────────────────────────────────────────
   // Cockpit is the admin home (Prompt 34, 2026-06-30). It's manager-only, so a non-manager
@@ -394,6 +427,19 @@ window.__wrenShellLoaded = 'v2';
         return r.json();
       });
     },
+
+    // ── Sidebar layout editor support (nav-settings.html) ──────────────────────
+    getNavMeta() {
+      return {
+        sections: Object.values(SECTIONS).map(s => ({ id: s.id, label: s.label, icon: s.icon })),
+        groups: _resolveNavGroups(),
+        defaultGroups: DEFAULT_NAV_GROUPS,
+      };
+    },
+    saveNavGroups(groups) {
+      try { localStorage.setItem('wrenNavGroups', JSON.stringify(groups)); return true; } catch (e) { return false; }
+    },
+    resetNavGroups() { try { localStorage.removeItem('wrenNavGroups'); } catch (e) { /* ignore */ } },
 
     toast(message, type = 'info', duration = 3500) {
       let container = document.getElementById('wren-toasts');
@@ -612,15 +658,43 @@ window.__wrenShellLoaded = 'v2';
     sidebar.id = 'wren-sidebar';
     sidebar.setAttribute('role', 'navigation');
     sidebar.setAttribute('aria-label', 'Main navigation');
-    sidebar.innerHTML = `
-      <ul class="v2-section-list" role="list" aria-label="Sections">
-        ${visibleSections.map(s => `
+    // Grouped sidebar: resolved layout (saved override or default). Unmapped
+    // sections fall into "More" below so nothing ever disappears.
+    const NAV_GROUPS = _resolveNavGroups();
+    const _itemHtml = s => s.href ? `
+          <li role="none">
+            <a class="v2-section-btn" href="${s.href}" aria-label="${s.label}" title="${s.label}" role="menuitem">
+              <span class="v2-section-icon" aria-hidden="true">${s.icon}</span>
+              <span class="v2-section-label">${s.label}</span>
+            </a>
+          </li>` : `
           <li role="none">
             <button class="v2-section-btn" data-section="${s.id}" aria-label="${s.label}" title="${s.label}" role="menuitem">
               <span class="v2-section-icon" aria-hidden="true">${s.icon}</span>
               <span class="v2-section-label">${s.label}</span>
             </button>
-          </li>`).join('')}
+          </li>`;
+    const _visMap = {}; visibleSections.forEach(s => { _visMap[s.id] = s; });
+    const _grouped = new Set();
+    const _groupHtml = (label, items) => {
+      const collapsed = sessionStorage.getItem('wren-navgrp-' + label) === '1';
+      return `<li class="v2-nav-group${collapsed ? ' collapsed' : ''}" role="none">
+        <button class="v2-group-header" data-group-toggle="${label}" aria-expanded="${!collapsed}">
+          <span class="v2-group-label">${label}</span><span class="v2-group-chev" aria-hidden="true">▾</span>
+        </button>
+        <ul class="v2-group-items" role="list">${items.map(_itemHtml).join('')}</ul>
+      </li>`;
+    };
+    let _navHtml = NAV_GROUPS.map(g => {
+      const items = g.sections.map(id => _visMap[id]).filter(Boolean);
+      items.forEach(s => _grouped.add(s.id));
+      return items.length ? _groupHtml(g.label, items) : '';
+    }).join('');
+    const _leftover = visibleSections.filter(s => !_grouped.has(s.id));
+    if (_leftover.length) _navHtml += _groupHtml('More', _leftover);
+    sidebar.innerHTML = `
+      <ul class="v2-section-list" role="list" aria-label="Sections">
+        ${_navHtml}
       </ul>
       <div class="v2-sidebar-footer">
         <button class="v2-section-btn v2-signout-btn" onclick="Wren.logout()" aria-label="Sign out" title="Sign out" role="menuitem">
@@ -629,6 +703,23 @@ window.__wrenShellLoaded = 'v2';
         </button>
       </div>`;
     document.body.insertBefore(sidebar, topbar.nextSibling);
+
+    // ── Collapsible nav-group styling + toggle (admin grouped sidebar, 2026-07-12) ──
+    if (!document.getElementById('wren-navgroup-css')) {
+      const _st = document.createElement('style');
+      _st.id = 'wren-navgroup-css';
+      _st.textContent = '.v2-group-header{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;color:var(--c-muted,#94a3b8);font-weight:700;font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:11px 14px 5px}.v2-group-header:hover{color:var(--c-text,#f1f5f9)}.v2-group-chev{transition:transform .15s ease;font-size:.7rem;opacity:.7}.v2-nav-group.collapsed .v2-group-chev{transform:rotate(-90deg)}.v2-nav-group.collapsed .v2-group-items{display:none}.v2-group-items{list-style:none;margin:0;padding:0}';
+      document.head.appendChild(_st);
+    }
+    sidebar.querySelectorAll('[data-group-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const grp = btn.closest('.v2-nav-group');
+        const label = btn.getAttribute('data-group-toggle');
+        const collapsed = grp.classList.toggle('collapsed');
+        btn.setAttribute('aria-expanded', String(!collapsed));
+        try { sessionStorage.setItem('wren-navgrp-' + label, collapsed ? '1' : '0'); } catch (e) {}
+      });
+    });
 
     // ── Module toggles (2026-07-09): hide sidebar sections whose module_<id>
     // feature flag is off (set in Setup & Features / the wizard presets).
@@ -877,6 +968,7 @@ window.__wrenShellLoaded = 'v2';
         if (!q) { resultsEl.innerHTML = '<p class="search-hint">Jump to any section or tab</p>'; return; }
         const hits = [];
         Object.values(SECTIONS).forEach(s => {
+          if (s.href) return; // standalone tool pages aren't SPA-searchable
           if (s.label.toLowerCase().includes(q)) hits.push({ label: s.label, icon: s.icon, section: s.id, tab: s.tabs[0] });
           s.tabs.forEach(t => {
             if (t.includes(q) || t.replace(/-/g, ' ').includes(q)) hits.push({ label: `${s.label} → ${t.replace(/-/g, ' ')}`, icon: s.icon, section: s.id, tab: t });

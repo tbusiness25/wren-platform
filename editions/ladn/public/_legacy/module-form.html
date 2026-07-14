@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="ladn">
+<title>Form — Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.form-page-header{background:var(--c-navy-mid);border:1px solid #2d3748;border-radius:14px;padding:20px;margin-bottom:20px}
+.form-page-title{font-size:22px;font-weight:700;color:#f1f5f9;display:flex;align-items:center;gap:10px}
+.form-page-sub{font-size:13px;color:#94a3b8;margin-top:6px}
+.picker-section{background:var(--c-navy-mid);border:1px solid #2d3748;border-radius:12px;padding:20px;margin-bottom:20px}
+.picker-label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.picker-select{width:100%;background:#0f172a;border:1px solid #2d3748;border-radius:8px;color:#f1f5f9;padding:10px 14px;font-size:14px;cursor:pointer;outline:none}
+.picker-select:focus{border-color:var(--c-blue)}
+#form-container{background:var(--c-navy-mid);border:1px solid #2d3748;border-radius:12px;padding:20px;margin-bottom:20px}
+.success-banner{background:#22c55e22;border:1px solid #22c55e44;border-radius:12px;padding:24px;text-align:center;margin-bottom:20px}
+.success-banner h3{color:#22c55e;font-size:20px;margin:0 0 8px}
+.success-banner p{color:#94a3b8;font-size:14px;margin:0 0 18px}
+.success-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.back-btn{display:inline-flex;align-items:center;gap:6px;color:#94a3b8;font-size:14px;text-decoration:none;margin-bottom:14px;padding:6px 0}
+.back-btn:hover{color:#f1f5f9}
+.loading-hint{color:#64748b;font-size:14px;padding:20px;text-align:center}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <a href="/learning.html" class="back-btn" id="back-link">← Back</a>
+
+  <div id="page-header" class="form-page-header" style="display:none">
+    <div class="form-page-title">
+      <span id="module-icon">📄</span>
+      <span id="module-name">Loading…</span>
+    </div>
+    <div class="form-page-sub" id="module-desc"></div>
+  </div>
+
+  <div id="picker-section" class="picker-section" style="display:none">
+    <div class="picker-label" id="picker-label">Select</div>
+    <select class="picker-select" id="entity-picker">
+      <option value="">— Choose —</option>
+    </select>
+    <div style="margin-top:12px">
+      <button class="btn btn-primary" id="picker-btn" disabled>Continue →</button>
+    </div>
+  </div>
+
+  <div id="form-container" style="display:none"></div>
+
+  <div id="success-banner" class="success-banner" style="display:none">
+    <h3>✓ Record saved</h3>
+    <p>The form has been submitted successfully.</p>
+    <div class="success-actions">
+      <button class="btn btn-primary" id="reset-form-btn">Submit another</button>
+      <button class="btn btn-ghost" id="history-back-btn">Back</button>
+    </div>
+  </div>
+
+  <div id="loading-hint" class="loading-hint">Loading form…</div>
+</div>
+
+<script>
+let currentModule = null;
+let selectedEntityId = null;
+let selectedEntityType = null;
+
+const params = new URLSearchParams(location.search);
+const PRE_CHILD_ID = params.get('child_id') ? parseInt(params.get('child_id')) : null;
+
+function getSlug() {
+  const parts = window.location.pathname.replace(/\/$/, '').split('/');
+  return parts[parts.length - 1];
+}
+
+function currentUserRole() {
+  return (Wren.user && Wren.user.role) ? Wren.user.role : 'practitioner';
+}
+
+function waitForRenderer(timeout) {
+  timeout = timeout || 8000;
+  const start = Date.now();
+  return new Promise(function(resolve, reject) {
+    (function check() {
+      if (typeof WrenModuleRenderer !== 'undefined') return resolve();
+      if (Date.now() - start > timeout) return reject(new Error('Renderer not loaded'));
+      setTimeout(check, 100);
+    })();
+  });
+}
+
+async function initPage() {
+  const slug = getSlug();
+  if (!slug) {
+    document.getElementById('loading-hint').textContent = 'No form specified.';
+    return;
+  }
+
+  let mod;
+  try {
+    mod = await Wren.api('/api/modules/by-slug/' + slug);
+  } catch(e) {
+    document.getElementById('loading-hint').textContent = 'Form not found or you do not have access.';
+    return;
+  }
+
+  if (!mod || !mod.id) {
+    document.getElementById('loading-hint').textContent = 'Form not found.';
+    return;
+  }
+
+  currentModule = mod;
+  document.title = mod.name + ' — Wren';
+  document.getElementById('module-icon').textContent = mod.icon || '📄';
+  document.getElementById('module-name').textContent = mod.name;
+  if (mod.description) document.getElementById('module-desc').textContent = mod.description;
+  document.getElementById('page-header').style.display = '';
+  document.getElementById('loading-hint').style.display = 'none';
+
+  const attachesTo = mod.attaches_to || 'standalone';
+
+  if (PRE_CHILD_ID && attachesTo === 'child') {
+    selectedEntityId = PRE_CHILD_ID;
+    selectedEntityType = 'child';
+    document.getElementById('back-link').href = '/child-profile.html?id=' + PRE_CHILD_ID;
+    await showForm();
+    return;
+  }
+
+  if (attachesTo === 'standalone' || attachesTo === 'multi') {
+    selectedEntityId = null;
+    selectedEntityType = attachesTo;
+    await showForm();
+    return;
+  }
+
+  await showPicker(attachesTo);
+}
+
+async function showPicker(attachesTo) {
+  selectedEntityType = attachesTo;
+  const section = document.getElementById('picker-section');
+  const picker = document.getElementById('entity-picker');
+  const label = document.getElementById('picker-label');
+  const btn = document.getElementById('picker-btn');
+
+  if (attachesTo === 'parent') {
+    section.innerHTML = `
+      <div class="picker-label">Parent / Carer reference</div>
+      <input type="text" id="parent-ref-input" class="picker-select" placeholder="Enter parent name or reference…" />
+      <div style="margin-top:12px">
+        <button class="btn btn-primary" id="parent-ref-confirm-btn">Continue →</button>
+      </div>`;
+    section.style.display = '';
+    document.getElementById('parent-ref-confirm-btn').addEventListener('click', onParentRefConfirm);
+    return;
+  }
+
+  let endpoint = '';
+  if (attachesTo === 'child') {
+    label.textContent = 'Select child';
+    endpoint = '/api/children';
+  } else if (attachesTo === 'staff') {
+    label.textContent = 'Select staff member';
+    endpoint = '/api/staff';
+  } else {
+    label.textContent = 'Select';
+    endpoint = '/api/children';
+  }
+
+  try {
+    const items = await Wren.api(endpoint);
+    const arr = Array.isArray(items) ? items : (items.children || items.staff || []);
+    picker.innerHTML = '<option value="">— Choose —</option>' + arr
+      .filter(function(i) { return !i.status || i.status === 'active' || i.status === 'current'; })
+      .map(function(i) {
+        const name = i.first_name ? (i.first_name + ' ' + i.last_name) : (i.name || i.full_name || ('#' + i.id));
+        return '<option value="' + i.id + '">' + name + '</option>';
+      }).join('');
+  } catch(e) {
+    picker.innerHTML = '<option value="">Could not load list</option>';
+  }
+
+  picker.onchange = function() { btn.disabled = !picker.value; };
+  section.style.display = '';
+}
+
+function onPickerConfirm() {
+  const picker = document.getElementById('entity-picker');
+  const val = parseInt(picker.value);
+  if (!val) return;
+  selectedEntityId = val;
+  document.getElementById('picker-section').style.display = 'none';
+  showForm();
+}
+
+function onParentRefConfirm() {
+  const input = document.getElementById('parent-ref-input');
+  const val = (input.value || '').trim();
+  if (!val) return;
+  selectedEntityId = val;
+  selectedEntityType = 'parent';
+  document.getElementById('picker-section').style.display = 'none';
+  showForm();
+}
+
+async function showForm() {
+  const container = document.getElementById('form-container');
+  container.style.display = '';
+  container.innerHTML = '<div class="loading-hint">Loading form fields…</div>';
+
+  try {
+    await waitForRenderer();
+  } catch(e) {
+    container.innerHTML = '<div class="loading-hint" style="color:#ef4444">Form renderer failed to load. Please refresh the page.</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  WrenModuleRenderer.renderForm(currentModule, container, {
+    portal: 'ey',
+    role: currentUserRole(),
+    entityType: selectedEntityType,
+    entityId: selectedEntityId,
+    onSubmit: handleSubmit
+  });
+}
+
+async function handleSubmit(data) {
+  try {
+    await Wren.api('/api/modules/' + currentModule.id + '/records', {
+      method: 'POST',
+      body: {
+        entity_type: selectedEntityType,
+        entity_id: selectedEntityId,
+        data: data
+      }
+    });
+    document.getElementById('form-container').style.display = 'none';
+    document.getElementById('picker-section').style.display = 'none';
+    document.getElementById('success-banner').style.display = '';
+    window.scrollTo(0, 0);
+  } catch(err) {
+    Wren.toast('Could not save record: ' + ((err && err.message) || 'Unknown error'), 'error');
+  }
+}
+
+function resetForm() {
+  selectedEntityId = null;
+  document.getElementById('success-banner').style.display = 'none';
+  document.getElementById('form-container').style.display = 'none';
+  document.getElementById('form-container').innerHTML = '';
+
+  const attachesTo = currentModule ? (currentModule.attaches_to || 'standalone') : 'standalone';
+  if (attachesTo === 'standalone' || attachesTo === 'multi') {
+    showForm();
+  } else {
+    document.getElementById('picker-section').style.display = '';
+    const picker = document.getElementById('entity-picker');
+    if (picker) picker.value = '';
+    const btn = document.getElementById('picker-btn');
+    if (btn) btn.disabled = true;
+  }
+}
+
+document.addEventListener('wren:ready', function() {
+  document.getElementById('picker-btn').addEventListener('click', onPickerConfirm);
+  document.getElementById('reset-form-btn').addEventListener('click', resetForm);
+  document.getElementById('history-back-btn').addEventListener('click', function() { history.back(); });
+  initPage();
+});
+</script>
+<script src="/js/wren-chat.js"></script>
+</body>
+</html>

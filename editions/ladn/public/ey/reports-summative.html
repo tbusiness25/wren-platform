@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Summative Reports">
+  <meta name="wren-app-chat"  content="on">
+  <title>Summative Reports · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* Twinkl-style questionnaire flow (2026-07-03):
+       Step 1 pick child+type → Step 2 tick statements per EYFS area + CoEL levels
+       → Step 3 AI draft with Shorten / Expand / Parent-friendly / Formal tools. */
+    #ey-sum-page { padding: 12px 12px calc(90px + env(safe-area-inset-bottom, 16px)); }
+
+    #ey-sum-back {
+      width: 44px; height: 44px;
+      background: transparent; border: none;
+      color: var(--c-text); cursor: pointer;
+      border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #ey-sum-back:hover { background: rgba(255,255,255,0.06); }
+
+    .sum-label {
+      font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .07em;
+      color: var(--c-muted); margin: 4px 4px 8px;
+    }
+
+    .sum-field { margin-bottom: 14px; }
+    .sum-field select {
+      width: 100%; min-height: 48px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      color: var(--c-text); font-size: .95rem; padding: 0 12px;
+    }
+
+    .sum-type-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .sum-type-card {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px; padding: 12px 14px;
+      cursor: pointer; transition: border-color .15s;
+      text-align: left; width: 100%;
+    }
+    .sum-type-card.active { border-color: var(--c-blue); background: rgba(74,154,191,0.08); }
+    .sum-type-icon {
+      font-size: 1.4rem; width: 40px; height: 40px;
+      background: rgba(74,154,191,0.1); border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .sum-type-body { flex: 1; }
+    .sum-type-title { font-size: .92rem; font-weight: 700; color: var(--c-text); margin-bottom: 3px; }
+    .sum-type-desc  { font-size: .8rem; color: var(--c-muted); line-height: 1.35; }
+    .sum-type-radio {
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 2px solid var(--c-border); flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .sum-type-card.active .sum-type-radio { border-color: var(--c-blue); }
+    .sum-type-card.active .sum-type-radio::after {
+      content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--c-blue);
+    }
+
+    .sum-btn {
+      width: 100%; min-height: 50px; border-radius: 12px; border: none;
+      background: var(--c-blue); color: #fff;
+      font-size: .95rem; font-weight: 700; cursor: pointer;
+      transition: opacity .15s;
+    }
+    .sum-btn:disabled { opacity: .5; cursor: default; }
+    .sum-btn.secondary {
+      background: transparent; border: 1px solid var(--c-border); color: var(--c-text);
+    }
+
+    .sum-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .sum-actions .sum-btn { flex: 1; }
+
+    .sum-note {
+      font-size: .78rem; color: var(--c-muted);
+      text-align: center; margin-top: 10px; line-height: 1.4;
+    }
+
+    .sum-spinner {
+      text-align: center; padding: 24px;
+      color: var(--c-muted); font-size: .9rem; display: none;
+    }
+    .sum-spinner.show { display: block; }
+
+    /* ── Step 2: checklist ─────────────────────────────────────────────────── */
+    #sum-checklist { display: none; }
+    #sum-checklist.show { display: block; }
+    #sum-check-child {
+      font-size: .95rem; font-weight: 700; color: var(--c-text);
+      margin: 4px 4px 2px;
+    }
+    #sum-check-hint { font-size: .78rem; color: var(--c-muted); margin: 0 4px 12px; line-height: 1.4; }
+
+    .sum-area-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px; margin-bottom: 10px; overflow: hidden;
+    }
+    .sum-area-head {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 12px 14px;
+      background: transparent; border: none; cursor: pointer;
+      text-align: left;
+    }
+    .sum-area-title { flex: 1; font-size: .9rem; font-weight: 700; color: var(--c-text); }
+    .sum-area-count {
+      font-size: .74rem; font-weight: 700; color: var(--c-blue);
+      background: rgba(74,154,191,0.14); border-radius: 10px;
+      padding: 2px 8px; min-width: 20px; text-align: center;
+    }
+    .sum-area-chevron { color: var(--c-muted); font-size: .8rem; transition: transform .15s; }
+    .sum-area-card.open .sum-area-chevron { transform: rotate(90deg); }
+    .sum-area-body { display: none; border-top: 1px solid var(--c-border); padding: 4px 0 8px; }
+    .sum-area-card.open .sum-area-body { display: block; }
+
+    .sum-aspect-heading {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--c-muted); padding: 10px 14px 2px;
+    }
+    .sum-stmt {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 14px; cursor: pointer; transition: background .1s;
+    }
+    .sum-stmt:hover { background: rgba(255,255,255,0.04); }
+    .sum-stmt input[type=checkbox] {
+      width: 19px; height: 19px; margin-top: 1px; flex-shrink: 0;
+      accent-color: var(--c-blue); cursor: pointer;
+    }
+    .sum-stmt-text { flex: 1; font-size: .84rem; color: var(--c-text); line-height: 1.4; }
+    .sum-stmt-badges { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
+    .sum-badge {
+      font-size: .65rem; font-weight: 700; border-radius: 8px; padding: 1px 7px;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
+    .sum-badge.secure     { background: rgba(34,197,94,0.16);  color: #22c55e; }
+    .sum-badge.developing { background: rgba(245,158,11,0.16); color: #f59e0b; }
+    .sum-badge.emerging   { background: rgba(148,163,184,0.16); color: var(--c-muted); }
+    .sum-badge.evidenced  { background: rgba(74,154,191,0.16); color: var(--c-blue); }
+    .sum-badge.range      { background: rgba(224,120,32,0.14); color: var(--c-orange, #e07820); }
+
+    /* CoEL cards */
+    .sum-coel-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .sum-coel-title { font-size: .88rem; font-weight: 700; color: var(--c-text); }
+    .sum-coel-aspects { font-size: .76rem; color: var(--c-muted); margin: 4px 0 8px; line-height: 1.4; }
+    .sum-coel-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sum-coel-pill {
+      height: 32px; padding: 0 12px; border-radius: 16px;
+      border: 1px solid var(--c-border); background: transparent;
+      color: var(--c-muted); font-size: .78rem; font-weight: 600;
+      cursor: pointer; transition: background .12s, color .12s, border-color .12s;
+    }
+    .sum-coel-pill.sel { background: var(--c-blue); color: #fff; border-color: var(--c-blue); }
+
+    #sum-focus-note {
+      width: 100%; box-sizing: border-box;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 12px; color: var(--c-text);
+      font-size: .88rem; line-height: 1.5; padding: 10px 12px;
+      resize: vertical; min-height: 64px; outline: none;
+      font-family: system-ui, Arial, sans-serif;
+    }
+    #sum-focus-note:focus { border-color: var(--c-blue); }
+
+    /* Sticky write bar for step 2 */
+    #sum-write-bar {
+      position: fixed; left: 0; right: 0;
+      bottom: calc(0px + env(safe-area-inset-bottom, 0));
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0));
+      background: linear-gradient(transparent, var(--c-bg, #0f172a) 30%);
+      display: none; z-index: 50;
+    }
+    #sum-write-bar.show { display: block; }
+
+    /* ── Step 3: result + refine toolbar ───────────────────────────────────── */
+    .sum-result {
+      margin-top: 18px;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 12px; padding: 14px;
+      display: none;
+    }
+    .sum-result.show { display: block; }
+    .sum-result h3 { margin: 0 0 4px; font-size: 1rem; color: var(--c-text); }
+    .sum-result-meta { font-size: .78rem; color: var(--c-muted); margin-bottom: 10px; }
+    #sum-refine-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .sum-refine-btn {
+      height: 34px; padding: 0 12px; border-radius: 17px;
+      border: 1px solid var(--c-border); background: transparent;
+      color: var(--c-text); font-size: .78rem; font-weight: 600;
+      cursor: pointer; transition: border-color .12s, background .12s;
+    }
+    .sum-refine-btn:hover { border-color: var(--c-blue); background: rgba(74,154,191,0.08); }
+    .sum-refine-btn:disabled { opacity: .45; cursor: default; }
+    #sum-undo-btn { color: var(--c-orange, #e07820); border-color: rgba(224,120,32,0.4); display: none; }
+    .sum-draft {
+      width: 100%; min-height: 320px;
+      background: var(--c-bg, #0f172a);
+      border: 1px solid var(--c-border);
+      border-radius: 10px; color: var(--c-text);
+      font-size: .9rem; line-height: 1.5; padding: 12px;
+      resize: vertical; font-family: inherit; box-sizing: border-box;
+    }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-sum-page">
+
+  <!-- ── STEP 1: child + type ── -->
+  <div id="sum-step1">
+    <div class="sum-label">Child</div>
+    <div class="sum-field">
+      <select id="sum-child" aria-label="Select child">
+        <option value="">Loading children…</option>
+      </select>
+    </div>
+
+    <div class="sum-label">Report Type</div>
+    <div class="sum-type-list" id="sum-types">
+      <button class="sum-type-card" type="button" data-type="termly">
+        <div class="sum-type-icon" aria-hidden="true">🗓️</div>
+        <div class="sum-type-body">
+          <div class="sum-type-title">Termly Report</div>
+          <div class="sum-type-desc">End-of-term cycle: what they learned this term, last term's next steps reviewed, fresh next steps set. Follows Ealing term dates.</div>
+        </div>
+        <span class="sum-type-radio" aria-hidden="true"></span>
+      </button>
+      <button class="sum-type-card active" type="button" data-type="progress">
+        <div class="sum-type-icon" aria-hidden="true">📈</div>
+        <div class="sum-type-body">
+          <div class="sum-type-title">Progress Report</div>
+          <div class="sum-type-desc">Termly summative summary of EYFS progress and next steps (last 3 months).</div>
+        </div>
+        <span class="sum-type-radio" aria-hidden="true"></span>
+      </button>
+      <button class="sum-type-card" type="button" data-type="2-year check">
+        <div class="sum-type-icon" aria-hidden="true">📋</div>
+        <div class="sum-type-body">
+          <div class="sum-type-title">2-Year Progress Check</div>
+          <div class="sum-type-desc">Statutory two-year-old check across prime areas (last 24 months).</div>
+        </div>
+        <span class="sum-type-radio" aria-hidden="true"></span>
+      </button>
+      <button class="sum-type-card" type="button" data-type="leaving">
+        <div class="sum-type-icon" aria-hidden="true">🎓</div>
+        <div class="sum-type-body">
+          <div class="sum-type-title">Transition / Leaving Report</div>
+          <div class="sum-type-desc">School-readiness transition summary for a child moving on (last 12 months).</div>
+        </div>
+        <span class="sum-type-radio" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <button class="sum-btn" id="sum-start" type="button" disabled>Start checklist</button>
+    <div class="sum-note">Pick what's true of the child from their Birth to 5 Matters band — Wren pre-ticks what the tracker already shows as secure — then Wren writes the report from your selection. You always review before anything goes to parents.</div>
+  </div>
+
+  <!-- ── STEP 2: checklist ── -->
+  <div id="sum-checklist">
+    <div id="sum-check-child"></div>
+    <div id="sum-check-hint"></div>
+
+    <div class="sum-label">EYFS areas — tick what applies</div>
+    <div id="sum-areas"></div>
+
+    <div class="sum-label" style="margin-top:16px">Characteristics of Effective Learning</div>
+    <div id="sum-coel"></div>
+
+    <div class="sum-label" style="margin-top:16px">Anything else? <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+    <textarea id="sum-focus-note" rows="2"
+      placeholder="Anything you'd like the report to mention — interests, friendships, settling, home news…"></textarea>
+
+    <button class="sum-btn secondary" id="sum-back-to-1" type="button" style="margin-top:12px">‹ Change child / type</button>
+  </div>
+
+  <div class="sum-spinner" id="sum-spinner">Wren is writing… this can take a minute.</div>
+
+  <!-- ── STEP 3: draft + refine ── -->
+  <div class="sum-result" id="sum-result">
+    <h3 id="sum-result-title">Draft</h3>
+    <div class="sum-result-meta" id="sum-result-meta"></div>
+    <div id="sum-refine-bar">
+      <button class="sum-refine-btn" data-refine="shorten"         type="button">✂️ Shorten</button>
+      <button class="sum-refine-btn" data-refine="expand"          type="button">➕ Expand</button>
+      <button class="sum-refine-btn" data-refine="parent_friendly" type="button">💬 Parent-friendly</button>
+      <button class="sum-refine-btn" data-refine="formal"          type="button">🎓 More formal</button>
+      <button class="sum-refine-btn" id="sum-regen-btn"            type="button">⟳ Regenerate</button>
+      <button class="sum-refine-btn" id="sum-undo-btn"             type="button">↩ Undo</button>
+    </div>
+    <textarea class="sum-draft" id="sum-draft"></textarea>
+    <div class="sum-actions">
+      <button class="sum-btn secondary" id="sum-save" type="button">Save Edits</button>
+      <button class="sum-btn" id="sum-send" type="button">Finalise &amp; Send</button>
+    </div>
+    <div class="sum-note">Finalise &amp; Send emails the PDF to parents on file. If email isn't configured, the PDF downloads instead.</div>
+  </div>
+
+</div><!-- #ey-sum-page -->
+
+<!-- Sticky write button (step 2) -->
+<div id="sum-write-bar">
+  <button class="sum-btn" id="sum-write" type="button" disabled>Write report</button>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/js/wren-app-shell.js?v=20260704" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var STATE = {
+    type: 'progress',
+    reportId: null,
+    checklist: null,     // API payload from /checklist/:child_id
+    coelLevels: {},      // area name -> 'emerging'|'developing'|'secure'
+    prevDraft: null,     // for Undo after a refine
+  };
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /* ── Step 1 ─────────────────────────────────────────────────────────────── */
+  function _loadChildren() {
+    var sel = document.getElementById('sum-child');
+    Wren.api('/api/parent-reports/children').then(function (data) {
+      var kids = (data && data.children) || [];
+      if (!kids.length) {
+        sel.innerHTML = '<option value="">No children found</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">Select a child…</option>' +
+        kids.map(function (c) {
+          var name = (c.preferred_name || c.first_name) + ' ' + (c.last_name || '');
+          var room = c.room_name ? ' (' + c.room_name + ')' : '';
+          return '<option value="' + c.id + '">' + _esc(name + room) + '</option>';
+        }).join('');
+      /* Deep link: /ey/reports/summative?child=ID&type=termly (from reminders/trackers) */
+      var params = new URLSearchParams(location.search);
+      var pChild = params.get('child');
+      if (pChild && sel.querySelector('option[value="' + pChild + '"]')) {
+        sel.value = pChild;
+        _refreshStartState();
+      }
+      var pType = params.get('type');
+      if (pType) {
+        var card = document.querySelector('.sum-type-card[data-type="' + pType + '"]');
+        if (card) card.click();
+      }
+    }).catch(function () {
+      sel.innerHTML = '<option value="">Could not load children</option>';
+    });
+  }
+
+  function _refreshStartState() {
+    document.getElementById('sum-start').disabled = !document.getElementById('sum-child').value;
+  }
+
+  function _initTypes() {
+    document.querySelectorAll('.sum-type-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        document.querySelectorAll('.sum-type-card').forEach(function (c) { c.classList.remove('active'); });
+        card.classList.add('active');
+        STATE.type = card.getAttribute('data-type');
+      });
+    });
+  }
+
+  /* ── Step 2: checklist ─────────────────────────────────────────────────── */
+  function _startChecklist() {
+    var childId = document.getElementById('sum-child').value;
+    if (!childId) return;
+    var startBtn = document.getElementById('sum-start');
+    startBtn.disabled = true; startBtn.textContent = 'Loading…';
+
+    Wren.api('/api/parent-reports/checklist/' + childId).then(function (data) {
+      STATE.checklist = data;
+      STATE.coelLevels = {};
+      _renderChecklist(data);
+      document.getElementById('sum-step1').style.display = 'none';
+      document.getElementById('sum-result').classList.remove('show');
+      document.getElementById('sum-checklist').classList.add('show');
+      document.getElementById('sum-write-bar').classList.add('show');
+      startBtn.disabled = false; startBtn.textContent = 'Start checklist';
+      window.scrollTo(0, 0);
+    }).catch(function (e) {
+      startBtn.disabled = false; startBtn.textContent = 'Start checklist';
+      Wren.toast((e && e.error) || 'Could not load checklist', 'error');
+    });
+  }
+
+  function _renderChecklist(data) {
+    var child = data.child || {};
+    var yrs = Math.floor((child.age_months || 0) / 12);
+    var mos = (child.age_months || 0) % 12;
+    document.getElementById('sum-check-child').textContent =
+      child.name + ' — ' + yrs + 'y ' + mos + 'm' + (child.room_name ? ' · ' + child.room_name : '');
+    document.getElementById('sum-check-hint').textContent =
+      'Statements from ' + child.first_name + '’s Birth to 5 Matters band. ' +
+      'Green = already secure on the tracker (pre-ticked). Untick anything you don’t agree with.';
+
+    /* EYFS area cards */
+    var PRIME_ONLY = (STATE.type === '2-year check');
+    var PRIME = ['Communication and Language', 'Physical Development', 'Personal, Social and Emotional Development'];
+    var wrap = document.getElementById('sum-areas');
+    var html = '';
+    Object.keys(data.areas || {}).sort().forEach(function (area) {
+      if (PRIME_ONLY && PRIME.indexOf(area) === -1) return;
+      var stmts = data.areas[area];
+      /* group by aspect */
+      var groups = {};
+      stmts.forEach(function (s) { (groups[s.aspect || 'General'] = groups[s.aspect || 'General'] || []).push(s); });
+      var inner = '';
+      Object.keys(groups).forEach(function (aspect) {
+        inner += '<div class="sum-aspect-heading">' + _esc(aspect) + '</div>';
+        groups[aspect].forEach(function (s) {
+          var pre = (s.status === 'secure');
+          var badges = '';
+          if (s.status) badges += '<span class="sum-badge ' + _esc(s.status) + '">' + _esc(s.status) + '</span>';
+          if (s.evidenced) badges += '<span class="sum-badge evidenced">📎 evidenced</span>';
+          var rangeShort = (s.age_range || '').replace(/\s*\(.*\)/, '');
+          if (rangeShort) badges += '<span class="sum-badge range">' + _esc(rangeShort) + '</span>';
+          inner +=
+            '<label class="sum-stmt">' +
+            '<input type="checkbox" data-stmt-id="' + s.id + '"' + (pre ? ' checked' : '') + '>' +
+            '<span class="sum-stmt-text">' + _esc(s.text) +
+            (badges ? '<span class="sum-stmt-badges">' + badges + '</span>' : '') +
+            '</span></label>';
+        });
+      });
+      var preCount = stmts.filter(function (s) { return s.status === 'secure'; }).length;
+      html +=
+        '<div class="sum-area-card" data-area="' + _esc(area) + '">' +
+        '<button class="sum-area-head" type="button">' +
+        '<span class="sum-area-title">' + _esc(area) + '</span>' +
+        '<span class="sum-area-count" data-count>' + preCount + '</span>' +
+        '<span class="sum-area-chevron">›</span>' +
+        '</button>' +
+        '<div class="sum-area-body">' + (inner || '<div class="sum-aspect-heading">No statements in band</div>') + '</div>' +
+        '</div>';
+    });
+    wrap.innerHTML = html || '<div class="sum-note">No framework statements found for this child’s age band.</div>';
+
+    /* expand/collapse + count updates */
+    wrap.querySelectorAll('.sum-area-head').forEach(function (head) {
+      head.addEventListener('click', function () {
+        head.closest('.sum-area-card').classList.toggle('open');
+      });
+    });
+    wrap.addEventListener('change', _refreshWriteState);
+
+    /* CoEL cards */
+    var coelWrap = document.getElementById('sum-coel');
+    var chtml = '';
+    Object.keys(data.coel || {}).forEach(function (area) {
+      var aspects = (data.coel[area] || []).map(function (a) { return a.aspect; })
+        .filter(function (v, i, arr) { return v && arr.indexOf(v) === i; });
+      chtml +=
+        '<div class="sum-coel-card" data-coel-area="' + _esc(area) + '">' +
+        '<div class="sum-coel-title">' + _esc(area) + '</div>' +
+        '<div class="sum-coel-aspects">' + _esc(aspects.join(' · ')) + '</div>' +
+        '<div class="sum-coel-pills">' +
+        ['Emerging', 'Developing', 'Secure'].map(function (l) {
+          return '<button class="sum-coel-pill" type="button" data-level="' + l.toLowerCase() + '">' + l + '</button>';
+        }).join('') +
+        '</div></div>';
+    });
+    coelWrap.innerHTML = chtml;
+    coelWrap.querySelectorAll('.sum-coel-pill').forEach(function (pill) {
+      pill.addEventListener('click', function () {
+        var card = pill.closest('.sum-coel-card');
+        var area = card.getAttribute('data-coel-area');
+        var already = pill.classList.contains('sel');
+        card.querySelectorAll('.sum-coel-pill').forEach(function (p) { p.classList.remove('sel'); });
+        if (already) { delete STATE.coelLevels[area]; }
+        else { pill.classList.add('sel'); STATE.coelLevels[area] = pill.getAttribute('data-level'); }
+      });
+    });
+
+    document.getElementById('sum-focus-note').value = '';
+    _refreshWriteState();
+  }
+
+  function _tickedIds() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('#sum-areas input[type=checkbox]:checked')
+    ).map(function (cb) { return parseInt(cb.getAttribute('data-stmt-id'), 10); });
+  }
+
+  function _refreshWriteState() {
+    var n = _tickedIds().length;
+    var btn = document.getElementById('sum-write');
+    btn.disabled = !n;
+    btn.textContent = n ? 'Write report (' + n + ' statement' + (n === 1 ? '' : 's') + ')' : 'Tick at least one statement';
+    /* per-area counts */
+    document.querySelectorAll('#sum-areas .sum-area-card').forEach(function (card) {
+      var c = card.querySelectorAll('input[type=checkbox]:checked').length;
+      var el = card.querySelector('[data-count]');
+      if (el) el.textContent = c;
+    });
+  }
+
+  function _backToStep1() {
+    document.getElementById('sum-checklist').classList.remove('show');
+    document.getElementById('sum-write-bar').classList.remove('show');
+    document.getElementById('sum-step1').style.display = '';
+    window.scrollTo(0, 0);
+  }
+
+  /* ── Step 3: generate + refine ─────────────────────────────────────────── */
+  function _coelPayload() {
+    return Object.keys(STATE.coelLevels).map(function (area) {
+      return { characteristic: area, level: STATE.coelLevels[area] };
+    });
+  }
+
+  function _generate() {
+    var childId = document.getElementById('sum-child').value;
+    var ids = _tickedIds();
+    if (!childId || !ids.length) return;
+
+    var writeBtn = document.getElementById('sum-write');
+    writeBtn.disabled = true;
+    document.getElementById('sum-spinner').classList.add('show');
+    document.getElementById('sum-result').classList.remove('show');
+
+    Wren.api('/api/parent-reports/generate-from-checklist', {
+      method: 'POST',
+      body: {
+        child_id: Number(childId),
+        report_type: STATE.type,
+        statement_ids: ids,
+        coel: _coelPayload(),
+        focus_note: document.getElementById('sum-focus-note').value.trim(),
+      }
+    }).then(function (data) {
+      STATE.reportId = data && data.id;
+      STATE.prevDraft = null;
+      document.getElementById('sum-spinner').classList.remove('show');
+      writeBtn.disabled = false;
+
+      var childSel = document.getElementById('sum-child');
+      var childName = childSel.options[childSel.selectedIndex].text;
+      document.getElementById('sum-result-title').textContent = 'Draft — ' + STATE.type;
+      document.getElementById('sum-result-meta').textContent =
+        childName + ' · ' + ids.length + ' statements · saved as report #' + (STATE.reportId || '?');
+      document.getElementById('sum-draft').value = (data && data.draft) || '';
+      document.getElementById('sum-undo-btn').style.display = 'none';
+      document.getElementById('sum-checklist').classList.remove('show');
+      document.getElementById('sum-write-bar').classList.remove('show');
+      document.getElementById('sum-result').classList.add('show');
+      document.getElementById('sum-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      Wren.toast('Draft generated', 'success');
+    }).catch(function (e) {
+      document.getElementById('sum-spinner').classList.remove('show');
+      writeBtn.disabled = false;
+      Wren.toast((e && e.error) || 'Generation failed', 'error');
+    });
+  }
+
+  function _refine(instruction, btn) {
+    if (!STATE.reportId) return;
+    var draftEl = document.getElementById('sum-draft');
+    var content = draftEl.value.trim();
+    if (!content) return;
+
+    var bar = document.querySelectorAll('.sum-refine-btn');
+    bar.forEach(function (b) { b.disabled = true; });
+    var orig = btn.textContent;
+    btn.textContent = '… working';
+
+    Wren.api('/api/parent-reports/' + STATE.reportId + '/refine', {
+      method: 'POST',
+      body: { instruction: instruction, content: content }
+    }).then(function (data) {
+      STATE.prevDraft = content;
+      draftEl.value = (data && data.draft) || content;
+      document.getElementById('sum-undo-btn').style.display = '';
+      Wren.toast('Rewritten — Undo if you preferred the last version', 'success', 3000);
+    }).catch(function (e) {
+      Wren.toast((e && e.error) || 'Rewrite failed', 'error');
+    }).then(function () {
+      bar.forEach(function (b) { b.disabled = false; });
+      btn.textContent = orig;
+    });
+  }
+
+  function _undo() {
+    if (STATE.prevDraft == null) return;
+    document.getElementById('sum-draft').value = STATE.prevDraft;
+    STATE.prevDraft = null;
+    document.getElementById('sum-undo-btn').style.display = 'none';
+  }
+
+  function _regenerate() {
+    /* Back to the same checklist selection, run generation again */
+    document.getElementById('sum-result').classList.remove('show');
+    document.getElementById('sum-checklist').classList.add('show');
+    document.getElementById('sum-write-bar').classList.add('show');
+    window.scrollTo(0, 0);
+  }
+
+  function _save() {
+    if (!STATE.reportId) return;
+    var content = document.getElementById('sum-draft').value;
+    Wren.api('/api/parent-reports/' + STATE.reportId, {
+      method: 'PUT',
+      body: { content: content }
+    }).then(function () {
+      Wren.toast('Edits saved', 'success');
+    }).catch(function (e) {
+      Wren.toast((e && e.error) || 'Save failed', 'error');
+    });
+  }
+
+  // Finalise then send. /send may return JSON (emailed) OR a PDF binary (no SMTP).
+  function _send() {
+    if (!STATE.reportId) return;
+    var content = document.getElementById('sum-draft').value;
+    var sendBtn = document.getElementById('sum-send');
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+
+    Wren.api('/api/parent-reports/' + STATE.reportId + '/finalise', {
+      method: 'POST',
+      body: { content: content }
+    }).then(function () {
+      var token = Wren.getToken();
+      return fetch('/api/parent-reports/' + STATE.reportId + '/send', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+    }).then(function (r) {
+      var ct = r.headers.get('content-type') || '';
+      if (ct.indexOf('application/pdf') !== -1) {
+        return r.blob().then(function (blob) {
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'report.pdf';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          Wren.toast('Report finalised — PDF downloaded', 'success');
+        });
+      }
+      return r.json().then(function (d) {
+        if (!r.ok) return Promise.reject(d);
+        if (d && d.parent_email) Wren.toast('Sent to ' + d.parent_email, 'success');
+        else Wren.toast('Report finalised and sent', 'success');
+      });
+    }).catch(function (e) {
+      Wren.toast((e && e.error) || 'Send failed', 'error');
+    }).then(function () {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Finalise & Send';
+    });
+  }
+
+  function _injectBack() {
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (!hamburger) return;
+    var btn = document.createElement('button');
+    btn.id = 'ey-sum-back';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Back to More');
+    btn.innerHTML =
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+      ' stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+    btn.addEventListener('click', function () {
+      if (history.length > 1) history.back();
+      else location.href = '/ey/more';
+    });
+    hamburger.parentNode.insertBefore(btn, hamburger);
+    hamburger.style.display = 'none';
+  }
+
+  document.addEventListener('wren:ready', function () {
+    _injectBack();
+    _initTypes();
+    _loadChildren();
+    document.getElementById('sum-child').addEventListener('change', _refreshStartState);
+    document.getElementById('sum-start').addEventListener('click', _startChecklist);
+    document.getElementById('sum-back-to-1').addEventListener('click', _backToStep1);
+    document.getElementById('sum-write').addEventListener('click', _generate);
+    document.getElementById('sum-save').addEventListener('click', _save);
+    document.getElementById('sum-send').addEventListener('click', _send);
+    document.getElementById('sum-regen-btn').addEventListener('click', _regenerate);
+    document.getElementById('sum-undo-btn').addEventListener('click', _undo);
+    document.querySelectorAll('.sum-refine-btn[data-refine]').forEach(function (b) {
+      b.addEventListener('click', function () { _refine(b.getAttribute('data-refine'), b); });
+    });
+  });
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"           content="eyfs">
+  <meta name="wren-app-page"          content="termly-tracker">
+  <meta name="wren-app-title"         content="Termly Update Tracker">
+  <meta name="wren-app-chat"          content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>Termly Update Tracker · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* Same shape and the same token vocabulary as /ey/termly-update so the two
+       screens read as one thing. Tokens only — no bare hex — and every pill is a
+       light tint behind dark ink of the same hue, which is wren.css's own badge
+       convention and the only version that survives both themes AND a setting
+       that has repainted the palette through wren-theme.js. */
+    #tk-wrap { padding:16px; max-width:900px; margin:0 auto; display:flex; flex-direction:column; gap:14px;
+               padding-bottom:calc(env(safe-area-inset-bottom,0px) + 90px); }
+    .tk-card { background:var(--c-surface); border:1px solid var(--c-border); border-radius:14px; padding:14px; }
+    .tk-h { font-size:1rem; margin:0 0 4px; color:var(--c-text); }
+    .tk-muted { color:var(--c-muted); font-size:.85rem; }
+    .tk-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .tk-row + .tk-row { border-top:1px solid var(--c-border); margin-top:10px; padding-top:12px; }
+    .tk-row b { color:var(--c-text); }
+    .tk-row small { display:block; color:var(--c-muted); font-size:.8rem; }
+    .tk-btn { border:1px solid var(--c-border); background:transparent; color:var(--c-text);
+              border-radius:10px; padding:9px 12px; font-size:.86rem; font-weight:600; cursor:pointer;
+              min-height:40px; font-family:inherit; }
+    .tk-btn.primary { background:var(--c-blue); color:#fff; border-color:var(--c-blue); }
+    .tk-btn.small   { min-height:32px; padding:5px 10px; font-size:.78rem; }
+    .tk-btn:disabled { opacity:.5; cursor:default; }
+    .tk-pill { display:inline-block; border-radius:999px; padding:3px 10px; font-size:.74rem; font-weight:700;
+               border:1px solid var(--c-border); color:var(--c-muted); white-space:nowrap; }
+    .tk-pill.overdue        { background:var(--c-red-light);    border-color:var(--c-red);    color:var(--c-red); }
+    .tk-pill.due            { background:var(--c-orange-light); border-color:var(--c-orange); color:var(--c-orange-dark); }
+    .tk-pill.in_progress    { background:var(--c-blue-light);   border-color:var(--c-blue);   color:var(--c-blue-dark); }
+    .tk-pill.upcoming       { background:var(--c-blue-light);   border-color:var(--c-blue);   color:var(--c-blue-dark); }
+    .tk-pill.done           { background:var(--c-green-light);  border-color:var(--c-green);  color:var(--c-green); }
+    .tk-pill.late           { background:var(--c-orange-light); border-color:var(--c-orange); color:var(--c-orange-dark); }
+    .tk-pill.not_applicable { background:transparent; }
+    .tk-counts { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .tk-count { flex:1 1 84px; border:1px solid var(--c-border); border-radius:12px; padding:8px 6px; text-align:center; }
+    .tk-count b { display:block; font-size:1.25rem; color:var(--c-text); }
+    .tk-count span { font-size:.72rem; color:var(--c-muted); }
+    .tk-note { background:var(--c-bg,transparent); border-left:3px solid var(--c-orange);
+               padding:8px 12px; border-radius:0 8px 8px 0; font-size:.85rem; color:var(--c-text); }
+    .tk-note.info { border-left-color:var(--c-blue); }
+    .tk-note.good { border-left-color:var(--c-green); }
+    .tk-hidden { display:none !important; }
+    .tk-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+    .tk-tab { border:1px solid var(--c-border); background:transparent; color:var(--c-muted);
+              border-radius:999px; padding:6px 14px; font-size:.82rem; font-weight:600; cursor:pointer;
+              font-family:inherit; min-height:34px; }
+    .tk-tab[aria-selected="true"] { background:var(--c-blue); border-color:var(--c-blue); color:#fff; }
+    .tk-filters { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .tk-filters select { background:var(--c-bg,var(--c-surface)); border:1px solid var(--c-border);
+                         border-radius:10px; color:var(--c-text); padding:8px 10px; font-size:.86rem;
+                         font-family:inherit; min-height:40px; }
+    .tk-table { border-collapse:collapse; width:100%; font-size:.84rem; margin-top:8px; }
+    .tk-table th, .tk-table td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--c-border);
+                                 color:var(--c-text); vertical-align:top; }
+    .tk-table th { color:var(--c-muted); font-weight:700; font-size:.74rem; white-space:nowrap; }
+    .tk-table td.n, .tk-table th.n { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .tk-table tr:last-child td { border-bottom:none; }
+    .tk-scroll { overflow-x:auto; }
+    .tk-bar { height:6px; border-radius:999px; background:var(--c-border); overflow:hidden; min-width:60px; }
+    .tk-bar > i { display:block; height:100%; background:var(--c-green); }
+    .tk-bar.late > i { background:var(--c-orange); }
+    #tk-empty { color:var(--c-muted); text-align:center; padding:14px 0; }
+    .tk-src { font-size:.74rem; color:var(--c-muted); }
+    .tk-warn { color:var(--c-orange-dark); font-weight:700; }
+  </style>
+</head>
+<body>
+<div id="tk-wrap">
+
+  <!-- ── Header: the cycle, the dates, the health of the calendar ─────────── -->
+  <div class="tk-card">
+    <h2 class="tk-h">Termly update tracker</h2>
+    <p class="tk-muted">Who has done their termly updates this half-term, who has not, and whether they
+      went out on time. The deadline comes from Ealing's school dates, the same cycle the updates
+      themselves run on.</p>
+    <div class="tk-filters">
+      <label class="tk-muted" for="tk-cycle">Half-term</label>
+      <select id="tk-cycle"></select>
+      <select id="tk-room"><option value="">All rooms</option></select>
+      <select id="tk-staff"><option value="">All key people</option></select>
+    </div>
+    <div id="tk-cycleline" class="tk-note info tk-hidden" style="margin-top:10px"></div>
+    <div id="tk-calendar"  class="tk-note tk-hidden" style="margin-top:10px"></div>
+    <div id="tk-srcwarn"   class="tk-note tk-hidden" style="margin-top:10px"></div>
+    <div id="tk-counts" class="tk-counts"></div>
+  </div>
+
+  <!-- ── Tabs ─────────────────────────────────────────────────────────────── -->
+  <div class="tk-card">
+    <div class="tk-tabs" role="tablist">
+      <button class="tk-tab" id="tk-tab-staff"    role="tab" aria-selected="true"  data-tab="staff">By key person</button>
+      <button class="tk-tab" id="tk-tab-rooms"    role="tab" aria-selected="false" data-tab="rooms">By room</button>
+      <button class="tk-tab" id="tk-tab-children" role="tab" aria-selected="false" data-tab="children">Every child</button>
+      <button class="tk-tab tk-hidden" id="tk-tab-report" role="tab" aria-selected="false" data-tab="report">Termly report</button>
+    </div>
+
+    <!-- BY KEY PERSON -->
+    <div id="tk-pane-staff">
+      <p class="tk-muted">On time means the key person wrote the update on or before the due date. The
+        two dates are kept apart on purpose: <b>done</b> is when they wrote it, <b>sent</b> is when the
+        family got it. A room full of on-time practitioners with a long delivery gap is a Wren problem,
+        not a staff one.</p>
+      <div class="tk-scroll">
+        <table class="tk-table" id="tk-staff-table">
+          <thead><tr>
+            <th>Key person</th><th class="n">Owed</th><th class="n">Done</th>
+            <th class="n">On time</th><th class="n">Late</th><th class="n">Avg days late</th>
+            <th class="n">Outstanding</th><th style="width:110px">Progress</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="tk-staff-empty" class="tk-hidden" style="color:var(--c-muted);padding:12px 0">Nothing to show for this half-term.</div>
+    </div>
+
+    <!-- BY ROOM -->
+    <div id="tk-pane-rooms" class="tk-hidden">
+      <div class="tk-scroll">
+        <table class="tk-table" id="tk-rooms-table">
+          <thead><tr>
+            <th>Room</th><th class="n">Owed</th><th class="n">Done</th>
+            <th class="n">On time</th><th class="n">Late</th><th class="n">Outstanding</th>
+            <th style="width:110px">Progress</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- EVERY CHILD -->
+    <div id="tk-pane-children" class="tk-hidden">
+      <div class="tk-scroll">
+        <table class="tk-table" id="tk-children-table">
+          <thead><tr>
+            <th>Child</th><th>Key person</th><th>Room</th><th>State</th>
+            <th>Due</th><th>Done</th><th>Sent</th><th class="n">Days late</th><th>From</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="tk-empty" class="tk-hidden">No children to show.</div>
+    </div>
+
+    <!-- TERMLY REPORT (managers) -->
+    <div id="tk-pane-report" class="tk-hidden">
+      <div class="tk-filters" style="margin-top:0">
+        <label class="tk-muted" for="tk-report-scope">Show</label>
+        <select id="tk-report-scope">
+          <option value="cycle">This half-term</option>
+          <option value="year">The whole academic year so far</option>
+        </select>
+        <button class="tk-btn small" id="tk-report-send">Send it to the managers now</button>
+      </div>
+      <p class="tk-muted">The report Wren sends the management team when a half-term closes: who was owed
+        an update, who sent one, who was late and by how long, and which children nobody wrote.</p>
+      <div id="tk-report-body"></div>
+    </div>
+  </div>
+
+  <!-- ── The watcher itself ───────────────────────────────────────────────── -->
+  <div class="tk-card" id="tk-watcher-card">
+    <h2 class="tk-h">The watcher</h2>
+    <p class="tk-muted">When a key person marks a termly update done, Wren puts it together with this
+      half-term's room plan, the child's next steps and their tracker, and sends it to the family.</p>
+    <div id="tk-watcher-status"></div>
+    <div id="tk-watcher-sources" style="margin-top:10px"></div>
+    <div class="tk-filters" id="tk-watcher-actions">
+      <button class="tk-btn small" id="tk-run-dry">What would it do now?</button>
+      <button class="tk-btn small primary" id="tk-run">Run it now</button>
+      <button class="tk-btn small" id="tk-preview">EyLog tag preview</button>
+    </div>
+    <div id="tk-run-out" class="tk-note info tk-hidden" style="margin-top:10px"></div>
+  </div>
+
+</div>
+
+<script src="/js/wren-core.js?v=20260904-devbanner" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  'use strict';
+  var STATE = { tracker: null, status: null, tab: 'staff' };
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function show(el, on) { if (el) el.classList.toggle('tk-hidden', !on); }
+  // Dates come off the API as 'YYYY-MM-DD' strings and are formatted with LOCAL
+  // getters. new Date('2026-09-16') is parsed as UTC midnight, which in BST
+  // prints as the 15th — see memory/reference_pg_date_ymd_trap.md.
+  function d(ymd) {
+    if (!ymd) return '—';
+    var p = String(ymd).split('-');
+    if (p.length !== 3) return esc(ymd);
+    var dt = new Date(+p[0], +p[1] - 1, +p[2]);
+    return isNaN(dt) ? esc(ymd) : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+  var STATE_LABEL = {
+    done: 'Done', due: 'Due', overdue: 'Overdue', in_progress: 'In progress',
+    upcoming: 'Not due yet', not_applicable: 'Not owed'
+  };
+
+  function bar(done, owed, late) {
+    var pct = owed ? Math.round((done / owed) * 100) : 0;
+    return '<div class="tk-bar' + (late ? ' late' : '') + '" title="' + pct + '%">'
+         + '<i style="width:' + pct + '%"></i></div>';
+  }
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+  function loadTracker() {
+    var q = [];
+    var c = $('tk-cycle').value; if (c) q.push('cycle_key=' + encodeURIComponent(c));
+    var r = $('tk-room').value;  if (r) q.push('room_id=' + encodeURIComponent(r));
+    var s = $('tk-staff').value; if (s) q.push('key_person_id=' + encodeURIComponent(s));
+    return Wren.api('/api/termly-watcher/tracker' + (q.length ? '?' + q.join('&') : ''))
+      .then(function (data) { STATE.tracker = data; render(); return data; })
+      .catch(function (e) {
+        Wren.toast((e && (e.error || e.message)) || 'Could not load the tracker', 'error');
+      });
+  }
+
+  function loadStatus() {
+    return Wren.api('/api/termly-watcher/status')
+      .then(function (data) { STATE.status = data; renderWatcher(); })
+      .catch(function () { /* the tracker is the point of the page; the watcher card can stay blank */ });
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function render() {
+    var t = STATE.tracker; if (!t) return;
+
+    // Cycle picker — filled once, then kept.
+    var sel = $('tk-cycle');
+    if (!sel.options.length && Array.isArray(t.cycles)) {
+      t.cycles.forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c.key; o.textContent = c.label;
+        sel.appendChild(o);
+      });
+    }
+    if (t.cycle) sel.value = t.cycle.key;
+
+    // Room + key-person filters, from what actually came back.
+    fillFilter($('tk-room'), t.rooms, 'room_id', 'All rooms');
+    fillFilter($('tk-staff'), t.staff, 'staff_id', 'All key people');
+
+    var line = $('tk-cycleline');
+    if (t.cycle) {
+      line.innerHTML = '<b>' + esc(t.cycle.label) + '</b> — opened ' + d(t.cycle.opens_on)
+        + ', due <b>' + d(t.cycle.due_on) + '</b>, overdue from ' + d(t.cycle.overdue_on)
+        + ', term ends ' + d(t.cycle.closes_on) + '.';
+      show(line, true);
+    } else { show(line, false); }
+
+    var cal = $('tk-calendar');
+    if (t.calendar && t.calendar.message) { cal.textContent = t.calendar.message; show(cal, true); }
+    else show(cal, false);
+
+    var warn = $('tk-srcwarn');
+    var needy = (t.sources || []).filter(function (s) { return s.needs_attention; });
+    if (t.source_error) {
+      warn.innerHTML = '<span class="tk-warn">A completion source could not be read.</span> '
+        + esc(t.source_error) + ' The board below is falling back to the tick-box flag alone.';
+      show(warn, true);
+    } else if (needy.length) {
+      warn.innerHTML = needy.map(function (s) { return '<div>' + esc(s.detail) + '</div>'; }).join('');
+      show(warn, true);
+    } else { show(warn, false); }
+
+    var c = t.totals || {};
+    $('tk-counts').innerHTML = [
+      count(c.owed, 'owed'), count(c.done, 'done'), count(c.on_time, 'on time'),
+      count(c.late, 'late'), count(c.outstanding, 'outstanding'),
+      count(c.not_applicable, 'not owed')
+    ].join('');
+
+    renderStaff(); renderRooms(); renderChildren();
+    show($('tk-tab-report'), !!t.can_manage);
+    show($('tk-watcher-card'), !!t.can_manage);
+  }
+
+  function count(n, label) {
+    return '<div class="tk-count"><b>' + (n == null ? 0 : n) + '</b><span>' + esc(label) + '</span></div>';
+  }
+
+  function fillFilter(sel, list, idKey, allLabel) {
+    if (sel.dataset.filled === '1') return;
+    (list || []).forEach(function (row) {
+      if (row[idKey] == null) return;
+      var o = document.createElement('option');
+      o.value = row[idKey]; o.textContent = row.name;
+      sel.appendChild(o);
+    });
+    sel.dataset.filled = '1';
+    void allLabel;
+  }
+
+  function renderStaff() {
+    var rows = (STATE.tracker.staff || []);
+    var tb = $('tk-staff-table').querySelector('tbody');
+    tb.innerHTML = rows.map(function (s) {
+      return '<tr>'
+        + '<td><b>' + esc(s.name) + '</b>'
+          + (s.missed && s.missed.length
+              ? '<small>' + esc(s.missed.slice(0, 4).map(function (m) { return m.name; }).join(', '))
+                + (s.missed.length > 4 ? ' and ' + (s.missed.length - 4) + ' more' : '')
+                + ' still to write</small>'
+              : '')
+        + '</td>'
+        + '<td class="n">' + s.owed + '</td>'
+        + '<td class="n">' + s.done + '</td>'
+        + '<td class="n">' + s.on_time + '</td>'
+        + '<td class="n">' + (s.late ? '<span class="tk-pill late">' + s.late + '</span>' : '0') + '</td>'
+        + '<td class="n">' + (s.late ? s.avg_days_late : '—') + '</td>'
+        + '<td class="n">' + s.outstanding + '</td>'
+        + '<td>' + bar(s.done, s.owed, s.late > 0) + '</td>'
+        + '</tr>';
+    }).join('');
+    show($('tk-staff-empty'), !rows.length);
+  }
+
+  function renderRooms() {
+    var tb = $('tk-rooms-table').querySelector('tbody');
+    tb.innerHTML = (STATE.tracker.rooms || []).map(function (r) {
+      return '<tr>'
+        + '<td><b>' + esc(r.name) + '</b></td>'
+        + '<td class="n">' + r.owed + '</td><td class="n">' + r.done + '</td>'
+        + '<td class="n">' + r.on_time + '</td><td class="n">' + r.late + '</td>'
+        + '<td class="n">' + r.outstanding + '</td>'
+        + '<td>' + bar(r.done, r.owed, r.late > 0) + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  function renderChildren() {
+    var kids = (STATE.tracker.children || []);
+    var tb = $('tk-children-table').querySelector('tbody');
+    tb.innerHTML = kids.map(function (k) {
+      var lag = (k.delivery_lag_days != null && k.delivery_lag_days > 1)
+        ? '<small>' + k.delivery_lag_days + ' days to reach the family</small>' : '';
+      return '<tr>'
+        + '<td><b>' + esc(k.name) + '</b>'
+          + (k.reason ? '<small>' + esc(k.reason) + '</small>' : '') + '</td>'
+        + '<td>' + esc(k.key_person_name || '—') + '</td>'
+        + '<td>' + esc(k.room_name || '—') + '</td>'
+        + '<td><span class="tk-pill ' + esc(k.state) + '">' + esc(STATE_LABEL[k.state] || k.state) + '</span>'
+          + (k.on_time === false ? ' <span class="tk-pill late">late</span>' : '') + '</td>'
+        + '<td>' + d(k.due_on) + '</td>'
+        + '<td>' + d(k.completed_on) + '</td>'
+        + '<td>' + d(k.sent_on) + (k.published ? '' : (k.sent_on ? '' : '')) + lag + '</td>'
+        + '<td class="n">' + (k.days_late == null ? '—' : k.days_late) + '</td>'
+        + '<td class="tk-src">' + esc(k.source || '—')
+          + (k.matched_by ? '<small>' + esc(k.matched_by) + '</small>' : '') + '</td>'
+        + '</tr>';
+    }).join('');
+    show($('tk-empty'), !kids.length);
+  }
+
+  // ── The watcher card ──────────────────────────────────────────────────────
+  function renderWatcher() {
+    var s = STATE.status; if (!s) return;
+    $('tk-watcher-status').innerHTML =
+      '<div class="tk-note ' + (s.enabled ? 'good' : '') + '">'
+      + (s.enabled ? 'Running' : '<b>Switched off</b>')
+      + ' — updates ' + (s.release === 'auto' ? 'go to families as soon as they are marked done'
+                                              : 'wait for a practitioner to send them')
+      + ', checked every ' + s.interval_minutes + ' minutes. '
+      + (s.produced ? s.produced.total + ' put together this half-term, ' + s.produced.published + ' sent.' : '')
+      + '</div>'
+      + '<div class="tk-note info" style="margin-top:8px">' + esc(s.sovereignty) + '</div>';
+
+    $('tk-watcher-sources').innerHTML = (s.sources || []).map(function (src) {
+      return '<div class="tk-row"><div><b>' + esc(src.label) + '</b>'
+        + '<small>' + esc(src.detail) + '</small></div>'
+        + '<span class="tk-pill ' + (src.enabled ? 'done' : 'not_applicable') + '">'
+        + (src.enabled ? 'on' : 'off') + '</span></div>';
+    }).join('');
+  }
+
+  function runWatcher(dry) {
+    var out = $('tk-run-out');
+    out.textContent = dry ? 'Checking…' : 'Running…'; show(out, true);
+    Wren.api('/api/termly-watcher/run', { method: 'POST', body: { dry: !!dry } })
+      .then(function (r) {
+        if (!r.ran) { out.textContent = 'Did not run: ' + (r.reason || 'unknown'); return; }
+        var c = r.counts || {};
+        var bits = Object.keys(c).map(function (k) { return k.replace(/_/g, ' ') + ': ' + c[k]; });
+        out.textContent = (dry ? 'It would act on ' + (c.would_create || 0) + ' child(ren). ' : 'Done. ')
+          + bits.join(' · ');
+        if (!dry) loadTracker();
+      })
+      .catch(function (e) { out.textContent = (e && (e.error || e.message)) || 'Failed'; });
+  }
+
+  function loadPreview() {
+    var out = $('tk-run-out'); out.textContent = 'Counting EyLog tags…'; show(out, true);
+    Wren.api('/api/termly-watcher/sources/preview')
+      .then(function (p) {
+        var rows = (p.tags || []).slice(0, 12).map(function (t) {
+          return '<tr><td>' + esc(t.tag) + (t.configured ? ' <span class="tk-pill done">in use</span>' : '')
+            + '</td><td class="n">' + t.observations + '</td><td class="n">' + t.children + '</td></tr>';
+        }).join('');
+        out.innerHTML = '<div>' + esc(p.how_to_read) + '</div>'
+          + '<div class="tk-muted" style="margin-top:6px">' + p.active_children + ' active children this half-term'
+          + (p.text_matches ? ' · text fallback matches ' + (p.text_matches.observations || 0)
+              + ' observation(s) across ' + (p.text_matches.children || 0) + ' child(ren)' : '')
+          + ' · flag set on ' + ((p.flagged && p.flagged.eylog) || 0) + ' EyLog and '
+          + ((p.flagged && p.flagged.wren) || 0) + ' Wren observation(s).</div>'
+          + (rows ? '<div class="tk-scroll"><table class="tk-table"><thead><tr><th>EyLog tag</th>'
+              + '<th class="n">Observations</th><th class="n">Children</th></tr></thead><tbody>'
+              + rows + '</tbody></table></div>'
+            : '<div class="tk-muted" style="margin-top:6px">No tagged EyLog observations in this half-term.</div>');
+      })
+      .catch(function (e) { out.textContent = (e && (e.error || e.message)) || 'Failed'; });
+  }
+
+  // ── Termly report ─────────────────────────────────────────────────────────
+  function loadReport() {
+    var scope = $('tk-report-scope').value;
+    var q = [];
+    if (scope === 'year' && STATE.tracker && STATE.tracker.cycle) {
+      q.push('academic_year=' + encodeURIComponent(STATE.tracker.cycle.academic_year));
+    } else if (STATE.tracker && STATE.tracker.cycle) {
+      q.push('cycle_key=' + encodeURIComponent(STATE.tracker.cycle.key));
+    }
+    $('tk-report-body').textContent = 'Loading…';
+    Wren.api('/api/termly-watcher/report' + (q.length ? '?' + q.join('&') : ''))
+      .then(function (r) {
+        var t = r.totals || {};
+        var head = '<div class="tk-note' + (t.outstanding || t.late ? '' : ' good') + '">'
+          + '<b>' + t.done + ' of ' + t.owed + '</b> termly updates went out across '
+          + (r.cycles || []).length + ' half-term(s). ' + t.on_time + ' on time, ' + t.late + ' late, '
+          + t.outstanding + ' never written.'
+          + (t.late ? ' The latest was ' + t.worst_days_late + ' day(s) past the due date.' : '')
+          + '</div>';
+        var rows = (r.staff || []).map(function (s) {
+          var missed = (s.missed || []).slice(0, 6).map(function (m) {
+            return esc(m.name) + ' (' + esc(m.cycle_label || m.cycle_key || '') + ', due ' + d(m.due_on) + ')';
+          }).join('; ');
+          return '<tr><td><b>' + esc(s.name) + '</b>'
+            + (missed ? '<small>Missed: ' + missed
+                + ((s.missed || []).length > 6 ? ' and ' + (s.missed.length - 6) + ' more' : '') + '</small>' : '')
+            + '</td><td class="n">' + s.owed + '</td><td class="n">' + s.done + '</td>'
+            + '<td class="n">' + s.on_time + '</td><td class="n">' + s.late + '</td>'
+            + '<td class="n">' + (s.late ? s.avg_days_late : '—') + '</td>'
+            + '<td class="n">' + s.outstanding + '</td></tr>';
+        }).join('');
+        $('tk-report-body').innerHTML = head
+          + '<div class="tk-scroll"><table class="tk-table"><thead><tr><th>Key person</th>'
+          + '<th class="n">Owed</th><th class="n">Done</th><th class="n">On time</th>'
+          + '<th class="n">Late</th><th class="n">Avg days late</th><th class="n">Missed</th>'
+          + '</tr></thead><tbody>' + (rows || '<tr><td colspan="7">Nothing owed in this period.</td></tr>')
+          + '</tbody></table></div>';
+      })
+      .catch(function (e) {
+        $('tk-report-body').textContent = (e && (e.error || e.message)) || 'Could not load the report';
+      });
+  }
+
+  function selectTab(name) {
+    STATE.tab = name;
+    ['staff', 'rooms', 'children', 'report'].forEach(function (t) {
+      var tab = $('tk-tab-' + t);
+      if (tab) tab.setAttribute('aria-selected', String(t === name));
+      show($('tk-pane-' + t), t === name);
+    });
+    if (name === 'report') loadReport();
+  }
+
+  function boot() {
+    ['tk-cycle', 'tk-room', 'tk-staff'].forEach(function (id) {
+      $(id).addEventListener('change', function () { loadTracker(); });
+    });
+    document.querySelectorAll('.tk-tab').forEach(function (b) {
+      b.addEventListener('click', function () { selectTab(b.dataset.tab); });
+    });
+    $('tk-report-scope').addEventListener('change', loadReport);
+    $('tk-report-send').addEventListener('click', function () {
+      if (!confirm('Send this half-term\'s termly-update report to the management team now?')) return;
+      Wren.api('/api/termly-watcher/run/report', { method: 'POST', body: { force: true } })
+        .then(function () { Wren.toast('Report sent to the managers', 'success'); })
+        .catch(function (e) { Wren.toast((e && (e.error || e.message)) || 'Could not send', 'error'); });
+    });
+    $('tk-run-dry').addEventListener('click', function () { runWatcher(true); });
+    $('tk-run').addEventListener('click', function () { runWatcher(false); });
+    $('tk-preview').addEventListener('click', loadPreview);
+
+    var params = new URLSearchParams(window.location.search);
+    var wanted = params.get('cycle_key');
+    loadTracker().then(function () {
+      if (wanted && $('tk-cycle').querySelector('option[value="' + wanted + '"]')) {
+        $('tk-cycle').value = wanted; loadTracker();
+      }
+      if (params.get('tab')) selectTab(params.get('tab'));
+    });
+    loadStatus();
+  }
+
+  // ABSOLUTE RULE 7 — never call the loader from a script tag. The shell fires
+  // wren:ready at the end of buildShell(); anything that runs before it has no
+  // Wren.api to call.
+  document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Traffic — Roost</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+  #ts-wrap{max-width:1000px;margin:0 auto;padding:18px 16px}
+  .ts-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .ts-head h1{font-size:1.3rem;margin:0;flex:1}
+  .ts-range{display:flex;gap:6px}
+  .ts-range button{padding:7px 14px;border:1px solid var(--c-border,#2d3748);background:var(--c-surface,#1e293b);color:var(--c-text,#e2e8f0);border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem}
+  .ts-range button.active{background:var(--c-blue,#4a9abf);border-color:var(--c-blue,#4a9abf);color:#fff;font-weight:700}
+  .ts-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:22px}
+  .ts-card{background:var(--c-surface,#1e293b);border:1px solid var(--c-border,#2d3748);border-radius:14px;padding:16px 18px}
+  .ts-card .host{font-weight:700;color:var(--c-blue,#4a9abf);font-size:1rem;margin-bottom:10px;word-break:break-all}
+  .ts-stat{display:flex;justify-content:space-between;font-size:.9rem;padding:3px 0;color:var(--c-text,#e2e8f0)}
+  .ts-stat b{font-size:1.05rem}
+  .ts-muted{color:var(--c-muted,#94a3b8)}
+  table{width:100%;border-collapse:collapse;font-size:.86rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--c-border,#2d3748)}
+  th{color:var(--c-muted,#94a3b8);font-weight:600}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  h2{font-size:1.05rem;margin:6px 2px 10px}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="ts-wrap">
+  <div class="ts-head">
+    <h1>📊 Website & app traffic</h1>
+    <div class="ts-range" id="ts-range">
+      <button data-days="1">Yesterday</button>
+      <button data-days="7" class="active">7 days</button>
+      <button data-days="30">30 days</button>
+    </div>
+  </div>
+  <div class="ts-cards" id="ts-cards"><div class="ts-muted">Loading…</div></div>
+  <h2>Top pages</h2>
+  <div id="ts-top"><div class="ts-muted">Loading…</div></div>
+  <p class="ts-muted" style="margin-top:18px;font-size:.8rem">First-party, cookie-free counts (parents app + getwren.co.uk). Dwell = time between first and last activity on a page.</p>
+</div>
+<script>
+(function () {
+  var DAYS = 7;
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function fmtDwell(s){ s=Number(s)||0; if(s<60) return s+'s'; return (s/60).toFixed(1)+'m'; }
+  function load(){
+    Wren.api('/api/analytics/summary?days=' + DAYS).then(function(d){
+      var hosts = d.by_host || [];
+      document.getElementById('ts-cards').innerHTML = hosts.length ? hosts.map(function(h){
+        return '<div class="ts-card"><div class="host">'+esc(h.host)+'</div>'
+          + '<div class="ts-stat"><span class="ts-muted">Visitors</span><b>'+(h.visitors||0)+'</b></div>'
+          + '<div class="ts-stat"><span class="ts-muted">Page views</span><b>'+(h.page_views||0)+'</b></div>'
+          + '<div class="ts-stat"><span class="ts-muted">Avg time on page</span><b>'+fmtDwell(h.avg_dwell_s)+'</b></div></div>';
+      }).join('') : '<div class="ts-muted">No traffic recorded for this period yet.</div>';
+      var top = d.top_pages || [];
+      document.getElementById('ts-top').innerHTML = top.length
+        ? '<table><thead><tr><th>Site</th><th>Page</th><th class="n">Views</th><th class="n">Visitors</th></tr></thead><tbody>'
+          + top.map(function(t){ return '<tr><td>'+esc(t.host)+'</td><td>'+esc(t.path)+'</td><td class="n">'+t.views+'</td><td class="n">'+t.visitors+'</td></tr>'; }).join('')
+          + '</tbody></table>'
+        : '<div class="ts-muted">No pages recorded yet.</div>';
+    }).catch(function(e){
+      document.getElementById('ts-cards').innerHTML = '<div class="ts-muted">Could not load traffic ('+esc((e&&e.message)||'error')+').</div>';
+      document.getElementById('ts-top').innerHTML = '';
+    });
+  }
+  document.getElementById('ts-range').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    DAYS = parseInt(b.dataset.days,10)||7;
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function(x){ x.classList.toggle('active', x===b); });
+    load();
+  });
+  document.addEventListener('wren:ready', load);
+  if (window.Wren && Wren.api) load();
+})();
+</script>
+</body>
+</html>

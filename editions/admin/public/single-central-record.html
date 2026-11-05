@@ -1,0 +1,231 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Single Central Record · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf;--orange:#e07820}
+ .scr-wrap{padding:18px;max-width:1600px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}
+ .sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+ .spacer{flex:1}
+ .btn{background:var(--blue);border:1px solid var(--blue);color:#04121b;border-radius:9px;padding:9px 15px;
+   font-size:.85rem;font-weight:700;cursor:pointer;min-height:40px}
+ .btn:hover{filter:brightness(1.08)}
+ .btn.ghost{background:transparent;color:var(--txt);border-color:var(--bd)}
+ input[type=search]{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:8px;
+   padding:9px 10px;font-size:.85rem;font-family:inherit;min-width:220px}
+ .empty{text-align:center;color:var(--mut);padding:40px 0;font-size:.9rem}
+ .banner{font-size:.82rem;color:var(--mut);margin:6px 0;min-height:1em}
+
+ /* legend + summary */
+ .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.78rem;color:var(--mut);margin-bottom:12px}
+ .legend span{display:inline-flex;align-items:center;gap:6px}
+ .dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+ .d-ok{background:var(--ok)}.d-warn{background:var(--warn)}.d-bad{background:var(--bad)}.d-miss{background:#64748b}
+
+ /* the record itself */
+ .tbl-scroll{overflow-x:auto;border:1px solid var(--bd);border-radius:14px;background:var(--card)}
+ table{border-collapse:collapse;width:100%;font-size:.8rem;min-width:1500px}
+ th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap;vertical-align:top}
+ thead th{position:sticky;top:0;background:#0b1428;color:var(--mut);font-weight:700;font-size:.72rem;
+   text-transform:uppercase;letter-spacing:.04em;z-index:2}
+ tbody tr:hover{background:rgba(255,255,255,.03)}
+ td.name{font-weight:700;white-space:normal;min-width:150px}
+ .role{color:var(--mut);font-weight:400;font-size:.74rem;display:block}
+ .cell-ok{color:var(--ok)}.cell-warn{color:var(--warn)}.cell-bad{color:var(--bad)}.cell-miss{color:#94a3b8}
+ .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700;
+   border:1px solid currentColor}
+ .p-ok{color:var(--ok)}.p-warn{color:var(--warn)}.p-bad{color:var(--bad)}.p-miss{color:#94a3b8}
+ .days{display:block;font-size:.68rem;color:var(--mut);font-weight:400}
+ .print-meta{display:none}
+
+ /* Print / PDF — same approach as crib-sheet.html: light ground, drop chrome,
+    let the table wrap onto as many sheets as it needs with repeating headers. */
+ @media print {
+   @page{size:A4 landscape;margin:10mm}
+   body{background:#fff;color:#000}
+   .wren-sidebar,.wren-topbar,.wren-shell-nav,nav,.toolbar,.actions{display:none!important}
+   .scr-wrap{padding:0;max-width:none}
+   .print-meta{display:block;font-size:.75rem;color:#333;margin-bottom:8px}
+   .tbl-scroll{overflow:visible;border:1px solid #999;border-radius:0;background:#fff}
+   table{min-width:0;width:100%;font-size:.62rem}
+   thead{display:table-header-group}
+   tr{page-break-inside:avoid}
+   th,td{border-bottom:1px solid #bbb;color:#000;padding:4px 5px}
+   thead th{background:#eee;color:#000}
+   h1,.sub{color:#000}
+   .legend{color:#333}
+   .cell-ok{color:#0a0}.cell-warn{color:#a60}.cell-bad{color:#c00}.cell-miss{color:#666}
+   .p-ok{color:#0a0}.p-warn{color:#a60}.p-bad{color:#c00}.p-miss{color:#666}
+   .days,.role{color:#555}
+ }
+</style></head>
+<body data-portal="admin">
+<div class="scr-wrap">
+  <h1>🗂️ Single Central Record</h1>
+  <div class="sub">Every active staff member's vetting and training record, in one inspector-ready table.
+    Dated cells are rated against the same window as the compliance alerts.</div>
+
+  <div class="print-meta" id="print-meta"></div>
+
+  <div class="toolbar actions">
+    <input type="search" id="f-search" placeholder="Filter by name or role…" autocomplete="off">
+    <button class="btn ghost" id="btn-issues">Show only issues</button>
+    <span class="spacer"></span>
+    <span class="banner" id="banner"></span>
+    <button class="btn ghost" id="btn-refresh">Refresh</button>
+    <a class="btn ghost" href="/staff-records.html" style="text-decoration:none;display:inline-flex;align-items:center">📋 Edit in Staff records →</a>
+    <button class="btn" id="btn-print">🖨️ Print / PDF</button>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot d-ok"></i> Valid</span>
+    <span><i class="dot d-warn"></i> Expires within the alert window</span>
+    <span><i class="dot d-bad"></i> Expired / overdue</span>
+    <span><i class="dot d-miss"></i> Not recorded</span>
+  </div>
+
+  <div class="tbl-scroll">
+    <table id="scr-table">
+      <thead><tr>
+        <th>Name</th><th>Start date</th>
+        <th>DBS number</th><th>DBS issued</th><th>DBS expiry</th>
+        <th>Right to work</th><th>RTW checked</th><th>Visa expiry</th>
+        <th>Qualification</th><th>Level</th>
+        <th>Paediatric first aid</th><th>Safeguarding training</th>
+        <th>Prohibition check</th><th>Induction</th><th>References</th>
+      </tr></thead>
+      <tbody id="scr-body"><tr><td colspan="15" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/compliance';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  var STATE={rows:[],window:60,issuesOnly:false};
+
+  function api(p,opts){opts=opts||{};
+    return fetch(API+p,{method:opts.method||'GET',
+      headers:Object.assign({'Authorization':'Bearer '+TOKEN()},{'Content-Type':'application/json'}),
+      body:opts.body?JSON.stringify(opts.body):undefined})
+    .then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};})
+      .catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){
+    return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+
+  // RAG classes shared by every dated cell — statuses come straight from the API
+  // so the page can never drift from /api/compliance/expiring.
+  var CLS={ok:'cell-ok',due_soon:'cell-warn',overdue:'cell-bad',missing:'cell-miss'};
+  var PCLS={ok:'p-ok',due_soon:'p-warn',overdue:'p-bad',missing:'p-miss'};
+
+  function fmtDate(d){
+    if(!d) return '—';
+    var p=String(d).slice(0,10).split('-');
+    return p.length===3 ? p[2]+'/'+p[1]+'/'+p[0] : String(d);
+  }
+  /* A dated cell: the date, coloured by status, with the countdown underneath. */
+  function dateCell(o,missingLabel){
+    if(!o||!o.date) return '<td class="cell-miss">'+esc(missingLabel||'Not recorded')+'</td>';
+    var d=o.days;
+    var note = d==null ? '' : (d<0 ? Math.abs(d)+' days overdue' : d+' days left');
+    return '<td class="'+(CLS[o.status]||'')+'">'+fmtDate(o.date)+
+           (note?'<span class="days">'+note+'</span>':'')+'</td>';
+  }
+  function yesNo(v,goodLabel,badLabel){
+    return '<td><span class="pill '+(v?'p-ok':'p-bad')+'">'+(v?(goodLabel||'Yes'):(badLabel||'No'))+'</span></td>';
+  }
+  function plain(v){return '<td>'+(v==null||v===''?'<span class="cell-miss">—</span>':esc(v))+'</td>';}
+
+  function rowHasIssue(r){
+    var bad=['overdue','due_soon','missing'];
+    if(bad.indexOf(r.dbs_expiry.status)>=0) return true;
+    if(r.right_to_work_expiry && bad.indexOf(r.right_to_work_expiry.status)>=0) return true;
+    if(r.visa_expiry && bad.indexOf(r.visa_expiry.status)>=0) return true;
+    if(bad.indexOf(r.paediatric_first_aid.status)>=0 && r.paediatric_first_aid.held) return true;
+    if(bad.indexOf(r.safeguarding_training.status)>=0) return true;
+    if(!r.references_complete) return true;
+    if(!r.induction.complete) return true;
+    return false;
+  }
+
+  function render(){
+    var q=(el('f-search').value||'').trim().toLowerCase();
+    var rows=STATE.rows.filter(function(r){
+      if(STATE.issuesOnly && !rowHasIssue(r)) return false;
+      if(!q) return true;
+      return (r.name||'').toLowerCase().indexOf(q)>=0 || (r.role||'').toLowerCase().indexOf(q)>=0;
+    });
+    if(!rows.length){ el('scr-body').innerHTML='<tr><td colspan="15" class="empty">No staff match this filter.</td></tr>'; return; }
+
+    el('scr-body').innerHTML=rows.map(function(r){
+      var pfa = r.paediatric_first_aid;
+      var pfaCell = !pfa.held
+        ? '<td class="cell-miss">No</td>'
+        : (pfa.date ? dateCell(pfa) : '<td class="cell-warn">Yes<span class="days">no expiry recorded</span></td>');
+      var sg = r.safeguarding_training;
+      var sgCell = sg.date ? dateCell(sg)
+        : (sg.completed ? '<td class="cell-warn">'+fmtDate(sg.completed)+'<span class="days">no expiry recorded</span></td>'
+                        : '<td class="cell-miss">Not recorded</td>');
+      return '<tr>'+
+        '<td class="name">'+esc(r.name)+'<span class="role">'+esc(r.role||'—')+'</span></td>'+
+        '<td>'+fmtDate(r.start_date)+'</td>'+
+        plain(r.dbs_number)+
+        '<td>'+fmtDate(r.dbs_issue_date)+'</td>'+
+        dateCell(r.dbs_expiry,'No DBS on file')+
+        plain(r.right_to_work_status)+
+        '<td>'+fmtDate(r.right_to_work_check_date)+'</td>'+
+        (r.visa_expiry ? dateCell(r.visa_expiry) : '<td class="cell-miss">n/a</td>')+
+        plain(r.qualification)+
+        plain(r.qualification_level)+
+        pfaCell+ sgCell+
+        '<td>'+fmtDate(r.prohibition_check_date)+'</td>'+
+        yesNo(r.induction.complete,'Complete','Outstanding')+
+        yesNo(r.references_complete,'Complete','Outstanding')+
+      '</tr>';
+    }).join('');
+  }
+
+  function load(){
+    el('banner').textContent='Loading…';
+    api('/scr').then(function(res){
+      if(!res.ok){ el('banner').textContent='Could not load ('+res.status+')';
+        el('scr-body').innerHTML='<tr><td colspan="15" class="empty">'+
+          esc((res.j&&res.j.error)||'Failed to load the record')+'</td></tr>'; return; }
+      STATE.rows=res.j.staff||[]; STATE.window=res.j.window_days;
+      var issues=STATE.rows.filter(rowHasIssue).length;
+      el('banner').textContent=STATE.rows.length+' active staff · '+issues+' with something outstanding · '+
+        STATE.window+'-day alert window';
+      el('print-meta').textContent='Your Nursery — Single Central Record · '+
+        STATE.rows.length+' active staff · generated '+new Date().toLocaleString('en-GB')+
+        ' · alert window '+STATE.window+' days';
+      render();
+    });
+  }
+
+  function init(){
+    el('btn-refresh').onclick=load;
+    el('btn-print').onclick=function(){window.print();};
+    el('f-search').oninput=render;
+    el('btn-issues').onclick=function(){
+      STATE.issuesOnly=!STATE.issuesOnly;
+      el('btn-issues').textContent=STATE.issuesOnly?'Show all staff':'Show only issues';
+      el('btn-issues').classList.toggle('ghost',!STATE.issuesOnly);
+      render();
+    };
+    load();
+  }
+  document.addEventListener('wren:ready', init);
+})();
+</script>
+</body></html>

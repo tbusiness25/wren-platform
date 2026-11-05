@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"  content="admin">
+  <meta name="wren-app-page" content="site-analytics">
+  <title>Website visitors · Roost</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+  <script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <style>
+    /* ═══════════════════════════════════════════════════════════════════════════
+       b517 — Roost → Comms → 📈 Website visitors.
+
+       Who is finding getwren.co.uk, which phonics and resources pages they read,
+       where they came from, and how often a link gets shared. Every number comes
+       from ladn.site_*_daily, which scripts/site-analytics-ingest.js writes from
+       the wren-landing web-server log. No cookies anywhere in the chain.
+
+       Colour: var(--c-*) tokens only — no hex, no rgb(), no named colour. Tints
+       are color-mix() of a token, the house idiom (public/css/wren-tokens.css).
+       scripts/b351-colour-audit.js enforces this.
+       ═══════════════════════════════════════════════════════════════════════════ */
+    .sa-wrap { max-width: 1100px; margin: 0 auto; padding: 16px 16px calc(env(safe-area-inset-bottom, 16px) + 32px); }
+    .sa-head h1 { font-size: 1.35rem; margin: 0 0 4px; color: var(--c-text); }
+    .sa-head p  { margin: 0 0 14px; color: var(--c-muted); font-size: .86rem; line-height: 1.5; max-width: 74ch; }
+
+    /* ── Controls ── */
+    .sa-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 18px; }
+    .sa-seg { display: flex; gap: 4px; background: var(--c-surface-2); border: 1px solid var(--c-border);
+              border-radius: 999px; padding: 3px; }
+    .sa-seg button { background: none; border: 0; border-radius: 999px; padding: 7px 13px; font: inherit;
+                     font-size: .82rem; font-weight: 700; color: var(--c-muted); cursor: pointer; white-space: nowrap; }
+    .sa-seg button:hover { color: var(--c-text); }
+    .sa-seg button[aria-pressed="true"] { background: var(--c-blue); color: var(--c-on-blue); }
+    .sa-seg button:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .sa-controls select, .sa-controls input[type="date"] {
+      background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border);
+      border-radius: 9px; padding: 7px 10px; font: inherit; font-size: .82rem; }
+    .sa-controls label { font-size: .78rem; color: var(--c-muted); font-weight: 700; }
+    .sa-controls .spacer { flex: 1 1 auto; }
+
+    /* ── Tiles ── */
+    .sa-tiles { display: grid; gap: 11px; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); margin-bottom: 18px; }
+    .tile { background: var(--c-surface); border: 1px solid var(--c-border); border-left: 3px solid var(--c-muted);
+            border-radius: 12px; padding: 12px 13px; }
+    .tile .t-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+                     color: var(--c-muted); font-weight: 800; }
+    .tile .t-main  { font-size: 1.5rem; font-weight: 800; margin: 4px 0 2px; line-height: 1.1;
+                     font-variant-numeric: tabular-nums; color: var(--c-text); }
+    .tile .t-sub   { font-size: .74rem; color: var(--c-muted); line-height: 1.45; }
+    .tile.t-people { border-left-color: var(--c-blue); }
+    .tile.t-pages  { border-left-color: var(--c-cat-2); }
+    .tile.t-files  { border-left-color: var(--c-cat-3); }
+    .tile.t-share  { border-left-color: var(--c-cat-4); }
+    .tile.t-click  { border-left-color: var(--c-green); }
+    .tile.t-install{ border-left-color: var(--c-purple); }
+    .tile.t-robots { border-left-color: var(--c-muted); }
+
+    /* ── Cards ── */
+    .card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+            padding: 15px; margin-bottom: 15px; }
+    .card > h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+                 color: var(--c-muted); margin: 0 0 11px; font-weight: 800; }
+    .card > h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 600; margin-left: 8px; }
+    .sa-cols { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+
+    /* ── Tables.
+         A five-column table's min-content width is 452px, so at 390px it pushed
+         the whole page sideways (measured, not guessed). The table scrolls inside
+         its own card instead — the same answer b255 gave the tracker grid. ── */
+    .sa-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table.sa { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    table.sa th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+                  color: var(--c-muted); font-weight: 800; padding: 0 8px 7px 0; border-bottom: 1px solid var(--c-border); }
+    table.sa td { padding: 7px 8px 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--c-border) 55%, transparent);
+                  color: var(--c-text); vertical-align: top; }
+    table.sa td.n, table.sa th.n { text-align: right; font-variant-numeric: tabular-nums; padding-right: 0; }
+    table.sa tr:last-child td { border-bottom: 0; }
+    table.sa .p { word-break: break-all; }
+    table.sa .bar { display: block; height: 4px; border-radius: 2px; background: var(--c-blue); margin-top: 4px;
+                    min-width: 2px; }
+
+    .pill { display: inline-block; font-size: .67rem; font-weight: 800; text-transform: uppercase;
+            letter-spacing: .03em; padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+            background: var(--c-surface-2); color: var(--c-muted); border: 1px solid var(--c-border); }
+    .pill.s-phonics     { background: color-mix(in srgb, var(--c-cat-1) 18%, transparent); color: var(--c-text); border-color: color-mix(in srgb, var(--c-cat-1) 45%, transparent); }
+    .pill.s-phonics-app { background: color-mix(in srgb, var(--c-cat-2) 18%, transparent); color: var(--c-text); border-color: color-mix(in srgb, var(--c-cat-2) 45%, transparent); }
+    .pill.s-resources   { background: color-mix(in srgb, var(--c-cat-3) 18%, transparent); color: var(--c-text); border-color: color-mix(in srgb, var(--c-cat-3) 45%, transparent); }
+    .pill.s-kids        { background: color-mix(in srgb, var(--c-cat-4) 18%, transparent); color: var(--c-text); border-color: color-mix(in srgb, var(--c-cat-4) 45%, transparent); }
+    .pill.s-parents     { background: color-mix(in srgb, var(--c-cat-5) 18%, transparent); color: var(--c-text); border-color: color-mix(in srgb, var(--c-cat-5) 45%, transparent); }
+    .pill.s-wren        { background: color-mix(in srgb, var(--c-cat-6) 18%, transparent); color: var(--c-text); border-color: color-mix(in srgb, var(--c-cat-6) 45%, transparent); }
+
+    /* ── Trend chart. Inline SVG: 24 <svg> charts already in this codebase and no
+         chart library anywhere, so this follows the house precedent. ── */
+    .sa-chart { width: 100%; height: 210px; display: block; }
+    .sa-chart .grid  { stroke: var(--c-border); stroke-width: 1; }
+    .sa-chart .bar   { fill: var(--c-blue); }
+    .sa-chart .bar:hover { fill: var(--c-blue-dark, var(--c-blue)); }
+    .sa-chart .vline { fill: none; stroke: var(--c-orange); stroke-width: 2; stroke-linejoin: round; }
+    .sa-chart .vdot  { fill: var(--c-orange); }
+    .sa-chart text   { fill: var(--c-muted); font-size: 10px; font-family: inherit; }
+    .sa-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .76rem; color: var(--c-muted); margin-top: 8px; }
+    .sa-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+    .sa-legend .k-views { background: var(--c-blue); }
+    .sa-legend .k-vis   { background: var(--c-orange); }
+
+    /* ── Explainer ── */
+    details.sa-note { background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 12px;
+                      padding: 11px 13px; margin-bottom: 15px; }
+    details.sa-note > summary { cursor: pointer; font-weight: 800; font-size: .82rem; color: var(--c-text); }
+    details.sa-note p, details.sa-note li { font-size: .82rem; color: var(--c-muted); line-height: 1.55; }
+    details.sa-note p:first-of-type { margin-top: 10px; }
+    details.sa-note ul { margin: 6px 0 0; padding-left: 20px; }
+    details.sa-note b { color: var(--c-text); }
+
+    .muted { color: var(--c-muted); font-size: .82rem; }
+    .empty { color: var(--c-muted); font-size: .82rem; padding: 6px 0; }
+    .err   { color: var(--c-danger); font-size: .84rem; }
+    .foot  { font-size: .74rem; color: var(--c-muted); line-height: 1.6; margin-top: 4px; }
+    #sa-country-card[hidden] { display: none; }
+
+    @media (max-width: 560px) {
+      .sa-controls { gap: 6px; }
+      .sa-seg button { padding: 6px 10px; font-size: .78rem; }
+      .tile .t-main { font-size: 1.3rem; }
+    }
+  </style>
+  <script src="/js/wren-core.js"></script>
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+</head>
+<body>
+<div class="sa-wrap">
+  <div class="sa-head">
+    <h1>📈 Website visitors</h1>
+    <p>Who is finding <b>getwren.co.uk</b> and the phonics app — which pages they read, which files they
+       download, where they came from, and how often somebody shares a link. Counted from the web server's
+       own log, with no cookies and no visitor tracking.</p>
+  </div>
+
+  <div class="sa-controls">
+    <div class="sa-seg" id="sa-range" role="group" aria-label="Date range">
+      <button type="button" data-days="7">7 days</button>
+      <button type="button" data-days="30" aria-pressed="true">30 days</button>
+      <button type="button" data-days="90">90 days</button>
+      <button type="button" data-days="365">Year</button>
+      <button type="button" data-custom="1">Dates…</button>
+    </div>
+    <div class="sa-seg" id="sa-grain" role="group" aria-label="Group by">
+      <button type="button" data-grain="day" aria-pressed="true">Daily</button>
+      <button type="button" data-grain="week">Weekly</button>
+      <button type="button" data-grain="month">Monthly</button>
+    </div>
+    <span id="sa-dates" hidden>
+      <label for="sa-from">From</label> <input type="date" id="sa-from">
+      <label for="sa-to">to</label> <input type="date" id="sa-to">
+    </span>
+    <span class="spacer"></span>
+    <label for="sa-host">Site</label>
+    <select id="sa-host"><option value="all">Both sites</option></select>
+    <label for="sa-section">Section</label>
+    <select id="sa-section"><option value="all">All sections</option></select>
+  </div>
+
+  <div id="sa-error" class="err" hidden></div>
+
+  <details class="sa-note">
+    <summary>What counts as a visitor here</summary>
+    <p>About four in five requests for a page on getwren.co.uk are not people. Some are honest robots that
+       say so — Google, Bing, Apple, and the AI crawlers. The rest is a scraper farm that rotates ordinary
+       Chrome user-agents across thousands of addresses, one request each, and no rule about the browser
+       name can tell those from a real reader.</p>
+    <p>What does tell them apart is behaviour. A real browser goes on to fetch the page's stylesheet, its
+       script and its fonts; the scraper takes the HTML and leaves. So:</p>
+    <ul>
+      <li>A <b>page view</b> is one request for a readable page that the sender then backed up by loading
+          at least one of the page's own files.</li>
+      <li>A <b>visitor</b> is one address-and-browser pairing seen on one site on one day. Not a person,
+          and not followed across days — two days of visits by the same person count as two.
+          A week's figure is the sum of its days, so somebody returning on Tuesday counts again.</li>
+      <li>A <b>download</b> counts when its sender behaved like a browser that day, or when it arrived
+          from an off-site link — a PDF runs no script of its own, so nothing on the page can vouch for it.</li>
+      <li>One address and browser reading more than fifty pages in a day is treated as a robot, however
+          convincing it looks. On the ten days measured when this was built, the busiest were 378 and 60
+          page views and both came from a data centre.</li>
+      <li>A <b>share</b> is a link-preview fetch. When somebody pastes a link into WhatsApp, Facebook,
+          Telegram or Slack, that service fetches the page to build the little preview card. It counts the
+          paste, not how many people then clicked.</li>
+    </ul>
+    <p><b>No cookies, and no IP addresses kept.</b> To count a day's visitors once each, the job hashes the
+       address and browser with a random salt made fresh for that day. The hashes and the salt are both
+       deleted the moment the day closes, which leaves the count and no way back to anybody.</p>
+  </details>
+
+  <div class="sa-tiles" id="sa-tiles"><div class="muted">Loading…</div></div>
+
+  <div class="card">
+    <h2>Trend <span class="sub" id="sa-trend-sub"></span></h2>
+    <div id="sa-chart-host"><div class="muted">Loading…</div></div>
+    <div class="sa-legend">
+      <span><i class="k-views"></i>Page views</span>
+      <span><i class="k-vis"></i>Visitors</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Sections <span class="sub">which part of the site people are reading</span></h2>
+    <div id="sa-sections"><div class="muted">Loading…</div></div>
+  </div>
+
+  <div class="sa-cols">
+    <div class="card">
+      <h2>Most-read pages</h2>
+      <div id="sa-pages"><div class="muted">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Most-downloaded files</h2>
+      <div id="sa-downloads"><div class="muted">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Where people arrive <span class="sub">first page of a visit</span></h2>
+      <div id="sa-entries"><div class="muted">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>How they found us</h2>
+      <div id="sa-refs"><div class="muted">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Links being shared <span class="sub">preview fetches</span></h2>
+      <div id="sa-shares"><div class="muted">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Campaign links <span class="sub">?ref= and utm_*</span></h2>
+      <div id="sa-campaigns"><div class="muted">Loading…</div></div>
+    </div>
+    <div class="card" id="sa-country-card" hidden>
+      <h2>Countries</h2>
+      <div id="sa-countries"></div>
+    </div>
+    <div class="card">
+      <h2>Robots <span class="sub">filtered out of every number above</span></h2>
+      <div id="sa-robots"><div class="muted">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Pages only the robots read <span class="sub">what the crawlers think the site is about</span></h2>
+    <div id="sa-botpages"><div class="muted">Loading…</div></div>
+  </div>
+
+  <p class="foot" id="sa-foot"></p>
+</div>
+
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function () {
+  'use strict';
+  var API = '/api/site-analytics';
+  var state = { days: 30, from: null, to: null, grain: 'day', host: 'all', section: 'all' };
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function n(v) { return Number(v || 0).toLocaleString('en-GB'); }
+  function errText(e) { return (e && (e.message || e.error)) || 'Could not load the website figures.'; }
+
+  var SECTION_LABEL = {
+    phonics: 'Phonics', 'phonics-app': 'Phonics app', resources: 'Resources',
+    kids: 'Kids', parents: 'For parents', wren: 'Wren (product pages)', other: 'Other',
+  };
+  function sectionPill(s) {
+    var k = String(s || 'other');
+    return '<span class="pill s-' + esc(k) + '">' + esc(SECTION_LABEL[k] || k) + '</span>';
+  }
+
+  // A small table with an inline proportion bar, used by six of the lists below.
+  function listTable(rows, cols, opts) {
+    if (!rows || !rows.length) return '<div class="empty">' + esc((opts && opts.empty) || 'Nothing in this period.') + '</div>';
+    var max = 0;
+    rows.forEach(function (r) { var v = Number(r[opts.barKey] || 0); if (v > max) max = v; });
+    var head = cols.map(function (c) { return '<th' + (c.n ? ' class="n"' : '') + '>' + esc(c.label) + '</th>'; }).join('');
+    var body = rows.map(function (r) {
+      return '<tr>' + cols.map(function (c) {
+        var v = c.cell(r);
+        if (c.n) return '<td class="n">' + v + '</td>';
+        var bar = '';
+        if (c.bar && max > 0) {
+          var pct = Math.max(1, Math.round((Number(r[opts.barKey] || 0) / max) * 100));
+          bar = '<span class="bar" style="width:' + pct + '%"></span>';
+        }
+        return '<td class="p">' + v + bar + '</td>';
+      }).join('') + '</tr>';
+    }).join('');
+    return '<div class="sa-scroll"><table class="sa"><thead><tr>' + head + '</tr></thead><tbody>'
+         + body + '</tbody></table></div>';
+  }
+
+  // ── Tiles ─────────────────────────────────────────────────────────────────
+  function renderTiles(d) {
+    var t = d.totals || {};
+    var installs = 0, launches = 0, clicks = 0;
+    (d.events || []).forEach(function (e) {
+      if (e.event === 'install') installs += Number(e.n || 0);
+      if (e.event === 'launch')  launches += Number(e.n || 0);
+      if (e.event === 'go')      clicks   += Number(e.n || 0);
+    });
+    var shares = 0;
+    (d.shares || []).forEach(function (s) { shares += Number(s.fetches || 0); });
+    var robots = Number(t.bot_hits || 0) + Number(t.scanner_hits || 0);
+    var robotPct = t.total_requests ? Math.round((robots / t.total_requests) * 100) : 0;
+    var perDay = t.days_with_data ? (Number(t.page_views || 0) / t.days_with_data) : 0;
+
+    var tiles = [
+      ['t-people', 'Visitors',      n(t.visitors),   'daily uniques, added up'],
+      ['t-pages',  'Page views',    n(t.page_views), perDay ? perDay.toFixed(1) + ' a day' : '—'],
+      ['t-files',  'Downloads',     n(t.downloads),  'PDFs and packs'],
+      ['t-share',  'Links shared',  n(shares),       'preview fetches'],
+      ['t-click',  'Clicks to the nursery', n(clicks), 'links out to a Wren site'],
+      ['t-install','Offline installs', n(installs),
+        launches ? 'added to a home screen; opened from one ' + n(launches) + ' times'
+                 : 'app added to a home screen'],
+      ['t-robots', 'Robots',        n(robots),       robotPct + '% of all requests, excluded'],
+    ];
+    $('sa-tiles').innerHTML = tiles.map(function (x) {
+      return '<div class="tile ' + x[0] + '"><div class="t-label">' + esc(x[1]) + '</div>'
+           + '<div class="t-main">' + x[2] + '</div>'
+           + '<div class="t-sub">' + esc(x[3]) + '</div></div>';
+    }).join('');
+  }
+
+  // ── Trend chart ───────────────────────────────────────────────────────────
+  // Bars are page views, the line is visitors. Grouped by day, week or month.
+  function renderChart(d) {
+    var s = (d.series || []);
+    if (!s.length) { $('sa-chart-host').innerHTML = '<div class="empty">No days with data in this period.</div>'; return; }
+    var W = 1000, H = 210, padL = 36, padR = 10, padT = 12, padB = 26;
+    var iw = W - padL - padR, ih = H - padT - padB;
+    var maxV = 1;
+    s.forEach(function (r) { maxV = Math.max(maxV, Number(r.page_views || 0), Number(r.visitors || 0)); });
+    var step = iw / s.length;
+    var bw = Math.max(1, Math.min(34, step * 0.62));
+    var y = function (v) { return padT + ih - (Number(v || 0) / maxV) * ih; };
+    var x = function (i) { return padL + step * i + step / 2; };
+
+    var ticks = [0, Math.round(maxV / 2), maxV].filter(function (v, i, a) { return a.indexOf(v) === i; });
+    var grid = ticks.map(function (v) {
+      return '<line class="grid" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>'
+           + '<text x="' + (padL - 6) + '" y="' + (y(v) + 3).toFixed(1) + '" text-anchor="end">' + v + '</text>';
+    }).join('');
+
+    var bars = s.map(function (r, i) {
+      var h = padT + ih - y(r.page_views);
+      return '<rect class="bar" x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + y(r.page_views).toFixed(1)
+           + '" width="' + bw.toFixed(1) + '" height="' + Math.max(0, h).toFixed(1) + '" rx="2">'
+           + '<title>' + esc(r.date) + ': ' + n(r.page_views) + ' page views, ' + n(r.visitors) + ' visitors</title></rect>';
+    }).join('');
+
+    var line = s.map(function (r, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(r.visitors).toFixed(1); }).join(' ');
+    var dots = s.length <= 60 ? s.map(function (r, i) {
+      return '<circle class="vdot" cx="' + x(i).toFixed(1) + '" cy="' + y(r.visitors).toFixed(1) + '" r="2.5"/>';
+    }).join('') : '';
+
+    // Label at most eight points, so the axis never overlaps itself.
+    var every = Math.max(1, Math.ceil(s.length / 8));
+    var labels = s.map(function (r, i) {
+      if (i % every !== 0 && i !== s.length - 1) return '';
+      return '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(shortDate(r.date)) + '</text>';
+    }).join('');
+
+    $('sa-chart-host').innerHTML =
+      '<svg class="sa-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" '
+      + 'aria-label="Page views and visitors over the period">' + grid + bars
+      + '<path class="vline" d="' + line + '"/>' + dots + labels + '</svg>';
+    $('sa-trend-sub').textContent = s.length + (state.grain === 'day' ? ' days' : state.grain === 'week' ? ' weeks' : ' months');
+  }
+
+  function shortDate(iso) {
+    var s = String(iso || '').slice(0, 10);
+    var p = s.split('-');
+    if (p.length !== 3) return s;
+    if (state.grain === 'month') return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(p[1]) - 1] + ' ' + p[0].slice(2);
+    return Number(p[2]) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(p[1]) - 1];
+  }
+
+  // ── Lists ─────────────────────────────────────────────────────────────────
+  var REF_LABEL = {
+    google: 'Google', bing: 'Bing', 'other-search': 'Other search engines',
+    ai: 'ChatGPT / Perplexity / Claude', facebook: 'Facebook or Instagram', whatsapp: 'WhatsApp',
+    twitter: 'X / Twitter', linkedin: 'LinkedIn', reddit: 'Reddit', telegram: 'Telegram',
+    youtube: 'YouTube', pinterest: 'Pinterest', 'eyfs-community': 'Early-years community sites',
+    internal: 'Another page on the site', direct: 'Typed in, or a bookmark', other: 'Somewhere else',
+  };
+  var BOT_FAMILY_LABEL = {
+    search: 'Search engines', ai: 'AI crawlers', seo: 'SEO tools', preview: 'Link previews',
+    scanner: 'Hostile probes', scraper: 'Scrapers', tool: 'Scripts and libraries',
+    monitor: 'Uptime monitors', spam: 'Referrer spam', other: 'Other robots',
+  };
+
+  function renderAll(d) {
+    renderTiles(d);
+    renderChart(d);
+
+    $('sa-sections').innerHTML = listTable(d.by_section || [], [
+      { label: 'Section', bar: true, cell: function (r) { return sectionPill(r.section); } },
+      { label: 'Page views', n: true, cell: function (r) { return n(r.views); } },
+      { label: 'Downloads',  n: true, cell: function (r) { return n(r.downloads); } },
+      { label: 'Arrivals',   n: true, cell: function (r) { return n(r.entries); } },
+      { label: 'Pages read', n: true, cell: function (r) { return n(r.pages_read); } },
+    ], { barKey: 'views' });
+
+    $('sa-pages').innerHTML = listTable(d.top_pages || [], [
+      { label: 'Page', bar: true, cell: function (r) { return esc(r.path) + ' ' + sectionPill(r.section); } },
+      { label: 'Views', n: true, cell: function (r) { return n(r.views); } },
+    ], { barKey: 'views' });
+
+    $('sa-downloads').innerHTML = listTable(d.top_downloads || [], [
+      { label: 'File', bar: true, cell: function (r) { return esc(r.path) + ' ' + sectionPill(r.section); } },
+      { label: 'Downloads', n: true, cell: function (r) { return n(r.views); } },
+    ], { barKey: 'views', empty: 'No downloads counted in this period.' });
+
+    $('sa-entries').innerHTML = listTable(d.entry_pages || [], [
+      { label: 'First page', bar: true, cell: function (r) { return esc(r.path) + ' ' + sectionPill(r.section); } },
+      { label: 'Visits', n: true, cell: function (r) { return n(r.entries); } },
+    ], { barKey: 'entries' });
+
+    var refRows = (d.referrer_groups || []).map(function (r) {
+      return { label: REF_LABEL[r.group] || r.group, hits: r.hits, group: r.group };
+    });
+    var refHtml = listTable(refRows, [
+      { label: 'Source', bar: true, cell: function (r) { return esc(r.label); } },
+      { label: 'Visits', n: true, cell: function (r) { return n(r.hits); } },
+    ], { barKey: 'hits' });
+    if ((d.referrer_domains || []).length) {
+      refHtml += '<h2 style="margin-top:15px">Named sites</h2>' + listTable(d.referrer_domains, [
+        { label: 'Site', bar: true, cell: function (r) { return esc(r.domain); } },
+        { label: 'Visits', n: true, cell: function (r) { return n(r.hits); } },
+      ], { barKey: 'hits' });
+    }
+    $('sa-refs').innerHTML = refHtml;
+
+    var shareHtml = listTable(d.shares || [], [
+      { label: 'Where it was pasted', bar: true, cell: function (r) { return esc(r.platform); } },
+      { label: 'Times', n: true, cell: function (r) { return n(r.fetches); } },
+      { label: 'Pages', n: true, cell: function (r) { return n(r.pages); } },
+    ], { barKey: 'fetches', empty: 'No link previews in this period — nobody pasted a link anywhere that fetches one.' });
+    if ((d.shared_pages || []).length) {
+      shareHtml += '<h2 style="margin-top:15px">Which links</h2>' + listTable(d.shared_pages, [
+        { label: 'Page', bar: true, cell: function (r) { return esc(r.path) + ' <span class="pill">' + esc(r.platforms) + '</span>'; } },
+        { label: 'Times', n: true, cell: function (r) { return n(r.fetches); } },
+      ], { barKey: 'fetches' });
+    }
+    $('sa-shares').innerHTML = shareHtml;
+
+    $('sa-campaigns').innerHTML = listTable(d.campaigns || [], [
+      { label: 'Source', bar: true, cell: function (r) {
+          var bits = [esc(r.source)];
+          if (r.medium && r.medium !== '(none)') bits.push(esc(r.medium));
+          if (r.campaign && r.campaign !== '(none)') bits.push('<b>' + esc(r.campaign) + '</b>');
+          return bits.join(' · ');
+        } },
+      { label: 'Visits', n: true, cell: function (r) { return n(r.hits); } },
+    ], { barKey: 'hits', empty: 'No tagged links used in this period. Add ?ref=<name> to a link you post and it will show up here.' });
+
+    if (d.country_available) {
+      $('sa-country-card').hidden = false;
+      $('sa-countries').innerHTML = listTable(d.countries || [], [
+        { label: 'Country', bar: true, cell: function (r) { return esc(r.country); } },
+        { label: 'Visits', n: true, cell: function (r) { return n(r.hits); } },
+      ], { barKey: 'hits' });
+    } else {
+      $('sa-country-card').hidden = true;
+    }
+
+    var famRows = (d.robot_families || []).map(function (r) {
+      return { label: BOT_FAMILY_LABEL[r.family] || r.family, hits: r.hits };
+    });
+    var robotHtml = listTable(famRows, [
+      { label: 'Kind', bar: true, cell: function (r) { return esc(r.label); } },
+      { label: 'Requests', n: true, cell: function (r) { return n(r.hits); } },
+    ], { barKey: 'hits' });
+    if ((d.robots || []).length) {
+      robotHtml += '<h2 style="margin-top:15px">By name</h2>' + listTable(d.robots, [
+        { label: 'Robot', bar: true, cell: function (r) { return esc(r.bot); } },
+        { label: 'Requests', n: true, cell: function (r) { return n(r.hits); } },
+      ], { barKey: 'hits' });
+    }
+    $('sa-robots').innerHTML = robotHtml;
+
+    $('sa-botpages').innerHTML = listTable(d.bot_only_pages || [], [
+      { label: 'Page', bar: true, cell: function (r) { return esc(r.path) + ' ' + sectionPill(r.section); } },
+      { label: 'Robot requests', n: true, cell: function (r) { return n(r.bot_hits); } },
+    ], { barKey: 'bot_hits', empty: 'Every page a robot read, a person read too.' });
+
+    // Footer: how fresh the numbers are, and the one honest caveat.
+    var bits = [];
+    var ing = (d.ingest || []).filter(function (r) { return r.source === 'wren-landing'; })[0] || (d.ingest || [])[0];
+    if (ing && ing.last_run_at) {
+      bits.push('Last read the web-server log ' + new Date(ing.last_run_at).toLocaleString('en-GB')
+                + ' (' + n(ing.lines_read) + ' lines over ' + n(ing.runs) + ' runs).');
+    } else {
+      bits.push('The log reader has not run yet.');
+    }
+    if (!d.host_field_from) {
+      bits.push('The web server did not record which of the two sites a request was for until b517 shipped, '
+              + 'so earlier days attribute by referring page and by path, and anything undecided is shown as "(unknown)".');
+    }
+    if (!d.country_available) bits.push('Cloudflare is not passing a country header, so there is no country breakdown.');
+    bits.push('The raw, unfiltered counts for the same period were ' + n((d.totals || {}).page_views_raw)
+            + ' page views and ' + n((d.totals || {}).visitors_raw) + ' senders — the difference is the scraper farm.');
+    $('sa-foot').textContent = bits.join(' ');
+  }
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+  function qs() {
+    var p = [];
+    if (state.from && state.to) { p.push('from=' + state.from, 'to=' + state.to); }
+    else p.push('days=' + state.days);
+    p.push('grain=' + state.grain);
+    if (state.host !== 'all') p.push('host=' + encodeURIComponent(state.host));
+    if (state.section !== 'all') p.push('section=' + encodeURIComponent(state.section));
+    return '?' + p.join('&');
+  }
+
+  var loading = false;
+  function load() {
+    if (loading) return;
+    loading = true;
+    $('sa-error').hidden = true;
+    Wren.api(API + '/summary' + qs()).then(function (d) {
+      loading = false;
+      if (!d) return;
+      if (d.ready === false) {
+        $('sa-tiles').innerHTML = '<div class="empty">' + esc(d.message || 'No website figures yet.') + '</div>';
+        ['sa-chart-host','sa-sections','sa-pages','sa-downloads','sa-entries','sa-refs','sa-shares','sa-campaigns','sa-robots','sa-botpages']
+          .forEach(function (id) { $(id).innerHTML = '<div class="empty">Nothing yet.</div>'; });
+        return;
+      }
+      (d.hosts || []).forEach(function (h) {
+        if (!$('sa-host').querySelector('option[value="' + h + '"]')) {
+          var o = document.createElement('option'); o.value = h; o.textContent = h;
+          $('sa-host').appendChild(o);
+        }
+      });
+      renderAll(d);
+    }).catch(function (e) {
+      loading = false;
+      $('sa-error').hidden = false;
+      $('sa-error').textContent = errText(e);
+    });
+  }
+
+  function seg(id, apply) {
+    var box = $(id);
+    box.addEventListener('click', function (ev) {
+      var b = ev.target.closest('button');
+      if (!b || !box.contains(b)) return;
+      [].forEach.call(box.querySelectorAll('button'), function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      apply(b);
+    });
+  }
+
+  function wire() {
+    seg('sa-range', function (b) {
+      if (b.dataset.custom) {
+        $('sa-dates').hidden = false;
+        var to = $('sa-to'), from = $('sa-from');
+        if (!to.value) { to.value = new Date().toISOString().slice(0, 10); }
+        if (!from.value) { from.value = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10); }
+        state.from = from.value; state.to = to.value;
+      } else {
+        $('sa-dates').hidden = true;
+        state.from = null; state.to = null;
+        state.days = Number(b.dataset.days) || 30;
+      }
+      load();
+    });
+    seg('sa-grain', function (b) { state.grain = b.dataset.grain || 'day'; load(); });
+    ['sa-from', 'sa-to'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        state.from = $('sa-from').value || null;
+        state.to = $('sa-to').value || null;
+        if (state.from && state.to) load();
+      });
+    });
+    $('sa-host').addEventListener('change', function () { state.host = this.value; load(); });
+    $('sa-section').addEventListener('change', function () { state.section = this.value; load(); });
+
+    Wren.api(API + '/sections').then(function (r) {
+      (r && r.sections || []).forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s.section;
+        o.textContent = SECTION_LABEL[s.section] || s.section;
+        $('sa-section').appendChild(o);
+      });
+    }).catch(function () { /* the filter just stays at "All sections" */ });
+  }
+
+  /* ══ Start ═══════════════════════════════════════════════════════════════
+     wren:ready fires at the end of buildShell(). Calling the loader from a
+     script tag would race the shell and the data would never arrive
+     (CLAUDE.md rule 7).
+     ══════════════════════════════════════════════════════════════════════ */
+  document.addEventListener('wren:ready', function () { wire(); load(); });
+})();
+</script>
+</body>
+</html>

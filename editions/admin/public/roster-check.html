@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roster Check · Roost</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<style>
+/* Deliberately self-contained: no shell dependency, so a shell fault can never
+   blank this page (that is exactly what happened to nav-settings.html). */
+:root{
+  --blue:#4a9abf; --orange:#e07820; --navy:#0f172a; --card:#1e293b; --border:#2d3748;
+  --text:#f1f5f9; --muted:#94a3b8; --ok:#22c55e; --warn:#f59e0b; --danger:#ef4444;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--navy);color:var(--text);
+     font-family:system-ui,Arial,sans-serif;-webkit-text-size-adjust:100%}
+h1,h2,h3{font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif;margin:0}
+a{color:var(--blue)}
+.wrap{max-width:1000px;margin:0 auto;padding:16px 16px 120px}
+header.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+header.top img{height:44px;width:auto;background:#fff;border-radius:10px;padding:4px}
+.sub{color:var(--muted);font-size:.9rem;margin:8px 0 18px;line-height:1.5}
+.privacy{background:#12253a;border:1px solid var(--blue);border-radius:12px;
+         padding:12px 14px;margin-bottom:18px;font-size:.86rem;line-height:1.55;color:#cfe3f0}
+.privacy b{color:var(--blue)}
+.bar{position:sticky;top:0;z-index:20;background:var(--navy);padding:10px 0;
+     border-bottom:1px solid var(--border);margin-bottom:14px}
+.counts{display:flex;gap:8px;flex-wrap:wrap;font-size:.82rem}
+.pill{background:var(--card);border:1px solid var(--border);border-radius:999px;padding:5px 11px}
+.pill b{font-family:'Arial Rounded MT Bold',Arial,sans-serif}
+.pill.here b{color:var(--ok)} .pill.left b{color:var(--danger)}
+.pill.wrong b{color:var(--warn)} .pill.todo b{color:var(--muted)}
+.progress{height:6px;background:var(--border);border-radius:999px;overflow:hidden;margin-top:9px}
+.progress i{display:block;height:100%;background:var(--blue);width:0;transition:width .25s ease}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px}
+button{font:inherit;border-radius:12px;border:1px solid var(--border);background:var(--card);
+       color:var(--text);padding:9px 14px;cursor:pointer;transition:all .2s ease;min-height:44px}
+button:hover{border-color:var(--blue)}
+button.primary{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600}
+button.ghost{background:transparent}
+h2.room{font-size:1.05rem;margin:22px 0 10px;color:var(--blue);
+        display:flex;align-items:baseline;gap:10px}
+h2.room span{font-size:.8rem;color:var(--muted);font-weight:400;font-family:system-ui,Arial,sans-serif}
+.child{background:var(--card);border:1px solid var(--border);border-radius:12px;
+       padding:12px 14px;margin-bottom:10px}
+.child.done{border-color:#24455e}
+.crow{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.cmain{flex:1 1 240px;min-width:0}
+.cname{font-weight:600;font-size:1rem}
+.cmeta{color:var(--muted);font-size:.8rem;margin-top:3px;line-height:1.5}
+.cmeta code{background:#0b1626;border-radius:5px;padding:1px 5px;font-size:.78rem}
+.flag{display:inline-block;font-size:.7rem;border-radius:999px;padding:2px 8px;margin-left:6px;
+      border:1px solid var(--border);color:var(--muted)}
+.flag.nolink{border-color:var(--warn);color:var(--warn)}
+.verdicts{display:flex;gap:6px;flex-wrap:wrap}
+.verdicts button{padding:8px 12px;font-size:.83rem;min-height:44px}
+.v-here.on{background:var(--ok);border-color:var(--ok);color:#06240f;font-weight:700}
+.v-left.on{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:700}
+.v-wrong.on{background:var(--warn);border-color:var(--warn);color:#3b2500;font-weight:700}
+.v-unsure.on{background:var(--muted);border-color:var(--muted);color:#0f172a;font-weight:700}
+.note{margin-top:10px}
+.note textarea{width:100%;background:#0b1626;color:var(--text);border:1px solid var(--border);
+               border-radius:10px;padding:9px;font:inherit;font-size:.85rem;min-height:56px;resize:vertical}
+.note .lbl{font-size:.72rem;color:var(--muted);margin-bottom:4px}
+.note .lbl b{color:var(--warn)}
+dialog{background:var(--card);color:var(--text);border:1px solid var(--border);
+       border-radius:14px;max-width:680px;width:94%;padding:0}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg-head{padding:14px 16px;border-bottom:1px solid var(--border);
+          display:flex;justify-content:space-between;align-items:center;gap:10px}
+.dlg-body{padding:16px}
+textarea#payload{width:100%;min-height:260px;background:#0b1626;color:var(--text);
+                 border:1px solid var(--border);border-radius:10px;padding:11px;
+                 font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.8rem}
+.empty{background:var(--card);border:1px dashed var(--border);border-radius:12px;
+       padding:26px;text-align:center;color:var(--muted)}
+footer.actions{position:fixed;left:0;right:0;bottom:0;background:rgba(15,23,42,.96);
+               border-top:1px solid var(--border);padding:11px 16px;
+               display:flex;gap:10px;justify-content:center;flex-wrap:wrap;z-index:30}
+@media (max-width:640px){ .verdicts{width:100%} .verdicts button{flex:1 1 auto} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <img src="/little-angels-logo.png" alt="Your Nursery"
+         onerror="this.style.display='none'">
+    <div>
+      <h1>Roster check</h1>
+      <div class="sub" style="margin:4px 0 0">Tick each child: still here, left, or details wrong.</div>
+    </div>
+  </header>
+
+  <div class="privacy">
+    <b>Nothing here leaves this browser.</b> Names, dates of birth and your private notes are
+    loaded straight from Wren on this device and are never sent anywhere. When you finish,
+    <b>Build result</b> produces a summary containing <b>only child ID numbers and your
+    verdicts</b> — no names, no DOBs, no notes — which is safe to paste back to Claude.
+  </div>
+
+  <div class="bar">
+    <div class="counts">
+      <span class="pill here">Here <b id="c-here">0</b></span>
+      <span class="pill left">Left <b id="c-left">0</b></span>
+      <span class="pill wrong">Details wrong <b id="c-wrong">0</b></span>
+      <span class="pill todo">Not sure <b id="c-unsure">0</b></span>
+      <span class="pill todo">Remaining <b id="c-todo">0</b></span>
+    </div>
+    <div class="progress"><i id="bar"></i></div>
+  </div>
+
+  <div class="controls">
+    <button id="tgl" class="ghost">Include future starters</button>
+    <button id="reset" class="ghost">Clear all my answers</button>
+  </div>
+
+  <div id="list"><div class="empty">Loading children…</div></div>
+</div>
+
+<footer class="actions">
+  <button class="primary" id="build">Build result to send back</button>
+  <span style="align-self:center;color:var(--muted);font-size:.8rem" id="footnote"></span>
+</footer>
+
+<dialog id="dlg">
+  <div class="dlg-head">
+    <h3 style="font-size:1rem">Safe to send back — IDs and verdicts only</h3>
+    <button id="dlg-x" class="ghost">Close</button>
+  </div>
+  <div class="dlg-body">
+    <p class="sub" style="margin-top:0">
+      Checked for you: this contains no names, no dates of birth and none of your private notes.
+      Your notes stay on this device — open them any time on this page.
+    </p>
+    <textarea id="payload" readonly></textarea>
+    <div class="controls" style="margin-bottom:0">
+      <button class="primary" id="copy">Copy to clipboard</button>
+      <button class="ghost" id="dl">Download .txt</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  'use strict';
+  var KEY = 'wren.rosterCheck.v1';
+  var TOKEN = sessionStorage.getItem('wrenToken') || localStorage.getItem('wrenToken');
+  var state = {};          // id -> {v:'here'|'left'|'wrong'|'unsure', n:'note'}
+  var kids = [];
+  var includeUpcoming = false;
+
+  try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function age(dob) {
+    if (!dob) return '';
+    var d = new Date(dob); if (isNaN(d)) return '';
+    var now = new Date(), m = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+    if (now.getDate() < d.getDate()) m--;
+    if (m < 0) return '';
+    return Math.floor(m / 12) + 'y ' + (m % 12) + 'm';
+  }
+  function fmt(d) { return d ? String(d).slice(0, 10) : '—'; }
+
+  function load() {
+    if (!TOKEN) {
+      document.getElementById('list').innerHTML =
+        '<div class="empty">Not signed in. <a href="/login.html">Sign in to Roost</a>, then reopen this page.</div>';
+      return;
+    }
+    var url = '/api/children' + (includeUpcoming ? '?include=upcoming' : '');
+    fetch(url, { headers: { Authorization: 'Bearer ' + TOKEN } })
+      .then(function (r) {
+        if (r.status === 401) { location.href = '/login.html'; throw new Error('401'); }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (rows) { kids = Array.isArray(rows) ? rows : []; render(); })
+      .catch(function (e) {
+        document.getElementById('list').innerHTML =
+          '<div class="empty">Could not load children: ' + esc(e.message) + '</div>';
+      });
+  }
+
+  function render() {
+    var byRoom = {};
+    kids.forEach(function (k) {
+      var r = k.room_name || k.room || 'No room set';
+      (byRoom[r] = byRoom[r] || []).push(k);
+    });
+    var rooms = Object.keys(byRoom).sort();
+    var html = '';
+    rooms.forEach(function (room) {
+      var list = byRoom[room].sort(function (a, b) {
+        return (a.first_name || '').localeCompare(b.first_name || '');
+      });
+      html += '<h2 class="room">' + esc(room) + ' <span>' + list.length + ' children</span></h2>';
+      list.forEach(function (k) {
+        var st = state[k.id] || {};
+        var name = (k.preferred_name || k.first_name || '') + ' ' + (k.last_name || '');
+        var notLinked = !k.eylog_ref && !k.eylog_child_id;
+        var upcoming = k.start_date && (new Date(k.start_date) > new Date());
+        html +=
+          '<div class="child' + (st.v ? ' done' : '') + '" data-id="' + k.id + '">' +
+            '<div class="crow">' +
+              '<div class="cmain">' +
+                '<div class="cname">' + esc(name.trim() || 'Unnamed') +
+                  (notLinked ? '<span class="flag nolink">not linked to EyLog</span>' : '') +
+                  (upcoming ? '<span class="flag">starts ' + esc(fmt(k.start_date)) + '</span>' : '') +
+                '</div>' +
+                '<div class="cmeta">' +
+                  'ID <code>' + k.id + '</code> · ' + esc(age(k.date_of_birth) || 'age unknown') +
+                  ' · started ' + esc(fmt(k.start_date)) +
+                  (k.leave_date ? ' · leaves ' + esc(fmt(k.leave_date)) : '') +
+                  (k.key_person_name ? ' · key person ' + esc(k.key_person_name) : '') +
+                '</div>' +
+              '</div>' +
+              '<div class="verdicts">' +
+                btn(k.id, 'here', 'Here', st.v) +
+                btn(k.id, 'left', 'Left', st.v) +
+                btn(k.id, 'wrong', 'Details wrong', st.v) +
+                btn(k.id, 'unsure', 'Not sure', st.v) +
+              '</div>' +
+            '</div>' +
+            '<div class="note">' +
+              '<div class="lbl">Private note — stays on this device, <b>never included</b> in the result</div>' +
+              '<textarea data-note="' + k.id + '" placeholder="e.g. moved rooms in June, surname spelling wrong…">' +
+                esc(st.n || '') + '</textarea>' +
+            '</div>' +
+          '</div>';
+      });
+    });
+    document.getElementById('list').innerHTML = html || '<div class="empty">No children returned.</div>';
+    document.getElementById('footnote').textContent = kids.length + ' children loaded';
+    tally();
+  }
+
+  function btn(id, v, label, cur) {
+    return '<button class="v-' + v + (cur === v ? ' on' : '') + '" data-v="' + v + '" data-cid="' + id + '">' +
+           label + '</button>';
+  }
+
+  function tally() {
+    var c = { here: 0, left: 0, wrong: 0, unsure: 0 };
+    kids.forEach(function (k) { var v = (state[k.id] || {}).v; if (v && c[v] !== undefined) c[v]++; });
+    var done = c.here + c.left + c.wrong + c.unsure;
+    document.getElementById('c-here').textContent = c.here;
+    document.getElementById('c-left').textContent = c.left;
+    document.getElementById('c-wrong').textContent = c.wrong;
+    document.getElementById('c-unsure').textContent = c.unsure;
+    document.getElementById('c-todo').textContent = Math.max(0, kids.length - done);
+    document.getElementById('bar').style.width = (kids.length ? (done / kids.length * 100) : 0) + '%';
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-cid]');
+    if (!b) return;
+    var id = b.getAttribute('data-cid'), v = b.getAttribute('data-v');
+    var st = state[id] = state[id] || {};
+    st.v = (st.v === v) ? null : v;                     // tap again to clear
+    if (!st.v) delete st.v;
+    save();
+    var card = b.closest('.child');
+    card.querySelectorAll('.verdicts button').forEach(function (x) { x.classList.remove('on'); });
+    if (st.v) { b.classList.add('on'); card.classList.add('done'); }
+    else card.classList.remove('done');
+    tally();
+  });
+
+  document.addEventListener('input', function (e) {
+    var t = e.target.closest('textarea[data-note]');
+    if (!t) return;
+    var id = t.getAttribute('data-note');
+    state[id] = state[id] || {};
+    state[id].n = t.value;
+    save();
+  });
+
+  document.getElementById('tgl').addEventListener('click', function () {
+    includeUpcoming = !includeUpcoming;
+    this.textContent = includeUpcoming ? 'Hide future starters' : 'Include future starters';
+    document.getElementById('list').innerHTML = '<div class="empty">Loading…</div>';
+    load();
+  });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    if (!confirm('Clear every answer and note on this device?')) return;
+    state = {}; save(); render();
+  });
+
+  function buildPayload() {
+    // IDs + verdicts ONLY. Notes and every name/DOB field are deliberately excluded.
+    var lines = ['# Wren roster check — ' + new Date().toISOString().slice(0, 10),
+                 '# child_id : verdict   (no names, no DOBs, no notes)', ''];
+    var groups = { here: [], left: [], wrong: [], unsure: [], unanswered: [] };
+    kids.forEach(function (k) {
+      var v = (state[k.id] || {}).v || 'unanswered';
+      groups[v].push(k.id);
+    });
+    Object.keys(groups).forEach(function (g) {
+      lines.push(g.toUpperCase() + ' (' + groups[g].length + '): ' + (groups[g].join(', ') || '—'));
+    });
+    lines.push('', 'total_loaded: ' + kids.length,
+               'included_future_starters: ' + includeUpcoming);
+    var notes = kids.filter(function (k) { return (state[k.id] || {}).n; }).map(function (k) { return k.id; });
+    if (notes.length) {
+      lines.push('', '# You wrote private notes on these IDs (text withheld): ' + notes.join(', '));
+    }
+    return lines.join('\n');
+  }
+
+  document.getElementById('build').addEventListener('click', function () {
+    document.getElementById('payload').value = buildPayload();
+    document.getElementById('dlg').showModal();
+  });
+  document.getElementById('dlg-x').addEventListener('click', function () {
+    document.getElementById('dlg').close();
+  });
+  document.getElementById('copy').addEventListener('click', function () {
+    var t = document.getElementById('payload');
+    t.select();
+    navigator.clipboard.writeText(t.value).then(
+      function () { this.textContent = 'Copied ✓'; }.bind(this),
+      function () { document.execCommand('copy'); }
+    );
+  });
+  document.getElementById('dl').addEventListener('click', function () {
+    var b = new Blob([document.getElementById('payload').value], { type: 'text/plain' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = 'roster-check-' + new Date().toISOString().slice(0, 10) + '.txt';
+    a.click();
+  });
+
+  load();
+}());
+</script>
+</body>
+</html>

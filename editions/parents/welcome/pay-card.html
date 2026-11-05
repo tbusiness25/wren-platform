@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Your Nursery — Pay by card</title>
+<meta name="lap-title" content="Pay by card">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap">
+<style>
+/* 2026-10-01 — pay one invoice by card (Opayo Pi drop-in + 3-D Secure). The card
+   number is typed into Opayo's own frame; this page never sees it. */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--green:#2d5a4a;--green-d:#1e3d31;--orange:#f0a050;--cream:#fefcf8;--text:#2a2a2a;--text-m:#5a5a5a;--border:#e8e0d0;--surface:#fff;--bad:#b42318;--good:#1f7a4f}
+body{font-family:'Nunito',system-ui,Arial,sans-serif;background:var(--cream);color:var(--text);line-height:1.55}
+.nav,.hero{display:none}
+.wrap{max-width:560px;margin:0 auto;padding:16px 16px 110px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px}
+.k{font:800 .74rem/1 Nunito,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-m)}
+.amt{font:800 2.1rem/1.15 Nunito,system-ui,sans-serif;color:var(--text);margin-top:6px;font-variant-numeric:tabular-nums}
+.sub{font-size:.9rem;color:var(--text-m);margin-top:2px}
+#sp-container{min-height:260px}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:50px;border:0;border-radius:12px;background:var(--green);
+  color:var(--lap-on-accent,#fff);font:800 1rem Nunito,system-ui,sans-serif;cursor:pointer;text-decoration:none}
+.btn[disabled]{opacity:.6;cursor:wait}
+.btn.ghost{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.msg{border-radius:12px;padding:12px 14px;font-size:.92rem}
+.msg.bad{background:color-mix(in srgb,var(--bad) 10%,var(--surface));color:var(--bad);border:1px solid color-mix(in srgb,var(--bad) 35%,transparent)}
+.msg.good{background:color-mix(in srgb,var(--good) 10%,var(--surface));color:var(--good);border:1px solid color-mix(in srgb,var(--good) 35%,transparent)}
+.note{font-size:.82rem;color:var(--text-m)}
+.big-tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--good) 14%,var(--surface));color:var(--good);margin:6px auto 10px;font-size:2rem}
+.center{text-align:center}
+</style>
+<script src="/pwa.js" defer></script>
+<link rel="stylesheet" href="/css/parents-app.css" data-parents-app-css="1">
+<script src="/js/lap-boot.js"></script>
+</head>
+<body>
+<nav class="nav"></nav><div class="hero"></div>
+<main class="wrap" id="wrap">
+  <div class="card"><div class="k">Pay by card</div><div class="sub">Loading…</div></div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var wrap = document.getElementById('wrap');
+  var q = new URLSearchParams(location.search);
+  var gbp = function (p) { return '£' + (Number(p || 0) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+  async function api(path, body) {
+    var r = await fetch(path, { method: body ? 'POST' : 'GET', credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+    var d = null; try { d = await r.json(); } catch (_) {}
+    if (!r.ok) throw new Error((d && d.error) || 'Something went wrong. Nothing has been taken from your card.');
+    return d;
+  }
+  function back() { return '<a class="btn ghost" href="/welcome/invoices">Back to invoices</a>'; }
+
+  // ── after the bank's check: how did it end? ──
+  if (q.get('result')) {
+    var ref = q.get('result'), tries = 0;
+    var poll = async function () {
+      try {
+        var a = await api('/welcome/pay/api/card/attempt/' + encodeURIComponent(ref));
+        if (a.status === 'pending' && tries++ < 8) return setTimeout(poll, 1500);
+        if (a.status === 'ok') {
+          // b492 — a family-balance payment clears several invoices at once: one receipt
+          // listing every one of them, not just the total.
+          var clearedRows = (a.cleared || []).length > 1 ? '<table style="width:100%;margin-top:10px;font-size:.9rem">' +
+            a.cleared.map(function (c) { return '<tr><td>' + esc(c.label) + '</td><td style="text-align:right">' + gbp(c.amount_pence) + '</td></tr>'; }).join('') +
+            '</table>' : '';
+          wrap.innerHTML = '<div class="card center"><div class="big-tick" aria-hidden="true">&#10003;</div><h2>Payment received</h2>' +
+            '<p class="sub">' + gbp(a.amount_pence) + ' · ' + esc(a.label) + '</p>' + clearedRows +
+            '<p class="note" style="margin-top:8px">Thank you. Your invoice' + ((a.cleared || []).length > 1 ? 's are' : ' is') + ' updated.</p></div>' + back();
+        } else {
+          wrap.innerHTML = '<div class="msg bad">Your bank did not approve the payment, so nothing has been taken. You can try again, use another card, or pay by bank transfer.</div>' + back();
+        }
+      } catch (e) { wrap.innerHTML = '<div class="msg bad">' + esc(e.message) + '</div>' + back(); }
+    };
+    poll();
+    return;
+  }
+
+  // 2026-10-12 (b492) — ?family=1 pays every open invoice in one go instead of one
+  // chosen invoice. Same Opayo drop-in, same start/pay/3DS shape; only the endpoints
+  // and the breakdown shown above the card fields differ.
+  var isFamily = q.get('family') === '1';
+  var invoiceId = q.get('invoice');
+  if (!isFamily && !invoiceId) { wrap.innerHTML = '<div class="msg bad">Choose an invoice to pay from your invoices.</div>' + back(); return; }
+  var startPath = isFamily ? '/welcome/pay/api/balance/start' : '/welcome/pay/api/card/start';
+  var payPath   = isFamily ? '/welcome/pay/api/balance/pay'   : '/welcome/pay/api/card/pay';
+  var startBody = isFamily ? {} : { invoice_id: Number(invoiceId) };
+
+  function breakdownHtml(items) {
+    if (!items || !items.length) return '';
+    var rows = items.map(function (i) {
+      var credited = i.invoice_total_pence > i.outstanding_pence;
+      return '<tr><td>' + esc([i.child_name, i.period_label, i.invoice_number].filter(Boolean).join(' · ') || ('#' + i.invoice_id)) + '</td>'
+        + '<td style="text-align:right">' + gbp(i.outstanding_pence)
+        + (credited ? '<div class="note">of ' + gbp(i.invoice_total_pence) + ', credit already applied</div>' : '') + '</td></tr>';
+    }).join('');
+    // review F2: credit already on the account is taken off the total, and shown
+    var credit = (start && start.account_credit_pence) || 0;
+    if (credit > 0) rows += '<tr><td>Credit on your account</td><td style="text-align:right">&minus;' + gbp(credit) + '</td></tr>';
+    return '<div class="card"><div class="k">What this clears</div><table style="width:100%;margin-top:8px;font-size:.92rem;border-collapse:collapse">' +
+      rows + '</table></div>';
+  }
+
+  var start;
+  function loadScript(src) {
+    return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+  }
+  function browserInfo() {
+    return { language: navigator.language || 'en-GB', colorDepth: String(screen.colorDepth || 24),
+             screenHeight: String(screen.height || 800), screenWidth: String(screen.width || 400),
+             tz: String(new Date().getTimezoneOffset()) };
+  }
+  function toBank(acsUrl, creq, sess) {
+    // The bank's 3-D Secure page. A real top-level form post, as the 3DS spec expects.
+    var f = document.createElement('form'); f.method = 'POST'; f.action = acsUrl;
+    [['creq', creq], ['threeDSSessionData', sess]].forEach(function (p) { var i = document.createElement('input'); i.type = 'hidden'; i.name = p[0]; i.value = p[1]; f.appendChild(i); });
+    document.body.appendChild(f); f.submit();
+  }
+
+  (async function () {
+    try {
+      start = await api(startPath, startBody);
+      wrap.innerHTML =
+        '<div class="card"><div class="k">Paying</div><div class="amt">' + gbp(start.amount_pence) + '</div><div class="sub">' + esc(start.label) + '</div></div>' +
+        breakdownHtml(start.breakdown) +
+        '<form class="card" id="sp-form" novalidate><div id="sp-container"></div><div id="pay-msg"></div>' +
+        '<button class="btn" id="pay-btn" type="submit" style="margin-top:12px">Pay ' + gbp(start.amount_pence) + '</button>' +
+        '<p class="note" style="margin-top:10px">Your card details go straight to our card processor, Opayo. Your Nursery never sees or stores them. Your bank may ask you to confirm the payment.</p></form>' +
+        (start.env !== 'live' ? '<div class="msg bad">Test mode: no real money is taken.</div>' : '') + back();
+      await loadScript(start.script_url);
+      var btn = document.getElementById('pay-btn'), msg = document.getElementById('pay-msg');
+      var checkout = window.sagepayCheckout({
+        merchantSessionKey: start.merchant_session_key,
+        containerSelector: '#sp-container',
+        onTokenise: async function (r) {
+          if (!r || !r.success) {
+            msg.innerHTML = '<div class="msg bad" style="margin-top:10px">' + esc((r && r.error && r.error.errorMessage) || 'Please check your card details.') + '</div>';
+            btn.disabled = false; btn.textContent = 'Pay ' + gbp(start.amount_pence); return;
+          }
+          try {
+            var out = await api(payPath, { ref: start.ref, card_identifier: r.cardIdentifier,
+              merchant_session_key: start.merchant_session_key, browser: browserInfo() });
+            if (out.status === 'ok') { location.replace('/welcome/pay-card?result=' + encodeURIComponent(out.ref)); return; }
+            if (out.status === '3dauth') { btn.textContent = 'Opening your bank…'; toBank(out.acs_url, out.creq, out.three_ds_session_data); return; }
+            wrap.innerHTML = '<div class="msg bad">' + esc(out.message || 'Your bank did not approve the payment. Nothing has been taken.') + '</div>' + back();
+          } catch (e) { wrap.innerHTML = '<div class="msg bad">' + esc(e.message) + '</div>' + back(); }
+        },
+      });
+      // Opayo's form() binds to the <form> round the card fields: a submit tokenises the card
+      // and calls onTokenise above. This listener only updates the button.
+      checkout.form({ formSelector: '#sp-form' });
+      document.getElementById('sp-form').addEventListener('submit', function () { btn.disabled = true; btn.textContent = 'Checking your card…'; msg.innerHTML = ''; });
+    } catch (e) {
+      wrap.innerHTML = '<div class="msg bad">' + esc(e.message) + '</div>' + back();
+    }
+  })();
+})();
+</script>
+</body>
+</html>

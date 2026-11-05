@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inactive children · Roost</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js?v=20260922-download" defer></script>
+  <style>
+    .ic-wrap { padding: 18px 22px; }
+    .ic-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+    .ic-head h1 { font-size:20px; margin:0; }
+    .ic-sub { font-size:12.5px; color:var(--c-muted); margin-bottom:16px; max-width:70ch; }
+    .ic-stats { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+    .ic-stat { background:var(--c-surface); border:1px solid var(--c-border); border-radius:10px; padding:12px 16px; min-width:120px; }
+    .ic-stat .n { font-size:22px; font-weight:800; color:var(--c-text); }
+    .ic-stat .l { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--c-muted); }
+    .ic-tools { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+    .ic-tools input { padding:8px 12px; border:1px solid var(--c-muted); border-radius:8px; font-size:13px; min-width:240px; }
+    .ic-table-wrap { overflow-x:auto; border:1px solid var(--c-border); border-radius:10px; background:var(--c-surface); }
+    table.ic { width:100%; border-collapse:collapse; font-size:13px; }
+    table.ic th { text-align:left; padding:10px 12px; background:var(--c-surface-2); border-bottom:1px solid var(--c-border);
+                  font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--c-muted); white-space:nowrap; }
+    table.ic td { padding:10px 12px; border-bottom:1px solid var(--c-border); }
+    table.ic tr:last-child td { border-bottom:none; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+    .pill.left { background:var(--c-danger-soft); color:var(--c-danger); }
+    .pill.inactive { background:var(--c-muted-soft); color:var(--c-muted); }
+    .empty { padding:40px; text-align:center; color:var(--c-muted); }
+  </style>
+</head>
+<body>
+<div class="ic-wrap">
+  <div class="ic-head"><h1>📁 Inactive children</h1></div>
+  <p class="ic-sub">
+    Children who have left, or whose leave date has passed. They are hidden from the register,
+    diary, planning, kitchen and the EY children grid, but their records are retained — this is
+    where to find them. Reactivating a child clears their leave date and puts them back on those
+    surfaces.
+  </p>
+
+  <div class="ic-stats" id="ic-stats"></div>
+
+  <div class="ic-tools">
+    <input type="search" id="ic-q" placeholder="Search by name…" aria-label="Search inactive children">
+    <a href="/leavers-book.html" class="btn btn-sm btn-ghost">🎁 Leavers &amp; Keepsakes →</a>
+  </div>
+
+  <div class="ic-table-wrap">
+    <table class="ic">
+      <thead><tr>
+        <th>Name</th><th>Room</th><th>Key person</th><th>Started</th><th>Left</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody id="ic-rows"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function fmt(d){ if(!d) return '—'; try{return new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}catch(e){return d;} }
+
+var ROWS = [];
+
+function render(list){
+  var tb = document.getElementById('ic-rows');
+  if(!list.length){ tb.innerHTML = '<tr><td colspan="7" class="empty">No inactive children.</td></tr>'; return; }
+  tb.innerHTML = list.map(function(c){
+    var left = c.leave_date && new Date(c.leave_date) < new Date();
+    var pill = left ? '<span class="pill left">Left</span>' : '<span class="pill inactive">Inactive</span>';
+    return '<tr>'+
+      '<td><a href="/child-profile.html?id='+c.id+'">'+esc(c.first_name)+' '+esc(c.last_name)+'</a></td>'+
+      '<td>'+esc(c.room_name||'—')+'</td>'+
+      '<td>'+esc(c.key_person_name||'—')+'</td>'+
+      '<td>'+fmt(c.start_date)+'</td>'+
+      '<td>'+fmt(c.leave_date)+'</td>'+
+      '<td>'+pill+'</td>'+
+      '<td><button type="button" class="btn btn-sm btn-ghost" data-reactivate="'+c.id+'">Reactivate</button></td>'+
+    '</tr>';
+  }).join('');
+}
+
+function stats(list){
+  var withLeave = list.filter(function(c){return c.leave_date;}).length;
+  var thisYear = list.filter(function(c){
+    return c.leave_date && new Date(c.leave_date).getFullYear() === new Date().getFullYear();
+  }).length;
+  document.getElementById('ic-stats').innerHTML =
+    [['Inactive', list.length], ['With a leave date', withLeave], ['Left this year', thisYear]]
+    .map(function(s){ return '<div class="ic-stat"><div class="n">'+s[1]+'</div><div class="l">'+s[0]+'</div></div>'; }).join('');
+}
+
+function load(){
+  Wren.api('/api/children/inactive').then(function(list){
+    ROWS = list || []; stats(ROWS); render(ROWS);
+  }).catch(function(e){
+    document.getElementById('ic-rows').innerHTML =
+      '<tr><td colspan="7" class="empty">Could not load: '+esc(e.message||e)+'</td></tr>';
+  });
+}
+
+document.getElementById('ic-q').addEventListener('input', function(){
+  var q = this.value.trim().toLowerCase();
+  render(!q ? ROWS : ROWS.filter(function(c){
+    return ((c.first_name||'')+' '+(c.last_name||'')).toLowerCase().indexOf(q) !== -1;
+  }));
+});
+
+document.addEventListener('click', function(e){
+  var btn = e.target.closest && e.target.closest('[data-reactivate]');
+  if(!btn) return;
+  var id = btn.getAttribute('data-reactivate');
+  if(!confirm('Reactivate this child? They will reappear on the register, diary and planning, and their leave date will be cleared.')) return;
+  btn.disabled = true;
+  Wren.api('/api/children/'+id+'/reactivate', { method:'POST' })
+    .then(function(){ Wren.toast('Child reactivated ✓','success'); load(); })
+    .catch(function(err){ btn.disabled=false; Wren.toast('Failed: '+(err.message||err),'error'); });
+});
+
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

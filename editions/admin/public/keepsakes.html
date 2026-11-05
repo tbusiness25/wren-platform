@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keepsakes · Roost</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js?v=20260922-download" defer></script>
+  <style>
+    .ks-wrap { padding: 18px 22px; }
+    .ks-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+    .ks-head h1 { font-size:20px; margin:0; }
+    .ks-sub { font-size:12.5px; color:var(--c-muted); margin-bottom:16px; }
+    .ks-stats { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+    .ks-stat { background:var(--c-surface); border:1px solid var(--c-border); border-radius:10px; padding:12px 16px; min-width:120px; }
+    .ks-stat .n { font-size:22px; font-weight:800; color:var(--c-text); }
+    .ks-stat .l { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--c-muted); }
+    h2.ks-sec { font-size:15px; margin:20px 0 10px; color:var(--c-text); }
+    .ks-table-wrap { overflow-x:auto; border:1px solid var(--c-border); border-radius:10px; background:var(--c-surface); }
+    table.ks { border-collapse:collapse; width:100%; font-size:13px; }
+    table.ks th { background:var(--c-bg); text-align:left; padding:9px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--c-text); white-space:nowrap; border-bottom:1px solid var(--c-border); }
+    table.ks td { padding:9px 12px; border-bottom:1px solid var(--c-border); white-space:nowrap; vertical-align:middle; }
+    table.ks tr:hover td { background:color-mix(in srgb, var(--c-blue) 10%, transparent); }
+    .pill { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:700; }
+    .pill.active { background:color-mix(in srgb, var(--c-ok) 22%, transparent); color:var(--c-ok); border:1px solid color-mix(in srgb, var(--c-ok) 45%, transparent); }
+    .pill.revoked { background:color-mix(in srgb, var(--c-danger) 22%, transparent); color:var(--c-danger); border:1px solid color-mix(in srgb, var(--c-danger) 45%, transparent); }
+    .pill.expired { background:color-mix(in srgb, var(--c-warn) 22%, transparent); color:var(--c-warn); border:1px solid color-mix(in srgb, var(--c-warn) 45%, transparent); }
+    .pill.opened { background:color-mix(in srgb, var(--c-blue) 22%, transparent); color:var(--c-blue); border:1px solid color-mix(in srgb, var(--c-blue) 45%, transparent); }
+    .pill.notopened { background:var(--c-bg); color:var(--c-muted); }
+    .pill.sent { background:color-mix(in srgb, var(--c-purple) 22%, transparent); color:var(--c-purple); border:1px solid color-mix(in srgb, var(--c-purple) 45%, transparent); }
+    .btn { border:1px solid var(--c-border); background:var(--c-surface); border-radius:7px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; color:var(--c-text); margin:1px; }
+    .btn:hover { background:color-mix(in srgb, var(--c-blue) 14%, transparent); border-color:var(--c-blue); }
+    .btn.primary { background:var(--c-orange); border-color:var(--c-orange); color:var(--c-on-orange); font-weight:800; }
+    .btn.danger { color:var(--c-danger); border-color:color-mix(in srgb, var(--c-danger) 45%, transparent); }
+    .thin { color:var(--c-warn); }
+    /* 2026-09-22 — a child's earlier books, folded under the current one */
+    tr.ks-old > td { background:color-mix(in srgb, var(--c-muted) 7%, transparent); font-size:12px; }
+    tr.ks-foot td { padding:10px 12px; font-size:12px; }
+    .ks-hist { margin-left:8px; padding:1px 8px; border-radius:20px; font-size:11px; font-weight:700; cursor:pointer;
+               background:var(--c-bg); color:var(--c-muted); border:1px solid var(--c-border); }
+    .ks-hist:hover { color:var(--c-text); border-color:var(--c-muted); }
+    .ks-hist.open { background:color-mix(in srgb, var(--c-blue) 14%, transparent); color:var(--c-blue); border-color:color-mix(in srgb, var(--c-blue) 45%, transparent); }
+    .muted { color:var(--c-muted); }
+    .ks-toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--c-surface-solid); color:var(--c-text); border:1px solid var(--c-border); padding:10px 18px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; z-index:60; max-width:80vw; }
+    .ks-toast.show { opacity:1; }
+  </style>
+</head>
+<body>
+<div class="ks-wrap">
+  <div class="ks-head"><h1>💛 Keepsakes</h1></div>
+  <div class="ks-sub">Leaver memory books — generate, send to families, and see who's opened theirs. Links are private per family, offline-installable, and revocable.</div>
+  <div class="ks-sub" style="margin-top:6px">This is <b>the only place</b> a memory book is generated or sent. The farewell message and highlights that go <i>inside</i> a book are written on the <a href="/leavers-book.html">Leavers Book</a> page, and families can now make their own copy from the parents app once they have given notice.</div>
+  <div class="ks-stats" id="ks-stats"></div>
+
+  <h2 class="ks-sec">Leavers without a keepsake</h2>
+  <div class="ks-table-wrap"><table class="ks" id="ks-cand"><thead><tr>
+    <th>Child</th><th>Leaves</th><th>Photos on file</th><th>Parent email</th><th></th>
+  </tr></thead><tbody></tbody></table></div>
+
+  <h2 class="ks-sec">Minted keepsakes</h2>
+  <div class="ks-table-wrap"><table class="ks" id="ks-list"><thead><tr>
+    <th>Child</th><th>Status</th><th>Photos</th><th>Sent</th><th>Opened</th><th>Last opened</th><th>Expires</th><th>Actions</th>
+  </tr></thead><tbody></tbody></table></div>
+</div>
+<div class="ks-toast" id="ks-toast"></div>
+
+<script>
+const BASE = '/api/leavers-gift';
+function toast(m){ const t=document.getElementById('ks-toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fdate(d){ return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'}) : '—'; }
+function name(r){ return esc((r.preferred_name||r.first_name||'')+' '+(r.last_name||'')).trim() || ('Child #'+r.child_id); }
+// The server owns the public base (KEEPSAKE_PUBLIC_BASE). This used to swap 'admin.' for
+// 'ey.' and hand out a staff-portal link a family could not open.
+var PUBLIC_BASE = '';
+function keepsakeUrl(tok){ return (PUBLIC_BASE || location.origin.replace('admin.','parents.')) + '/keepsake/' + tok; }
+
+async function load(){
+  let pkgs=[], cands=[];
+  try { const r = await Wren.api(BASE+'/packages'); pkgs = r.packages || []; PUBLIC_BASE = r.public_base || ''; }
+  catch(e){ toast('Load failed: '+e.message); }
+  try { cands = (await Wren.api(BASE+'/candidates')).candidates || []; } catch(e){}
+
+  // 2026-09-22 — one child, one keepsake. Regenerating a book retires the old link and
+  // mints a new one, so a child generated seven times had seven rows here and looked
+  // duplicated. Group by child: the newest is the CURRENT book, the rest are its history.
+  const byChild = new Map();
+  pkgs.forEach(p=>{ const k=p.child_id; if(!byChild.has(k)) byChild.set(k,[]); byChild.get(k).push(p); });
+  // /packages already comes back created_at DESC, so [0] is the newest for each child
+  const current = [...byChild.values()].map(list=>list[0]);
+  const older = new Map([...byChild.entries()].map(([k,list])=>[k,list.slice(1)]));
+
+  const opened = current.filter(p=>p.access_count>0).length;
+  const sent = current.filter(p=>p.sent_at).length;
+  const withPhotos = current.filter(p=>(p.media_count||0)>2).length;
+  const supersededCount = [...older.values()].reduce((n,l)=>n+l.length,0);
+  document.getElementById('ks-stats').innerHTML = [
+    ['Keepsakes', current.length],['With photos', withPhotos],['Sent to family', sent],
+    ['Opened by family', opened],['Leavers pending', cands.length]
+  ].map(([l,n])=>`<div class="ks-stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+  // Candidates
+  document.querySelector('#ks-cand tbody').innerHTML = cands.length ? cands.map(c=>`
+    <tr><td>${name(c)}</td><td>${fdate(c.leave_date)}</td>
+        <td>${c.photo_obs>0?c.photo_obs+' obs':'<span class="thin">none</span>'}</td>
+        <td>${c.parent_email?esc(c.parent_email):'<span class="muted">— none —</span>'}</td>
+        <td><button class="btn primary" data-gen="${c.child_id}">Generate keepsake</button></td></tr>
+  `).join('') : '<tr><td colspan="5" class="muted" style="padding:16px">Every leaver has a keepsake 🎉</td></tr>';
+
+  // Minted — the current book per child; the superseded ones fold away under it
+  const rowFor = (p, isOld) => {
+    const st = p.status;
+    const openedPill = p.access_count>0 ? `<span class="pill opened">opened ${p.access_count}×</span>` : `<span class="pill notopened">not opened</span>`;
+    const sentPill = p.sent_at ? `<span class="pill sent">✓ ${fdate(p.sent_at)}</span>` : '<span class="muted">—</span>';
+    const thin = (p.media_count||0)<3;
+    const history = isOld ? [] : (older.get(p.child_id)||[]);
+    return `<tr data-id="${p.id}" class="${isOld?'ks-old':''}">
+      <td>${isOld?'<span class="muted">↳ earlier version</span>':name(p)}
+          ${history.length?`<button class="ks-hist" data-hist="${p.child_id}">${history.length} earlier version${history.length>1?'s':''}</button>`:''}</td>
+      <td><span class="pill ${st}">${isOld?'superseded':st}</span></td>
+      <td class="${thin?'thin':''}">${p.media_count||0}${thin?' ⚠':''}</td>
+      <td>${sentPill}</td>
+      <td>${openedPill}</td>
+      <td>${fdate(p.last_accessed_at)}</td>
+      <td>${fdate(p.expires_at)}</td>
+      <td>
+        ${st==='active'?`<button class="btn primary" data-send="${p.id}" data-email="${esc(p.parent_email||'')}">Send link</button>`:''}
+        ${st==='active'?`<button class="btn" data-copy="${esc(p.token)}">Copy link</button>`:''}
+        <button class="btn primary" data-zip="${p.id}" title="index.html + a media folder — opens in any browser, videos play, nothing hosted">Download book</button>
+        <button class="btn" data-preview="${p.id}">Preview</button>
+        <button class="btn" data-pdf="${p.id}">PDF</button>
+        ${st==='active'
+          ?`<button class="btn danger" data-revoke="${p.id}">Revoke</button>`
+          :`${isOld?'':`<button class="btn primary" data-gen="${p.child_id}">Regenerate</button>`}
+            <button class="btn danger" data-del="${p.id}" data-delname="${isOld?'this earlier version':esc(name(p))}">Delete</button>`}
+      </td></tr>`;
+  };
+  document.querySelector('#ks-list tbody').innerHTML =
+    (current.map(p=>rowFor(p,false) + (older.get(p.child_id)||[]).map(o=>rowFor(o,true)).join('')).join('')
+      || '<tr><td colspan="8" class="muted" style="padding:16px">No keepsakes yet.</td></tr>')
+    + (supersededCount?`<tr class="ks-foot"><td colspan="8" class="muted">${current.length} keepsake${current.length===1?'':'s'}, one per child. ${supersededCount} earlier version${supersededCount===1?'':'s'} kept underneath — open a child's row to see or delete them.</td></tr>`:'');
+
+  wire();
+  document.querySelectorAll('#ks-list tr.ks-old').forEach(r=>r.style.display='none');
+}
+
+function wire(){
+  document.querySelectorAll('[data-gen]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Generate a keepsake memory book for this child?'))return;
+    b.disabled=true; b.textContent='Generating…';
+    try{ const r=await Wren.api(`${BASE}/gift/${b.dataset.gen}/generate`,{method:'POST',body:'{}'}); toast('Keepsake generated ('+(r.package?.media_count||0)+' photos)'); load(); }
+    catch(e){ toast('Error: '+e.message); b.disabled=false; }
+  });
+  document.querySelectorAll('[data-send]').forEach(b=>b.onclick=async()=>{
+    const email = b.dataset.email || prompt('No email on file — enter the family email to send to:');
+    if(!email) return;
+    if(!confirm('Email the keepsake link to '+email+'?'))return;
+    b.disabled=true; b.textContent='Sending…';
+    const post = body => Wren.api(`${BASE}/packages/${b.dataset.send}/send`,{method:'POST',body:JSON.stringify(body)});
+    const done = r => { toast(r.emailed?('Sent to '+r.to):('Recorded — '+(r.note||'email not configured; copy the link'))); load(); };
+    try{ done(await post({email})); }
+    catch(e){
+      // b326 — the send refuses when the keepsake holds no photos. Wren.api rejects with
+      // the response body, so the reason is on `e` itself, not e.message.
+      if(e && e.reason==='no_media'){
+        if(e.can_override && confirm((e.error||'This keepsake holds no photos.')+'\n\nSend it to '+email+' anyway?')){
+          try{ done(await post({email, confirm_no_photos:true})); return; }
+          catch(e2){ toast('Error: '+(e2?.error||e2?.message||'send failed')); }
+        } else {
+          toast(e.error+(e.can_override?'':' Ask a manager to override.'));
+        }
+      } else {
+        toast('Error: '+(e?.error||e?.message||'send failed'));
+      }
+      b.disabled=false; b.textContent='Send link';
+    }
+  });
+  document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{
+    const url=keepsakeUrl(b.dataset.copy);
+    navigator.clipboard?.writeText(url).then(()=>toast('Link copied: '+url),()=>prompt('Copy the link:',url)) || prompt('Copy the link:',url);
+  });
+  // 2026-09-22 — these two were window.open(), which opens a NEW window that carries no
+  // Authorization header, so the route answered {"error":"Unauthorised"} and the family's
+  // memory book never arrived. Wren.download fetches with the token and saves the file.
+  const grab = (b, url, fname, label) => {
+    const was = b.textContent; b.disabled = true; b.textContent = '…';
+    Wren.download(url, fname)
+      .then(r => toast(label + ' downloaded (' + Math.round(r.size/1024) + ' KB)'))
+      .catch(e => toast('Error: ' + (e?.error || e?.message || 'could not produce the file')))
+      .then(() => { b.disabled = false; b.textContent = was; });
+  };
+  document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>
+    grab(b, `${BASE}/packages/${b.dataset.preview}/download`, 'memory-book.html', 'Memory book'));
+  document.querySelectorAll('[data-pdf]').forEach(b=>b.onclick=()=>
+    grab(b, `${BASE}/packages/${b.dataset.pdf}/book.pdf`, 'memory-book.pdf', 'PDF'));
+  // the one to actually give a family: index.html + media/, so the videos play
+  document.querySelectorAll('[data-zip]').forEach(b=>b.onclick=()=>
+    grab(b, `${BASE}/packages/${b.dataset.zip}/book.zip`, 'memory-book.zip', 'Memory book'));
+
+  // Delete a keepsake that is no longer the live one. The server refuses to delete a link
+  // that a family has actually opened — that is their book, and revoking is the right tool.
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Delete '+b.dataset.delname+' permanently?\n\nThis removes the record and the frozen snapshot. It cannot be undone.'))return;
+    b.disabled=true; b.textContent='Deleting…';
+    try{ await Wren.api(`${BASE}/packages/${b.dataset.del}`,{method:'DELETE'}); toast('Deleted'); load(); }
+    catch(e){ toast(e?.error || e?.message || 'Could not delete'); b.disabled=false; b.textContent='Delete'; }
+  });
+
+  // show / hide a child's earlier versions
+  document.querySelectorAll('[data-hist]').forEach(b=>b.onclick=()=>{
+    const tb = b.closest('tbody'); const open = b.classList.toggle('open');
+    let row = b.closest('tr').nextElementSibling;
+    while(row && row.classList.contains('ks-old')){ row.style.display = open?'':'none'; row = row.nextElementSibling; }
+  });
+  document.querySelectorAll('[data-revoke]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Revoke this keepsake link? The family will no longer be able to open it.'))return;
+    try{ await Wren.api(`${BASE}/packages/${b.dataset.revoke}/revoke`,{method:'POST',body:'{}'}); toast('Revoked'); load(); }
+    catch(e){ toast('Error: '+e.message); }
+  });
+}
+
+document.addEventListener('wren:ready', ()=>load().catch(e=>toast('Load failed: '+e.message)));
+</script>
+</body>
+</html>

@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"           content="eyfs">
+  <meta name="wren-app-page"          content="setting-incident-new">
+  <meta name="wren-app-title"         content="Setting Incident">
+  <meta name="wren-app-chat"          content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>Setting Incident · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* Layout copied from ey/incident-new.html so the two report forms feel like
+       the same tool. Everything here is sized for one thumb on a tablet held in
+       one hand — this form is filled in during or straight after the event. */
+    #si-page { padding: 0 0 calc(env(safe-area-inset-bottom) + 24px); }
+    #si-back {
+      width: 44px; height: 44px; background: transparent; border: none;
+      color: var(--c-text); cursor: pointer; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; transition: background .15s;
+    }
+    #si-back:hover { background: rgba(255,255,255,0.06); }
+    #si-save {
+      height: 36px; padding: 0 18px; background: var(--c-blue); border: none;
+      border-radius: 10px; color: #fff; font-size: .9rem; font-weight: 700;
+      cursor: pointer; flex-shrink: 0; transition: opacity .15s;
+    }
+    #si-save:hover  { opacity: .88; }
+    #si-save:disabled { opacity: .45; cursor: default; }
+
+    #si-body { padding: 16px; max-width: 640px; }
+
+    .si-section { margin-bottom: 18px; }
+    .si-label {
+      display: block; font-size: .78rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em;
+      color: var(--c-muted); margin-bottom: 6px;
+    }
+    .si-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--c-muted); }
+    .si-input {
+      width: 100%; box-sizing: border-box;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 8px; color: var(--c-text); font-size: .9rem;
+      padding: 0 12px; height: 44px; outline: none;
+      font-family: system-ui, Arial, sans-serif;
+    }
+    .si-input:focus { border-color: var(--c-blue); }
+    textarea.si-input { height: auto; min-height: 90px; padding: 10px 12px; resize: vertical; line-height: 1.5; }
+    textarea.si-input::placeholder { color: var(--c-muted); }
+    .si-row { display: flex; gap: 10px; }
+    .si-row .si-section { flex: 1; }
+
+    /* Step 1 — what kind of thing happened. Grouped exactly as the catalogue is,
+       because "is this premises, security, a child, an adult, health?" is the
+       question a practitioner can answer in two seconds under pressure. */
+    #si-cat-groups { display: flex; flex-direction: column; gap: 14px; }
+    .si-cat-group-name {
+      font-size: .72rem; font-weight: 800; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--c-muted); margin-bottom: 7px;
+    }
+    .si-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .si-chip {
+      min-height: 44px; padding: 0 14px; border-radius: 12px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      color: var(--c-text); font-size: .85rem; font-weight: 600; cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+      display: inline-flex; align-items: center; text-align: left;
+    }
+    .si-chip.active { background: rgba(224,120,32,0.16); border-color: var(--c-amber); color: var(--c-amber); }
+
+    /* Prompts: the "don't forget" list attached to the chosen category. */
+    #si-prompts {
+      background: rgba(74,154,191,0.10); border: 1px solid rgba(74,154,191,0.35);
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 18px;
+    }
+    #si-prompts[hidden] { display: none; }
+    #si-prompts h3 { margin: 0 0 6px; font-size: .8rem; font-weight: 800; color: var(--c-blue); }
+    #si-prompts ul { margin: 0; padding-left: 18px; }
+    #si-prompts li { font-size: .84rem; line-height: 1.5; color: var(--c-text); margin-bottom: 3px; }
+
+    /* Ofsted banner — the whole reason this record exists. */
+    #si-ofsted-banner {
+      background: rgba(224,120,32,0.14); border: 1px solid var(--c-amber);
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 18px;
+      font-size: .85rem; line-height: 1.5; color: var(--c-text);
+    }
+    #si-ofsted-banner[hidden] { display: none; }
+    #si-ofsted-banner strong { color: var(--c-amber); }
+
+    /* Severity */
+    .si-sev-chip { min-height: 44px; padding: 0 16px; border-radius: 12px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      color: var(--c-muted); font-size: .85rem; font-weight: 700; cursor: pointer; }
+    .si-sev-chip.active { background: rgba(74,154,191,0.16); border-color: var(--c-blue); color: var(--c-blue); }
+
+    /* Toggles */
+    .si-toggle {
+      display: flex; align-items: center; gap: 10px; min-height: 48px;
+      padding: 0 12px; background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 10px; cursor: pointer; margin-bottom: 8px;
+    }
+    .si-toggle input { width: 22px; height: 22px; accent-color: var(--c-blue); flex-shrink: 0; }
+    .si-toggle span { font-size: .88rem; color: var(--c-text); }
+
+    /* Children — 0..n. The default is NONE: most setting incidents have no
+       individual child, and a form that nags for one teaches staff to invent one. */
+    #si-child-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    #si-child-list:empty { display: none; }
+    .si-child-tag {
+      display: inline-flex; align-items: center; gap: 8px; min-height: 40px;
+      padding: 0 8px 0 12px; border-radius: 20px;
+      background: rgba(74,154,191,0.15); border: 1px solid var(--c-blue);
+      color: var(--c-text); font-size: .85rem; font-weight: 600;
+    }
+    .si-child-tag button {
+      width: 26px; height: 26px; border-radius: 50%; border: none;
+      background: rgba(0,0,0,.35); color: #fff; cursor: pointer; font-size: 15px; line-height: 1;
+    }
+    .si-none-note { font-size: .82rem; color: var(--c-muted); margin: 4px 0 10px; }
+
+    /* Photo strip — same mechanism as ey/incident-new.html */
+    #si-photo-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+    #si-photo-strip:empty { display: none; }
+    .si-photo-wrap {
+      position: relative; width: 84px; height: 84px; border-radius: 10px;
+      overflow: hidden; border: 1px solid var(--c-border); background: var(--c-surface);
+    }
+    .si-photo-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .si-photo-remove {
+      position: absolute; top: 3px; right: 3px; width: 24px; height: 24px;
+      border-radius: 50%; border: none; background: rgba(0,0,0,0.62); color: #fff;
+      font-size: 15px; cursor: pointer; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .si-photo-remove:hover { background: var(--c-red, #ef4444); }
+    .si-photo-wrap.uploading { opacity: .5; }
+    .si-photo-wrap.uploading::after {
+      content: '…'; position: absolute; inset: 0; display: flex;
+      align-items: center; justify-content: center; color: #fff; font-size: 1.4rem;
+    }
+    .si-add-btn {
+      min-height: 44px; padding: 0 16px; border-radius: 10px; cursor: pointer;
+      background: var(--c-surface); border: 1px dashed var(--c-border);
+      color: var(--c-text); font-size: .9rem; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .si-add-btn:hover { border-color: var(--c-blue); }
+
+    /* Collapsible "the rest" — the form stays short until the emergency is over. */
+    #si-more-toggle {
+      width: 100%; min-height: 48px; border-radius: 10px; cursor: pointer;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      color: var(--c-text); font-size: .9rem; font-weight: 700; margin-bottom: 18px;
+    }
+    #si-more[hidden] { display: none; }
+
+    .si-route-note {
+      font-size: .82rem; line-height: 1.5; color: var(--c-muted);
+      border-left: 3px solid var(--c-border); padding: 2px 0 2px 12px; margin-bottom: 18px;
+    }
+    .si-route-note a { color: var(--c-blue); }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="si-page">
+  <div id="si-body">
+
+    <p class="si-route-note">
+      Use this for something that happened to the <strong>setting</strong> — a fire, an intruder, a
+      leak, a lost child, an outbreak, a near miss.<br>
+      A child hurt themselves? <a href="/ey/incident/new">Accident report</a>.
+      Worried about a child's welfare? <a href="/ey/safeguarding/new">Safeguarding concern</a>.
+    </p>
+
+    <!-- Step 1: what happened -->
+    <div class="si-section">
+      <span class="si-label">What happened? <span class="si-hint">(tap one)</span></span>
+      <div id="si-cat-groups"><div class="si-hint">Loading…</div></div>
+    </div>
+
+    <div id="si-prompts" hidden>
+      <h3>Don't forget to record</h3>
+      <ul id="si-prompts-list"></ul>
+    </div>
+
+    <div id="si-ofsted-banner" hidden>
+      <strong>Ofsted must be told about this.</strong>
+      <span id="si-ofsted-text"></span>
+    </div>
+
+    <!-- When -->
+    <div class="si-row">
+      <div class="si-section">
+        <label class="si-label" for="si-date">Date</label>
+        <input class="si-input" type="date" id="si-date" aria-label="Date it happened">
+      </div>
+      <div class="si-section">
+        <label class="si-label" for="si-time">Time</label>
+        <select class="si-input" id="si-time" aria-label="Time it happened"></select>
+      </div>
+    </div>
+
+    <div class="si-section">
+      <label class="si-label" for="si-location">Where</label>
+      <select class="si-input" id="si-location" aria-label="Where it happened"></select>
+    </div>
+    <div class="si-section" id="si-location-other-wrap" hidden>
+      <label class="si-label" for="si-location-other">Other location (specify)</label>
+      <input class="si-input" type="text" id="si-location-other" placeholder="Type the location…" autocomplete="off">
+    </div>
+
+    <div class="si-section">
+      <label class="si-label" for="si-description">What happened <span class="si-hint">(required)</span></label>
+      <textarea class="si-input" id="si-description" rows="4"
+        placeholder="Say it plainly, in the order it happened…"></textarea>
+    </div>
+
+    <div class="si-section">
+      <label class="si-label" for="si-immediate">What you did straight away</label>
+      <textarea class="si-input" id="si-immediate" rows="3"
+        placeholder="Evacuated, isolated the supply, called 999, searched the garden…"></textarea>
+    </div>
+
+    <!-- How serious -->
+    <div class="si-section">
+      <span class="si-label">How serious</span>
+      <div class="si-chips" id="si-sev-chips" role="group" aria-label="Severity">
+        <button type="button" class="si-sev-chip" data-sev="minor">Minor</button>
+        <button type="button" class="si-sev-chip active" data-sev="significant">Significant</button>
+        <button type="button" class="si-sev-chip" data-sev="major">Major</button>
+      </div>
+    </div>
+
+    <!-- Who was there -->
+    <div class="si-row">
+      <div class="si-section">
+        <label class="si-label" for="si-children-present">Children present</label>
+        <input class="si-input" type="number" min="0" id="si-children-present" inputmode="numeric" placeholder="e.g. 24">
+      </div>
+      <div class="si-section">
+        <label class="si-label" for="si-staff-present">Staff present</label>
+        <input class="si-input" type="number" min="0" id="si-staff-present" inputmode="numeric" placeholder="e.g. 7">
+      </div>
+    </div>
+
+    <!-- Children affected: 0..n, none is normal -->
+    <div class="si-section">
+      <span class="si-label">Children affected <span class="si-hint">(only if this is about particular children)</span></span>
+      <div id="si-child-list"></div>
+      <p class="si-none-note" id="si-child-none">No individual child is linked — that's normal for a fire, a leak or a power cut.</p>
+      <button type="button" id="si-child-add" class="si-add-btn"><span aria-hidden="true">👶</span> Add a child</button>
+      <select class="si-input" id="si-child-select" style="margin-top:10px" hidden></select>
+    </div>
+
+    <!-- Evacuation -->
+    <label class="si-toggle" for="si-evac">
+      <input type="checkbox" id="si-evac"><span>The building was evacuated</span>
+    </label>
+    <div class="si-section" id="si-evac-detail" hidden>
+      <label class="si-toggle" for="si-rollcall">
+        <input type="checkbox" id="si-rollcall"><span>Roll call complete — everyone accounted for</span>
+      </label>
+      <label class="si-label" for="si-rollcall-notes" style="margin-top:8px">Roll call notes</label>
+      <textarea class="si-input" id="si-rollcall-notes" rows="2"
+        placeholder="How long it took, anyone missing and for how long…"></textarea>
+    </div>
+
+    <!-- Emergency services -->
+    <label class="si-toggle" for="si-999">
+      <input type="checkbox" id="si-999"><span>Emergency services were called</span>
+    </label>
+    <div class="si-section" id="si-999-detail" hidden>
+      <span class="si-label">Who attended</span>
+      <div class="si-chips" id="si-services" role="group" aria-label="Services attended">
+        <button type="button" class="si-chip" data-service="police">🚓 Police</button>
+        <button type="button" class="si-chip" data-service="fire">🚒 Fire</button>
+        <button type="button" class="si-chip" data-service="ambulance">🚑 Ambulance</button>
+      </div>
+      <label class="si-label" for="si-external-ref" style="margin-top:10px">Their incident number</label>
+      <input class="si-input" type="text" id="si-external-ref" placeholder="Police / fire reference…" autocomplete="off">
+    </div>
+
+    <!-- Photos -->
+    <div class="si-section">
+      <span class="si-label">Photos <span class="si-hint">(the damage, the door, the area — optional)</span></span>
+      <div id="si-photo-strip" role="list" aria-label="Attached photos"></div>
+      <button type="button" id="si-photo-add" class="si-add-btn"><span aria-hidden="true">📷</span> Add photo</button>
+      <input type="file" id="si-photo-input" accept="image/*" capture="environment" multiple hidden>
+    </div>
+
+    <!-- Everything else, folded away until the emergency is over -->
+    <button type="button" id="si-more-toggle">＋ Add the rest (witnesses, parents, agencies)</button>
+    <div id="si-more" hidden>
+      <div class="si-section">
+        <label class="si-label" for="si-witnesses">Witnesses</label>
+        <input class="si-input" type="text" id="si-witnesses" placeholder="Who else saw it…" autocomplete="off">
+      </div>
+      <label class="si-toggle" for="si-parents">
+        <input type="checkbox" id="si-parents"><span>Parents have been told</span>
+      </label>
+      <div class="si-section">
+        <label class="si-label" for="si-parents-message">What parents were told</label>
+        <textarea class="si-input" id="si-parents-message" rows="3"
+          placeholder="The wording used, so everyone says the same thing…"></textarea>
+      </div>
+      <div class="si-section">
+        <span class="si-label">Other agencies informed</span>
+        <div class="si-chips" id="si-agencies" role="group" aria-label="Other agencies">
+          <button type="button" class="si-chip" data-agency="EHO">EHO</button>
+          <button type="button" class="si-chip" data-agency="HSE">HSE</button>
+          <button type="button" class="si-chip" data-agency="Local authority">Local authority</button>
+          <button type="button" class="si-chip" data-agency="Insurer">Insurer</button>
+          <button type="button" class="si-chip" data-agency="Landlord">Landlord</button>
+          <button type="button" class="si-chip" data-agency="UKHSA">UKHSA</button>
+          <button type="button" class="si-chip" data-agency="ICO">ICO</button>
+        </div>
+      </div>
+      <label class="si-toggle" for="si-ofsted-manual">
+        <input type="checkbox" id="si-ofsted-manual"><span>Ofsted needs to be notified about this</span>
+      </label>
+      <label class="si-toggle" for="si-riddor">
+        <input type="checkbox" id="si-riddor"><span>RIDDOR dangerous occurrence</span>
+      </label>
+    </div>
+
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  function _e(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function _p2(n) { return (n < 10 ? '0' : '') + n; }
+  function _param(k) { return new URLSearchParams(location.search).get(k); }
+
+  /* "Where it happened" — deliberately the SAME list as the accident form
+     (ey/incident-new.html), plus the places only a setting incident happens in.
+     Edit freely. */
+  var LOCATIONS = [
+    'Office', 'Preschool corridors', 'Garden room', 'Preschool art room',
+    'Preschool main room', 'Preschool toilets', 'Garden', 'Driveway',
+    'Front gate / entrance', 'Out of setting', 'Baby room', 'Baby room cloakroom',
+    'Changing room', 'Kitchen', 'Staff toilets', 'Baby changing area', 'Baby corridor',
+    'Whole building', 'Car park', 'Store room / shed'
+  ];
+  var LOCATION_OTHER = 'Other (specify)';
+
+  var _cats       = [];      // flat catalogue
+  var _catId      = null;
+  var _cat        = null;
+  var _severity   = 'significant';
+  var _sevTouched = false;   // once the reporter picks one, stop overriding it
+  var _ofstedTouched = false;
+  var _services   = [];
+  var _agencies   = [];
+  var _children   = [];      // [{ id, name }] — 0..n, empty is the normal case
+  var _allChildren = [];
+  var _photoUrls  = [];
+
+  /* ── Topbar buttons ─────────────────────────────────────────────────────── */
+  function _installBack() {
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (!hamburger) return;
+    var btn = document.createElement('button');
+    btn.id = 'si-back';
+    btn.setAttribute('aria-label', 'Back');
+    btn.innerHTML = '&#8592;';
+    btn.addEventListener('click', function() {
+      if (history.length > 1) history.back(); else Wren.navigate('/ey/home');
+    });
+    hamburger.parentNode.insertBefore(btn, hamburger);
+    hamburger.style.display = 'none';
+  }
+  function _installSave() {
+    var tb = document.getElementById('wren-app-topbar') || document.querySelector('.wren-app-topbar');
+    if (!tb) return;
+    var b = document.createElement('button');
+    b.id = 'si-save'; b.textContent = 'Save';
+    b.addEventListener('click', _doSave);
+    var actions = tb.querySelector('.wren-app-topbar-actions');
+    if (actions) actions.insertBefore(b, actions.firstChild); else tb.appendChild(b);
+  }
+
+  /* ── Date / time ────────────────────────────────────────────────────────── */
+  function _initDateTime() {
+    var now = new Date();
+    var today = now.getFullYear() + '-' + _p2(now.getMonth() + 1) + '-' + _p2(now.getDate());
+    var d = document.getElementById('si-date');
+    if (d) { d.value = today; d.max = today; }
+    var t = document.getElementById('si-time');
+    if (t) {
+      var html = '';
+      for (var m = 0; m < 1440; m += 5) {
+        var v = _p2(Math.floor(m / 60)) + ':' + _p2(m % 60);
+        html += '<option value="' + v + '">' + v + '</option>';
+      }
+      t.innerHTML = html;
+      var near = Math.min(1435, Math.round((now.getHours() * 60 + now.getMinutes()) / 5) * 5);
+      t.value = _p2(Math.floor(near / 60)) + ':' + _p2(near % 60);
+    }
+  }
+
+  function _initLocations() {
+    var sel = document.getElementById('si-location');
+    if (!sel) return;
+    var html = '<option value="">Select a location…</option>';
+    LOCATIONS.forEach(function(l) { html += '<option value="' + _e(l) + '">' + _e(l) + '</option>'; });
+    html += '<option value="__other__">' + _e(LOCATION_OTHER) + '</option>';
+    sel.innerHTML = html;
+    sel.addEventListener('change', function() {
+      var w = document.getElementById('si-location-other-wrap');
+      if (w) w.hidden = (sel.value !== '__other__');
+      if (sel.value === '__other__') { var o = document.getElementById('si-location-other'); if (o) o.focus(); }
+    });
+  }
+  function _resolveLocation() {
+    var sel = document.getElementById('si-location');
+    if (!sel) return null;
+    if (sel.value === '__other__') {
+      var o = document.getElementById('si-location-other');
+      return (o && o.value.trim()) ? o.value.trim() : null;
+    }
+    return sel.value || null;
+  }
+
+  /* ── Categories ─────────────────────────────────────────────────────────── */
+  function _loadCategories() {
+    return Wren.api('/api/setting-incidents/categories').then(function(d) {
+      _cats = d.categories || [];
+      var wrap = document.getElementById('si-cat-groups');
+      if (!wrap) return;
+      wrap.innerHTML = (d.groups || []).map(function(g) {
+        return '<div><div class="si-cat-group-name">' + _e(g.group_name) + '</div><div class="si-chips">' +
+          g.categories.map(function(c) {
+            return '<button type="button" class="si-chip" data-cat="' + _e(c.id) + '">' + _e(c.label) + '</button>';
+          }).join('') + '</div></div>';
+      }).join('');
+      wrap.querySelectorAll('.si-chip').forEach(function(chip) {
+        chip.addEventListener('click', function() { _pickCategory(chip.dataset.cat); });
+      });
+      var pre = _param('category');
+      if (pre) _pickCategory(pre);
+    }).catch(function() {
+      var wrap = document.getElementById('si-cat-groups');
+      if (wrap) wrap.innerHTML = '<div class="si-hint">Could not load the category list. Pull down to retry.</div>';
+    });
+  }
+
+  function _pickCategory(id) {
+    var cat = _cats.filter(function(c) { return c.id === id; })[0];
+    if (!cat) return;
+    _catId = id; _cat = cat;
+    document.querySelectorAll('#si-cat-groups .si-chip').forEach(function(c) {
+      c.classList.toggle('active', c.dataset.cat === id);
+    });
+
+    // The category's default severity is a starting point, not a decision — as
+    // soon as the reporter touches the severity chips it stops moving.
+    if (!_sevTouched) _setSeverity(cat.default_severity || 'significant');
+
+    // Prompts: the things this particular kind of event gets forgotten.
+    var box = document.getElementById('si-prompts');
+    var list = document.getElementById('si-prompts-list');
+    if (box && list) {
+      var ps = cat.prompts || [];
+      list.innerHTML = ps.map(function(p) { return '<li>' + _e(p) + '</li>'; }).join('');
+      box.hidden = !ps.length;
+    }
+
+    if (!_ofstedTouched) {
+      var chk = document.getElementById('si-ofsted-manual');
+      if (chk) chk.checked = !!cat.ofsted_notifiable_default;
+    }
+    _renderOfstedBanner();
+    var title = document.getElementById('wren-app-title');
+    if (title) title.textContent = cat.label;
+  }
+
+  function _ofstedOn() {
+    var chk = document.getElementById('si-ofsted-manual');
+    return !!(chk && chk.checked);
+  }
+  function _renderOfstedBanner() {
+    var b = document.getElementById('si-ofsted-banner');
+    var t = document.getElementById('si-ofsted-text');
+    if (!b || !t) return;
+    if (!_ofstedOn()) { b.hidden = true; return; }
+    var extra = (_catId === 'food_poisoning')
+      ? ' Food poisoning must be notified when TWO OR MORE children are affected — if only one child is affected, a manager can clear this on the record.'
+      : '';
+    t.textContent = ' A manager has 14 days from when this happened to notify Ofsted. '
+      + 'Saving this starts that clock and it will chase itself until it is done.' + extra;
+    b.hidden = false;
+  }
+
+  /* ── Severity ───────────────────────────────────────────────────────────── */
+  function _setSeverity(sev) {
+    _severity = sev;
+    document.querySelectorAll('.si-sev-chip').forEach(function(c) {
+      c.classList.toggle('active', c.dataset.sev === sev);
+    });
+  }
+  function _initSeverity() {
+    document.querySelectorAll('.si-sev-chip').forEach(function(c) {
+      c.addEventListener('click', function() { _sevTouched = true; _setSeverity(c.dataset.sev); });
+    });
+  }
+
+  /* ── Multi-select chip rows (services, agencies) ────────────────────────── */
+  function _initChipSet(containerId, attr, store) {
+    var wrap = document.getElementById(containerId);
+    if (!wrap) return;
+    wrap.querySelectorAll('.si-chip').forEach(function(chip) {
+      chip.addEventListener('click', function() {
+        var v = chip.dataset[attr];
+        var i = store.indexOf(v);
+        if (i >= 0) store.splice(i, 1); else store.push(v);
+        chip.classList.toggle('active', i < 0);
+      });
+    });
+  }
+
+  /* ── Toggles that reveal a detail block ─────────────────────────────────── */
+  function _initToggles() {
+    var evac = document.getElementById('si-evac');
+    var evacD = document.getElementById('si-evac-detail');
+    if (evac && evacD) evac.addEventListener('change', function() { evacD.hidden = !evac.checked; });
+
+    var e999 = document.getElementById('si-999');
+    var e999D = document.getElementById('si-999-detail');
+    if (e999 && e999D) e999.addEventListener('change', function() { e999D.hidden = !e999.checked; });
+
+    var more = document.getElementById('si-more');
+    var moreBtn = document.getElementById('si-more-toggle');
+    if (more && moreBtn) moreBtn.addEventListener('click', function() {
+      more.hidden = !more.hidden;
+      moreBtn.textContent = more.hidden ? '＋ Add the rest (witnesses, parents, agencies)'
+                                        : '－ Hide the rest';
+    });
+
+    var ofs = document.getElementById('si-ofsted-manual');
+    if (ofs) ofs.addEventListener('change', function() { _ofstedTouched = true; _renderOfstedBanner(); });
+  }
+
+  /* ── Children: 0..n ─────────────────────────────────────────────────────── */
+  function _renderChildren() {
+    var list = document.getElementById('si-child-list');
+    var none = document.getElementById('si-child-none');
+    if (!list) return;
+    list.innerHTML = _children.map(function(c, i) {
+      return '<span class="si-child-tag">' + _e(c.name) +
+             '<button type="button" data-i="' + i + '" aria-label="Remove ' + _e(c.name) + '">&times;</button></span>';
+    }).join('');
+    list.querySelectorAll('button').forEach(function(b) {
+      b.addEventListener('click', function() {
+        _children.splice(parseInt(b.dataset.i, 10), 1); _renderChildren();
+      });
+    });
+    if (none) none.hidden = _children.length > 0;
+  }
+
+  function _initChildren() {
+    var addBtn = document.getElementById('si-child-add');
+    var sel = document.getElementById('si-child-select');
+    if (!addBtn || !sel) return;
+
+    addBtn.addEventListener('click', function() {
+      if (!sel.hidden) { sel.hidden = true; return; }
+      sel.hidden = false;
+      if (_allChildren.length) { sel.focus(); return; }
+      Wren.api('/api/children?status=active').then(function(d) {
+        _allChildren = (d.children || d || []).filter(function(c) { return c && c.id; });
+        sel.innerHTML = '<option value="">Choose a child…</option>' + _allChildren.map(function(c) {
+          var n = ((c.preferred_name || c.first_name || '') + ' ' + (c.last_name || '')).trim() || ('#' + c.id);
+          return '<option value="' + c.id + '">' + _e(n) + '</option>';
+        }).join('');
+        sel.focus();
+      }).catch(function() { Wren.toast('Could not load the children list', 'error'); });
+    });
+
+    sel.addEventListener('change', function() {
+      var id = parseInt(sel.value, 10);
+      if (!id) return;
+      var c = _allChildren.filter(function(x) { return x.id === id; })[0];
+      var n = c ? (((c.preferred_name || c.first_name || '') + ' ' + (c.last_name || '')).trim() || ('#' + id)) : ('#' + id);
+      if (!_children.some(function(x) { return x.id === id; })) _children.push({ id: id, name: n });
+      sel.value = ''; sel.hidden = true;
+      _renderChildren();
+    });
+
+    // A child hub can deep-link straight here with ?child=NN (e.g. from a lost
+    // child on that child's page) — pre-link them rather than making staff hunt.
+    var pre = _param('child');
+    if (pre && /^\d+$/.test(pre)) {
+      Wren.api('/api/children/' + pre + '/profile').then(function(d) {
+        _children.push({ id: parseInt(pre, 10),
+          name: ((d.first_name || '') + ' ' + (d.last_name || '')).trim() || ('#' + pre) });
+        _renderChildren();
+      }).catch(function() {});
+    }
+  }
+
+  /* ── Photos ─────────────────────────────────────────────────────────────── */
+  function _initPhotos() {
+    var addBtn = document.getElementById('si-photo-add');
+    var input  = document.getElementById('si-photo-input');
+    if (!addBtn || !input) return;
+    addBtn.addEventListener('click', function() { input.click(); });
+    input.addEventListener('change', function() {
+      var files = Array.prototype.slice.call(input.files || []);
+      input.value = '';
+      files.forEach(_uploadPhoto);
+    });
+  }
+
+  function _renderPhotoStrip() {
+    var strip = document.getElementById('si-photo-strip');
+    if (!strip) return;
+    strip.innerHTML = '';
+    _photoUrls.forEach(function(url, i) {
+      var wrap = document.createElement('div');
+      wrap.className = 'si-photo-wrap';
+      wrap.setAttribute('role', 'listitem');
+      var img = document.createElement('img');
+      // b491 (2026-10-12): `url` (from the /upload response) now arrives already
+      // signed with a short-lived MEDIA_URL_KEY token (src/lib/media-url.js,
+      // applied server-side to every response) — appending Wren.getToken() here
+      // on top would overwrite that signed token with the raw 12h session JWT
+      // (the exact thing release CHECK.md finding F1 flagged) and the server no
+      // longer accepts that in the query at all. Only the EY device token still
+      // needs appending client-side; the server has no way to know it at upload time.
+      var dv = ''; try { dv = localStorage.getItem('wrenDevice') || ''; } catch (e) {}
+      img.src = url + (dv ? ((url.indexOf('?') === -1 ? '?' : '&') + 'dev=' + encodeURIComponent(dv)) : '');
+      img.alt = 'Attached photo ' + (i + 1);
+      var rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'si-photo-remove';
+      rm.setAttribute('aria-label', 'Remove photo ' + (i + 1));
+      rm.innerHTML = '&times;';
+      rm.addEventListener('click', function() { _removePhoto(url); });
+      wrap.appendChild(img); wrap.appendChild(rm);
+      strip.appendChild(wrap);
+    });
+  }
+
+  function _uploadPhoto(file) {
+    if (!file || !/^image\//.test(file.type)) { Wren.toast('Only image files can be attached', 'error'); return; }
+    if (file.size > 8 * 1024 * 1024) { Wren.toast('Images must be under 8MB', 'error'); return; }
+    var strip = document.getElementById('si-photo-strip');
+    var ph = null;
+    if (strip) {
+      ph = document.createElement('div');
+      ph.className = 'si-photo-wrap uploading';
+      try { ph.appendChild(Object.assign(document.createElement('img'), { src: URL.createObjectURL(file) })); } catch (_) {}
+      strip.appendChild(ph);
+    }
+    var fd = new FormData();
+    fd.append('photos', file);
+    // Raw fetch, NOT Wren.api: Wren.api forces JSON and would corrupt the multipart body.
+    var headers = {};
+    var tok = (window.Wren && Wren.getToken) ? Wren.getToken() : null;
+    if (tok) headers.Authorization = 'Bearer ' + tok;
+    var dev = '';
+    try { dev = localStorage.getItem('wrenDevice') || ''; } catch (e) {}
+    if (dev) headers['X-Wren-Device'] = dev;
+    fetch('/api/setting-incidents/upload', { method: 'POST', headers: headers, body: fd })
+      .then(function(r) {
+        if (r.status === 401) { Wren.logout(); return Promise.reject(new Error('Session expired')); }
+        if (!r.ok) return r.json().then(function(d) { return Promise.reject(new Error(d.error || 'upload failed')); });
+        return r.json();
+      })
+      .then(function(res) {
+        var url = res && res.urls && res.urls[0];
+        if (url) _photoUrls.push(url);
+        _renderPhotoStrip();
+      })
+      .catch(function(err) {
+        if (ph && ph.parentNode) ph.parentNode.removeChild(ph);
+        Wren.toast('Photo upload failed: ' + (err.message || 'error'), 'error');
+      });
+  }
+
+  function _removePhoto(url) {
+    var i = _photoUrls.indexOf(url);
+    if (i >= 0) _photoUrls.splice(i, 1);
+    _renderPhotoStrip();
+    var fname = url.split('/').pop();
+    if (fname) Wren.api('/api/setting-incidents/photo/' + encodeURIComponent(fname), { method: 'DELETE' }).catch(function() {});
+  }
+
+  /* ── Save ───────────────────────────────────────────────────────────────── */
+  function _val(id) {
+    var el = document.getElementById(id);
+    return el ? (el.value || '').trim() || null : null;
+  }
+  function _chk(id) {
+    var el = document.getElementById(id);
+    return !!(el && el.checked);
+  }
+  function _int(id) {
+    var v = _val(id);
+    if (v == null) return null;
+    var n = parseInt(v, 10);
+    return isNaN(n) ? null : n;
+  }
+
+  function _doSave() {
+    var btn = document.getElementById('si-save');
+    if (!_catId) { Wren.toast('Choose what happened first', 'error'); return; }
+    var desc = _val('si-description');
+    if (!desc) { Wren.toast('Please say what happened', 'error'); return; }
+    if (btn) btn.disabled = true;
+
+    var date = _val('si-date') || new Date().toISOString().slice(0, 10);
+    var time = _val('si-time') || '00:00';
+
+    var payload = {
+      category:         _catId,
+      severity:         _severity,
+      // Local wall-clock time. new Date('YYYY-MM-DDTHH:MM') is parsed in the
+      // browser's zone, which is the setting's zone — the server stores the
+      // resulting instant, so 09:20 in Ealing stays 09:20 in Ealing.
+      occurred_at:      new Date(date + 'T' + time).toISOString(),
+      location:         _resolveLocation(),
+      description:      desc,
+      immediate_action: _val('si-immediate'),
+      witness_names:    _val('si-witnesses'),
+      children_present: _int('si-children-present'),
+      staff_present:    _int('si-staff-present'),
+      evacuation_required: _chk('si-evac'),
+      roll_call_complete:  _chk('si-evac') ? _chk('si-rollcall') : null,
+      roll_call_notes:     _val('si-rollcall-notes'),
+      emergency_services_called: _chk('si-999'),
+      services_attended:   _services.slice(),
+      external_ref:        _val('si-external-ref'),
+      ofsted_notifiable:   _ofstedOn(),
+      riddor_dangerous_occurrence: _chk('si-riddor'),
+      other_agencies:      _agencies.slice(),
+      parents_informed:    _chk('si-parents'),
+      parents_message:     _val('si-parents-message'),
+      photo_urls:          _photoUrls.slice(),
+      children:            _children.map(function(c) { return { child_id: c.id }; }),
+    };
+
+    Wren.api('/api/setting-incidents', { method: 'POST', body: JSON.stringify(payload) })
+      .then(function(res) {
+        var ref = (res && res.incident_ref) || '';
+        Wren.toast('Setting incident saved' + (ref ? ' — ' + ref : ''), 'success');
+        if (res && res.ofsted_notifiable && res.ofsted_due_by) {
+          setTimeout(function() {
+            Wren.toast('Ofsted must be notified by ' + String(res.ofsted_due_by).slice(0, 10)
+                       + '. A manager has been alerted.', 'info');
+          }, 900);
+        }
+        setTimeout(function() { Wren.navigate('/ey/home'); }, 2400);
+      })
+      .catch(function(err) {
+        if (btn) btn.disabled = false;
+        Wren.toast('Could not save: ' + (err.message || 'error'), 'error');
+      });
+  }
+
+  /* ── Boot ───────────────────────────────────────────────────────────────── */
+  document.addEventListener('wren:ready', function() {
+    _installBack();
+    _installSave();
+    _initDateTime();
+    _initLocations();
+    _initSeverity();
+    _initToggles();
+    _initChipSet('si-services', 'service', _services);
+    _initChipSet('si-agencies', 'agency', _agencies);
+    _initChildren();
+    _renderChildren();
+    _initPhotos();
+    _loadCategories();
+  });
+
+}());
+</script>
+</body>
+</html>

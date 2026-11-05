@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Waitlist Manager — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .wl-table{width:100%;border-collapse:collapse;font-size:.84rem}
+    .wl-table th{position:sticky;top:0;background:var(--c-card);text-align:left;padding:9px 10px;border-bottom:2px solid var(--c-border);font-size:.74rem;text-transform:uppercase;letter-spacing:.4px;color:var(--c-muted);cursor:pointer;white-space:nowrap;user-select:none}
+    .wl-table th.nosort{cursor:default}
+    .wl-table th .arrow{opacity:.4;font-size:.7rem}
+    .wl-table td{padding:9px 10px;border-bottom:1px solid var(--c-border);vertical-align:top}
+    .wl-row{cursor:pointer;transition:background .1s}
+    .wl-row:hover{background:rgba(74,154,191,.07)}
+    .wl-notes{max-width:220px;color:var(--c-muted);font-size:.78rem}
+    .pri-pill{display:inline-block;min-width:34px;text-align:center;padding:2px 8px;border-radius:8px;font-weight:700;font-size:.78rem}
+    .pri-hi{background:rgba(74,154,99,.18);color:#4a9a63}
+    .pri-md{background:rgba(216,133,63,.18);color:#d8853f}
+    .pri-lo{background:rgba(100,116,139,.18);color:#94a3b8}
+    .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:.68rem;background:rgba(74,154,191,.15);color:#4a9abf;margin:1px}
+    /* drawer */
+    .drawer-back{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:60}
+    .drawer{position:fixed;top:0;right:0;height:100vh;width:min(560px,100%);background:var(--c-card);border-left:1px solid var(--c-border);box-shadow:-8px 0 24px rgba(0,0,0,.25);z-index:61;transform:translateX(100%);transition:transform .22s ease;overflow-y:auto;display:flex;flex-direction:column}
+    .drawer.open{transform:translateX(0)}
+    .drawer-head{padding:16px 18px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:10px;position:sticky;top:0;background:var(--c-card);z-index:2}
+    .drawer-body{padding:16px 18px;flex:1}
+    .fld{margin-bottom:12px}
+    .fld label{display:block;font-size:.74rem;font-weight:600;color:var(--c-muted);margin-bottom:4px}
+    .fld input[type=text],.fld input[type=number],.fld input[type=date],.fld textarea,.fld select{width:100%}
+    .chk{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;margin-right:16px}
+    .wt-box{background:#0f172a0d;border:1px solid var(--c-border);border-radius:10px;padding:12px;white-space:pre-wrap;font-size:.84rem;line-height:1.6;color:var(--c-text)}
+    .tl-item{border-left:3px solid var(--c-border);padding:6px 0 6px 12px;margin:8px 0;font-size:.8rem}
+    .tl-item .tl-meta{color:var(--c-muted);font-size:.72rem}
+    .spinner-sm{width:14px;height:14px;border:2px solid rgba(74,154,191,.3);border-top-color:#4a9abf;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .sect-h{font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--c-muted);font-weight:700;margin:18px 0 8px;border-top:1px solid var(--c-border);padding-top:12px}
+    /* b184 — bulk email + book-viewing */
+    .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:70;align-items:center;justify-content:center;padding:16px}
+    .modal-back.open{display:flex}
+    .modal-box{background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;width:min(560px,100%);max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+    .modal-head{padding:14px 18px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:10px;font-weight:700}
+    .modal-body{padding:16px 18px}
+    .modal-foot{padding:12px 18px;border-top:1px solid var(--c-border);display:flex;gap:8px;align-items:center}
+    .preview-box{background:rgba(74,154,191,.08);border:1px solid var(--c-border);border-radius:10px;padding:10px 12px;font-size:.82rem;margin-top:10px;display:none}
+    .preview-box.show{display:block}
+    .staff-pick{display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow-y:auto;border:1px solid var(--c-border);border-radius:10px;padding:8px}
+    .staff-pick label{display:inline-flex;align-items:center;gap:5px;font-size:.8rem;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;padding:3px 8px;cursor:pointer}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">⭐ Waitlist Manager</div>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-secondary btn-sm" id="btn-bulk">✉️ Email list</button>
+      <button class="btn btn-secondary btn-sm" id="btn-auto">Run auto-actions</button>
+      <button class="btn btn-secondary btn-sm" id="btn-termly">Termly update email</button>
+      <button class="btn btn-secondary btn-sm" id="btn-rescore">Recompute priority</button>
+      <a href="/admissions/index.html" class="btn btn-ghost btn-sm">← Admissions</a>
+    </div>
+  </div>
+  <div style="margin-bottom:10px;color:var(--c-muted);font-size:.82rem" id="wl-summary"></div>
+  <div class="card" style="padding:0;overflow:auto;max-height:calc(100vh - 200px)">
+    <table class="wl-table" id="wl-table">
+      <thead>
+        <tr>
+          <th data-sort="priority_score">Priority <span class="arrow">⇅</span></th>
+          <th data-sort="child_first_name">Child <span class="arrow">⇅</span></th>
+          <th data-sort="age_months_now">Age (mo) <span class="arrow">⇅</span></th>
+          <th data-sort="room_needed">Room <span class="arrow">⇅</span></th>
+          <th data-sort="expected_start_date">Start <span class="arrow">⇅</span></th>
+          <th data-sort="parent_name">Parent <span class="arrow">⇅</span></th>
+          <th data-sort="months_on_list">On list <span class="arrow">⇅</span></th>
+          <th data-sort="status">Status <span class="arrow">⇅</span></th>
+          <th class="nosort">Notes</th>
+        </tr>
+      </thead>
+      <tbody id="wl-body">
+        <tr><td colspan="9" style="padding:30px;text-align:center"><span class="spinner-sm"></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Detail drawer -->
+<div class="drawer-back" id="drawer-back"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div style="font-weight:700" id="dr-title">—</div>
+    <button class="btn btn-ghost btn-sm" id="dr-close" style="margin-left:auto">✕</button>
+  </div>
+  <div class="drawer-body" id="dr-body"></div>
+</div>
+
+<!-- b184: bulk email by pipeline stage -->
+<div class="modal-back" id="bulk-back">
+  <div class="modal-box">
+    <div class="modal-head">✉️ Email the waiting list
+      <button class="btn btn-ghost btn-sm" id="bulk-close" style="margin-left:auto">✕</button></div>
+    <div class="modal-body">
+      <div class="fld">
+        <label>Who gets this?</label>
+        <select id="bulk-stage" class="form-control"><option value="all">Loading stages…</option></select>
+      </div>
+      <div class="fld"><label>Subject</label>
+        <input type="text" id="bulk-subject" class="form-control" placeholder="Your Nursery — an update from us"></div>
+      <div class="fld"><label>Message (HTML allowed)</label>
+        <textarea id="bulk-body" rows="7" class="form-control" placeholder="Hello,&#10;&#10;..."></textarea></div>
+      <div style="font-size:.76rem;color:var(--c-muted)">
+        Families are BCC'd in batches of 90 — nobody sees anyone else's address.
+        Rows with no email address are skipped and counted.
+      </div>
+      <div class="preview-box" id="bulk-preview"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary btn-sm" id="bulk-preview-btn">Preview recipients</button>
+      <button class="btn btn-primary btn-sm" id="bulk-send-btn" disabled>Send…</button>
+      <span id="bulk-msg" style="font-size:.8rem;color:var(--c-muted)"></span>
+    </div>
+  </div>
+</div>
+
+<!-- b184: book a viewing -->
+<div class="modal-back" id="view-back">
+  <div class="modal-box">
+    <div class="modal-head">📅 Book a viewing — <span id="view-who">—</span>
+      <button class="btn btn-ghost btn-sm" id="view-close" style="margin-left:auto">✕</button></div>
+    <div class="modal-body">
+      <div class="fld"><label>Date &amp; time</label>
+        <input type="datetime-local" id="view-when" class="form-control"></div>
+      <div class="fld"><label>How long? (minutes)</label>
+        <input type="number" id="view-duration" class="form-control" value="45" min="5" max="480" step="5"></div>
+      <div class="fld"><label>Which staff are showing them round?</label>
+        <div class="staff-pick" id="view-staff">Loading staff…</div></div>
+      <div class="fld"><label>Notes for the staff</label>
+        <textarea id="view-notes" rows="3" class="form-control" placeholder="Wants to see the baby room; sibling already with us."></textarea></div>
+      <div style="font-size:.76rem;color:var(--c-muted)">
+        Moves the family to the viewing stage, puts it on the staff calendar, notifies whoever
+        you tick, and schedules automatic reminders 24h and 1h before.
+      </div>
+      <div class="preview-box" id="view-result"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary btn-sm" id="view-book-btn">Book viewing</button>
+      <span id="view-msg" style="font-size:.8rem;color:var(--c-muted)"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let rows = [], sortKey = 'priority_score', sortDir = -1, current = null;
+let staffCache = null, bulkPreviewed = null;
+
+document.addEventListener('wren:ready', () => {
+  document.getElementById('wl-table').querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = (k === 'child_first_name' || k === 'parent_name' || k === 'room_needed' || k === 'status') ? 1 : -1; }
+      renderTable();
+    });
+  });
+  document.getElementById('wl-body').addEventListener('click', e => {
+    const tr = e.target.closest('[data-id]'); if (tr) openDrawer(parseInt(tr.dataset.id));
+  });
+  document.getElementById('dr-close').addEventListener('click', closeDrawer);
+  document.getElementById('drawer-back').addEventListener('click', closeDrawer);
+  document.getElementById('btn-rescore').addEventListener('click', doRescore);
+  document.getElementById('btn-termly').addEventListener('click', doTermly);
+  document.getElementById('btn-auto').addEventListener('click', doAuto);
+  // b184 — bulk email + book viewing
+  document.getElementById('btn-bulk').addEventListener('click', openBulk);
+  document.getElementById('bulk-close').addEventListener('click', () => closeModal('bulk-back'));
+  document.getElementById('bulk-back').addEventListener('click', e => { if (e.target.id === 'bulk-back') closeModal('bulk-back'); });
+  document.getElementById('bulk-preview-btn').addEventListener('click', previewBulk);
+  document.getElementById('bulk-send-btn').addEventListener('click', sendBulk);
+  document.getElementById('bulk-stage').addEventListener('change', resetBulkPreview);
+  document.getElementById('view-close').addEventListener('click', () => closeModal('view-back'));
+  document.getElementById('view-back').addEventListener('click', e => { if (e.target.id === 'view-back') closeModal('view-back'); });
+  document.getElementById('view-book-btn').addEventListener('click', bookViewing);
+  load();
+});
+
+async function load() {
+  try {
+    rows = await Wren.api('/api/waitlist');
+    if (!Array.isArray(rows)) rows = [];
+    document.getElementById('wl-summary').textContent = rows.length + ' families on the active waiting list. Click a header to sort; click a row for detail + Wren thoughts.';
+    renderTable();
+  } catch (e) {
+    document.getElementById('wl-body').innerHTML = '<tr><td colspan="9" style="padding:20px;color:#ef4444">Failed to load: ' + (e.message || e) + '</td></tr>';
+  }
+}
+
+function priPill(v) {
+  const n = Number(v) || 0;
+  const cls = n >= 45 ? 'pri-hi' : n >= 28 ? 'pri-md' : 'pri-lo';
+  return '<span class="pri-pill ' + cls + '">' + (Math.round(n * 10) / 10) + '</span>';
+}
+function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function renderTable() {
+  const dir = sortDir;
+  const sorted = rows.slice().sort((a, b) => {
+    let x = a[sortKey], y = b[sortKey];
+    if (x == null) x = ''; if (y == null) y = '';
+    if (typeof x === 'string' || typeof y === 'string') return String(x).localeCompare(String(y)) * dir;
+    return (x - y) * dir;
+  });
+  document.getElementById('wl-body').innerHTML = sorted.map(r => {
+    const tags = [];
+    if (r.flexible_start) tags.push('<span class="tag">flex start</span>');
+    if (r.flexible_parttime) tags.push('<span class="tag">flex days</span>');
+    if (r.existing_family) tags.push('<span class="tag">sibling</span>');
+    if (r.wren_thoughts) tags.push('<span class="tag" style="background:rgba(74,154,99,.15);color:#4a9a63">🐦 analysed</span>');
+    return '<tr class="wl-row" data-id="' + r.id + '">' +
+      '<td>' + priPill(r.priority_score) + '</td>' +
+      '<td><strong>' + esc(r.child_first_name) + ' ' + esc(r.child_last_name) + '</strong></td>' +
+      '<td>' + (r.age_months_now != null ? r.age_months_now : '—') + '</td>' +
+      '<td>' + esc(r.room_needed || '—') + '</td>' +
+      '<td>' + (r.expected_start_date ? esc(String(r.expected_start_date).slice(0, 10)) : '—') + '</td>' +
+      '<td>' + esc(r.parent_name || '—') + '</td>' +
+      '<td>' + (r.months_on_list != null ? r.months_on_list + 'mo' : '—') + '</td>' +
+      '<td>' + esc(r.status || 'waiting') + '</td>' +
+      '<td class="wl-notes">' + esc(r.notes || '') + ' ' + tags.join('') + '</td>' +
+      '</tr>';
+  }).join('') || '<tr><td colspan="9" style="padding:20px;color:var(--c-muted)">No active waitlist entries.</td></tr>';
+}
+
+function openDrawer(id) {
+  current = rows.find(r => r.id === id); if (!current) return;
+  const r = current;
+  document.getElementById('dr-title').textContent = (r.child_first_name || '') + ' ' + (r.child_last_name || '');
+  const days = Array.isArray(r.preferred_days) ? r.preferred_days.join(',') : '';
+  document.getElementById('dr-body').innerHTML =
+    '<div style="margin-bottom:8px">' + priPill(r.priority_score) + ' priority · age ~' + (r.age_months_now ?? '?') + 'mo · on list ' + (r.months_on_list ?? '?') + 'mo</div>' +
+    '<div class="sect-h">At-a-glance note</div>' +
+    '<div class="fld"><textarea id="f-notes" rows="2" class="form-control">' + esc(r.notes || '') + '</textarea></div>' +
+    '<div class="sect-h">Qualitative detail</div>' +
+    '<div class="fld"><label>How did they hear about us?</label><input type="text" id="f-how_heard" class="form-control" value="' + esc(r.how_heard || '') + '"></div>' +
+    '<div class="fld"><label>Existing family link (sibling etc.)</label><input type="text" id="f-existing_family" class="form-control" value="' + esc(r.existing_family || '') + '"></div>' +
+    '<div class="fld"><label class="chk"><input type="checkbox" id="f-flexible_start" ' + (r.flexible_start ? 'checked' : '') + '> Flexible on start date</label>' +
+      '<label class="chk"><input type="checkbox" id="f-flexible_parttime" ' + (r.flexible_parttime ? 'checked' : '') + '> Flexible on days/part-time</label></div>' +
+    '<div class="fld"><label>Room needed</label><input type="text" id="f-room_needed" class="form-control" value="' + esc(r.room_needed || '') + '"></div>' +
+    '<div class="fld"><label>Requested start date</label><input type="date" id="f-expected_start_date" class="form-control" value="' + (r.expected_start_date ? String(r.expected_start_date).slice(0, 10) : '') + '"></div>' +
+    '<div class="fld"><label>Preferred days (comma sep)</label><input type="text" id="f-preferred_days" class="form-control" value="' + esc(days) + '"></div>' +
+    '<div class="fld"><label>Willing to wait / duration (months)</label><input type="number" id="f-list_duration_months" class="form-control" value="' + (r.list_duration_months ?? '') + '"></div>' +
+    '<div class="fld"><label>Auto action</label><select id="f-auto_action" class="form-control">' +
+      ['', 'keep', 'remove', 'reserve_ready'].map(v => '<option value="' + v + '"' + (r.auto_action === v ? ' selected' : '') + '>' + (v || '(none)') + '</option>').join('') + '</select></div>' +
+    '<div class="fld"><label>Private notes (staff only)</label><textarea id="f-private_notes" rows="2" class="form-control">' + esc(r.private_notes || '') + '</textarea></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" id="dr-save">Save</button>' +
+      '<span id="dr-save-msg" style="align-self:center;font-size:.8rem;color:var(--c-muted)"></span></div>' +
+    '<div class="sect-h">🐦 Wren thoughts</div>' +
+    '<div class="fld"><button class="btn btn-secondary btn-sm" id="dr-analyse">' + (r.wren_thoughts ? 'Re-analyse' : 'Analyse fit & priority') + '</button>' +
+      '<span id="dr-analyse-msg" style="margin-left:8px;font-size:.8rem;color:var(--c-muted)"></span></div>' +
+    '<div class="wt-box" id="dr-thoughts" style="' + (r.wren_thoughts ? '' : 'display:none') + '">' + esc(r.wren_thoughts || '') + '</div>' +
+    (r.wren_thoughts_at ? '<div style="font-size:.72rem;color:var(--c-muted);margin-top:4px">Last analysed ' + new Date(r.wren_thoughts_at).toLocaleString('en-GB') + '</div>' : '') +
+    '<div class="sect-h">📅 Viewing</div>' +
+    '<div class="fld"><div style="font-size:.8rem;color:var(--c-muted);margin-bottom:6px">Current stage: <strong>' + esc(r.status || 'waiting') + '</strong></div>' +
+      '<button class="btn btn-secondary btn-sm" id="dr-viewing">Move to viewing &amp; book a time</button> ' +
+      // b336 (2026-09-17) — the slot-based system: office picks an open slot on the
+      // grid, the room confirms it. Additive alongside the flow above, not a
+      // replacement — that one still books straight onto the calendar for a
+      // manager who already knows exactly when.
+      '<a class="btn btn-ghost btn-sm" href="/admin/viewings?family_type=waiting_list&family_id=' + r.id + '" target="_blank" rel="noopener">Book via slots →</a></div>' +
+    '<div class="sect-h">Conversation timeline</div>' +
+    '<div id="dr-timeline"><button class="btn btn-ghost btn-sm" id="dr-loadtl">Load calls & messages</button></div>' +
+    // b534 — relationship note + any phone/details the local model found in this
+    // family's emails (scripts/family-context-from-email.js). Lazy-loaded like the
+    // timeline above, and silently does nothing if this account isn't a manager.
+    '<div class="sect-h">📝 Family notes</div>' +
+    '<div id="dr-famnotes"><button class="btn btn-ghost btn-sm" id="dr-loadfn">Load family notes</button></div>';
+
+  document.getElementById('dr-viewing').addEventListener('click', () => openViewing(r));
+  document.getElementById('dr-save').addEventListener('click', saveDrawer);
+  document.getElementById('dr-analyse').addEventListener('click', analyse);
+  document.getElementById('dr-loadtl').addEventListener('click', loadTimeline);
+  document.getElementById('dr-loadfn').addEventListener('click', loadFamilyNotes);
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-back').style.display = 'block';
+}
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-back').style.display = 'none';
+}
+
+async function saveDrawer() {
+  const g = id => document.getElementById(id);
+  const body = {
+    notes: g('f-notes').value, how_heard: g('f-how_heard').value, existing_family: g('f-existing_family').value,
+    flexible_start: g('f-flexible_start').checked, flexible_parttime: g('f-flexible_parttime').checked,
+    room_needed: g('f-room_needed').value, expected_start_date: g('f-expected_start_date').value || null,
+    preferred_days: g('f-preferred_days').value ? g('f-preferred_days').value.split(',').map(s => s.trim()).filter(Boolean) : null,
+    list_duration_months: g('f-list_duration_months').value ? parseInt(g('f-list_duration_months').value) : null,
+    auto_action: g('f-auto_action').value || null, private_notes: g('f-private_notes').value,
+  };
+  const msg = document.getElementById('dr-save-msg'); msg.textContent = 'Saving…';
+  try {
+    const updated = await Wren.api('/api/waitlist/' + current.id, { method: 'PUT', body });
+    Object.assign(current, updated);
+    const i = rows.findIndex(r => r.id === current.id); if (i >= 0) rows[i] = current;
+    msg.textContent = 'Saved ✓ (priority ' + updated.priority_score + ')';
+    renderTable();
+  } catch (e) { msg.textContent = 'Save failed: ' + (e.message || e); }
+}
+
+async function analyse() {
+  const btn = document.getElementById('dr-analyse'), msg = document.getElementById('dr-analyse-msg');
+  btn.disabled = true; msg.innerHTML = '<span class="spinner-sm"></span> Asking the local model (~30-60s)…';
+  try {
+    const r = await Wren.api('/api/waitlist/' + current.id + '/analyse', { method: 'POST', body: {} });
+    const box = document.getElementById('dr-thoughts');
+    box.style.display = ''; box.textContent = r.wren_thoughts;
+    current.wren_thoughts = r.wren_thoughts; current.wren_thoughts_at = r.wren_thoughts_at; current.priority_score = r.priority_score;
+    const i = rows.findIndex(x => x.id === current.id); if (i >= 0) rows[i] = current;
+    msg.textContent = 'Done (' + (r.model || '') + ')'; renderTable();
+  } catch (e) { msg.textContent = 'Failed: ' + (e.message || e); }
+  finally { btn.disabled = false; btn.textContent = 'Re-analyse'; }
+}
+
+async function loadTimeline() {
+  const el = document.getElementById('dr-timeline'); el.innerHTML = '<span class="spinner-sm"></span> Loading…';
+  try {
+    const t = await Wren.api('/api/waitlist/' + current.id + '/timeline');
+    if (!t.count) { el.innerHTML = '<div style="color:var(--c-muted);font-size:.8rem">No matched calls or messages (matched on: ' + JSON.stringify(t.matched_on) + ').</div>'; return; }
+    el.innerHTML = t.events.map(ev =>
+      '<div class="tl-item">' +
+      '<div class="tl-meta">' + (ev.type === 'call' ? '📞 call' : '✉️ ' + (ev.direction || 'msg')) + ' · ' + (ev.source || '') + ' · ' + (ev.at ? new Date(ev.at).toLocaleString('en-GB') : '') + '</div>' +
+      '<div>' + esc(ev.summary || '') + '</div></div>').join('');
+  } catch (e) { el.innerHTML = '<div style="color:#ef4444">Failed: ' + (e.message || e) + '</div>'; }
+}
+
+// b534 — same /api/comms/family-notes the child profile's Messages & emails tab
+// uses, keyed by waiting_list_id here instead of child_id. Managers only — a 403
+// just leaves the lazy-load button in place rather than showing an error.
+async function loadFamilyNotes() {
+  const wlId = current.id;
+  const el = document.getElementById('dr-famnotes'); el.innerHTML = '<span class="spinner-sm"></span> Loading…';
+  try {
+    const d = await Wren.api('/api/comms/family-notes?waiting_list_id=' + wlId);
+    const note = d.note || {};
+    const important = Array.isArray(note.important) ? note.important : [];
+    const fills = (Array.isArray(d.fills) ? d.fills : []).filter(f => !f.undone_at);
+    el.innerHTML =
+      (note.note ? '<p style="margin:0 0 6px;font-size:.85rem">' + esc(note.note) + '</p>' : '<div style="color:var(--c-muted);font-size:.8rem">No relationship note yet.</div>') +
+      (important.length ? '<ul style="margin:0 0 6px;padding-left:18px;font-size:.8rem">' +
+        important.map(m => '<li>' + esc((m.date || '') + ' — ' + (m.line || '')) + '</li>').join('') + '</ul>' : '') +
+      (fills.length ? fills.map(f =>
+        '<div style="display:flex;justify-content:space-between;gap:8px;font-size:.8rem;padding:4px 0;border-top:1px solid var(--c-border)">' +
+        '<span><strong>' + esc(f.target_column) + ':</strong> ' + esc(f.value) + ' <span style="color:var(--c-muted)">(found in an email)</span></span>' +
+        '<button class="btn btn-ghost btn-sm" data-undo-fill="' + f.id + '">Undo</button></div>').join('') : '');
+    el.querySelectorAll('[data-undo-fill]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { await Wren.api('/api/comms/family-fills/' + b.getAttribute('data-undo-fill') + '/undo', { method: 'POST' }); loadFamilyNotes(); }
+      catch (e) { Wren.toast && Wren.toast('Could not undo: ' + (e.message || e), 'error'); b.disabled = false; }
+    }));
+  } catch (e) {
+    if (/manager/i.test(e.message || '')) { el.innerHTML = '<button class="btn btn-ghost btn-sm" id="dr-loadfn">Load family notes</button>'; document.getElementById('dr-loadfn').addEventListener('click', loadFamilyNotes); return; }
+    el.innerHTML = '<div style="color:#ef4444">Failed: ' + (e.message || e) + '</div>';
+  }
+}
+
+async function doRescore() {
+  try { const r = await Wren.api('/api/waitlist/rescore', { method: 'POST', body: {} }); Wren.toast && Wren.toast('Rescored ' + r.rescored + ' rows', 'success'); await load(); }
+  catch (e) { alert('Rescore failed: ' + (e.message || e)); }
+}
+async function doTermly() {
+  if (!confirm('Generate termly update emails? This is a DRY RUN (no emails sent) unless you confirm sending next.')) return;
+  try {
+    const r = await Wren.api('/api/waitlist/termly-update', { method: 'POST', body: {} });
+    if (confirm('Dry run: ' + r.total + ' families (' + r.skipped + ' skipped/no email). Send for real now?')) {
+      const r2 = await Wren.api('/api/waitlist/termly-update', { method: 'POST', body: { send: true } });
+      alert('Sent ' + r2.sent + ', skipped ' + r2.skipped + ', failed ' + r2.failed);
+    }
+  } catch (e) { alert('Termly update failed: ' + (e.message || e)); }
+}
+async function doAuto() {
+  try {
+    const r = await Wren.api('/api/waitlist/auto-actions/run', { method: 'POST', body: {} });
+    const summary = 'Checked ' + r.checked + ' · would flag remove: ' + r.flagged_remove + ', reserve-ready: ' + r.flagged_reserve;
+    if (r.flagged_remove + r.flagged_reserve > 0 && confirm(summary + '\n\nApply these changes + queue emails?')) {
+      const r2 = await Wren.api('/api/waitlist/auto-actions/run', { method: 'POST', body: { apply: true } });
+      alert('Applied. remove: ' + r2.flagged_remove + ', reserve-ready: ' + r2.flagged_reserve + ', emails queued: ' + r2.queued_emails);
+      await load();
+    } else { alert(summary + '\n(no changes to apply)'); }
+  } catch (e) { alert('Auto-actions failed: ' + (e.message || e)); }
+}
+
+// ═══ b184 — bulk email by pipeline stage ═══════════════════════════════════
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function resetBulkPreview() {
+  bulkPreviewed = null;
+  document.getElementById('bulk-send-btn').disabled = true;
+  document.getElementById('bulk-preview').classList.remove('show');
+}
+
+async function openBulk() {
+  document.getElementById('bulk-back').classList.add('open');
+  resetBulkPreview();
+  document.getElementById('bulk-msg').textContent = '';
+  // Stage list comes from the DB, so it can never drift from real data.
+  try {
+    const s = await Wren.api('/api/waitlist/bulk-email/stages');
+    const sel = document.getElementById('bulk-stage');
+    sel.innerHTML =
+      '<option value="all">Everyone on the list (' + s.all.with_email + ' with an email)</option>' +
+      (s.stages || []).map(st =>
+        '<option value="' + esc(st.stage) + '">' + esc(st.stage) + ' — ' + st.with_email + ' with an email (' + st.total + ' total)</option>'
+      ).join('');
+  } catch (e) {
+    document.getElementById('bulk-msg').textContent = 'Could not load stages: ' + (e.message || e);
+  }
+}
+
+async function previewBulk() {
+  const msg = document.getElementById('bulk-msg'), box = document.getElementById('bulk-preview');
+  msg.textContent = 'Checking…';
+  try {
+    const r = await Wren.api('/api/waitlist/bulk-email', { method: 'POST', body: {
+      stage: document.getElementById('bulk-stage').value,
+      subject: document.getElementById('bulk-subject').value,
+      body_html: document.getElementById('bulk-body').value,
+      dry_run: true,
+    }});
+    bulkPreviewed = { stage: r.stage, count: r.recipient_count };
+    box.classList.add('show');
+    box.innerHTML = '<strong>' + r.recipient_count + ' recipient' + (r.recipient_count === 1 ? '' : 's') + '</strong>' +
+      ' in stage <strong>' + esc(r.stage) + '</strong>' +
+      (r.skipped_no_email ? ' · ' + r.skipped_no_email + ' skipped (no usable email)' : '') +
+      '<div style="margin-top:6px;max-height:120px;overflow-y:auto;font-size:.76rem;color:var(--c-muted)">' +
+        (r.recipients || []).map(esc).join('<br>') + '</div>' +
+      '<div style="margin-top:6px">Nothing has been sent yet.</div>';
+    document.getElementById('bulk-send-btn').disabled = r.recipient_count === 0;
+    msg.textContent = 'Dry run — nothing sent.';
+  } catch (e) {
+    box.classList.remove('show');
+    msg.textContent = 'Preview failed: ' + (e.message || e);
+  }
+}
+
+async function sendBulk() {
+  if (!bulkPreviewed) return alert('Preview the recipients first.');
+  const subject = document.getElementById('bulk-subject').value.trim();
+  const body = document.getElementById('bulk-body').value.trim();
+  if (!subject || !body) return alert('Subject and message are both required to send.');
+  if (!confirm('Send "' + subject + '" to ' + bulkPreviewed.count + ' families in stage "' + bulkPreviewed.stage + '"?\n\nThis cannot be unsent.')) return;
+  const msg = document.getElementById('bulk-msg');
+  msg.textContent = 'Sending…';
+  try {
+    const r = await Wren.api('/api/waitlist/bulk-email', { method: 'POST', body: {
+      stage: document.getElementById('bulk-stage').value,
+      subject, body_html: body, dry_run: false,
+    }});
+    msg.textContent = r.mail_disabled
+      ? 'Test environment — resolved ' + r.recipient_count + ' recipients, nothing actually sent.'
+      : 'Sent ' + r.sent + (r.failed ? ', failed ' + r.failed : '') + '.';
+    resetBulkPreview();
+  } catch (e) { msg.textContent = 'Send failed: ' + (e.message || e); }
+}
+
+// ═══ b184 — move to viewing: date/time + staff picker ══════════════════════
+async function loadStaff() {
+  if (staffCache) return staffCache;
+  staffCache = await Wren.api('/api/staff');
+  if (!Array.isArray(staffCache)) staffCache = [];
+  return staffCache;
+}
+
+async function openViewing(r) {
+  current = r;
+  document.getElementById('view-who').textContent = (r.child_first_name || '') + ' ' + (r.child_last_name || '');
+  document.getElementById('view-result').classList.remove('show');
+  document.getElementById('view-msg').textContent = '';
+  document.getElementById('view-notes').value = '';
+  // Default to 10:00 tomorrow — far enough out that both reminders still land.
+  const d = new Date(Date.now() + 24 * 3600 * 1000);
+  d.setHours(10, 0, 0, 0);
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('view-when').value =
+    d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  document.getElementById('view-back').classList.add('open');
+  const box = document.getElementById('view-staff');
+  try {
+    const staff = await loadStaff();
+    box.innerHTML = staff.map(s =>
+      '<label><input type="checkbox" class="view-staff-cb" value="' + s.id + '"> ' +
+      esc((s.preferred_name || s.first_name || '') + ' ' + (s.last_name || '')) + '</label>').join('')
+      || '<span style="color:var(--c-muted);font-size:.8rem">No active staff found.</span>';
+  } catch (e) {
+    box.innerHTML = '<span style="color:#ef4444;font-size:.8rem">Could not load staff: ' + esc(e.message || String(e)) + '</span>';
+  }
+}
+
+async function bookViewing() {
+  if (!current) return;
+  const when = document.getElementById('view-when').value;
+  if (!when) return alert('Pick a date and time for the viewing.');
+  const staff_ids = Array.from(document.querySelectorAll('.view-staff-cb:checked')).map(c => parseInt(c.value, 10));
+  if (!staff_ids.length && !confirm('No staff ticked — book the viewing with nobody assigned (and no reminders)?')) return;
+  const msg = document.getElementById('view-msg'), box = document.getElementById('view-result');
+  msg.textContent = 'Booking…';
+  try {
+    const r = await Wren.api('/api/waitlist/' + current.id + '/book-viewing', { method: 'POST', body: {
+      starts_at: when,
+      duration_mins: parseInt(document.getElementById('view-duration').value, 10) || 45,
+      staff_ids,
+      notes: document.getElementById('view-notes').value,
+    }});
+    box.classList.add('show');
+    box.innerHTML = 'Booked ✓ — calendar event <strong>#' + r.event_id + '</strong>, stage now <strong>' + esc(r.status) + '</strong>.' +
+      '<div style="margin-top:4px">Notified ' + (r.notification_ids || []).length + ' staff · ' +
+      (r.reminders || []).length + ' reminder' + ((r.reminders || []).length === 1 ? '' : 's') + ' scheduled.</div>';
+    msg.textContent = '';
+    current.status = r.status;
+    const i = rows.findIndex(x => x.id === current.id); if (i >= 0) rows[i].status = r.status;
+    renderTable();
+  } catch (e) { msg.textContent = 'Booking failed: ' + (e.message || e); }
+}
+</script>
+</body>
+</html>

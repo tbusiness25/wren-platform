@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Absence warnings — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .aw-card { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:16px;margin-bottom:14px; }
+    .aw-caveat { background:var(--c-amber-light);color:var(--c-navy);border:1px solid var(--c-amber);border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.85rem;line-height:1.65; }
+    .aw-info { background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted);border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.84rem;line-height:1.6; }
+    .aw-master { display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:14px 16px;margin-bottom:18px; }
+    .aw-master b { font-size:.95rem;color:var(--c-text); }
+    table.aw { width:100%;border-collapse:collapse;font-size:.85rem; }
+    table.aw th { text-align:left;color:var(--c-muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:8px; }
+    table.aw td { padding:9px 8px;border-top:1px solid var(--c-border);color:var(--c-text);vertical-align:middle; }
+    table.aw input[type=number] { width:78px; }
+    .aw-num { background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-text);border-radius:6px;padding:5px 8px;font-size:.82rem; }
+    .aw-kind { font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em; }
+    .aw-kind.bradford { background:var(--c-blue-light);color:var(--c-blue-dark); }
+    .aw-kind.lateness { background:var(--c-amber-light);color:var(--c-amber); }
+    .pill { font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em; }
+    .pill.draft     { background:var(--c-amber-light);color:var(--c-amber); }
+    .pill.approved  { background:var(--c-green-light);color:var(--c-green); }
+    .pill.dismissed { background:var(--c-surface);color:var(--c-muted);border:1px solid var(--c-border); }
+    .pill.off       { background:var(--c-surface);color:var(--c-muted);border:1px solid var(--c-border); }
+    .pill.on        { background:var(--c-green-light);color:var(--c-green); }
+    .empty { color:var(--c-muted);padding:26px;text-align:center;font-size:.88rem; }
+    .aw-letter { width:100%;min-height:300px;background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-text);
+                 border-radius:8px;padding:12px;font-family:inherit;font-size:.86rem;line-height:1.65;resize:vertical; }
+    .aw-tmpl { width:100%;min-height:150px;background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-text);
+               border-radius:8px;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.76rem;line-height:1.6;resize:vertical; }
+    .aw-score { font-weight:800; }
+    .aw-score.hot { color:var(--c-red); } .aw-score.warm { color:var(--c-amber); }
+    .aw-row-actions { display:flex;gap:6px;flex-wrap:wrap; }
+    details.aw-tmpl-wrap { margin-top:8px; }
+    details.aw-tmpl-wrap > summary { cursor:pointer;font-size:.76rem;color:var(--c-muted);padding:4px 0; }
+    .aw-hint { font-size:.74rem;color:var(--c-muted);margin-top:4px;line-height:1.5; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Absence warnings</div>
+      <div class="page-subtitle">Attendance triggers, the drafts they produce, and who has approved what</div>
+    </div>
+    <a href="/admin/staff/discipline.html" class="btn btn-secondary btn-sm">Disciplinary →</a>
+  </div>
+
+  <div class="aw-caveat" id="caveat"></div>
+
+  <div class="aw-info">
+    <b>Nothing here reaches a member of staff on its own.</b> When somebody crosses a trigger that is
+    switched on, Wren writes a <b>draft</b> letter and tells you. They are told nothing until you have
+    read that draft and pressed Approve — and approving it opens a disciplinary case at the
+    <i>concern</i> step, never at an outcome. An outcome before an invitation and a meeting is not a
+    record of a fair process, and the disciplinary screen refuses one regardless of what is pressed here.
+  </div>
+
+  <div class="aw-master" id="master"></div>
+
+  <div class="aw-card">
+    <div class="card-title" style="margin-bottom:4px">Triggers</div>
+    <div class="aw-hint" style="margin-bottom:10px">
+      A Bradford Factor score is <b>S² × D</b> — spells squared, times total days — over the lookback
+      window. Timekeeping triggers count late arrivals in the window. Change a number and it saves itself.
+    </div>
+    <div id="stages"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="aw-card">
+    <div class="card-title" style="margin-bottom:10px">Waiting for you</div>
+    <div id="drafts"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="aw-card">
+    <div class="card-title" style="margin-bottom:4px">Where everybody stands</div>
+    <div class="aw-hint" style="margin-bottom:10px">
+      Live scores. Nobody on this list has been told anything — it is here so a conversation can happen
+      before a threshold does.
+    </div>
+    <div id="watchlist"><div class="empty">Not loaded — press Refresh scores.</div></div>
+  </div>
+
+  <div class="aw-card">
+    <div class="card-title" style="margin-bottom:10px">History</div>
+    <div id="history"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const errText = e => (e && (e.error || e.message)) || 'Something went wrong';
+const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+
+let STAGES = [], ENABLED = false;
+
+document.addEventListener('wren:ready', () => {
+  loadStages();
+  loadTriggers();
+});
+
+// ── the master switch + the stages ─────────────────────────────────────────
+async function loadStages() {
+  try {
+    const d = await Wren.api('/api/hr-warnings/stages');
+    STAGES = d.stages || [];
+    ENABLED = !!d.enabled;
+    document.getElementById('caveat').innerHTML = '<b>Read this before switching anything on.</b><br>' + esc(d.caveat);
+    renderMaster();
+    renderStages(d);
+  } catch (e) {
+    document.getElementById('stages').innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>';
+  }
+}
+
+function renderMaster() {
+  document.getElementById('master').innerHTML = `
+    <b>Attendance triggers are ${ENABLED ? 'ON' : 'OFF'}</b>
+    <span class="pill ${ENABLED ? 'on' : 'off'}">${ENABLED ? 'running' : 'nothing is evaluated'}</span>
+    <button class="btn ${ENABLED ? 'btn-secondary' : 'btn-primary'} btn-sm" id="btn-master">
+      ${ENABLED ? 'Switch off' : 'Switch on'}</button>
+    <button class="btn btn-secondary btn-sm" id="btn-run">Check now</button>
+    <button class="btn btn-ghost btn-sm" id="btn-scores">Refresh scores</button>
+    <span class="aw-hint" style="margin:0">With this off, nothing is evaluated and no draft is ever written.</span>`;
+  document.getElementById('btn-master').addEventListener('click', toggleMaster);
+  document.getElementById('btn-run').addEventListener('click', runNow);
+  document.getElementById('btn-scores').addEventListener('click', loadWatchlist);
+}
+
+function renderStages(d) {
+  if (!STAGES.length) { document.getElementById('stages').innerHTML = '<div class="empty">No stages.</div>'; return; }
+  document.getElementById('stages').innerHTML = `
+    <table class="aw"><thead><tr>
+      <th>Stage</th><th>Measures</th><th>Trigger at</th><th>Looking back</th>
+      <th>On</th><th>Send without me</th><th></th>
+    </tr></thead><tbody>
+    ${STAGES.map(s => `<tr>
+      <td><b>${esc(s.label)}</b>${s.outcome_key ? `<div class="aw-hint">possible outcome: ${esc(String(s.outcome_key).replace(/_/g,' '))}</div>` : '<div class="aw-hint">informal — no formal outcome</div>'}</td>
+      <td><span class="aw-kind ${esc(s.kind)}">${s.kind === 'lateness' ? 'late arrivals' : 'Bradford'}</span></td>
+      <td><input class="aw-num" type="number" min="1" value="${esc(s.threshold)}" data-f="threshold" data-k="${esc(s.stage_key)}"></td>
+      <td><input class="aw-num" type="number" min="1" max="260" value="${esc(s.lookback_weeks)}" data-f="lookback_weeks" data-k="${esc(s.stage_key)}"> <span class="aw-hint" style="margin:0">weeks</span></td>
+      <td><input type="checkbox" ${s.is_active ? 'checked' : ''} data-f="is_active" data-k="${esc(s.stage_key)}"></td>
+      <td><input type="checkbox" ${s.auto_send ? 'checked' : ''} data-f="auto_send" data-k="${esc(s.stage_key)}">
+          <div class="aw-hint">off = a person reads it first</div></td>
+      <td><button class="btn btn-ghost btn-sm" data-tmpl="${esc(s.stage_key)}">Letter</button></td>
+    </tr>
+    <tr id="tmpl-${esc(s.stage_key)}" style="display:none"><td colspan="7">
+      <textarea class="aw-tmpl" data-tmplbody="${esc(s.stage_key)}">${esc(s.letter_template || '')}</textarea>
+      <div class="aw-hint">Tokens: ${(d.tokens || []).map(t => '{{' + t + '}}').join(' · ')}</div>
+      <button class="btn btn-primary btn-sm" style="margin-top:8px" data-savetmpl="${esc(s.stage_key)}">Save letter</button>
+    </td></tr>`).join('')}
+    </tbody></table>`;
+
+  document.querySelectorAll('[data-f]').forEach(el => {
+    el.addEventListener('change', () => saveStage(el.dataset.k, el.dataset.f,
+      el.type === 'checkbox' ? el.checked : Number(el.value)));
+  });
+  document.querySelectorAll('[data-tmpl]').forEach(b => b.addEventListener('click', () => {
+    const row = document.getElementById('tmpl-' + b.dataset.tmpl);
+    row.style.display = row.style.display === 'none' ? '' : 'none';
+  }));
+  document.querySelectorAll('[data-savetmpl]').forEach(b => b.addEventListener('click', () => {
+    const ta = document.querySelector(`[data-tmplbody="${b.dataset.savetmpl}"]`);
+    saveStage(b.dataset.savetmpl, 'letter_template', ta.value);
+  }));
+}
+
+async function saveStage(key, field, value) {
+  try {
+    await Wren.api('/api/hr-warnings/stages/' + encodeURIComponent(key), { method: 'PUT', body: { [field]: value } });
+    Wren.toast('Saved.', 'success');
+    if (field === 'is_active' || field === 'auto_send') loadStages();
+  } catch (e) { Wren.toast(errText(e), 'error'); loadStages(); }
+}
+
+async function toggleMaster() {
+  try {
+    const d = await Wren.api('/api/hr-warnings/enabled', { method: 'PUT', body: { enabled: !ENABLED } });
+    ENABLED = !!d.enabled;
+    renderMaster();
+    Wren.toast(ENABLED ? 'Triggers are on.' : 'Triggers are off.', 'success');
+  } catch (e) { Wren.toast(errText(e), 'error'); }
+}
+
+async function runNow() {
+  try {
+    const d = await Wren.api('/api/hr-warnings/run', { method: 'POST', body: {} });
+    Wren.toast(d.ran ? `Checked ${d.considered} people — ${d.drafted.length} new draft${d.drafted.length === 1 ? '' : 's'}.`
+                     : `Nothing ran: ${d.reason}.`, d.ran ? 'success' : 'info');
+    loadTriggers();
+  } catch (e) { Wren.toast(errText(e), 'error'); }
+}
+
+// ── the drafts ─────────────────────────────────────────────────────────────
+async function loadTriggers() {
+  try {
+    const [live, past] = await Promise.all([
+      Wren.api('/api/hr-warnings/triggers'),
+      Wren.api('/api/hr-warnings/triggers?status=dismissed'),
+    ]);
+    renderDrafts(live.filter(t => t.status === 'draft'));
+    renderHistory([...live.filter(t => t.status !== 'draft'), ...past]);
+  } catch (e) {
+    document.getElementById('drafts').innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>';
+  }
+}
+
+function renderDrafts(rows) {
+  document.getElementById('drafts').innerHTML = rows.length
+    ? `<table class="aw"><thead><tr><th>Person</th><th>Stage</th><th>Score</th><th>Window</th><th>Raised</th><th></th></tr></thead>
+       <tbody>${rows.map(t => `<tr>
+         <td><b>${esc(t.staff_name)}</b>${t.job_title ? `<div class="aw-hint">${esc(t.job_title)}</div>` : ''}</td>
+         <td><span class="aw-kind ${esc(t.kind)}">${esc(t.stage_label || t.stage_key)}</span></td>
+         <td><span class="aw-score ${Number(t.score) >= Number(t.threshold) * 2 ? 'hot' : 'warm'}">${esc(t.score)}</span>
+             <span class="aw-hint" style="margin:0"> / ${esc(t.threshold)}</span>
+             <div class="aw-hint">${t.kind === 'lateness'
+                ? `${esc((t.detail && t.detail.instances) || 0)} late arrivals`
+                : `${esc((t.detail && t.detail.instances) || 0)} absences, ${esc((t.detail && t.detail.days) || 0)} days`}</div></td>
+         <td class="aw-hint">${esc(t.lookback_weeks)} weeks to ${fmtDate(t.window_to)}</td>
+         <td class="aw-hint">${fmtDate(t.detected_on)}</td>
+         <td class="aw-row-actions">
+           <button class="btn btn-primary btn-sm" data-open="${t.id}">Read the draft</button>
+           <button class="btn btn-ghost btn-sm" data-dismiss="${t.id}">Not this one</button>
+         </td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">Nothing waiting. ' + (ENABLED ? 'Nobody has crossed a trigger that is switched on.' : 'Triggers are switched off.') + '</div>';
+
+  document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openDraft(b.dataset.open)));
+  document.querySelectorAll('[data-dismiss]').forEach(b => b.addEventListener('click', () => dismiss(b.dataset.dismiss)));
+}
+
+// The letter, in a modal, editable before it is approved.
+// NOTE: the Roost shell's Wren.modal returns an ELEMENT with action callbacks —
+// it is not a Promise, so it is never awaited (reference_roost_modal_returns_element_not_promise).
+async function openDraft(id) {
+  let t;
+  try { t = await Wren.api('/api/hr-warnings/triggers/' + id); }
+  catch (e) { return Wren.toast(errText(e), 'error'); }
+
+  const detail = t.detail || {};
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div class="aw-hint" style="margin-bottom:10px">
+      <b>${esc(t.staff_name)}</b> · ${esc(t.stage_label || t.stage_key)} ·
+      ${t.kind === 'lateness'
+        ? `${esc(detail.instances || 0)} late arrivals`
+        : `Bradford ${esc(t.score)} — ${esc(detail.instances || 0)} absences, ${esc(detail.days || 0)} days`}
+      in the ${esc(t.lookback_weeks)} weeks to ${fmtDate(t.window_to)} (trigger ${esc(t.threshold)}).
+    </div>
+    <div class="aw-hint" style="margin:0 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label for="draft-stage" style="margin:0">Stage</label>
+      <select id="draft-stage" class="aw-num" style="width:auto">
+        ${STAGES.filter(s => s.kind === t.kind && (s.is_active || s.stage_key === t.stage_key)).map(s =>
+          `<option value="${esc(s.stage_key)}" ${s.stage_key === t.stage_key ? 'selected' : ''}>${esc(s.label)} (${esc(s.threshold)})</option>`).join('')}
+      </select>
+      <button class="btn btn-ghost btn-sm" id="draft-restage" type="button">Change stage</button>
+      <span>Wren starts everyone with no live warning at the bottom of the ladder. If they have already had a
+        warning that isn't on the disciplinary screen, move this draft up. Changing stage re-writes the letter.</span>
+    </div>
+    <textarea class="aw-letter" id="draft-body">${esc(t.letter_body || '')}</textarea>
+    <div class="aw-hint" style="margin-top:8px">
+      Approving tells ${esc(String(t.staff_name).split(' ')[0])} that you want to talk about their attendance,
+      files this letter on their HR page, and opens a disciplinary case at the <i>concern</i> step.
+      No outcome is recorded — record the written invitation, then the meeting, on the disciplinary screen.
+    </div>`;
+
+  // Wren.modal(title, content, buttons) — the shell returns the overlay ELEMENT
+  // and runs each button's `action`; it is not a Promise and is never awaited
+  // (reference_roost_modal_returns_element_not_promise). `close:false` keeps the
+  // modal open after a save so the letter can be edited again.
+  body.querySelector('#draft-restage').addEventListener('click', async () => {
+    const key = body.querySelector('#draft-stage').value;
+    if (key === t.stage_key) return;
+    if (!confirm('Move this draft to a different stage? The letter will be re-written from that stage\'s template — any edits you have made here will be lost.')) return;
+    try {
+      await Wren.api(`/api/hr-warnings/triggers/${id}/stage`, { method: 'PUT', body: { stage_key: key } });
+      Wren.toast('Stage changed — letter re-written.', 'success');
+      const ov = body.closest('.modal-overlay, .wren-modal-overlay, [role="dialog"]');
+      if (ov) ov.remove();
+      loadTriggers();
+      openDraft(id);
+    } catch (e) { Wren.toast(errText(e), 'error'); }
+  });
+
+  Wren.modal('Draft letter — not sent', body, [
+    { label: 'Close', class: 'btn-secondary' },
+    { label: 'Save draft', class: 'btn-secondary', close: false, action: async () => {
+        try {
+          await Wren.api(`/api/hr-warnings/triggers/${id}/letter`, { method: 'PUT',
+            body: { letter_body: document.getElementById('draft-body').value } });
+          Wren.toast('Draft saved.', 'success');
+        } catch (e) { Wren.toast(errText(e), 'error'); }
+      } },
+    { label: 'Approve and tell them', class: 'btn-primary', action: async () => {
+        // The edited text is saved FIRST: approving files the letter on the
+        // person's HR page, and filing the version before the manager's edits
+        // would put a letter they did not write under their name.
+        const text = document.getElementById('draft-body').value;
+        try {
+          await Wren.api(`/api/hr-warnings/triggers/${id}/letter`, { method: 'PUT', body: { letter_body: text } });
+        } catch (e) { /* an unchanged draft is fine */ }
+        try {
+          const r = await Wren.api(`/api/hr-warnings/triggers/${id}/approve`, { method: 'POST', body: {} });
+          Wren.toast(r.case_id ? `Approved. Disciplinary case #${r.case_id} opened.` : 'Approved.', 'success');
+          loadTriggers();
+        } catch (e) { Wren.toast(errText(e), 'error'); }
+      } },
+  ]);
+}
+
+async function dismiss(id) {
+  const reason = prompt('Why is no action being taken? (recorded — "certified, disability-related" or "already dealt with" is enough)');
+  if (reason === null || !reason.trim()) return;
+  try {
+    await Wren.api(`/api/hr-warnings/triggers/${id}/dismiss`, { method: 'POST', body: { reason } });
+    Wren.toast('Recorded — nothing was sent.', 'success');
+    loadTriggers();
+  } catch (e) { Wren.toast(errText(e), 'error'); }
+}
+
+function renderHistory(rows) {
+  document.getElementById('history').innerHTML = rows.length
+    ? `<table class="aw"><thead><tr><th>Person</th><th>Stage</th><th>Score</th><th>What happened</th><th>When</th><th>Case</th></tr></thead>
+       <tbody>${rows.map(t => `<tr>
+         <td>${esc(t.staff_name)}</td>
+         <td>${esc(t.stage_label || t.stage_key)}</td>
+         <td>${esc(t.score)} / ${esc(t.threshold)}</td>
+         <td><span class="pill ${esc(t.status)}">${esc(t.status)}</span>
+             ${t.status === 'dismissed'
+               ? `<div class="aw-hint">${esc(t.dismissed_by_name || '')}: ${esc(t.dismissed_reason || '')}</div>`
+               : `<div class="aw-hint">approved by ${esc(t.approved_by_name || '')}${t.staff_notified_at ? ' · they were told' : ''}</div>`}</td>
+         <td class="aw-hint">${fmtDate(t.dismissed_at || t.approved_at || t.detected_on)}</td>
+         <td>${t.case_id ? `<a href="/admin/staff/discipline.html" class="btn btn-ghost btn-sm">#${esc(t.case_id)}</a>` : '—'}</td>
+       </tr>`).join('')}</tbody></table>`
+    : '<div class="empty">Nothing has been approved or dismissed yet.</div>';
+}
+
+// ── the watchlist ──────────────────────────────────────────────────────────
+async function loadWatchlist() {
+  document.getElementById('watchlist').innerHTML = '<div class="empty">Working it out…</div>';
+  try {
+    const d = await Wren.api('/api/hr-warnings/watchlist');
+    document.getElementById('watchlist').innerHTML = d.staff.length
+      ? `<table class="aw"><thead><tr><th>Person</th><th>Bradford (${esc(d.window.weeks)}w)</th><th>Absences</th><th>Days</th><th>Late (${esc(d.lateness_window_weeks)}w)</th><th>Sits at</th></tr></thead>
+         <tbody>${d.staff.map(s => `<tr>
+           <td>${esc(s.name)}${s.job_title ? `<div class="aw-hint">${esc(s.job_title)}</div>` : ''}</td>
+           <td><span class="aw-score ${s.bradford_score >= 200 ? 'hot' : s.bradford_score >= 100 ? 'warm' : ''}">${esc(s.bradford_score)}</span></td>
+           <td>${esc(s.bradford_instances)}</td><td>${esc(s.bradford_days)}</td>
+           <td>${esc(s.late_count_8w)}</td>
+           <td>${s.stage ? `<span class="aw-kind bradford">${esc(s.stage.label)}</span> ` : ''}
+               ${s.lateness_stage ? `<span class="aw-kind lateness">${esc(s.lateness_stage.label)}</span>` : ''}
+               ${!s.stage && !s.lateness_stage ? '<span class="aw-hint">below every trigger that is on</span>' : ''}</td>
+         </tr>`).join('')}</tbody></table>`
+      : '<div class="empty">No active staff.</div>';
+  } catch (e) {
+    document.getElementById('watchlist').innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>';
+  }
+}
+</script>
+</body>
+</html>

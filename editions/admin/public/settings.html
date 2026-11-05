@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Settings — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<!-- b403 — item labels for the "Hidden menu items" card; data only, no DOM side effects. -->
+<script src="/js/wren-ey-more-nav.js?v=20261006" defer></script>
+<!-- b525 — the HR app nav declaration (edition "hr" in the navigation matrix). -->
+<script src="/js/wren-hr-nav.js?v=b525" defer></script>
+<style>
+.settings-section { margin-bottom: 28px; }
+.settings-section-title { font-size:.75rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:#4a9abf; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #2d3748; }
+.toggle-row { display:flex; align-items:center; justify-content:space-between; padding:14px 0; border-bottom:1px solid #1e293b; gap:16px; }
+.toggle-row:last-child { border-bottom:none; }
+.toggle-label { flex:1 }
+.toggle-label strong { display:block; font-size:.9rem; margin-bottom:2px; }
+.toggle-label span { font-size:.8rem; color:#94a3b8; line-height:1.4; display:block; }
+.toggle-switch { position:relative; width:48px; height:26px; flex-shrink:0; }
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider { position:absolute; inset:0; cursor:pointer; background:#2d3748; border-radius:26px; transition:.2s; }
+.toggle-slider::before { content:''; position:absolute; height:20px; width:20px; left:3px; bottom:3px; background:#64748b; border-radius:50%; transition:.2s; }
+input:checked + .toggle-slider { background:#4a9abf; }
+input:checked + .toggle-slider::before { transform:translateX(22px); background:#fff; }
+.settings-save-row { margin-top:20px; display:flex; gap:10px; align-items:center; }
+/* b239 — parents-group card. Theme tokens only, so it reads correctly in light
+   and dark; the rest of this page predates them and still carries bare hex. */
+.pgr-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit, minmax(min(100%, 150px), 1fr)); margin-bottom:14px; }
+.pgr-stat { background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; padding:10px 12px; }
+.pgr-stat b { display:block; font-size:1.4rem; line-height:1.2; color:var(--c-text); }
+.pgr-stat span { font-size:.72rem; color:var(--c-muted); }
+.pgr-stat.is-red b { color:var(--c-red); }
+.pgr-stat.is-amber b { color:var(--c-amber); }
+.pgr-stat.is-ok b { color:var(--c-green); }
+.pgr-list { margin:0 0 12px; padding:0; list-style:none; max-height:230px; overflow-y:auto; border:1px solid var(--c-border); border-radius:8px; }
+.pgr-list li { display:flex; justify-content:space-between; gap:12px; padding:7px 11px; border-bottom:1px solid var(--c-border); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.74rem; color:var(--c-text); }
+.pgr-list li:last-child { border-bottom:none; }
+.pgr-list li em { color:var(--c-muted); font-style:normal; }
+.pgr-h { font-size:.78rem; font-weight:700; color:var(--c-text); margin:14px 0 6px; }
+.pgr-note { font-size:.74rem; color:var(--c-muted); line-height:1.5; }
+.network-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:6px; font-size:.78rem; font-weight:600; }
+.badge-tailscale { background:rgba(74,154,191,.15); color:#4a9abf; border:1px solid rgba(74,154,191,.3); }
+.badge-remote { background:rgba(239,68,68,.1); color:#ef4444; border:1px solid rgba(239,68,68,.3); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   b230 (2026-08-25) — responsive layout.
+
+   Toby, on an Honor Magic V5 foldable: "admin on mobile formatting looks off …
+   in settings, its not side by side, its underneath so i cant see it properly".
+
+   Two separate faults, both real, and this file had ZERO @media queries:
+     • repeat(auto-fit, minmax(200px,1fr)) collapses to ONE column on the ~400px
+       folded outer screen — that is the "underneath".
+     • grid-template-columns:1fr 1fr and 1fr 1fr auto were HARD-CODED, so they
+       could not stack at all; they just squeezed until the inputs were unusable.
+
+   The fix is minmax(min(100%, N), 1fr) — the min() stops a track ever being
+   wider than its container (which is what pushed the page into horizontal
+   scroll) while auto-fit still gives real multi-column layout as soon as there
+   is room. Floors are tuned so the UNFOLDED inner screen (~740–880px) gets
+   genuine columns rather than falling back to one.
+
+   Target widths: 400 (folded) · 740 & 880 (unfolded) · 1024 · 1440.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The reading column. Deliberately capped — these are label+toggle rows, and a
+   1400px-wide switch row is worse, not better. min() keeps it from ever
+   exceeding the viewport on the folded screen. */
+.settings-wrap { max-width:min(100%, 760px); }
+
+/* Link lists (System Tools): 1 col folded → 2 unfolded → 3 desktop. */
+.set-links { display:grid; gap:8px; font-size:.85rem;
+             grid-template-columns:repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+
+/* Fact/label pairs (edition, schema, server time). */
+.set-facts { display:grid; gap:8px; font-size:.875rem;
+             grid-template-columns:repeat(auto-fit, minmax(min(100%, 165px), 1fr)); }
+
+/* Stat tiles (backup snapshot counts). 150px floor put three across the fold
+   at ~110px each and clipped the numbers; 130px + min() keeps 2 up folded. */
+.set-stats { display:grid; gap:12px; margin-bottom:14px;
+             grid-template-columns:repeat(auto-fit, minmax(min(100%, 130px), 1fr)); }
+
+/* Two fields that belong together (Return date + Cover person). Was a
+   hard-coded `1fr 1fr`, which is why it stayed side by side at 400px and both
+   inputs became unreadable. */
+.set-pair { display:grid; gap:12px; grid-template-columns:repeat(2, minmax(0, 1fr)); }
+
+/* Rule field sets (room-move rules): as many as fit, never narrower than the
+   container. */
+.set-fields { display:grid; gap:10px;
+              grid-template-columns:repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+
+/* A room row: name, capacity, Save. Was `1fr 1fr auto` — at 400px the capacity
+   box ended up ~60px wide with the Save button hanging off the edge. */
+.set-room-row { display:grid; gap:10px; align-items:end; padding:12px;
+                background:#0f172a; border:1px solid #2d3748; border-radius:8px;
+                grid-template-columns:minmax(0, 2fr) minmax(0, 1fr) auto; }
+.set-room-row .set-room-save { margin-top:0; }
+
+/* Anything that scrolls sideways does so INSIDE its own box — the page body
+   must never scroll horizontally. */
+.set-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+/* ── Folded outer screen and phones ─────────────────────────────────────── */
+@media (max-width: 560px) {
+  .set-pair       { grid-template-columns:1fr; }
+  .set-room-row   { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
+  .set-room-row .set-room-save { grid-column:1 / -1; width:100%; }
+  .toggle-row     { flex-wrap:wrap; }
+  .toggle-label   { flex:1 1 100%; }
+  .toggle-switch  { margin-left:auto; }
+  .settings-save-row .btn { flex:1 1 100%; }
+}
+
+/* Desktop: the 760px cap left roughly half a 1440px screen empty, which reads
+   as broken rather than as a considered reading column. Widened enough to give
+   the link/stat grids a third column without letting a switch row sprawl. */
+@media (min-width: 1280px) {
+  .settings-wrap { max-width:min(100%, 1000px); }
+}
+
+/* ── Unfolded inner screen (~740–880) and up: real columns ──────────────── */
+@media (min-width: 700px) {
+  .set-links  { grid-template-columns:repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+  .set-stats  { grid-template-columns:repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+  .set-fields { grid-template-columns:repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
+}
+
+/* Buttons + the status note must wrap rather than push the page sideways;
+   without this the Save row was the one thing overflowing at 400px. */
+.settings-save-row { flex-wrap:wrap; }
+
+/* Fingers, not mouse pointers: a 26px-high control on a phone is a miss. */
+@media (pointer: coarse) {
+  .settings-wrap .btn { min-height:42px; }
+  .settings-wrap .form-control { min-height:42px; font-size:16px; } /* 16px stops iOS zooming on focus */
+}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">⚙️ Settings</div>
+    <button class="btn btn-primary" id="btn-save-top">Save All Settings</button>
+  </div>
+
+  <div class="settings-wrap">
+
+    <!-- Access Control -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🔒 Access Control</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Allow full portal access from outside school network</strong>
+          <span>When OFF, staff accessing from outside the school Tailscale network can only reach the HR portal — no child or learning data. When ON, full access is allowed remotely.</span>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <span class="network-badge badge-tailscale">✓ On Tailscale (100.x.x.x) — always full access</span>
+            <span class="network-badge badge-remote" id="remote-access-badge">✕ Remote — HR only</span>
+          </div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-remote-access">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div style="margin-top:12px;padding:12px;background:#0f2235;border-radius:8px;font-size:.82rem;color:#94a3b8;line-height:1.6">
+        <strong style="color:#f1f5f9">How this works:</strong> Wren checks the requesting IP address. Connections from the 100.x.x.x Tailscale network always have full access. Connections from any other IP are either allowed (toggle ON) or restricted to HR only (toggle OFF). Recommended: keep OFF for safeguarding — staff should use Tailscale for remote access to child data.
+      </div>
+    </div>
+
+    <!-- Device Enrolment & Enforcement (b97 2026-07-17) -->
+    <div class="card settings-section" id="device-enforce-card">
+      <div class="settings-section-title">📱 Device Enrolment</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Enforce trusted-device enrolment</strong>
+          <span>When ON, only enrolled devices can reach child data (per-portal keys in settings). When OFF (default), Wren just logs "would-block" and blocks nothing. The env master switch <code>DEVICE_ENFORCE</code> must also be on before anything is actually blocked.</span>
+          <div id="device-enforce-status" style="margin-top:8px;font-size:.78rem;color:#94a3b8"></div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-device-enforce" aria-label="Enforce trusted-device enrolment">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div style="margin-top:10px;font-size:.8rem;color:#94a3b8">Manage enrolled devices (enrol/revoke, per-portal detail): <a href="/admin/system/security" style="color:#4a9abf">System → Security</a></div>
+    </div>
+
+    <!-- System tools (b97 2026-07-17: sidebar "System" submenu removed — destinations linked here) -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🧭 System Tools</div>
+      <div class="set-links">
+        <a href="/admin/system/settings" style="color:#4a9abf;text-decoration:none">⚙️ System (settings, integrations, backups, security, permissions, audit log)</a>
+        <a href="/admin/data-governance/dashboard" style="color:#4a9abf;text-decoration:none">🗄️ Data Governance</a>
+        <a href="/cf-access.html" style="color:#4a9abf;text-decoration:none">🔐 Access Control (Cloudflare)</a>
+        <a href="/admin/access" style="color:#4a9abf;text-decoration:none">🔓 Access</a>
+        <a href="/nav-settings.html" style="color:#4a9abf;text-decoration:none">🎛️ Sidebar Layout</a>
+        <!-- b230 — the matrix page was linked from nowhere until now. -->
+        <a href="/admin/notifications/settings" style="color:#4a9abf;text-decoration:none">🔔 Notifications (matrix, devices &amp; quiet hours)</a>
+        <!-- b500 (2026-10-13) — spreadsheet-style bulk editor for roles, qualifications, DBS, right-to-work and training. -->
+        <a href="/staff-records.html" style="color:#4a9abf;text-decoration:none">📋 Staff Records (roles, qualifications, DBS &amp; training — bulk edit)</a>
+      </div>
+    </div>
+
+    <!-- ══ b239 — Parents mailing group vs the children register ═════════════
+         Two failures in opposite directions, and nothing compared them before:
+         a family that left in July still getting the newsletter in October, and
+         a parent of a child who is here today receiving no nursery email at all.
+
+         REFS, NOT ADDRESSES. Every identifier on this card is
+         sha256(address)[0..10]@domain — the same pseudonymous ref the sync log
+         uses, so the same person has the same ref in both. That is deliberate:
+         the whole point of the b239 log clean-up is that this data stopped being
+         written in the clear, and a screen that renders it in the clear would
+         undo that on the first screenshot. To resolve one, hash the chmod-600
+         paste-file on the host (the one-liner is in the header of
+         scripts/sync-gmail-allowlist.js). -->
+    <div class="card settings-section" id="parents-group">
+      <div class="settings-section-title">📬 Parents Mailing Group</div>
+      <div id="pgr-body" style="font-size:.85rem;color:var(--c-muted)">Loading…</div>
+    </div>
+
+    <!-- On-screen Helpers -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🎛️ On-screen Helpers</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Show voice / mic button</strong>
+          <span>Floating microphone for quick voice notes (records → transcribes).</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-show-mic" aria-label="Show voice mic button">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Show chatbot</strong>
+          <span>Floating Wren assistant (the bird) in the corner.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-show-chat" aria-label="Show chatbot">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div style="margin-top:10px;font-size:.8rem;color:#94a3b8">Saved on this device. You can also hide each widget from the widget itself.</div>
+    </div>
+
+    <!-- Away Mode -->
+    <div class="card settings-section" id="away-mode-card">
+      <div class="settings-section-title">🏖️ Away Mode</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Away mode</strong>
+          <span>When ON: James/Vapi tells callers you're on annual leave (back on the return date) and to speak to your cover person; an out-of-office auto-reply is set on your mailbox; and the team is emailed. Toggle OFF to revert all of it.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="away-active" aria-label="Enable away mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="away-fields" class="set-pair" style="margin-top:14px">
+        <div class="form-group">
+          <label class="form-label">Return date <span style="color:#ef4444">*</span></label>
+          <input type="date" class="form-control" id="away-return-date" min="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cover person</label>
+          <select class="form-control" id="away-cover-person">
+            <option value="17">Demo Deputy (Deputy Manager)</option>
+            <option value="">Nobody — take a message only</option>
+          </select>
+        </div>
+      </div>
+      <div id="away-actions" style="margin-top:16px">
+        <div style="font-size:.8rem;color:#94a3b8;margin-bottom:8px">Choose what turns on with Away Mode:</div>
+        <label class="away-act" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #2d3748;border-radius:8px;margin-bottom:8px;cursor:pointer">
+          <input type="checkbox" id="away-notify-callers" checked style="margin-top:3px">
+          <span><strong style="color:#f1f5f9">📞 Tell phone callers (James / Aria)</strong><br><span style="font-size:.78rem;color:#94a3b8">Callers hear you're on leave and are directed to your cover person.</span></span>
+        </label>
+        <label class="away-act" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #2d3748;border-radius:8px;margin-bottom:8px;cursor:pointer">
+          <input type="checkbox" id="away-set-ooo" checked style="margin-top:3px">
+          <span><strong style="color:#f1f5f9">✉️ Set my email out-of-office</strong><br><span style="font-size:.78rem;color:#94a3b8">Auto-reply on toby@ (covers admin@ etc.) pointing senders to your cover email.</span></span>
+        </label>
+        <label class="away-act" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #2d3748;border-radius:8px;margin-bottom:8px;cursor:pointer">
+          <input type="checkbox" id="away-email-team" checked style="margin-top:3px">
+          <span><strong style="color:#f1f5f9">👥 Email the team</strong><br><span style="font-size:.78rem;color:#94a3b8">One-off email to all staff telling them who's covering (on activation only).</span></span>
+        </label>
+        <label class="away-act" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #2d3748;border-radius:8px;cursor:pointer">
+          <input type="checkbox" id="away-show-banner" checked style="margin-top:3px">
+          <span><strong style="color:#f1f5f9">🚩 Show "manager away" banner in portals</strong><br><span style="font-size:.78rem;color:#94a3b8">A gentle banner so staff know cover is in place.</span></span>
+        </label>
+      </div>
+      <div id="away-status-badge" style="margin-top:12px;display:none"></div>
+      <div style="margin-top:14px">
+        <button class="btn btn-primary" id="btn-apply-away-mode">Apply Away Mode</button>
+        <span id="away-last-updated" style="font-size:.78rem;color:#94a3b8;margin-left:12px"></span>
+      </div>
+      <div style="margin-top:10px;padding:10px 14px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;font-size:.8rem;color:#94a3b8;line-height:1.6">
+        <strong style="color:#f1f5f9">Note:</strong> Switch this ON yourself when you leave. Wren sets the phone (James), your email out-of-office, and the team email directly. The OOO needs the Google <em>gmail.settings.basic</em> scope on the service account — if it's not added yet you'll see a ⚠️ and can set your Gmail vacation reply manually. Toggle OFF to revert everything.
+        the deputy is <strong>not available Thursdays</strong> — Aria will say she's unavailable on that day automatically.
+      </div>
+    </div>
+
+    <!-- Inbox drafting (b486, 2026-10-12) -->
+    <div class="card settings-section" id="inbox-draft-settings-card">
+      <div class="settings-section-title">📥 Inbox</div>
+      <p style="font-size:.8rem;color:#94a3b8;margin:0 0 12px">
+        Hermes (the local AI) reads each new email in the shared inbox and can suggest a summary and a draft reply
+        in Communications → Message Review. The same toggle is also in the Inbox toolbar's ⋯ menu.
+      </p>
+      <!-- b486b (2026-10-12, D4): these were color:#f1f5f9 — white, illegible on
+           Roost's light theme (settings-inbox-card-light.png in the review). -->
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--c-text);cursor:pointer">
+          <input type="radio" name="inbox-settings-mode" value="full"> Summaries and drafts</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--c-text);cursor:pointer">
+          <input type="radio" name="inbox-settings-mode" value="summary_only"> Summaries only</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--c-text);cursor:pointer">
+          <input type="radio" name="inbox-settings-mode" value="off"> Off</label>
+      </div>
+      <div class="form-group" style="max-width:240px">
+        <label class="form-label">Draft timeout (seconds)</label>
+        <input type="number" class="form-control" id="inbox-draft-timeout-s" min="30" max="900" step="10">
+        <span style="font-size:.74rem;color:#94a3b8">
+          How long Wren waits for the local model before marking a draft "failed" — it then retries
+          automatically (+10 min, +1 hour, +6 hours, then stops). 30–900 seconds.
+        </span>
+      </div>
+      <div style="margin-top:14px">
+        <button class="btn btn-primary" id="btn-inbox-settings-save">Save</button>
+        <span id="inbox-settings-saved" style="font-size:.78rem;color:#94a3b8;margin-left:12px"></span>
+      </div>
+    </div>
+
+    <!-- Council Data Sharing (b378, 2026-10-01) -->
+    <div class="card settings-section" id="council-sharing-card">
+      <div class="settings-section-title">🏛️ Council Data Sharing</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Share anonymous totals with the council</strong>
+          <span>Off by default. When on, each term Wren sends the council COUNTS ONLY — never a child's name, DOB or any note.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="council-sharing-enabled" aria-label="Share anonymous totals with the council">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="council-sharing-fields" style="margin-top:10px">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Council</label>
+            <input type="text" class="form-input" id="council-sharing-slug" value="ealing" placeholder="ealing">
+          </div>
+          <div class="form-group">
+            <label class="form-label">API key (given to you by the council admin)</label>
+            <input type="password" class="form-input" id="council-sharing-api-key" placeholder="Paste the key here to set/replace it">
+            <span style="font-size:.76rem;color:#94a3b8" id="council-sharing-key-status"></span>
+          </div>
+        </div>
+        <div class="toggle-row" style="margin-top:4px">
+          <div class="toggle-label">
+            <strong>Show our setting's name to the council</strong>
+            <span>Off = the borough dashboard counts us but never names us. On = our name appears next to our own figures only.</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="council-sharing-show-name" aria-label="Show setting name to council">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div style="margin-top:10px;padding:10px 14px;background:#0f172a;border:1px solid #2d3748;border-radius:8px;font-size:.8rem;color:#94a3b8;line-height:1.6">
+          <strong style="color:#f1f5f9">Exactly what gets sent, each term:</strong> headcounts by age band (0-2, 2-3, 3-4, 4+); for each EYFS area, how many children are on track for their age vs not yet, split by age band; the same split for funded 2-year-olds, SEND, EAL and gender; a count of school-leaver transition records shared this term. <strong>Any number under 5 is withheld</strong> — sent as "too few to show", never as a figure, and a whole on-track/not-yet split is withheld together if either side is small (so the hidden number can't be worked out from the total). No child's name, DOB, note or anything free-text ever leaves this building.
+        </div>
+
+        <div style="margin-top:12px">
+          <button class="btn small" id="btn-council-preview">Preview what would be shared</button>
+          <button class="btn btn-primary small" id="btn-council-save">Save</button>
+          <button class="btn small" id="btn-council-push-now">Push now</button>
+          <span id="council-sharing-term" style="font-size:.78rem;color:#94a3b8;margin-left:8px"></span>
+        </div>
+        <pre id="council-sharing-preview" style="display:none;margin-top:10px;max-height:260px;overflow:auto;background:#0a1020;border:1px solid #2d3748;border-radius:8px;padding:10px;font-size:.72rem;color:#94a3b8"></pre>
+
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid #2d3748">
+          <button class="btn small" id="btn-council-stop" style="color:#ef4444">Stop sharing</button>
+          <label style="font-size:.78rem;color:#94a3b8;margin-left:8px">
+            <input type="checkbox" id="council-sharing-delete-past"> also delete our past submissions from the council
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nursery Info -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🏫 Nursery Information</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nursery name</label>
+          <input type="text" class="form-control" id="setting-nursery_name" value="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone number</label>
+          <input type="text" class="form-control" id="setting-nursery_phone" value="">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Address</label>
+          <input type="text" class="form-control" id="setting-nursery_address" value="">
+        </div>
+        <div class="form-group">
+          <!-- b299: named here rather than assumed to be Ealing. Term dates says
+               "not published by <this>", and every edition is somewhere else. -->
+          <label class="form-label">Local authority</label>
+          <input type="text" class="form-control" id="setting-local_authority" placeholder="e.g. Ealing">
+          <span style="font-size:.72rem;color:var(--c-muted)">Who publishes your term dates and sets your funding rates.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- b299: Invoices. Every id here is `setting-<key>`, which is all it takes —
+         loadSettings() fills any such element and saveAll() sweeps them all into
+         one POST, so no new JS is needed. -->
+    <div class="card settings-section" id="invoice-settings-card">
+      <div class="settings-section-title">🧾 Invoices</div>
+      <p style="font-size:.78rem;color:var(--c-muted);margin:0 0 14px">
+        What appears on every invoice and statement. The letterhead comes from Nursery
+        Information above; these are the invoice's own details.
+      </p>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Invoice email address</label>
+          <input type="email" class="form-control" id="setting-invoice_nursery_email"
+                 placeholder="info@example-nursery.co.uk">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Invoice due day of the month</label>
+          <input type="number" class="form-control" id="setting-invoice_due_day" min="1" max="28" step="1">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">UK company registration</label>
+          <input type="text" class="form-control" id="setting-invoice_company_registration"
+                 placeholder="02470076">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ofsted registration</label>
+          <input type="text" class="form-control" id="setting-invoice_ofsted_registration"
+                 placeholder="EY123456">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Session start</label>
+          <input type="time" class="form-control" id="setting-invoice_session_start">
+          <span style="font-size:.72rem;color:var(--c-muted)">The time a full day begins — printed as "Mon - 08:00-18:00".</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hours in a full day</label>
+          <input type="number" class="form-control" id="setting-invoice_session_hours" min="1" max="14" step="0.5">
+          <span style="font-size:.72rem;color:var(--c-muted)">Sets the session end time and the hourly rate.</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Calculation factor</label>
+        <input type="text" class="form-control" id="setting-invoice_calculation_factor" placeholder="52.00/12.00">
+        <span style="font-size:.72rem;color:var(--c-muted)">
+          Weeks per year / months per year. Fees are payable for <strong>52 weeks</strong> —
+          bank holidays, inset days and the Christmas closure included.
+        </span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment terms</label>
+        <textarea class="form-control" id="setting-invoice_payment_terms" rows="2"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Invoice footer</label>
+        <textarea class="form-control" id="setting-invoice_footer_note" rows="10"
+                  style="font-family:inherit;line-height:1.5"
+                  placeholder="Free text shown at the bottom of every invoice.&#10;&#10;Line breaks are kept exactly as you type them, and any web address becomes a clickable link:&#10;Term dates: https://example-nursery.co.uk/term-dates"></textarea>
+        <span style="font-size:.72rem;color:var(--c-muted)">
+          Printed on every invoice exactly as entered — blank lines stay blank, and
+          any <code>https://</code> address becomes a link a parent can tap.
+        </span>
+      </div>
+    </div>
+
+    <!-- Rooms -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🚪 Rooms & Capacity</div>
+      <div id="rooms-list" style="display:grid;gap:10px"></div>
+    </div>
+
+    <!-- Academic Year -->
+    <div class="card settings-section">
+      <div class="settings-section-title">📅 Academic Year & Terms</div>
+      <!-- b298 (2026-09-10) — the two calendars now have their own screens. The
+           free-text list below is kept (it is what several older routes still read)
+           but the live calendars are here. Nothing removed. -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <a href="/term-dates.html" class="btn btn-ghost" style="border-color:#2d3748;color:#4a9abf">📅 Term dates — half-terms &amp; breaks (planning) →</a>
+        <a href="/funding-dates.html" class="btn btn-ghost" style="border-color:#2d3748;color:#4a9abf">💷 Funding dates — periods &amp; rates (funding) →</a>
+      </div>
+      <div style="font-size:.78rem;color:#94a3b8;line-height:1.6;margin-bottom:14px">
+        Two different calendars. <strong style="color:#f1f5f9">Term dates</strong> are the teaching
+        half-terms and the holidays between them — planning runs on those.
+        <strong style="color:#f1f5f9">Funding dates</strong> are the entitlement claim windows
+        (1 Sep–31 Dec, 1 Jan–31 Mar, 1 Apr–31 Aug) and the rates per band. Funding runs
+        continuously; teaching does not. Neither is derived from the other.
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Current academic year</label>
+          <input type="text" class="form-control" id="setting-academic_year" placeholder="e.g. 2025-2026">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Default contracted hours/week</label>
+          <input type="number" class="form-control" id="setting-default_contracted_hours" min="0" max="60" step="0.5">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Term dates (one per line: "Term name: DD/MM/YYYY – DD/MM/YYYY")</label>
+        <textarea class="form-control" id="setting-term_dates" rows="6" placeholder="Autumn 1: 04/09/2025 – 24/10/2025&#10;Autumn 2: 03/11/2025 – 19/12/2025&#10;Spring 1: 06/01/2026 – 13/02/2026&#10;Spring 2: 23/02/2026 – 27/03/2026&#10;Summer 1: 14/04/2026 – 22/05/2026&#10;Summer 2: 01/06/2026 – 22/07/2026"></textarea>
+      </div>
+    </div>
+
+    <!-- Safeguarding -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🛡️ Safeguarding</div>
+      <div class="form-group">
+        <label class="form-label">Designated Safeguarding Lead (DSL)</label>
+        <input type="text" class="form-control" id="setting-safeguarding_lead" placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Deputy DSL</label>
+        <input type="text" class="form-control" id="setting-deputy_safeguarding_lead" placeholder="Full name (optional)">
+      </div>
+    </div>
+
+    <!-- My PIN -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🔑 My PIN</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">New PIN (4+ digits)</label>
+          <input type="password" class="form-control" id="new-pin" inputmode="numeric" maxlength="8">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm PIN</label>
+          <input type="password" class="form-control" id="confirm-pin" inputmode="numeric" maxlength="8">
+        </div>
+      </div>
+      <button class="btn btn-ghost" id="btn-change-pin">Update PIN</button>
+    </div>
+
+    <!-- Backup & Recovery -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🔒 Backup & Recovery</div>
+      <div id="backup-status-area"><div class="loading-state"><div class="spinner"></div></div></div>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" id="run-backup-btn">▶ Run Backup Now</button>
+        <a href="#recovery-guide" id="btn-recovery-guide" class="btn btn-ghost" style="border-color:#2d3748;color:#94a3b8">📖 Recovery Guide</a>
+      </div>
+      <div id="recovery-guide" style="display:none;margin-top:14px;background:#0f172a;border:1px solid #2d3748;border-radius:10px;padding:16px">
+        <div style="font-size:.85rem;font-weight:700;color:#4a9abf;margin-bottom:10px">Step-by-step recovery</div>
+        <ol style="color:#94a3b8;font-size:.82rem;line-height:1.8;padding-left:1.4em;margin:0">
+          <li>SSH into the Wren server: <code style="color:#f1f5f9;background:#1e293b;padding:1px 6px;border-radius:4px">ssh toby@your-server</code></li>
+          <li>Run: <code style="color:#f1f5f9;background:#1e293b;padding:1px 6px;border-radius:4px">bash /app/scripts/recover.sh</code></li>
+          <li>Confirm when prompted — the script lists available snapshots and restores the latest</li>
+          <li>Containers restart automatically after restore</li>
+          <li>If database is unrecoverable, restore from USB drive: <code style="color:#f1f5f9;background:#1e293b;padding:1px 6px;border-radius:4px">rsync -a /media/wren-backup/ /app-backups/</code></li>
+          <li>Contact Wren support if USB is also unavailable</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- ── Room Moves (b206, 2026-08-19) ────────────────────────────────────
+         Toby's rule: Baby Room → Pre-school on the MONDAY OF THE WEEK AFTER the
+         child's 2nd birthday, so occupancy is accurate. Rules are per ROOM PAIR,
+         so a future Baby → Toddler → Pre-school setup is a settings edit, not a
+         code change. Appended — nothing above or below was touched.
+         Ids are prefixed `rm-`, NOT `setting-`: saveAll() sweeps every
+         [id^="setting-"] element into a flat POST, which would mangle these. -->
+    <div class="card settings-section" id="room-moves-card">
+      <div class="settings-section-title">🚪 Room Moves</div>
+      <div style="font-size:.82rem;color:#94a3b8;line-height:1.6;margin-bottom:14px">
+        When a child moves up a room, Wren moves their <strong>booking</strong> too — occupancy and the
+        register count the booking, not the profile, so this is what keeps the room numbers honest.
+        Runs once a night as part of the existing nightly job (no separate schedule).
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Run the nightly room-move job</strong>
+          <span>OFF — Wren works out the dates and shows them, but nothing happens on its own;
+                you move children from Admissions → Transfer window. ON — the job runs each night
+                as part of the existing nightly run. Starts OFF on a new setting on purpose:
+                the first move should be one you have agreed in the building.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="rm-engine-auto">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Move children automatically</strong>
+          <span>ON — a child due to move is moved overnight and the key person is told.
+                OFF — nothing moves; you get a notification proposing the move and confirm it yourself
+                on Admissions → Transfer window.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="rm-auto-apply">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Notice period</strong>
+          <span>How far ahead the manager and the key person are told, so the room can prepare and
+                parents can be given warning. One notification per child per move — never a nightly nag.</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <input type="number" class="form-control" id="rm-notice-weeks" min="0" max="52" step="1" style="width:80px">
+          <span style="font-size:.82rem;color:#94a3b8">weeks</span>
+        </div>
+      </div>
+
+      <div style="margin-top:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap">
+          <div style="font-size:.78rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Rules</div>
+          <button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" id="rm-add-rule">+ Add a room pair</button>
+        </div>
+        <div id="rm-rules"><div class="loading-state"><div class="spinner"></div></div></div>
+      </div>
+
+      <div class="settings-save-row">
+        <button class="btn btn-primary" id="rm-save">Save room-move rules</button>
+        <button class="btn btn-ghost" id="rm-dry-run">Preview tonight's run</button>
+        <span id="rm-save-note" style="font-size:.78rem;color:#64748b"></span>
+      </div>
+      <pre id="rm-run-output" style="display:none;font-size:.75rem;color:#94a3b8;background:#0f172a;border:1px solid #2d3748;border-radius:6px;padding:10px;margin:12px 0 0;white-space:pre-wrap;max-height:220px;overflow-y:auto"></pre>
+
+      <!-- Forward view — the same list Admissions → Transfer window shows. -->
+      <div style="margin-top:22px">
+        <div style="font-size:.78rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Upcoming moves</div>
+        <div style="font-size:.78rem;color:#94a3b8;margin-bottom:10px">
+          Next term's shape at a glance. Dates are editable on
+          <a href="/index.html#admissions" style="color:#4a9abf">Admissions → Transfer window</a>.
+        </div>
+        <div id="rm-upcoming"><div class="loading-state"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Next Steps (b393, 2026-10-05) -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🎯 Next Steps</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Parents can see next steps</strong>
+          <span>Shows "What we're working on" in the parents' app — only the steps a key person has explicitly
+            shared, worded for families. Off by default.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-ns-parents">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Soft limit per child</strong>
+          <span>How many active next steps before the EY app and the overview flag it as "more than usual" — a
+            warning, not a hard cap.</span>
+        </div>
+        <input type="number" min="1" max="20" id="setting-next_steps_soft_limit" class="form-control" style="max-width:90px">
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Stale after (weeks)</strong>
+          <span>An active next step with no review in this many weeks counts as "stale" on the manager overview.</span>
+        </div>
+        <input type="number" min="1" max="52" id="setting-next_steps_stale_weeks" class="form-control" style="max-width:90px">
+      </div>
+    </div>
+
+    <!-- parentdetails-20261023: the funding-week nudge + inbox search. Both OFF by default. They are switched on the Missing details
+         page, NOT from this page's Save: turning either on needs the preview there first (who would be messaged, and what). -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🔔 Missing-details nudges</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Funding week nudge: <span id="nudge-state">…</span></strong>
+          <span>Reminds families in their app (never by email) before each funding claim window, until their gaps are filled.
+            Off by default; switched on, previewed and logged on <a href="/missing-details.html" style="color:var(--c-blue)">Missing details</a>.</span>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Search the inbox for a missing detail: <span id="isearch-state">…</span></strong>
+          <span>A button per gap that asks the nursery's local model to find it in that family's own emails, for a person to check. Switched on Missing details.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Enquiries (b399, 2026-10-06) -->
+    <div class="card settings-section">
+      <div class="settings-section-title">📨 Enquiries</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Email families when they enquire</strong>
+          <span>Sends ONE automatic thank-you email the moment a family submits a public enquiry
+            form — what we received, and that we'll be in touch to arrange a visit. On by default.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-enquiry-ack">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Enquiry mode in the parents app</strong>
+          <span>Lets a family with an enquiry on the system use the parents app before they start —
+            messaging us and logging sleeps/food at home — with everything else (diary, photos,
+            invoices) hidden until they have a confirmed place. On by default.</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-enquiry-app-mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Admissions pipeline (b424, 2026-10-08) -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🌱 Admissions pipeline</div>
+      <div class="toggle-row">
+        <div class="toggle-label">
+          <strong>Apply email-detected stage moves automatically</strong>
+          <span>When an email from a known family says a viewing is booked, a viewing happened, or
+            they'd like a place, Roost can suggest moving their pipeline card forward — a chip on
+            the card, Accept/Dismiss. Off by default: suggestions wait for a person to accept them.
+            Turning this on applies a clear match straight away instead (never backwards, never an
+            automatic email to the family).</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-admissions-auto-apply">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Welcome pack (b422, 2026-10-08) — confirmation email + checklist sent when a
+         family becomes Registered. Its own load/save, separate from "Save All
+         Settings" below (which only touches the generic settings key/value store). -->
+    <div class="card settings-section" id="wp-settings-card">
+      <div class="settings-section-title">📬 Welcome pack</div>
+      <div style="font-size:.82rem;color:var(--c-muted);line-height:1.6;margin-bottom:14px">
+        Sent when a family becomes Registered — on the Pipeline card, or from Waiting list → Enrol.
+        Nothing sends automatically: a manager always previews it first.
+      </div>
+      <div class="form-group">
+        <label class="form-label">Subject</label>
+        <input class="form-control" id="wp-subject">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email body (HTML)</label>
+        <textarea class="form-control" id="wp-body" rows="10" style="font-family:monospace;font-size:.82rem"></textarea>
+        <div style="font-size:.74rem;color:var(--c-muted);margin-top:6px">
+          Merge fields: <span id="wp-merge-fields" style="font-family:monospace"></span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Live preview</label>
+        <iframe id="wp-settings-preview" sandbox="" style="width:100%;height:220px;border:1px solid var(--c-border);border-radius:8px;background:#fff"></iframe>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Checklist items shown to the family</label>
+        <div id="wp-checklist-toggles" style="display:grid;gap:6px"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Attachments</label>
+        <div id="wp-attachments-list" style="display:grid;gap:6px;margin-bottom:10px"></div>
+        <input type="file" id="wp-attachment-file" accept=".pdf,.docx,.doc,.jpg,.jpeg,.png">
+        <button class="btn btn-ghost btn-sm" id="wp-attachment-upload-btn" style="margin-left:8px">Upload</button>
+      </div>
+      <button class="btn btn-primary" id="wp-save-btn">Save welcome pack settings</button>
+    </div>
+
+    <!-- System Info -->
+    <div class="card settings-section">
+      <div class="settings-section-title">🖥️ System</div>
+      <div id="sys-info"><div class="loading-state"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- b403 (2026-10-06, ported 2026-10-17) — a visible front end for the b242 nav_layout "hidden"
+         rows, which had no admin screen at all (built, never wired to a UI).
+         Presentation only — hiding a tile here never touches the API gate; see
+         src/routes/nav-layout.js's PRESENTATION, NOT SECURITY comment. -->
+    <div class="card settings-section" id="hidden-nav-items-card">
+      <div class="settings-section-title">🙈 Hidden menu items</div>
+      <div style="font-size:.82rem;color:var(--c-muted);line-height:1.6;margin-bottom:14px">
+        Items hidden from the EY app's More menu for everyone. The page still works if someone
+        has the link — this only removes the tile. Un-hide to bring one back.
+      </div>
+      <div id="hidden-nav-items-list"><div class="loading-state"><div class="spinner"></div></div></div>
+    </div>
+
+    <div class="settings-save-row">
+      <button class="btn btn-primary" id="btn-save-bottom" style="flex:1;padding:14px">Save All Settings</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentSettings = {};
+
+function updateRemoteBadge() {
+  const on = document.getElementById('toggle-remote-access').checked;
+  const badge = document.getElementById('remote-access-badge');
+  badge.textContent = on ? '✓ Remote — Full access' : '✕ Remote — HR only';
+  badge.className = on ? 'network-badge badge-tailscale' : 'network-badge badge-remote';
+}
+
+async function loadSettings() {
+  try {
+    currentSettings = await Wren.api('/api/admin/settings');
+    // Apply to form fields
+    for (const [key, value] of Object.entries(currentSettings)) {
+      const el = document.getElementById('setting-'+key);
+      if (el) el.value = value;
+    }
+    // Access control toggle
+    const remoteAccess = currentSettings['remote_full_access'] === 'true';
+    document.getElementById('toggle-remote-access').checked = remoteAccess;
+    updateRemoteBadge();
+    // b393 — parents-see-next-steps toggle (same pattern as remote access above)
+    document.getElementById('toggle-ns-parents').checked = currentSettings['parents_see_next_steps'] === 'true';
+    // b399 — both default ON: absent/anything-but-'false' reads as checked.
+    document.getElementById('toggle-enquiry-ack').checked = currentSettings['enquiry_ack_email_enabled'] !== 'false';
+    // parentdetails-20261023: read-only here (switched on Missing details, after a preview)
+    document.getElementById('nudge-state').textContent = currentSettings['detail_nudge_enabled'] === 'true'
+      ? (currentSettings['detail_nudge_dry_run'] === 'false' ? 'ON, sending' : 'ON, dry run') : 'OFF';
+    document.getElementById('isearch-state').textContent = currentSettings['detail_inbox_search_enabled'] === 'true' ? 'ON' : 'OFF';
+    document.getElementById('toggle-enquiry-app-mode').checked = currentSettings['enquiry_app_mode_enabled'] !== 'false';
+    // b424 — default OFF (opposite convention from the two toggles above), so read === 'true'.
+    document.getElementById('toggle-admissions-auto-apply').checked = currentSettings['admissions_auto_apply_email_moves'] === 'true';
+  } catch(e) {
+    Wren.toast('Failed to load settings', 'error');
+  }
+}
+
+async function saveAll() {
+  const updates = {
+    remote_full_access: document.getElementById('toggle-remote-access').checked ? 'true' : 'false',
+    // b393 — parents_see_next_steps is a checkbox, not a setting-* text input, same reason remote_full_access is listed here
+    parents_see_next_steps: document.getElementById('toggle-ns-parents').checked ? 'true' : 'false',
+    // b399 — enquiry ack email + enquiry-mode toggles, same reason
+    enquiry_ack_email_enabled: document.getElementById('toggle-enquiry-ack').checked ? 'true' : 'false',
+    enquiry_app_mode_enabled: document.getElementById('toggle-enquiry-app-mode').checked ? 'true' : 'false',
+    // b424 — admissions pipeline email-suggestion auto-apply, same reason the others are here
+    admissions_auto_apply_email_moves: document.getElementById('toggle-admissions-auto-apply').checked ? 'true' : 'false'
+  };
+  // Collect all text inputs/textareas with setting- prefix
+  document.querySelectorAll('[id^="setting-"]').forEach(el => {
+    const key = el.id.replace('setting-', '');
+    updates[key] = el.value;
+  });
+  try {
+    await Wren.api('/api/admin/settings', { method: 'POST', body: updates });
+    Wren.toast('Settings saved ✓', 'success');
+  } catch(e) { Wren.toast(e.error || 'Failed to save', 'error'); }
+}
+
+async function changePin() {
+  const pin = document.getElementById('new-pin').value;
+  const confirm = document.getElementById('confirm-pin').value;
+  if (pin !== confirm) { Wren.toast('PINs do not match', 'warning'); return; }
+  if (pin.length < 4) { Wren.toast('PIN must be 4+ digits', 'warning'); return; }
+  try {
+    await Wren.api('/api/auth/set-my-pin', { method: 'POST', body: { pin } });
+    Wren.toast('PIN updated ✓ — signing out', 'success');
+    setTimeout(() => Wren.logout(), 2000);
+  } catch(e) { Wren.toast('Failed', 'error'); }
+}
+
+async function loadSysInfo() {
+  try {
+    const edition = await Wren.api('/api/edition');
+    document.getElementById('sys-info').innerHTML = `
+      <div class="set-facts">
+        <div><span style="color:#94a3b8">Edition:</span> <strong>${edition.edition}</strong></div>
+        <div><span style="color:#94a3b8">Schema:</span> <strong>${edition.schema}</strong></div>
+        <div><span style="color:#94a3b8">Demo mode:</span> <strong>${edition.demo ? 'Yes' : 'No'}</strong></div>
+        <div><span style="color:#94a3b8">Server time:</span> <strong>${new Date().toLocaleString('en-GB')}</strong></div>
+      </div>`;
+  } catch(e) {}
+}
+
+/* b200 fix — these four ran immediately, but wren-shell-v2.js is loaded with
+   `defer`, so `Wren` did not exist yet. The resulting "Wren is not defined"
+   ReferenceError aborted the REST of this inline script, which is where the
+   Save / Change PIN / Run Backup / Recovery-guide click handlers are wired
+   (they are ~100 lines below). Net effect on /settings.html: nothing loaded and
+   every button was dead. Same wren:ready guard the rest of this file already
+   uses (see loadAwayMode below), per CLAUDE.md rule 7. */
+function _b200Boot() {
+  loadSettings();
+  loadSysInfo();
+  loadBackupStatus();
+  loadRooms();
+}
+if (window._wrenReady) _b200Boot(); else document.addEventListener('wren:ready', _b200Boot);
+
+async function loadBackupStatus() {
+  try {
+    const d = await Wren.api('/api/admin/backup-status');
+    const el = document.getElementById('backup-status-area');
+    if (d.error) { el.innerHTML = `<div class="alert alert-warning">${d.error}</div>`; return; }
+    const usbBadge = d.usb_mounted
+      ? `<span style="color:#22c55e;font-weight:700">✅ Connected & synced</span>`
+      : `<span style="color:#f59e0b;font-weight:700">⚠️ Not connected</span>`;
+    el.innerHTML = `
+      <div class="set-stats">
+        <div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:1.6rem;font-weight:800;color:#4a9abf">${d.snapshots}</div>
+          <div style="font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Daily Snapshots</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:1.6rem;font-weight:800;color:#4a9abf">${d.weekly_snapshots}</div>
+          <div style="font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Weekly Snapshots</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:1.3rem;font-weight:800;color:#22c55e">${d.total_size||'—'}</div>
+          <div style="font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em">Total Size</div>
+        </div>
+      </div>
+      <div style="font-size:.82rem;margin-bottom:6px"><span style="color:#94a3b8">USB drive:</span> ${usbBadge}</div>
+      <div style="font-size:.82rem;margin-bottom:6px"><span style="color:#94a3b8">Next run:</span> <span style="color:#f1f5f9">${d.next_run}</span></div>
+      <div style="font-size:.82rem;margin-bottom:6px"><span style="color:#94a3b8">Latest snapshot:</span> <span style="color:#f1f5f9">${d.latest_date||'—'} (${d.latest_size||'—'})</span></div>
+      <div style="margin-top:12px">
+        <div style="font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Last backup log</div>
+        <pre style="font-size:.75rem;color:#94a3b8;background:#0f172a;border:1px solid #2d3748;border-radius:6px;padding:10px;margin:0;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto">${d.last_log||'No log yet'}</pre>
+      </div>
+    `;
+  } catch (e) {
+    document.getElementById('backup-status-area').innerHTML = '<div style="color:#94a3b8;font-size:.85rem">Backup status unavailable</div>';
+  }
+}
+
+async function runBackup() {
+  const btn = document.getElementById('run-backup-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Starting...';
+  try {
+    await Wren.api('/api/admin/run-backup', { method: 'POST', body: {} });
+    Wren.toast('Backup started in background — check log in ~60 seconds', 'success');
+    btn.textContent = '✅ Backup started';
+    setTimeout(() => { btn.textContent = '▶ Run Backup Now'; btn.disabled = false; loadBackupStatus(); }, 65000);
+  } catch (e) {
+    Wren.toast('Failed to start backup: ' + (e.error||'error'), 'error');
+    btn.textContent = '▶ Run Backup Now';
+    btn.disabled = false;
+  }
+}
+
+function toggleRecovery(e) {
+  if (e) e.preventDefault();
+  const el = document.getElementById('recovery-guide');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadRooms() {
+  try {
+    const rooms = await Wren.api('/api/admin/rooms');
+    const container = document.getElementById('rooms-list');
+    container.innerHTML = rooms.map(r => `
+      <div class="set-room-row">
+        <div>
+          <label style="font-size:.7rem;color:#64748b;display:block;margin-bottom:3px">Room name</label>
+          <input type="text" class="form-control" id="room-name-${r.id}" value="${r.display_name||r.name}" style="font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.7rem;color:#64748b;display:block;margin-bottom:3px">Capacity</label>
+          <input type="number" class="form-control" id="room-cap-${r.id}" value="${r.capacity}" min="1" max="100" style="font-size:.85rem">
+        </div>
+        <button class="btn btn-ghost set-room-save" style="padding:7px 14px;font-size:.78rem" onclick="saveRoom(${r.id})">Save</button>
+      </div>
+    `).join('');
+  } catch(e) {
+    Wren.toast('Failed to load rooms', 'error');
+  }
+}
+
+window.saveRoom = async function(roomId) {
+  const name = document.getElementById('room-name-'+roomId).value.trim();
+  const capacity = parseInt(document.getElementById('room-cap-'+roomId).value);
+  if (!name || !capacity) { Wren.toast('Name and capacity required', 'warning'); return; }
+  try {
+    await Wren.api('/api/admin/rooms/'+roomId, { method: 'PUT', body: { display_name: name, capacity } });
+    Wren.toast('Room updated ✓', 'success');
+  } catch(e) {
+    Wren.toast(e.error || 'Failed to update room', 'error');
+  }
+};
+
+document.getElementById('btn-save-top').addEventListener('click', saveAll);
+document.getElementById('btn-save-bottom').addEventListener('click', saveAll);
+document.getElementById('toggle-remote-access').addEventListener('change', updateRemoteBadge);
+document.getElementById('btn-change-pin').addEventListener('click', changePin);
+document.getElementById('run-backup-btn').addEventListener('click', runBackup);
+document.getElementById('btn-recovery-guide').addEventListener('click', toggleRecovery);
+
+// Away Mode
+(function() {
+  const toggle = document.getElementById('away-active');
+  const fields = document.getElementById('away-fields');
+  const badge  = document.getElementById('away-status-badge');
+  const lastEl = document.getElementById('away-last-updated');
+  const minDate = new Date().toISOString().slice(0,10);
+  document.getElementById('away-return-date').setAttribute('min', minDate);
+
+  function setAwayUI(active) {
+    fields.style.opacity = active ? '1' : '0.5';
+    fields.querySelectorAll('input,select').forEach(el => el.disabled = !active);
+    badge.style.display = active ? 'block' : 'none';
+    if (active) {
+      badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:rgba(224,120,32,.15);border:1px solid rgba(224,120,32,.3);border-radius:6px;font-size:.8rem;color:#e07820;font-weight:600">🏖️ Away mode will be ACTIVE when you click Apply</span>';
+    }
+  }
+
+  toggle.addEventListener('change', () => setAwayUI(toggle.checked));
+
+  async function loadAwayMode() {
+    try {
+      const d = await Wren.api('/api/away-mode');
+      toggle.checked = d.active;
+      if (d.return_date) document.getElementById('away-return-date').value = d.return_date.slice(0,10);
+      if (d.cover_person_id) document.getElementById('away-cover-person').value = String(d.cover_person_id);
+      // Reflect saved per-action toggles (default ON when the field is absent)
+      document.getElementById('away-notify-callers').checked = d.notify_callers !== false;
+      document.getElementById('away-set-ooo').checked        = d.set_ooo        !== false;
+      document.getElementById('away-email-team').checked      = d.email_team     !== false;
+      document.getElementById('away-show-banner').checked     = d.show_banner    !== false;
+      if (d.updated_at) {
+        const who = d.updated_by_name || 'someone';
+        lastEl.textContent = `Last changed by ${who} on ${new Date(d.updated_at).toLocaleDateString('en-GB')}`;
+      }
+      if (d.active) {
+        badge.style.display = 'block';
+        badge.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;font-size:.8rem;color:#ef4444;font-weight:600">🏖️ AWAY MODE IS ACTIVE — Aria is in away mode now</span>';
+      }
+      setAwayUI(d.active);
+    } catch(e) { console.error('away mode load error', e); }
+  }
+
+  document.getElementById('btn-apply-away-mode').addEventListener('click', async () => {
+    const active = toggle.checked;
+    const returnDate = document.getElementById('away-return-date').value;
+    const coverPersonId = document.getElementById('away-cover-person').value;
+    if (active && !returnDate) { Wren.toast('Return date is required when away mode is ON', 'warning'); return; }
+    const btn = document.getElementById('btn-apply-away-mode');
+    btn.disabled = true; btn.textContent = '⏳ Saving...';
+    try {
+      const res = await Wren.api('/api/away-mode', {
+        method: 'PUT',
+        body: {
+          active,
+          return_date: returnDate || null,
+          cover_person_id: coverPersonId ? parseInt(coverPersonId) : null,
+          notify_callers: document.getElementById('away-notify-callers').checked,
+          set_ooo:        document.getElementById('away-set-ooo').checked,
+          email_team:     document.getElementById('away-email-team').checked,
+          show_banner:    document.getElementById('away-show-banner').checked,
+        }
+      });
+      const eff = (res && res.effects) || {};
+      const badge = document.getElementById('away-status-badge');
+      if (active) {
+        const bits = [
+          eff.cover ? `📞 James/phone: callers pointed to <strong>${eff.cover.name}</strong> (${eff.cover.role}${eff.cover.room ? ', ' + eff.cover.room : ''})` : '',
+          eff.ooo && eff.ooo.set ? '📧 Out-of-office set on your mailbox' : (eff.ooo && eff.ooo.error ? '⚠️ OOO not set — ' + eff.ooo.error : ''),
+          eff.staff && eff.staff.sent != null ? `👥 ${eff.staff.sent} staff emailed` : (eff.staff && eff.staff.error ? '⚠️ staff email failed' : ''),
+        ].filter(Boolean);
+        badge.style.display = 'block';
+        badge.innerHTML = `<div style="padding:12px 14px;background:#0f291c;border:1px solid #166534;border-radius:8px;color:#bbf7d0;font-size:.82rem;line-height:1.7">${bits.map(b=>'<div>'+b+'</div>').join('')}</div>`;
+        Wren.toast('🏖️ Away mode ON', 'success');
+      } else {
+        badge.style.display = 'none';
+        Wren.toast('✅ Away mode OFF — out-of-office cleared, James back to normal', 'success');
+      }
+      await loadAwayMode();
+    } catch(e) {
+      Wren.toast(e.error || 'Failed to update away mode', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Apply Away Mode';
+    }
+  });
+
+  // Rule-7 pattern: wait for the shell (Wren.api) before first load.
+  if (window._wrenReady) loadAwayMode(); else document.addEventListener('wren:ready', loadAwayMode);
+})();
+
+// Inbox drafting (b486, 2026-10-12)
+(function() {
+  const card = document.getElementById('inbox-draft-settings-card');
+  if (!card) return;
+
+  async function loadInboxSettings() {
+    try {
+      const d = await Wren.api('/api/comms/inbox/settings');
+      const r = card.querySelector(`input[name="inbox-settings-mode"][value="${d.mode || 'full'}"]`);
+      if (r) r.checked = true;
+      const t = document.getElementById('inbox-draft-timeout-s');
+      if (t) t.value = d.timeout_s || 300;
+    } catch (e) { console.error('inbox settings load error', e); }
+  }
+
+  document.getElementById('btn-inbox-settings-save').addEventListener('click', async () => {
+    const mode = card.querySelector('input[name="inbox-settings-mode"]:checked')?.value || 'full';
+    const timeoutS = parseInt(document.getElementById('inbox-draft-timeout-s').value, 10) || 300;
+    const btn = document.getElementById('btn-inbox-settings-save');
+    btn.disabled = true; btn.textContent = '⏳ Saving...';
+    try {
+      await Wren.api('/api/comms/inbox/settings', { method: 'PUT', body: { mode, timeout_s: timeoutS } });
+      const saved = document.getElementById('inbox-settings-saved');
+      if (saved) saved.textContent = 'Saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      Wren.toast('Inbox settings saved', 'success');
+    } catch (e) {
+      Wren.toast(e.error || e.message || 'Could not save — are you on the shared inbox manager list?', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save';
+    }
+  });
+
+  if (window._wrenReady) loadInboxSettings(); else document.addEventListener('wren:ready', loadInboxSettings);
+})();
+
+// Council Data Sharing (b378, 2026-10-01)
+(function() {
+  const enabledToggle = document.getElementById('council-sharing-enabled');
+  const fields         = document.getElementById('council-sharing-fields');
+  const keyStatus       = document.getElementById('council-sharing-key-status');
+  const termEl          = document.getElementById('council-sharing-term');
+  const previewEl        = document.getElementById('council-sharing-preview');
+
+  function setFieldsEnabled(on) {
+    fields.style.opacity = on ? '1' : '0.6';
+  }
+  enabledToggle.addEventListener('change', () => setFieldsEnabled(enabledToggle.checked));
+
+  async function loadStatus() {
+    try {
+      const d = await Wren.api('/api/council-sharing/status');
+      enabledToggle.checked = d.enabled;
+      document.getElementById('council-sharing-slug').value = d.council_slug || 'ealing';
+      document.getElementById('council-sharing-show-name').checked = d.show_setting_name;
+      keyStatus.textContent = d.has_api_key ? `Key on file, ending …${d.api_key_suffix}` : 'No API key saved yet.';
+      termEl.textContent = d.term ? `Current term: ${d.term.label}` : '';
+      setFieldsEnabled(d.enabled);
+    } catch (e) { console.error('council-sharing status error', e); }
+  }
+
+  document.getElementById('btn-council-preview').addEventListener('click', async () => {
+    try {
+      const d = await Wren.api('/api/council-sharing/status');
+      previewEl.style.display = 'block';
+      previewEl.textContent = JSON.stringify(d.preview, null, 2);
+    } catch (e) { Wren.toast(e.error || 'Could not build preview', 'error'); }
+  });
+
+  document.getElementById('btn-council-save').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-council-save');
+    btn.disabled = true;
+    try {
+      const apiKeyInput = document.getElementById('council-sharing-api-key');
+      await Wren.api('/api/council-sharing/configure', {
+        method: 'POST',
+        body: {
+          enabled: enabledToggle.checked,
+          council_slug: document.getElementById('council-sharing-slug').value.trim() || 'ealing',
+          show_setting_name: document.getElementById('council-sharing-show-name').checked,
+          api_key: apiKeyInput.value.trim() || undefined,
+        },
+      });
+      apiKeyInput.value = '';
+      Wren.toast('✅ Council sharing settings saved', 'success');
+      await loadStatus();
+    } catch (e) {
+      Wren.toast(e.error || 'Failed to save', 'error');
+    } finally { btn.disabled = false; }
+  });
+
+  document.getElementById('btn-council-push-now').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-council-push-now');
+    btn.disabled = true; btn.textContent = '⏳ Sending...';
+    try {
+      const d = await Wren.api('/api/council-sharing/push-now', { method: 'POST' });
+      Wren.toast(`✅ Sent totals for ${d.term}`, 'success');
+    } catch (e) {
+      Wren.toast(e.error || 'Push failed — check the API key', 'error');
+    } finally { btn.disabled = false; btn.textContent = 'Push now'; }
+  });
+
+  document.getElementById('btn-council-stop').addEventListener('click', async () => {
+    const alsoDelete = document.getElementById('council-sharing-delete-past').checked;
+    if (!confirm(alsoDelete
+      ? 'Stop sharing AND delete our past submissions from the council hub?'
+      : 'Stop sharing with the council? (Past submissions stay on the council hub unless you also tick "also delete".)')) return;
+    try {
+      const d = await Wren.api('/api/council-sharing/stop-sharing', { method: 'POST', body: { delete_past_submissions: alsoDelete } });
+      Wren.toast(d.deleted ? '✅ Sharing stopped and past submissions deleted' : '✅ Sharing stopped', 'success');
+      await loadStatus();
+    } catch (e) { Wren.toast(e.error || 'Failed to stop sharing', 'error'); }
+  });
+
+  if (window._wrenReady) loadStatus(); else document.addEventListener('wren:ready', loadStatus);
+})();
+
+// Device enrolment enforcement (b97 2026-07-17). One master-ish toggle: reflects the
+// four per-portal keys (checked only when ALL are on) and flips them together via the
+// existing endpoints the device middleware already reads (ladn.settings device_enforce_*).
+// Default stays OFF/log-only; env DEVICE_ENFORCE remains the hard kill-switch.
+(function () {
+  var cb = document.getElementById('toggle-device-enforce');
+  var statusEl = document.getElementById('device-enforce-status');
+  if (!cb) return;
+  var PORTALS = ['ey', 'admin', 'parents', 'hr'];
+  function load() {
+    Wren.api('/api/devices/status').then(function (st) {
+      if (!st || !st.portals) return;
+      var on = PORTALS.filter(function (p) { return (st.portals[p] || {}).toggle === 'on'; });
+      cb.checked = on.length === PORTALS.length;
+      var mixed = on.length > 0 && on.length < PORTALS.length;
+      statusEl.innerHTML =
+        (st.master
+          ? '<span style="color:#ef4444;font-weight:600">Env master ON — the toggle is live.</span>'
+          : 'Env master <code>DEVICE_ENFORCE</code> is OFF — saved, but everything stays log-only.') +
+        (mixed ? ' <span style="color:#e07820">Mixed per-portal state (' + on.join(', ') + ' on) — use System → Security for per-portal control.</span>' : '');
+    }).catch(function () { statusEl.textContent = 'Could not load device enforcement status.'; });
+  }
+  cb.addEventListener('change', function () {
+    var state = cb.checked ? 'on' : 'off';
+    cb.disabled = true;
+    Promise.all(PORTALS.map(function (p) {
+      return Wren.api('/api/devices/enforce', { method: 'POST', body: { portal: p, state: state } });
+    })).then(function () {
+      Wren.toast('Device enforcement ' + state.toUpperCase() + ' for all portals' + (state === 'on' ? ' (still log-only until env master DEVICE_ENFORCE is on)' : ''), 'success');
+    }).catch(function (e) {
+      Wren.toast((e && e.error) || 'Failed to update device enforcement', 'error');
+    }).then(function () { cb.disabled = false; load(); });
+  });
+  // Rule-7 pattern: wait for the shell (Wren.api) before first load.
+  if (window._wrenReady) load(); else document.addEventListener('wren:ready', load);
+})();
+
+// ── b239 — Parents mailing group vs the children register ───────────────────
+// Renders REFS ONLY (sha256(address)[0..10]@domain). See the comment on the card.
+(function () {
+  var body = document.getElementById('pgr-body');
+  if (!body) return;
+
+  function esc(t) {
+    return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+
+  function stat(n, label, tone) {
+    return '<div class="pgr-stat ' + (tone || '') + '"><b>' + esc(n) + '</b><span>' + esc(label) + '</span></div>';
+  }
+
+  function render(d) {
+    if (!d.ran) {
+      // "Never run" is not "nothing wrong" — say which one it is.
+      body.innerHTML = '<p class="pgr-note">No reconciliation has run yet, so nothing is known either way. '
+        + 'The daily allowlist sync writes one; to run it now:<br><code>' + esc(d.how || '') + '</code></p>';
+      return;
+    }
+    var c = d.counts || {};
+    var orphans = d.orphans || [], missing = d.missing || [];
+    var leavers = orphans.filter(function (o) { return o.classification === 'leaver'; });
+    var unknown = orphans.filter(function (o) { return o.classification === 'unknown_to_wren'; });
+
+    function childLinks(ids) {
+      var list = (ids || []).filter(function (x) { return x != null; });
+      if (!list.length) return 'no child record';
+      return list.map(function (id) {
+        return '<a href="/child-profile.html?id=' + encodeURIComponent(id) + '">child #' + esc(id) + '</a>';
+      }).join(', ');
+    }
+
+    var html = '<div class="pgr-grid">'
+      + stat(c.group_members || 0, 'on the group', '')
+      + stat(c.enrolled_parent_addresses || 0, 'enrolled parents', '')
+      + stat(leavers.length, 'left, still on it', leavers.length ? 'is-red' : 'is-ok')
+      + stat(c.missing || 0, 'enrolled, not on it', (c.missing || 0) ? 'is-red' : 'is-ok')
+      + stat(unknown.length, 'unknown to Wren', unknown.length ? 'is-amber' : 'is-ok')
+      + '</div>';
+
+    if (missing.length) {
+      html += '<div class="pgr-h">Parents of enrolled children who receive no nursery email</div><ul class="pgr-list">';
+      missing.forEach(function (m) {
+        html += '<li><span>' + esc(m.ref) + '</span><em>' + childLinks(m.child_ids) + '</em></li>';
+      });
+      html += '</ul>';
+    }
+    if (leavers.length) {
+      html += '<div class="pgr-h">Former families still on the group</div><ul class="pgr-list">';
+      leavers.forEach(function (o) {
+        html += '<li><span>' + esc(o.ref) + '</span><em>' + childLinks(o.id == null ? [] : [o.id]) + '</em></li>';
+      });
+      html += '</ul>';
+    }
+    if (unknown.length) {
+      html += '<div class="pgr-h">On the group, unknown to Wren</div><ul class="pgr-list">';
+      unknown.forEach(function (o) { html += '<li><span>' + esc(o.ref) + '</span><em>no record</em></li>'; });
+      html += '</ul>';
+    }
+    if (!missing.length && !leavers.length && !unknown.length) {
+      html += '<p class="pgr-note">The group and the register agree. Enquiry and waiting-list families on the '
+        + 'group are expected and are not counted as findings.</p>';
+    }
+
+    html += '<p class="pgr-note" style="margin-top:12px">Last checked '
+      + esc(new Date(d.ran_at).toLocaleString('en-GB'))
+      + ' · ' + esc(d.group_email || '')
+      + (d.ok ? '' : ' · <span style="color:var(--c-amber)">partial run — some sources could not be read</span>')
+      + '<br>Identifiers are pseudonymous refs, not addresses. To resolve one, hash the paste-file on the host '
+      + '(see the header of <code>scripts/sync-gmail-allowlist.js</code>).</p>';
+
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'
+      + '<button class="btn btn-sm" id="pgr-sync">Fix it now — sync the group</button>'
+      + '<button class="btn btn-sm btn-ghost" id="pgr-recheck">Re-check</button>'
+      + '</div>'
+      + '<p class="pgr-note" style="margin-top:6px">Syncing adds every parent on the current register to the group '
+      + 'and removes everyone who should not be on it. Nobody is emailed either way.</p>';
+
+    body.innerHTML = html;
+
+    function run(path, btn, label) {
+      var el = document.getElementById(btn);
+      if (!el) return;
+      el.addEventListener('click', function () {
+        var was = el.textContent;
+        el.disabled = true; el.textContent = label;
+        Wren.api(path, { method: 'POST' })
+          .then(function (r) {
+            if (window.Wren && Wren.toast) Wren.toast(r && r.summary ? r.summary : 'Done', 'success');
+            load();
+          })
+          .catch(function (e) {
+            if (window.Wren && Wren.toast) Wren.toast((e && e.error) || 'That did not run', 'error');
+            el.disabled = false; el.textContent = was;
+          });
+      });
+    }
+    run('/api/admin/parents-group-sync', 'pgr-sync', 'Syncing…');
+    run('/api/admin/parents-group-recheck', 'pgr-recheck', 'Checking…');
+  }
+
+  function load() {
+    Wren.api('/api/admin/parents-group-reconciliation')
+      .then(render)
+      .catch(function () { body.textContent = 'Could not load the parents group reconciliation.'; });
+  }
+  // Rule-7 pattern: wait for the shell (Wren.api) before first load.
+  if (window._wrenReady) load(); else document.addEventListener('wren:ready', load);
+})();
+
+// On-screen helper toggles (mic FAB + chatbot). Inverted: checked = visible.
+// Widgets read a HIDDEN flag in localStorage on load ('1' = hidden).
+(function () {
+  var defs = [
+    { id: 'toggle-show-mic',  hiddenKey: 'wren.voiceBtnHidden', widget: 'mic'  },
+    { id: 'toggle-show-chat', hiddenKey: 'wren.chatBtnHidden',  widget: 'chat' },
+  ];
+  defs.forEach(function (t) {
+    var el = document.getElementById(t.id);
+    if (!el) return;
+    el.checked = localStorage.getItem(t.hiddenKey) !== '1';   // default ON (shown)
+    el.addEventListener('change', function () {
+      var visible = el.checked;
+      try { visible ? localStorage.removeItem(t.hiddenKey) : localStorage.setItem(t.hiddenKey, '1'); } catch (_) {}
+      try { document.dispatchEvent(new CustomEvent('wren:set-widget-visibility', { detail: { widget: t.widget, visible: visible } })); } catch (_) {}
+      if (window.Wren && Wren.toast) Wren.toast(visible ? 'Shown' : 'Hidden', 'success');
+    });
+  });
+  document.addEventListener('wren:widget-visibility-changed', function (e) {
+    if (!e || !e.detail) return;
+    var map = { mic: 'toggle-show-mic', chat: 'toggle-show-chat' };
+    var el = document.getElementById(map[e.detail.widget]);
+    if (el) el.checked = !!e.detail.visible;
+  });
+})();
+
+// ── Room Moves (b206, 2026-08-19) ──────────────────────────────────────────
+// Reads and writes all three settings keys through /api/room-moves/config:
+//   room_move_rules · room_move_auto_apply · room_move_notice_weeks
+// The rules are per ROOM PAIR, so Baby → Toddler → Pre-school is two rows here
+// rather than a code change. The upcoming-moves list below is the SAME endpoint
+// Admissions → Transfer window uses — one list, two places.
+(function () {
+  var card = document.getElementById('room-moves-card');
+  if (!card) return;
+  var CFG = null;              // last loaded config (rooms, triggers, timings)
+  var RULES = [];              // working copy, edited in place
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  var TRIGGER_LABEL = {
+    second_birthday: '2nd birthday',
+    age_months: 'A fixed age (months)',
+    manual: 'Manual only — no automatic date',
+  };
+  var TIMING_LABEL = {
+    same_week: 'Monday of that week',
+    week_after: 'Monday of the week after',
+    next_month: 'Start of the next month',
+  };
+
+  function describe(r) {
+    if (r.trigger === 'manual') return 'Moved only when a manager sets a date — no automatic schedule.';
+    var t = r.trigger === 'age_months' ? ((parseInt(r.age_months, 10) || 24) + ' months old') : 'their 2nd birthday';
+    var w = r.timing === 'same_week' ? 'the Monday of that week'
+          : r.timing === 'next_month' ? 'the start of the next month'
+          : 'the Monday of the week after';
+    return 'When a child reaches ' + t + ', they move on ' + w + '.';
+  }
+
+  function roomOptions(sel) {
+    return (CFG.rooms || []).map(function (rm) {
+      return '<option value="' + rm.id + '"' + (Number(sel) === rm.id ? ' selected' : '') + '>' + esc(rm.name) + '</option>';
+    }).join('');
+  }
+
+  function renderRules() {
+    var el = document.getElementById('rm-rules');
+    if (!RULES.length) {
+      el.innerHTML = '<div style="color:#94a3b8;font-size:.82rem;padding:12px;background:#0f172a;border:1px solid #2d3748;border-radius:8px">No rules — add a room pair to start moving children automatically.</div>';
+      return;
+    }
+    el.innerHTML = RULES.map(function (r, i) {
+      return '<div style="background:#0f172a;border:1px solid ' + (r.enabled ? '#2d3748' : '#1e293b') + ';border-radius:8px;padding:14px;margin-bottom:10px' + (r.enabled ? '' : ';opacity:.6') + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">' +
+          '<input type="text" class="form-control" data-rm-f="label" data-rm-i="' + i + '" value="' + esc(r.label) + '" style="font-size:.9rem;font-weight:700;flex:1;min-width:190px">' +
+          '<label style="font-size:.76rem;color:#94a3b8;display:flex;align-items:center;gap:6px"><input type="checkbox" data-rm-f="enabled" data-rm-i="' + i + '"' + (r.enabled ? ' checked' : '') + '> Active</label>' +
+          '<button class="btn btn-ghost" style="padding:5px 10px;font-size:.74rem;border-color:#7f1d1d;color:#f87171" data-rm-del="' + i + '">Remove</button>' +
+        '</div>' +
+        '<div class="set-fields">' +
+          field('From room', '<select class="form-control" data-rm-f="from_room_id" data-rm-i="' + i + '">' + roomOptions(r.from_room_id) + '</select>') +
+          field('To room', '<select class="form-control" data-rm-f="to_room_id" data-rm-i="' + i + '">' + roomOptions(r.to_room_id) + '</select>') +
+          field('Trigger', '<select class="form-control" data-rm-f="trigger" data-rm-i="' + i + '">' +
+            (CFG.triggers || []).map(function (t) { return '<option value="' + t + '"' + (r.trigger === t ? ' selected' : '') + '>' + esc(TRIGGER_LABEL[t] || t) + '</option>'; }).join('') + '</select>') +
+          (r.trigger === 'age_months'
+            ? field('Age (months)', '<input type="number" class="form-control" min="1" max="120" data-rm-f="age_months" data-rm-i="' + i + '" value="' + (parseInt(r.age_months, 10) || 24) + '">')
+            : '') +
+          field('Timing', '<select class="form-control" data-rm-f="timing" data-rm-i="' + i + '"' + (r.trigger === 'manual' ? ' disabled' : '') + '>' +
+            (CFG.timings || []).map(function (t) { return '<option value="' + t + '"' + (r.timing === t ? ' selected' : '') + '>' + esc(TIMING_LABEL[t] || t) + '</option>'; }).join('') + '</select>') +
+        '</div>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.8rem;color:#94a3b8">' +
+          '<input type="checkbox" data-rm-f="auto_apply" data-rm-i="' + i + '"' + (r.auto_apply ? ' checked' : '') + '> ' +
+          'Apply this rule’s moves automatically' +
+        '</label>' +
+        '<div style="margin-top:10px;font-size:.78rem;color:#4a9abf">' + esc(describe(r)) + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function field(label, control) {
+    return '<div><label style="font-size:.7rem;color:#64748b;display:block;margin-bottom:3px">' + label + '</label>' + control + '</div>';
+  }
+
+  // Delegated so re-rendering never loses handlers.
+  document.getElementById('rm-rules').addEventListener('change', function (e) {
+    var t = e.target, f = t.getAttribute('data-rm-f');
+    if (!f) return;
+    var r = RULES[parseInt(t.getAttribute('data-rm-i'), 10)];
+    if (!r) return;
+    if (t.type === 'checkbox') r[f] = t.checked;
+    else if (f === 'from_room_id' || f === 'to_room_id' || f === 'age_months') r[f] = parseInt(t.value, 10);
+    else r[f] = t.value;
+    renderRules();                      // re-render: trigger changes what's shown
+  });
+  document.getElementById('rm-rules').addEventListener('input', function (e) {
+    var t = e.target;
+    if (t.getAttribute('data-rm-f') === 'label') {
+      var r = RULES[parseInt(t.getAttribute('data-rm-i'), 10)];
+      if (r) r.label = t.value;         // no re-render — would steal focus mid-type
+    }
+  });
+  document.getElementById('rm-rules').addEventListener('click', function (e) {
+    var del = e.target.getAttribute && e.target.getAttribute('data-rm-del');
+    if (del == null) return;
+    RULES.splice(parseInt(del, 10), 1);
+    renderRules();
+  });
+
+  document.getElementById('rm-add-rule').addEventListener('click', function () {
+    var rooms = CFG.rooms || [];
+    RULES.push({
+      key: 'rule_' + (RULES.length + 1) + '_' + Math.random().toString(36).slice(2, 6),
+      label: 'New room move',
+      from_room_id: rooms[0] ? rooms[0].id : null,
+      to_room_id: rooms[1] ? rooms[1].id : (rooms[0] ? rooms[0].id : null),
+      trigger: 'second_birthday', age_months: 24, timing: 'week_after',
+      auto_apply: true, enabled: true,
+    });
+    renderRules();
+  });
+
+  function renderUpcoming(d) {
+    var el = document.getElementById('rm-upcoming');
+    var moves = (d && d.moves) || [];
+    if (!moves.length) {
+      el.innerHTML = '<div style="color:#94a3b8;font-size:.82rem;padding:12px;background:#0f172a;border:1px solid #2d3748;border-radius:8px">No moves scheduled — no child in a "from" room has a move date yet.</div>';
+      return;
+    }
+    var rows = moves.map(function (m) {
+      var when = m.days_away < 0 ? '<span style="color:#f87171;font-weight:700">' + Math.abs(m.days_away) + ' days overdue</span>'
+        : m.days_away === 0 ? '<span style="color:#f59e0b;font-weight:700">today</span>'
+        : m.days_away + ' days';
+      return '<tr style="border-top:1px solid #1e293b">' +
+        '<td style="padding:7px 8px;color:#64748b">#' + m.child_id + '</td>' +
+        '<td style="padding:7px 8px;color:#f1f5f9;font-weight:600">' + esc(m.name) + '</td>' +
+        '<td style="padding:7px 8px;color:#94a3b8">' + esc(m.from_room || '—') + '</td>' +
+        '<td style="padding:7px 8px;color:#94a3b8">' + esc(m.to_room || '—') + '</td>' +
+        '<td style="padding:7px 8px;color:#f1f5f9">' + esc(m.move_date) +
+          (m.manual_override ? ' <span title="set by hand — the nightly rule recompute leaves it alone" style="font-size:.68rem;color:#e07820">✎ manual</span>' : '') + '</td>' +
+        '<td style="padding:7px 8px">' + when + '</td>' +
+        '<td style="padding:7px 8px;font-size:.72rem;color:#64748b">' +
+          (m.proposal ? '<span style="color:#f59e0b">awaiting your OK</span>'
+           : m.auto_apply ? 'automatic' : 'needs confirming') + '</td>' +
+      '</tr>';
+    }).join('');
+    el.innerHTML = '<div class="set-scroll" style="background:#0f172a;border:1px solid #2d3748;border-radius:8px">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:.8rem">' +
+      '<thead><tr style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em">' +
+      '<th style="text-align:left;padding:8px">ID</th><th style="text-align:left;padding:8px">Child</th>' +
+      '<th style="text-align:left;padding:8px">From</th><th style="text-align:left;padding:8px">To</th>' +
+      '<th style="text-align:left;padding:8px">Move date</th><th style="text-align:left;padding:8px">Away</th>' +
+      '<th style="text-align:left;padding:8px">Handling</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  async function loadRoomMoves() {
+    try {
+      CFG = await Wren.api('/api/room-moves/config');
+      RULES = (CFG.rules || []).map(function (r) { return Object.assign({}, r); });
+      document.getElementById('rm-engine-auto').checked = !!CFG.engine_auto;
+      document.getElementById('rm-auto-apply').checked = !!CFG.auto_apply;
+      document.getElementById('rm-notice-weeks').value = CFG.notice_weeks;
+      renderRules();
+      if (CFG.seeded_defaults) {
+        document.getElementById('rm-save-note').textContent = 'Showing the default rule — press Save to store it.';
+      }
+    } catch (e) {
+      document.getElementById('rm-rules').innerHTML =
+        '<div style="color:#f87171;font-size:.82rem">Could not load room-move rules: ' + esc((e && e.error) || e.message || 'error') + '</div>';
+      return;
+    }
+    try { renderUpcoming(await Wren.api('/api/room-moves/upcoming')); }
+    catch (e) { document.getElementById('rm-upcoming').innerHTML = '<div style="color:#f87171;font-size:.82rem">Could not load the upcoming moves.</div>'; }
+  }
+
+  async function saveRoomMoves(quiet) {
+    var weeks = parseInt(document.getElementById('rm-notice-weeks').value, 10);
+    var body = {
+      rules: RULES,
+      auto_apply: document.getElementById('rm-auto-apply').checked,
+      engine_auto: document.getElementById('rm-engine-auto').checked,
+      notice_weeks: isNaN(weeks) ? 4 : weeks,
+    };
+    var res = await Wren.api('/api/room-moves/config', { method: 'PUT', body: body });
+    CFG = Object.assign({}, CFG, res);
+    RULES = (res.rules || []).map(function (r) { return Object.assign({}, r); });
+    renderRules();
+    var note = document.getElementById('rm-save-note');
+    note.textContent = 'Saved' + ((res.recomputed && res.recomputed.length)
+      ? ' — ' + res.recomputed.length + ' move date(s) recalculated from the new rule' : '') + '.';
+    if (!quiet) Wren.toast('Room-move rules saved ✓', 'success');
+    try { renderUpcoming(await Wren.api('/api/room-moves/upcoming')); } catch (e) {}
+  }
+
+  document.getElementById('rm-save').addEventListener('click', function () {
+    saveRoomMoves(false).catch(function (e) { Wren.toast((e && e.error) || 'Failed to save room-move rules', 'error'); });
+  });
+
+  // "Save All Settings" should mean all of them.
+  ['btn-save-top', 'btn-save-bottom'].forEach(function (id) {
+    var b = document.getElementById(id);
+    if (b) b.addEventListener('click', function () {
+      saveRoomMoves(true).catch(function (e) { Wren.toast((e && e.error) || 'Room-move rules were NOT saved', 'error'); });
+    });
+  });
+
+  document.getElementById('rm-dry-run').addEventListener('click', async function () {
+    var out = document.getElementById('rm-run-output');
+    var btn = this;
+    btn.disabled = true; btn.textContent = '⏳ Working…';
+    try {
+      // dry_run defaults true server-side — a preview never moves a child.
+      var r = await Wren.api('/api/room-moves/run', { method: 'POST', body: { dry_run: true } });
+      out.style.display = 'block';
+      out.textContent = (r.log || []).join('\n') || 'Nothing due, nothing proposed, no notices to send.';
+    } catch (e) {
+      out.style.display = 'block';
+      out.textContent = 'Preview failed: ' + ((e && e.error) || e.message || 'error');
+    } finally { btn.disabled = false; btn.textContent = "Preview tonight's run"; }
+  });
+
+  // Rule-7 pattern: wait for the shell (Wren.api) before first load.
+  if (window._wrenReady) loadRoomMoves(); else document.addEventListener('wren:ready', loadRoomMoves);
+})();
+
+// b422 (2026-10-08) — Welcome pack settings card. Its own load/save, isolated
+// from loadSettings()/saveAll() above (those only touch the generic
+// key/value `settings` table; this card's data lives in welcome_pack_settings
+// + welcome_pack_attachments, via /api/welcome-pack/settings).
+(function () {
+  var state = null;
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // b429 — 'payment' defaults OFF (opt-in), matching src/lib/welcome-pack.js's
+  // DEFAULT_OFF: prod has only 3 ACTIVE GoCardless mandates, so left on by
+  // default this item would sit outstanding for almost every family forever.
+  var DEFAULT_OFF = ['payment'];
+  function renderToggles() {
+    var box = document.getElementById('wp-checklist-toggles');
+    var cfg = state.checklist_config || {};
+    box.innerHTML = state.item_defs.map(function (d) {
+      var on = DEFAULT_OFF.indexOf(d.key) !== -1 ? cfg[d.key] === true : cfg[d.key] !== false;
+      return '<label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--c-text)">' +
+        '<input type="checkbox" data-wp-item="' + d.key + '"' + (on ? ' checked' : '') + '> ' + esc(d.label) + '</label>';
+    }).join('');
+  }
+
+  function renderAttachments() {
+    var box = document.getElementById('wp-attachments-list');
+    if (!state.attachments.length) {
+      box.innerHTML = '<div style="font-size:.8rem;color:var(--c-muted)">No attachments yet.</div>';
+      return;
+    }
+    box.innerHTML = state.attachments.map(function (a) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;background:var(--c-surface-2);border-radius:8px">' +
+        '<span style="font-size:.84rem;color:var(--c-text)">' + esc(a.title) + ' <span style="color:var(--c-muted)">(' + Math.round((a.size_bytes || 0) / 1024) + 'KB)</span></span>' +
+        '<button class="btn btn-ghost btn-sm wp-del-attachment" data-id="' + a.id + '" style="padding:4px 10px">Remove</button></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.wp-del-attachment'), function (btn) {
+      btn.addEventListener('click', async function () {
+        try {
+          await Wren.api('/api/welcome-pack/settings/attachments/' + btn.dataset.id, { method: 'DELETE' });
+          await loadWelcomePackSettings();
+        } catch (e) { Wren.toast((e && e.error) || 'Failed to remove', 'error'); }
+      });
+    });
+  }
+
+  // b428 — the brief asked for a live preview here; there wasn't one. Fills
+  // the merge fields with sample values (same keys src/lib/welcome-pack.js
+  // renders for real) so the subject/body are shown exactly as a parent would
+  // see them, re-rendered on every edit.
+  var WP_SAMPLE_FIELDS = {
+    parent_name: 'Jamie Smith', child_first_name: 'Alex', child_name: 'Alex Smith',
+    start_date: '3 November 2026', nursery_name: 'Your Setting',
+    signup_link: 'https://parents.example-nursery.co.uk',
+    checklist_list: '<p>Here is what is still left to do:</p><ul><li>Red book / immunisations</li><li>All about me</li></ul>',
+  };
+  function renderTemplate(tpl, fields) {
+    return String(tpl || '').replace(/\{\{(\w+)\}\}/g, function (m, key) { return fields[key] != null ? String(fields[key]) : ''; });
+  }
+  function renderPreview() {
+    var pv = document.getElementById('wp-settings-preview');
+    if (!pv) return;
+    pv.srcdoc = renderTemplate(document.getElementById('wp-body').value, WP_SAMPLE_FIELDS);
+  }
+  document.getElementById('wp-body').addEventListener('input', renderPreview);
+
+  async function loadWelcomePackSettings() {
+    try {
+      state = await Wren.api('/api/welcome-pack/settings');
+      document.getElementById('wp-subject').value = state.subject || '';
+      document.getElementById('wp-body').value = state.body_html || '';
+      document.getElementById('wp-merge-fields').textContent = state.merge_fields.map(function (f) { return '{{' + f.key + '}}'; }).join(', ');
+      renderToggles();
+      renderAttachments();
+      renderPreview();
+    } catch (e) { Wren.toast('Failed to load welcome pack settings', 'error'); }
+  }
+
+  document.getElementById('wp-save-btn').addEventListener('click', async function () {
+    var checklist_config = {};
+    Array.prototype.forEach.call(document.querySelectorAll('[data-wp-item]'), function (el) {
+      checklist_config[el.dataset.wpItem] = el.checked;
+    });
+    try {
+      state = await Wren.api('/api/welcome-pack/settings', {
+        method: 'PUT',
+        body: { subject: document.getElementById('wp-subject').value, body_html: document.getElementById('wp-body').value, checklist_config: checklist_config },
+      });
+      Wren.toast('Welcome pack settings saved ✓', 'success');
+    } catch (e) { Wren.toast((e && e.error) || 'Failed to save', 'error'); }
+  });
+
+  document.getElementById('wp-attachment-upload-btn').addEventListener('click', async function () {
+    var input = document.getElementById('wp-attachment-file');
+    if (!input.files || !input.files[0]) { Wren.toast('Choose a file first', 'warning'); return; }
+    var fd = new FormData();
+    fd.append('file', input.files[0]);
+    fd.append('title', input.files[0].name);
+    try {
+      // multipart body — plain fetch, not Wren.api (same reason handbook.html's
+      // upload does the same: Wren.api always sends JSON).
+      var token = localStorage.getItem('wrenToken') || sessionStorage.getItem('wrenToken');
+      var resp = await fetch('/api/welcome-pack/settings/attachments', {
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd,
+      });
+      if (!resp.ok) { var err = await resp.json().catch(function () { return {}; }); throw new Error(err.error || 'Upload failed'); }
+      input.value = '';
+      await loadWelcomePackSettings();
+      Wren.toast('Attachment added ✓', 'success');
+    } catch (e) { Wren.toast(e.message || 'Upload failed', 'error'); }
+  });
+
+  if (window._wrenReady) loadWelcomePackSettings(); else document.addEventListener('wren:ready', loadWelcomePackSettings);
+})();
+
+// b403 (2026-10-06, ported 2026-10-17) — "Hidden menu items" card. Reads/writes the existing
+// ladn.nav_layout rows (edition='ladn-more', role='*') via /api/nav-layout —
+// that route and table were built for b242 but never got a screen. No new
+// route needed; un-hiding is DELETE /api/nav-layout/cell, same as the matrix
+// screen would use. (Role-specific rows set in the matrix are not shown here — only the '*' defaults.)
+(function () {
+  var box = document.getElementById('hidden-nav-items-list');
+  if (!box) return;
+  function labelFor(key) {
+    var items = window.WREN_EY_MORE_ITEMS || [];
+    for (var i = 0; i < items.length; i++) if (items[i].key === key) return items[i].label;
+    return key;
+  }
+  function escAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+  async function loadHiddenNavItems() {
+    try {
+      var d = await Wren.api('/api/nav-layout/matrix?edition=ladn-more');
+      var hidden = (d.rows || []).filter(function (r) { return r.role === '*' && r.hidden; });
+      if (!hidden.length) {
+        box.innerHTML = '<div style="font-size:.82rem;color:var(--c-muted)">Nothing hidden right now.</div>';
+        return;
+      }
+      box.innerHTML = hidden.map(function (r) {
+        return '<div class="toggle-row" data-section-id="' + escAttr(r.section_id) + '">' +
+          '<div class="toggle-label"><strong>' + escAttr(labelFor(r.section_id)) + '</strong></div>' +
+          '<button class="btn btn-ghost btn-unhide-nav" style="padding:6px 12px;font-size:.78rem">Un-hide</button>' +
+          '</div>';
+      }).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('.btn-unhide-nav'), function (btn) {
+        btn.addEventListener('click', async function () {
+          var row = btn.closest('[data-section-id]');
+          var sectionId = row.dataset.sectionId;
+          btn.disabled = true;
+          try {
+            await Wren.api('/api/nav-layout/cell?' + new URLSearchParams({
+              edition: 'ladn-more', role: '*', section_id: sectionId,
+            }), { method: 'DELETE' });
+            Wren.toast('Un-hidden ✓', 'success');
+            loadHiddenNavItems();
+          } catch (e) {
+            btn.disabled = false;
+            Wren.toast((e && e.error) || 'Failed to un-hide', 'error');
+          }
+        });
+      });
+    } catch (e) {
+      box.innerHTML = '<div style="font-size:.82rem;color:var(--c-muted)">Couldn\'t load — ' +
+        ((e && e.error) || 'try again') + '</div>';
+    }
+  }
+
+  if (window._wrenReady) loadHiddenNavItems(); else document.addEventListener('wren:ready', loadHiddenNavItems);
+})();
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

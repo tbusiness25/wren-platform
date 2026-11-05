@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Action Plans — Your Nursery</title>
+<meta name="lap-title" content="Action plans">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+/* b339 — this page was a hard-coded dark-navy palette (61 hex literals), so it looked like a different
+   app and could not follow the light/dark setting. It now reads the same tokens as every other screen.
+   The three priority colours and the status dots are meaning, not decoration, so they are named here once. */
+:root{--green:#2d5a4a;--green-d:#1e3d31;--orange:#f0a050;--cream:#fefcf8;--cream-d:#f5f0e8;--text:#2a2a2a;--text-m:#5a5a5a;--border:#e8e0d0;
+  --pri-high:#ef4444;--pri-med:#f59e0b;--pri-low:#22c55e}
+body{background:var(--cream);color:var(--text);font-family:'Nunito',system-ui,Arial,sans-serif;line-height:1.6;min-height:100vh}
+/* the fallback header, kept in the file for the day the shell script fails; the shell's title row replaces it */
+.top-bar{background:var(--green);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:14px}
+.top-bar img{height:44px;border-radius:8px;background:var(--surface, #fff);padding:2px}
+.top-bar h1{font-size:1.1rem;font-family:'Arial Rounded MT Bold',Nunito,Arial,sans-serif;color:#fff;flex:1}
+.top-bar a{color:rgba(255,255,255,.85);font-size:.85rem;text-decoration:none}
+html.lap-shell .top-bar{display:none}
+.container{max-width:720px;margin:0 auto;padding:20px 16px}
+.plan-block{background:var(--surface, #fff);border:1px solid var(--border);border-radius:14px;margin-bottom:14px;overflow:hidden}
+.plan-head{padding:16px;border-bottom:1px solid var(--border)}
+.plan-name{font-size:1.05rem;font-weight:800;color:var(--text);margin-bottom:6px}
+.plan-meta{font-size:.8rem;color:var(--text-m);display:flex;gap:12px;flex-wrap:wrap}
+.plan-desc{font-size:.86rem;color:var(--text-m);margin-top:8px;line-height:1.5}
+.items-list{padding:12px 16px}
+.item-card{border-left:4px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:var(--cream-d)}
+.item-card.pri-high{border-left-color:var(--pri-high)}
+.item-card.pri-medium{border-left-color:var(--pri-med)}
+.item-card.pri-low{border-left-color:var(--pri-low)}
+.item-title{font-weight:700;font-size:.92rem;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.item-title.done-text{text-decoration:line-through;color:var(--text-m)}
+.status-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.dot-completed{background:var(--pri-low)}
+.dot-in-progress{background:var(--green)}
+.dot-blocked{background:var(--pri-high)}
+.dot-todo{background:var(--text-m)}
+.item-meta{font-size:.78rem;color:var(--text-m);display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:.74rem;font-weight:700;color:var(--text)}
+.badge-red{background:var(--lap-tint-red, #fbe4e0)}
+.badge-blue{background:var(--lap-tint-blue, #e8f4fd)}
+.badge-gray{background:var(--lap-tint-neutral, #f5f0e8);border:1px solid var(--border)}
+.badge-green{background:var(--lap-tint-green, #e4f3ea)}
+.item-desc{font-size:.84rem;color:var(--text-m);margin-bottom:10px;line-height:1.5}
+.comments-section{margin-top:8px;border-top:1px solid var(--border);padding-top:4px}
+.comment-toggle{font-size:.84rem;font-weight:700;color:var(--lap-ink,var(--green));cursor:pointer;background:none;border:none;padding:0 2px;min-height:44px}
+.comment-toggle:hover{text-decoration:underline}
+.comments-inner{margin-top:4px;display:none}
+.comments-inner.open{display:block}
+.comment-bubble{background:var(--surface, #fff);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:6px}
+.comment-author{font-size:.74rem;color:var(--lap-ink,var(--green));font-weight:700;margin-bottom:2px}
+.comment-body{font-size:.86rem;color:var(--text)}
+.comment-form{display:flex;gap:8px;margin-top:8px}
+.comment-input{flex:1;min-width:0;background:var(--surface, #fff);border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;color:var(--text);font-size:16px;outline:none}
+.comment-input:focus{border-color:var(--green)}
+.comment-err{margin-top:6px;font-size:.82rem;color:var(--text);background:var(--lap-tint-red, #fbe4e0);border-radius:8px;padding:8px 10px}
+.btn{padding:0 16px;min-height:44px;border-radius:10px;border:none;cursor:pointer;font-size:.86rem;font-weight:700;transition:.15s}
+.btn-primary{background:var(--green);color:#fff}
+.btn-primary:hover{background:var(--green-d)}
+.btn-primary:disabled{opacity:.6;cursor:default}
+.progress-bar-wrap{height:6px;background:var(--cream-d);border-radius:3px;margin-top:10px;overflow:hidden}
+.progress-bar{height:100%;background:var(--green);border-radius:3px;transition:.3s}
+.tag-chip{display:inline-block;padding:2px 8px;border-radius:10px;background:var(--lap-tint-neutral, #f5f0e8);color:var(--lap-ink,var(--green));font-size:.72rem;font-weight:700;margin:1px}
+.comments-list .lap-empty{padding:8px 8px 4px}
+.comments-list .lap-empty .lap-ill{width:64px}
+.items-list .lap-empty{padding:10px 8px 6px}
+.sk{height:150px;margin-bottom:14px;border-radius:14px;background:linear-gradient(90deg,var(--cream-d) 0%,var(--surface,#fff) 50%,var(--cream-d) 100%);background-size:200% 100%;animation:sk 1.2s ease-in-out infinite}
+@keyframes sk{to{background-position:-200% 0}}
+@media(prefers-reduced-motion:reduce){.sk{animation:none}}
+@media(max-width:500px){.plan-meta{flex-direction:column;gap:4px}}
+</style>
+<script src="/pwa.js" defer></script>
+<link rel="stylesheet" href="/css/parents-app.css" data-parents-app-css="1">
+<script src="/js/lap-boot.js"></script>
+</head>
+<body>
+
+<div class="top-bar">
+  <img src="/little-angels-logo.png" alt="Your Nursery" data-hide-on-error>
+  <h1>Action Plans</h1>
+  <a href="/welcome">← Back</a>
+</div>
+
+<div class="container">
+  <div id="content"><div class="sk"></div><div class="sk"></div></div>
+
+  <!-- b339 (2026-09-18): the intro sentence moved from above the plans to here. Unchanged. -->
+  <details class="lap-fold">
+    <summary>About action plans</summary>
+    <div class="lap-fold-body">
+      These are action plans your nursery has shared with you about <strong>your child's care</strong>. You can read progress updates and leave comments for the nursery team.
+    </div>
+  </details>
+</div>
+
+<script src="/js/wren-parent-empty.js"></script>
+<script>
+const el=document.getElementById('content');
+
+function fail(){
+  WrenParentEmpty.render(el,navigator.onLine===false?'offline':'error',{
+    text:'We couldn’t load your action plans just now. Please try again in a moment.',
+    action:{label:'Try again',onClick:load}
+  });
+}
+
+async function load(){
+  el.innerHTML='<div class="sk"></div><div class="sk"></div>';
+  try{
+    const res=await fetch('/api/action-plans');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const plans=await res.json();
+    if(!plans.length){
+      WrenParentEmpty.render(el,'generic',{
+        title:'No plans shared yet',
+        text:'When the nursery shares an action plan with you — such as a settling-in plan or support plan for your child — it will appear here.'
+      });
+      return;
+    }
+    el.innerHTML='';
+    for(const plan of plans){
+      let items=[];
+      try{items=await fetch('/api/action-plan-items?plan_id='+plan.id).then(r=>r.ok?r.json():[]);}catch{}
+      const done=items.filter(i=>i.status==='completed').length;
+      const pct=items.length?Math.round(done/items.length*100):0;
+      const block=document.createElement('div');
+      block.className='plan-block';
+      block.innerHTML=`
+        <div class="plan-head">
+          <div class="plan-name">${esc(plan.title)}</div>
+          <div class="plan-meta">
+            ${plan.child_name?`<span>👶 ${esc(plan.child_name)}</span>`:''}
+            ${plan.category?`<span>${esc(plan.category.replace('_',' '))}</span>`:''}
+            ${plan.target_date?`<span>Target: ${fmtDate(plan.target_date)}</span>`:''}
+            <span>${pct}% complete</span>
+          </div>
+          ${plan.description?`<div class="plan-desc">${esc(plan.description)}</div>`:''}
+          <div class="progress-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+        </div>
+        <div class="items-list">${renderItems(items,plan.id)}</div>`;
+      el.appendChild(block);
+      // Wire up comment toggles for this block
+      block.querySelectorAll('[data-toggle-comments]').forEach(btn=>{
+        btn.addEventListener('click',async()=>{
+          const inner=document.getElementById('ci-'+btn.dataset.toggleComments);
+          if(!inner) return;
+          inner.classList.toggle('open');
+          if(inner.classList.contains('open')&&!inner.dataset.loaded){
+            inner.dataset.loaded='1';
+            await loadComments(btn.dataset.toggleComments,inner);
+          }
+        });
+      });
+      block.querySelectorAll('[data-post-comment]').forEach(btn=>{
+        btn.addEventListener('click',async()=>{
+          const itemId=btn.dataset.postComment;
+          const inp=document.getElementById('cinp-'+itemId);
+          const err=document.getElementById('cerr-'+itemId);
+          if(!inp||!inp.value.trim()) return;
+          if(err) err.hidden=true;
+          btn.disabled=true;
+          try{
+            // a non-2xx reply is a failure too — the old code cleared the box as if it had sent
+            const r=await fetch('/api/action-plan-items/'+itemId+'/comments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:inp.value.trim()})});
+            if(!r.ok) throw new Error('HTTP '+r.status);
+            inp.value='';
+            const inner=document.getElementById('ci-'+itemId);
+            await loadComments(itemId,inner);
+          } catch(e){
+            // the message stays in the box so nothing is lost; Send is the retry
+            if(err){ err.textContent='That did not send. Your message is still here — tap Send to try again.'; err.hidden=false; }
+          }
+          finally{ btn.disabled=false; }
+        });
+      });
+    }
+  } catch(e){ fail(); }
+}
+
+function renderItems(items, planId){
+  if(!items.length) return WrenParentEmpty.html('generic',{compact:true,title:'No actions listed yet',text:'Actions will appear here once the nursery adds them.'});
+  return items.map(item=>{
+    const done=item.status==='completed';
+    const overdue=item.deadline&&!done&&new Date(item.deadline)<new Date();
+    const dotClass={completed:'dot-completed','in-progress':'dot-in-progress',blocked:'dot-blocked',todo:'dot-todo'}[item.status]||'dot-todo';
+    const dlBadge=item.deadline?`<span class="badge ${overdue?'badge-red':'badge-gray'}">${overdue?'⚠ ':''}${fmtDate(item.deadline)}</span>`:'';
+    const tags=(item.tags||[]).map(t=>`<span class="tag-chip">${esc(t)}</span>`).join('');
+    return `<div class="item-card pri-${item.priority||'medium'} ${done?'done':''}">
+      <div class="item-title ${done?'done-text':''}">
+        <span class="status-dot ${dotClass}" title="${esc(item.status)}"></span>
+        ${esc(item.title)}
+      </div>
+      <div class="item-meta">
+        ${dlBadge}
+        ${item.assignee_name?`<span>👤 ${esc(item.assignee_name)}</span>`:''}
+        <span class="badge ${done?'badge-green':'badge-gray'}">${esc(item.status||'todo').replace('-',' ')}</span>
+        ${tags}
+      </div>
+      ${item.description?`<div class="item-desc">${esc(item.description)}</div>`:''}
+      <div class="comments-section">
+        <button type="button" class="comment-toggle" data-toggle-comments="${item.id}">💬 Comments${item.comment_count?` (${item.comment_count})`:''}</button>
+        <div class="comments-inner" id="ci-${item.id}">
+          <div class="comment-form">
+            <input class="comment-input" id="cinp-${item.id}" aria-label="Message for the nursery team" placeholder="Leave a message for the nursery team…">
+            <button type="button" class="btn btn-primary" data-post-comment="${item.id}">Send</button>
+          </div>
+          <div class="comment-err" id="cerr-${item.id}" role="alert" hidden></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadComments(itemId, container){
+  const existing=container.querySelector('.comments-list');
+  try{
+    const res=await fetch('/api/action-plan-items/'+itemId+'/comments');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const comments=await res.json();
+    if(existing) existing.remove();
+    const list=document.createElement('div');
+    list.className='comments-list';
+    if(comments.length){
+      list.innerHTML=comments.map(c=>`<div class="comment-bubble"><div class="comment-author">${esc(c.author_name)} · ${fmtDate(c.created_at)}</div><div class="comment-body">${esc(c.body)}</div></div>`).join('');
+    } else {
+      list.innerHTML=WrenParentEmpty.html('generic',{compact:true,title:'No comments yet',text:'Leave a message for the nursery team below.'});
+    }
+    container.insertBefore(list, container.firstChild);
+  } catch{
+    // could not read the thread: say so, with a way to ask again
+    if(existing) existing.remove();
+    const list=document.createElement('div');
+    list.className='comments-list';
+    WrenParentEmpty.render(list,navigator.onLine===false?'offline':'error',{compact:true,text:'We couldn’t load the comments.',
+      action:{label:'Try again',onClick:()=>loadComments(itemId,container)}});
+    container.insertBefore(list, container.firstChild);
+  }
+}
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtDate(d){return d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';}
+
+load();
+
+// b508 (2026-10-18) — the logo/photo above used onerror="this.style.display='none'".
+// The LADN CSP sets `script-src-attr 'none'`, so that attribute had already stopped
+// firing and a missing image showed the browser's broken-image icon instead of
+// hiding. Same behaviour, as a capture-phase listener (error events do not bubble,
+// so `true` is required). Do not put it back as an attribute.
+document.addEventListener('error', function (e) {
+  var t = e.target;
+  if (t && t.tagName === 'IMG' && t.hasAttribute('data-hide-on-error')) t.style.display = 'none';
+}, true);
+
+</script>
+  <script src="/js/wren-lightbox.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>Now Mode — Wren</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand: #4a9abf;
+      --orange: #e07820;
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #2d3748;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, Arial, sans-serif;
+      user-select: none;
+    }
+
+    /* ── Top bar ─────────────────────────────────────────────────────────────── */
+    #nm-topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 60px;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      z-index: 100;
+      gap: 16px;
+    }
+    #nm-topbar .nm-logo {
+      font-size: 1.3rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    #nm-topbar .nm-logo .w { color: var(--brand); }
+    #nm-topbar .nm-logo .ren { color: var(--orange); }
+    #nm-mode-label {
+      font-size: .75rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      background: rgba(74,154,191,.15);
+      border: 1px solid rgba(74,154,191,.3);
+      border-radius: 6px;
+      padding: 3px 10px;
+    }
+    #nm-clock {
+      margin-left: auto;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -.02em;
+    }
+    #nm-exit {
+      background: rgba(239,68,68,.15);
+      border: 1px solid rgba(239,68,68,.4);
+      color: var(--danger);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    #nm-exit:hover { background: rgba(239,68,68,.25); }
+
+    /* ── Tile grid ───────────────────────────────────────────────────────────── */
+    #nm-grid {
+      position: fixed;
+      top: 60px; left: 0; right: 0; bottom: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .nm-tile {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background .15s, border-color .15s, transform .1s;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .nm-tile:hover { background: #263449; border-color: var(--brand); transform: scale(1.01); }
+    .nm-tile:active { transform: scale(.98); }
+
+    .nm-tile .tile-icon {
+      font-size: clamp(2.5rem, 6vw, 5rem);
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+    .nm-tile .tile-title {
+      font-size: clamp(1rem, 2.5vw, 1.8rem);
+      font-weight: 800;
+      color: var(--text);
+      text-align: center;
+      font-family: 'Arial Rounded MT Bold', 'Nunito', Arial, sans-serif;
+    }
+    .nm-tile .tile-sub {
+      font-size: clamp(.65rem, 1.2vw, .9rem);
+      color: var(--muted);
+      text-align: center;
+      margin-top: 6px;
+      padding: 0 12px;
+    }
+    .nm-tile .tile-badge {
+      position: absolute;
+      top: 12px; right: 14px;
+      font-size: .75rem;
+      font-weight: 700;
+      background: var(--brand);
+      color: white;
+      border-radius: 20px;
+      padding: 2px 10px;
+    }
+
+    /* Accent colours per tile */
+    .nm-tile.tile-register  { border-color: var(--success); }
+    .nm-tile.tile-register:hover { background: rgba(34,197,94,.08); border-color: var(--success); }
+    .nm-tile.tile-behaviour { border-color: var(--orange); }
+    .nm-tile.tile-behaviour:hover { background: rgba(224,120,32,.08); border-color: var(--orange); }
+    .nm-tile.tile-obs       { border-color: var(--brand); }
+    .nm-tile.tile-activity  { border-color: #8b5cf6; }
+    .nm-tile.tile-activity:hover { background: rgba(139,92,246,.08); border-color: #8b5cf6; }
+    .nm-tile.tile-timer     { border-color: var(--warning); }
+    .nm-tile.tile-timer:hover { background: rgba(245,158,11,.08); border-color: var(--warning); }
+
+    /* 6th slot: clock display */
+    .nm-tile.tile-clock {
+      cursor: default;
+      border-style: dashed;
+      border-color: #2d3748;
+      background: transparent;
+    }
+    .nm-tile.tile-clock:hover { transform: none; border-color: #2d3748; background: transparent; }
+    #nm-clock-big {
+      font-size: clamp(2rem, 7vw, 6rem);
+      font-weight: 900;
+      color: var(--brand);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -.04em;
+    }
+    #nm-date-big { font-size: clamp(.75rem, 1.5vw, 1.1rem); color: var(--muted); margin-top: 6px; }
+
+    /* ── Modal overlay ───────────────────────────────────────────────────────── */
+    #nm-modal-bg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,.85);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    #nm-modal-bg.open { display: flex; }
+    #nm-modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      width: min(800px, 94vw);
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 28px;
+      position: relative;
+    }
+    #nm-modal-close {
+      position: absolute;
+      top: 16px; right: 16px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.4rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #nm-modal-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 18px;
+      font-family: 'Arial Rounded MT Bold', 'Nunito', Arial, sans-serif;
+    }
+    #nm-modal-body { font-size: .9rem; color: var(--text); }
+
+    /* ── Register styles ────────────────────────────────────────────────── */
+    .reg-child-row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 14px; border-radius: 12px;
+      border: 2px solid var(--border);
+      margin-bottom: 8px;
+      cursor: default;
+    }
+    .reg-avatar {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--brand);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1.1rem; color: white;
+      flex-shrink: 0;
+    }
+    .reg-name { font-weight: 700; flex: 1; font-size: 1rem; }
+    .reg-btn {
+      padding: 8px 16px; border: none; border-radius: 8px;
+      font-weight: 700; font-size: .85rem; cursor: pointer;
+      transition: opacity .15s;
+      min-width: 72px;
+    }
+    .reg-btn:hover { opacity: .85; }
+    .reg-present { background: rgba(34,197,94,.2); color: var(--success); border: 1px solid var(--success); }
+    .reg-absent  { background: rgba(239,68,68,.2); color: var(--danger);  border: 1px solid var(--danger);  }
+    .reg-late    { background: rgba(245,158,11,.2); color: var(--warning); border: 1px solid var(--warning); }
+    .reg-selected { box-shadow: 0 0 0 3px var(--brand); }
+
+    /* ── Behaviour grid ─────────────────────────────────────────────────── */
+    .beh-child-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 16px; border-radius: 12px;
+      border: 2px solid var(--border);
+      cursor: pointer; margin: 4px;
+      font-weight: 600; font-size: .9rem;
+      transition: border-color .15s;
+    }
+    .beh-child-chip:hover { border-color: var(--orange); }
+    .beh-type-btn {
+      padding: 14px 20px; border-radius: 12px;
+      border: 2px solid var(--border);
+      background: none; color: var(--text);
+      font-weight: 700; font-size: 1rem; cursor: pointer;
+      transition: all .15s; text-align: left;
+    }
+    .beh-type-btn.positive { border-color: var(--success); color: var(--success); }
+    .beh-type-btn.positive:hover { background: rgba(34,197,94,.1); }
+    .beh-type-btn.concern  { border-color: var(--warning); color: var(--warning); }
+    .beh-type-btn.concern:hover  { background: rgba(245,158,11,.1); }
+
+    /* ── Timer ──────────────────────────────────────────────────────────── */
+    #timer-display {
+      font-size: clamp(3rem, 12vw, 9rem);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      color: var(--brand);
+      text-align: center;
+      letter-spacing: -.04em;
+    }
+    #timer-display.warn   { color: var(--warning); }
+    #timer-display.urgent { color: var(--danger); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+    .timer-preset-btn {
+      padding: 12px 20px; border-radius: 10px;
+      background: rgba(74,154,191,.1);
+      border: 1px solid rgba(74,154,191,.3);
+      color: var(--brand); font-weight: 700; font-size: 1rem;
+      cursor: pointer; transition: background .15s;
+    }
+    .timer-preset-btn:hover { background: rgba(74,154,191,.2); }
+
+    /* ── Quick Obs ──────────────────────────────────────────────────────── */
+    .obs-child-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 16px; border-radius: 12px;
+      border: 2px solid var(--border);
+      cursor: pointer; margin: 4px;
+      font-weight: 600; font-size: .9rem;
+      transition: all .15s;
+    }
+    .obs-child-chip.selected { border-color: var(--brand); background: rgba(74,154,191,.1); }
+    .obs-text { width: 100%; min-height: 80px; resize: vertical; background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 12px; color: var(--text); font-size: 1rem; font-family: inherit; }
+
+    /* ── Activity Bank ─────────────────────────────────────────────────── */
+    .act-filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .act-filter-btn {
+      padding: 6px 14px; border-radius: 20px; font-size: .8rem; font-weight: 600;
+      border: 1px solid var(--border); color: var(--muted); cursor: pointer;
+      background: none; transition: all .15s;
+    }
+    .act-filter-btn.active { background: var(--brand); border-color: var(--brand); color: white; }
+    .act-card {
+      background: #0f172a; border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px 16px; margin-bottom: 8px;
+    }
+    .act-title { font-weight: 700; font-size: .95rem; margin-bottom: 6px; }
+    .act-meta { font-size: .75rem; color: var(--muted); margin-bottom: 10px; }
+    .act-links { display: flex; gap: 8px; flex-wrap: wrap; }
+    .act-link-btn {
+      padding: 6px 14px; border-radius: 8px; font-size: .8rem; font-weight: 600;
+      background: rgba(74,154,191,.15); border: 1px solid rgba(74,154,191,.3);
+      color: var(--brand); cursor: pointer; text-decoration: none;
+      transition: background .15s;
+    }
+    .act-link-btn:hover { background: rgba(74,154,191,.25); }
+
+    /* ── Responsive: tablet portrait ───────────────────────────────────── */
+    @media (max-width: 900px) {
+      #nm-grid { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(3, 1fr); }
+      .nm-tile.tile-clock { display: none; }
+    }
+    @media (max-width: 600px) {
+      #nm-grid { grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr); gap: 10px; padding: 10px; }
+      .nm-tile .tile-icon { font-size: 2.2rem; }
+      .nm-tile .tile-sub { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Top bar ────────────────────────────────────────────────────────────── -->
+<div id="nm-topbar">
+  <div class="nm-logo"><span class="w">w</span><span class="ren">ren</span></div>
+  <div id="nm-mode-label">Now Mode</div>
+  <div id="nm-clock">00:00</div>
+  <button id="nm-exit" onclick="nmExit()">Exit Now Mode &nbsp; Esc</button>
+</div>
+
+<!-- ── Tile grid ──────────────────────────────────────────────────────────── -->
+<div id="nm-grid">
+
+  <div class="nm-tile tile-register" onclick="nmOpenRegister()">
+    <div class="tile-icon">✅</div>
+    <div class="tile-title">Register</div>
+    <div class="tile-sub">Mark attendance — one tap per child</div>
+    <div class="tile-badge" id="reg-badge" style="display:none">0 left</div>
+  </div>
+
+  <div class="nm-tile tile-behaviour" onclick="nmOpenBehaviour()">
+    <div class="tile-icon">⭐</div>
+    <div class="tile-title">Behaviour</div>
+    <div class="tile-sub">Points &amp; notes — tap child then reason</div>
+  </div>
+
+  <div class="nm-tile tile-obs" onclick="nmOpenObs()">
+    <div class="tile-icon">📷</div>
+    <div class="tile-title">Quick Obs</div>
+    <div class="tile-sub">Voice · photo · text — linked straight to profile</div>
+  </div>
+
+  <div class="nm-tile tile-activity" onclick="nmOpenActivity()">
+    <div class="tile-icon">📚</div>
+    <div class="tile-title">Activity Bank</div>
+    <div class="tile-sub">Filter → open in Twinkl, Promethean, Espresso</div>
+  </div>
+
+  <div class="nm-tile tile-timer" onclick="nmOpenTimer()">
+    <div class="tile-icon">⏱️</div>
+    <div class="tile-title">Timer</div>
+    <div class="tile-sub">Countdown with audio alert</div>
+  </div>
+
+  <div class="nm-tile tile-clock">
+    <div id="nm-clock-big">00:00</div>
+    <div id="nm-date-big">Monday</div>
+  </div>
+
+</div>
+
+<!-- ── Modal overlay ──────────────────────────────────────────────────────── -->
+<div id="nm-modal-bg">
+  <div id="nm-modal">
+    <button id="nm-modal-close" onclick="nmCloseModal()">✕</button>
+    <div id="nm-modal-title">Modal</div>
+    <div id="nm-modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ── Auth guard — redirect if no token ──────────────────────────────────────
+const _jwt = sessionStorage.getItem('wren_jwt') || localStorage.getItem('wren_jwt');
+if (!_jwt) { window.location.href = '/'; }
+
+const _headers = () => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _jwt });
+async function _api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { ..._headers(), ...(opts.headers||{}) } });
+  if (!r.ok) throw new Error(await r.text().catch(()=>r.status));
+  return r.json();
+}
+
+// ── Clock ──────────────────────────────────────────────────────────────────
+function _tick() {
+  const now = new Date();
+  const hm = now.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+  document.getElementById('nm-clock').textContent = hm;
+  document.getElementById('nm-clock-big').textContent = hm;
+  document.getElementById('nm-date-big').textContent =
+    now.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+}
+_tick(); setInterval(_tick, 1000);
+
+// ── Escape key exits ───────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('nm-modal-bg').classList.contains('open')) nmCloseModal();
+    else nmExit();
+  }
+});
+
+function nmExit() {
+  if (document.referrer && document.referrer.includes(location.host)) {
+    history.back();
+  } else {
+    window.location.href = '/';
+  }
+}
+
+function nmOpenModal(title, html) {
+  document.getElementById('nm-modal-title').textContent = title;
+  document.getElementById('nm-modal-body').innerHTML = html;
+  document.getElementById('nm-modal-bg').classList.add('open');
+}
+function nmCloseModal() {
+  document.getElementById('nm-modal-bg').classList.remove('open');
+  document.getElementById('nm-modal-body').innerHTML = '';
+  if (_timerInterval) { /* keep timer running */ }
+}
+
+// ─────────────────────────────────── REGISTER ──────────────────────────────
+let _regChildren = [];
+
+async function nmOpenRegister() {
+  nmOpenModal('Register', '<div style="color:#64748b;text-align:center;padding:20px">Loading…</div>');
+  try {
+    _regChildren = await _api('/api/children?status=active&limit=60');
+  } catch { _regChildren = []; }
+
+  let today = {};
+  try {
+    const att = await _api('/api/attendance?date=' + new Date().toISOString().slice(0,10));
+    (att||[]).forEach(a => { today[a.child_id] = a.status; });
+  } catch {}
+
+  const rows = _regChildren.map(c => {
+    const st = today[c.id] || 'unmarked';
+    const initials = ((c.first_name||'?')[0] + (c.last_name||'?')[0]).toUpperCase();
+    return `<div class="reg-child-row" id="reg-row-${c.id}">
+      <div class="reg-avatar">${initials}</div>
+      <div class="reg-name">${_esc(c.first_name)} ${_esc(c.last_name)}</div>
+      <button class="reg-btn reg-present ${st==='present'?'reg-selected':''}" onclick="regMark(${c.id},'present')">Present</button>
+      <button class="reg-btn reg-late    ${st==='late'   ?'reg-selected':''}" onclick="regMark(${c.id},'late')">Late</button>
+      <button class="reg-btn reg-absent  ${st==='absent' ?'reg-selected':''}" onclick="regMark(${c.id},'absent')">Absent</button>
+    </div>`;
+  }).join('');
+  document.getElementById('nm-modal-body').innerHTML = rows || '<p style="color:#64748b">No children found.</p>';
+}
+
+async function regMark(childId, status) {
+  try {
+    await _api('/api/attendance', {
+      method: 'POST',
+      body: JSON.stringify({ child_id: childId, date: new Date().toISOString().slice(0,10), status }),
+    });
+    const row = document.getElementById('reg-row-' + childId);
+    if (row) {
+      row.querySelectorAll('.reg-btn').forEach(b => b.classList.remove('reg-selected'));
+      const target = row.querySelector(`.reg-${status}`);
+      if (target) target.classList.add('reg-selected');
+    }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ─────────────────────────────────── BEHAVIOUR ─────────────────────────────
+let _behTarget = null;
+
+async function nmOpenBehaviour() {
+  let children = _regChildren;
+  if (!children.length) {
+    try { children = await _api('/api/children?status=active&limit=60'); } catch { children = []; }
+  }
+
+  const chips = children.map(c =>
+    `<div class="beh-child-chip" onclick="behSelectChild(${c.id},'${_esc(c.first_name)}')" id="beh-chip-${c.id}">
+      ${_esc(c.first_name)} ${_esc(c.last_name)}
+    </div>`
+  ).join('');
+
+  nmOpenModal('Behaviour', `
+    <div style="margin-bottom:16px">
+      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:8px">1. Select child:</div>
+      <div id="beh-chips">${chips}</div>
+    </div>
+    <div id="beh-action-panel" style="display:none">
+      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:8px">2. Record for <strong id="beh-child-name"></strong>:</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <button class="beh-type-btn positive" onclick="behRecord('positive')">⭐ Recognition / Positive</button>
+        <button class="beh-type-btn concern"  onclick="behRecord('concern')">⚠️ Concern / Note</button>
+      </div>
+      <textarea id="beh-note" style="width:100%;background:#0f172a;border:1px solid #2d3748;border-radius:10px;padding:10px;color:#f1f5f9;font-size:.9rem;min-height:60px;font-family:inherit;resize:vertical" placeholder="Optional note (reason, context…)"></textarea>
+    </div>
+  `);
+}
+
+function behSelectChild(id, name) {
+  _behTarget = id;
+  document.querySelectorAll('.beh-child-chip').forEach(c => c.style.borderColor = '');
+  const chip = document.getElementById('beh-chip-' + id);
+  if (chip) chip.style.borderColor = 'var(--orange)';
+  const panel = document.getElementById('beh-action-panel');
+  const nm = document.getElementById('beh-child-name');
+  if (panel) panel.style.display = 'block';
+  if (nm) nm.textContent = name;
+}
+
+async function behRecord(type) {
+  if (!_behTarget) { alert('Select a child first'); return; }
+  const note = document.getElementById('beh-note')?.value || '';
+  try {
+    await _api('/api/behaviour', {
+      method: 'POST',
+      body: JSON.stringify({ child_id: _behTarget, type, note, source: 'now_mode', points: type==='positive'?1:0 }),
+    });
+    document.getElementById('beh-note').value = '';
+    _behTarget = null;
+    document.querySelectorAll('.beh-child-chip').forEach(c => c.style.borderColor = '');
+    document.getElementById('beh-action-panel').style.display = 'none';
+    _flash('Recorded');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ─────────────────────────────────── QUICK OBS ─────────────────────────────
+let _obsChildren = [];
+let _obsSelected = [];
+
+async function nmOpenObs() {
+  if (!_obsChildren.length) {
+    try { _obsChildren = await _api('/api/children?status=active&limit=60'); } catch { _obsChildren = []; }
+  }
+
+  const chips = _obsChildren.map(c =>
+    `<div class="obs-child-chip" onclick="obsToggleChild(${c.id})" id="obs-chip-${c.id}">
+      ${_esc(c.first_name)}
+    </div>`
+  ).join('');
+
+  nmOpenModal('Quick Observation', `
+    <div style="margin-bottom:14px">
+      <div style="font-size:.82rem;color:#94a3b8;margin-bottom:8px">Children (tap to select, multi-select OK):</div>
+      <div id="obs-chips">${chips}</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="act-link-btn" onclick="obsStartVoice()">🎙 Voice note</button>
+      <button class="act-link-btn" onclick="obsTakePhoto()">📷 Photo</button>
+    </div>
+    <textarea id="obs-text" class="obs-text" placeholder="Type your observation…"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <select id="obs-area" style="background:#0f172a;border:1px solid #2d3748;border-radius:8px;padding:8px;color:#f1f5f9;font-size:.85rem">
+        <option value="">Area of learning…</option>
+        <option>PSED</option><option>CL</option><option>PD</option>
+        <option>Literacy</option><option>Maths</option><option>UW</option><option>EAD</option>
+        <option>Phonics</option><option>PSHE</option><option>Science</option>
+      </select>
+      <button class="act-link-btn" style="flex:1;min-width:120px" onclick="obsSave()">Save observation →</button>
+    </div>
+    <div id="obs-status" style="margin-top:8px;font-size:.8rem;color:#22c55e;display:none">Saved!</div>
+  `);
+}
+
+function obsToggleChild(id) {
+  const chip = document.getElementById('obs-chip-' + id);
+  if (_obsSelected.includes(id)) {
+    _obsSelected = _obsSelected.filter(x => x !== id);
+    chip?.classList.remove('selected');
+  } else {
+    _obsSelected.push(id);
+    chip?.classList.add('selected');
+  }
+}
+
+async function obsStartVoice() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    alert('Voice recording not supported in this browser. Use text input.');
+    return;
+  }
+  const txt = document.getElementById('obs-text');
+  if (!txt) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const rec = new MediaRecorder(stream);
+    const chunks = [];
+    rec.ondataavailable = e => chunks.push(e.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      const fd = new FormData();
+      fd.append('audio', blob, 'obs.webm');
+      try {
+        const r = await fetch('/api/transcribe', { method: 'POST', headers: { Authorization: 'Bearer ' + _jwt }, body: fd });
+        const d = await r.json();
+        if (d.text) txt.value = (txt.value ? txt.value + ' ' : '') + d.text;
+      } catch { alert('Transcription failed — type your observation.'); }
+    };
+    rec.start();
+    setTimeout(() => rec.stop(), 15000); // max 15s
+    _flash('Recording 15s… (stops automatically)');
+  } catch(e) { alert('Microphone access denied: ' + e.message); }
+}
+
+function obsTakePhoto() {
+  // Open camera via input[type=file] — works on both mobile and IWB webcam
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.style.display = 'none';
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('photo', file);
+    if (_obsSelected.length) fd.append('child_ids', JSON.stringify(_obsSelected));
+    try {
+      await fetch('/api/observations/upload-photo', { method: 'POST', headers: { Authorization: 'Bearer ' + _jwt }, body: fd });
+      _flash('Photo saved to observations');
+    } catch { alert('Upload failed'); }
+    document.body.removeChild(inp);
+  };
+  document.body.appendChild(inp);
+  inp.click();
+}
+
+async function obsSave() {
+  const text = document.getElementById('obs-text')?.value?.trim();
+  const area = document.getElementById('obs-area')?.value;
+  if (!text) { alert('Write your observation first'); return; }
+  if (!_obsSelected.length) { alert('Select at least one child'); return; }
+  try {
+    for (const cid of _obsSelected) {
+      await _api('/api/observations', {
+        method: 'POST',
+        body: JSON.stringify({ child_id: cid, text, area_of_learning: area || null, source: 'now_mode' }),
+      });
+    }
+    document.getElementById('obs-text').value = '';
+    _obsSelected = [];
+    document.querySelectorAll('.obs-child-chip').forEach(c => c.classList.remove('selected'));
+    const st = document.getElementById('obs-status');
+    if (st) { st.style.display='block'; setTimeout(()=>st.style.display='none', 2000); }
+  } catch(e) { alert('Save error: ' + e.message); }
+}
+
+// ─────────────────────────────────── ACTIVITY BANK ─────────────────────────
+let _actFilter = { area: '', duration: '', outdoor: '' };
+let _actCache = [];
+
+async function nmOpenActivity() {
+  nmOpenModal('Activity Bank', `
+    <div class="act-filter-row" id="act-filters">
+      <button class="act-filter-btn active" onclick="actFilter('area','')">All areas</button>
+      <button class="act-filter-btn" onclick="actFilter('area','PSED')">PSED</button>
+      <button class="act-filter-btn" onclick="actFilter('area','Literacy')">Literacy</button>
+      <button class="act-filter-btn" onclick="actFilter('area','Maths')">Maths</button>
+      <button class="act-filter-btn" onclick="actFilter('area','UW')">UW</button>
+      <button class="act-filter-btn" onclick="actFilter('area','EAD')">EAD</button>
+      <button class="act-filter-btn" onclick="actFilter('duration','short')">≤10 min</button>
+      <button class="act-filter-btn" onclick="actFilter('outdoor','true')">Outdoor</button>
+    </div>
+    <div id="act-list"><div style="color:#64748b;text-align:center;padding:20px">Loading…</div></div>
+  `);
+  await actLoad();
+}
+
+async function actLoad() {
+  const el = document.getElementById('act-list');
+  if (!el) return;
+  try {
+    if (!_actCache.length) {
+      const qs = new URLSearchParams({ limit: 50, ..._actFilter });
+      _actCache = await _api('/api/activity-bank?' + qs);
+    }
+    const filtered = _actCache.filter(a => {
+      if (_actFilter.area && a.area_of_learning !== _actFilter.area) return false;
+      if (_actFilter.duration === 'short' && (a.duration_minutes||99) > 10) return false;
+      if (_actFilter.outdoor === 'true' && !a.is_outdoor) return false;
+      return true;
+    });
+    if (!filtered.length) { el.innerHTML = '<p style="color:#64748b;text-align:center">No activities match filter.</p>'; return; }
+    el.innerHTML = filtered.slice(0, 20).map(a => {
+      const links = [];
+      if (a.twinkl_query) links.push(`<a class="act-link-btn" href="https://www.twinkl.co.uk/search?q=${encodeURIComponent(a.twinkl_query)}" target="_blank" rel="noopener">Open in Twinkl →</a>`);
+      if (a.espresso_url) links.push(`<a class="act-link-btn" href="${a.espresso_url}" target="_blank" rel="noopener">Espresso →</a>`);
+      if (a.mathletics_url) links.push(`<a class="act-link-btn" href="${a.mathletics_url}" target="_blank" rel="noopener">Mathletics →</a>`);
+      if (!links.length) links.push(`<span style="font-size:.75rem;color:#64748b">No IWB links configured</span>`);
+      return `<div class="act-card">
+        <div class="act-title">${_esc(a.name||a.title||'Activity')}</div>
+        <div class="act-meta">${_esc(a.area_of_learning||'')} ${a.duration_minutes?'· '+a.duration_minutes+'min':''} ${a.is_outdoor?'· Outdoor':''}</div>
+        <div class="act-links">${links.join('')}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<p style="color:#ef4444">Error loading activities: ${_esc(e.message)}</p>`; }
+}
+
+function actFilter(key, val) {
+  _actFilter[key] = val;
+  _actCache = []; // force reload on filter change
+  document.querySelectorAll('.act-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent.trim().toLowerCase().includes(val) || (val==='' && b.textContent.includes('All')));
+  });
+  actLoad();
+}
+
+// ─────────────────────────────────── TIMER ─────────────────────────────────
+let _timerInterval = null;
+let _timerRemaining = 0;
+let _timerRunning = false;
+
+function nmOpenTimer() {
+  nmOpenModal('Timer', `
+    <div style="text-align:center;padding:12px 0 20px">
+      <div id="timer-display">05:00</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:20px">
+      <button class="timer-preset-btn" onclick="timerSet(5)">5 min</button>
+      <button class="timer-preset-btn" onclick="timerSet(10)">10 min</button>
+      <button class="timer-preset-btn" onclick="timerSet(15)">15 min</button>
+      <button class="timer-preset-btn" onclick="timerSet(20)">20 min</button>
+      <button class="timer-preset-btn" onclick="timerSet(2)" style="background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3);color:var(--warning)">Transition 2m</button>
+      <button class="timer-preset-btn" onclick="timerSet(1)" style="background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:var(--danger)">Lunch warning 1m</button>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:12px">
+      <button class="act-link-btn" style="font-size:1rem;padding:12px 28px" onclick="timerToggle()">▶ Start / ⏸ Pause</button>
+      <button class="act-link-btn" style="font-size:1rem;padding:12px 28px" onclick="timerReset()">↺ Reset</button>
+    </div>
+    <div style="text-align:center">
+      <input type="range" id="timer-custom-slider" min="1" max="60" value="5" oninput="timerSet(this.value)" style="width:80%;accent-color:var(--brand)">
+      <div style="font-size:.8rem;color:#64748b;margin-top:4px">Custom: drag to set minutes</div>
+    </div>
+  `);
+  if (!_timerRunning) timerSet(5);
+  _updateTimerDisplay();
+}
+
+function timerSet(mins) {
+  if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+  _timerRunning = false;
+  _timerRemaining = parseInt(mins) * 60;
+  _updateTimerDisplay();
+}
+
+function timerToggle() {
+  if (_timerRunning) {
+    clearInterval(_timerInterval); _timerInterval = null;
+    _timerRunning = false;
+  } else {
+    if (_timerRemaining <= 0) timerSet(5);
+    _timerRunning = true;
+    _timerInterval = setInterval(() => {
+      _timerRemaining--;
+      _updateTimerDisplay();
+      if (_timerRemaining <= 0) {
+        clearInterval(_timerInterval); _timerInterval = null; _timerRunning = false;
+        _timerAlarm();
+      }
+    }, 1000);
+  }
+}
+
+function timerReset() {
+  if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+  _timerRunning = false;
+  _timerRemaining = 0;
+  _updateTimerDisplay();
+}
+
+function _updateTimerDisplay() {
+  const el = document.getElementById('timer-display');
+  if (!el) return;
+  const m = Math.floor(Math.abs(_timerRemaining) / 60);
+  const s = Math.abs(_timerRemaining) % 60;
+  el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  el.className = _timerRemaining <= 0 ? 'urgent' : _timerRemaining <= 30 ? 'warn' : '';
+}
+
+function _timerAlarm() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1100, 880].forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = freq;
+      o.type = 'sine';
+      g.gain.setValueAtTime(0, ctx.currentTime + i * 0.4);
+      g.gain.linearRampToValueAtTime(0.5, ctx.currentTime + i * 0.4 + 0.05);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + i * 0.4 + 0.35);
+      o.start(ctx.currentTime + i * 0.4);
+      o.stop(ctx.currentTime + i * 0.4 + 0.4);
+    });
+  } catch {}
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function _esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _flash(msg) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  Object.assign(el.style, {
+    position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)',
+    background:'#22c55e', color:'white', padding:'10px 24px', borderRadius:'8px',
+    fontWeight:'700', zIndex:'9999', fontSize:'.95rem',
+    boxShadow:'0 4px 20px rgba(0,0,0,.4)',
+  });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2000);
+}
+</script>
+</body>
+</html>

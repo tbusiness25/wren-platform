@@ -1,0 +1,749 @@
+<!-- b518 (2026-10-20) — Events & Calendar. ONE area: the three calendar layers,
+     the weekly planning merged in as an overlay, the managers' hub (shared
+     calendar + a thread per event + a general channel + notes), the read-only
+     iCal feeds, and Send to Toby's Pippin.
+     Tokens only (var(--c-*)); no colour literal anywhere in this file. -->
+<section class="wren-section" id="ec-root">
+  <nav class="wren-tab-bar" role="tablist" aria-label="Events and Calendar tabs">
+    <div class="tab-bar-track">
+      <button class="wren-tab" role="tab" aria-selected="true"  tabindex="0"  data-tab="month"    id="tab-ec-month"    aria-controls="panel-ec-month">Month</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="week"     id="tab-ec-week"     aria-controls="panel-ec-week">Week &amp; planning</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="list"     id="tab-ec-list"     aria-controls="panel-ec-list">What's coming up</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="managers" id="tab-ec-managers" aria-controls="panel-ec-managers">Managers' hub</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="pippin"   id="tab-ec-pippin"   aria-controls="panel-ec-pippin">Sent to Pippin</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="feeds"    id="tab-ec-feeds"    aria-controls="panel-ec-feeds">Subscribe (iCal)</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="term-dates" id="tab-ec-terms"  aria-controls="panel-ec-terms">Term dates</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+  <style>
+    .ec-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .ec-nav{display:flex;gap:6px;align-items:center}
+    .ec-label{font-weight:700;min-width:150px;text-align:center;line-height:32px}
+    .ec-chips{display:flex;flex-wrap:wrap;gap:6px}
+    .ec-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--c-border);
+      background:var(--c-surface);color:var(--c-text);border-radius:999px;padding:4px 11px;font-size:.8rem;
+      font-weight:600;cursor:pointer;user-select:none}
+    .ec-chip[aria-pressed="true"]{border-color:currentColor}
+    .ec-chip .dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:0 0 auto}
+    .ec-chip.off{opacity:.42}
+    table.ec-grid{width:100%;border-collapse:collapse;table-layout:fixed}
+    table.ec-grid th{padding:6px 4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--c-muted);text-align:center}
+    table.ec-grid td{border:1px solid var(--c-border);height:108px;vertical-align:top;padding:4px;overflow:hidden}
+    table.ec-grid td.out{opacity:.4}
+    table.ec-grid td.ec-today{outline:2px solid var(--c-blue);outline-offset:-2px}
+    .ec-dnum{font-size:.78rem;color:var(--c-muted);font-weight:600;margin-bottom:3px}
+    td.ec-today .ec-dnum{color:var(--c-blue)}
+    .ec-ev{display:block;width:100%;text-align:left;border:0;border-left:3px solid currentColor;
+      background:var(--c-surface);color:var(--c-text);border-radius:3px;padding:2px 5px;font-size:.72rem;
+      margin-bottom:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ec-ev .t{color:var(--c-muted);font-variant-numeric:tabular-nums}
+    .ec-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px;margin-bottom:12px}
+    .ec-card h3{margin:0 0 8px;font-size:.95rem}
+    .ec-muted{color:var(--c-muted);font-size:.85rem}
+    .ec-week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+    .ec-day{background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:10px;min-height:170px}
+    .ec-day h4{margin:0 0 6px;font-size:.82rem;display:flex;justify-content:space-between;gap:6px}
+    .ec-day h4 span{color:var(--c-muted);font-weight:500}
+    .ec-theme{font-size:.78rem;color:var(--c-purple);font-weight:700;margin:4px 0}
+    .ec-acts{margin:0;padding-left:16px;font-size:.78rem}
+    .ec-res{font-size:.72rem;color:var(--c-muted);margin-top:4px}
+    .ec-msg{border-top:1px solid var(--c-border);padding:9px 0}
+    .ec-msg:first-child{border-top:0}
+    .ec-msg .who{font-weight:700;font-size:.8rem}
+    .ec-msg .when{color:var(--c-muted);font-size:.72rem;margin-left:6px}
+    .ec-msg .body{font-size:.88rem;white-space:pre-wrap;margin-top:3px}
+    .ec-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+    .ec-form label{display:block;font-size:.75rem;color:var(--c-muted);font-weight:700;margin-bottom:3px}
+    .ec-form input,.ec-form select,.ec-form textarea{
+      width:100%;background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-text);
+      border-radius:8px;padding:7px 9px;font:inherit;font-size:.85rem}
+    .ec-wide{grid-column:1/-1}
+    .ec-pre{background:var(--c-surface);border:1px dashed var(--c-border);border-radius:8px;
+      padding:10px;font-size:.85rem;white-space:pre-wrap}
+    .ec-refuse{border-left:3px solid var(--c-red);padding:6px 10px;font-size:.84rem;margin:6px 0;background:var(--c-surface)}
+    .ec-ok{border-left:3px solid var(--c-ok);padding:6px 10px;font-size:.84rem;margin:6px 0;background:var(--c-surface)}
+    .ec-pill{display:inline-block;border:1px solid var(--c-border);border-radius:999px;padding:1px 8px;font-size:.7rem;font-weight:700}
+    table.ec-list{width:100%;border-collapse:collapse;font-size:.85rem}
+    table.ec-list th{text-align:left;padding:6px;color:var(--c-muted);font-size:.72rem;text-transform:uppercase;border-bottom:1px solid var(--c-border)}
+    table.ec-list td{padding:7px 6px;border-bottom:1px solid var(--c-border);vertical-align:top}
+    .ec-url{font-family:ui-monospace,monospace;font-size:.76rem;word-break:break-all}
+    @media (max-width:760px){
+      .ec-week{grid-template-columns:1fr}
+      table.ec-grid td{height:74px}
+      .ec-label{min-width:120px}
+    }
+  </style>
+
+  <div class="wren-tab-panels">
+    <!-- MONTH -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ec-month" data-tab="month" aria-labelledby="tab-ec-month">
+      <div class="ec-bar">
+        <div class="ec-nav">
+          <button class="btn btn-sm btn-ghost" id="ec-prev" aria-label="Previous month">‹</button>
+          <span class="ec-label" id="ec-month-label"></span>
+          <button class="btn btn-sm btn-ghost" id="ec-next" aria-label="Next month">›</button>
+          <button class="btn btn-sm btn-ghost" id="ec-today">Today</button>
+        </div>
+        <div class="ec-nav">
+          <button class="btn btn-sm btn-primary" id="ec-add">+ Add to the calendar</button>
+        </div>
+      </div>
+      <div class="ec-chips" id="ec-layers" role="group" aria-label="Calendar layers"></div>
+      <p class="ec-muted" id="ec-audience-note" style="margin:8px 0 12px"></p>
+      <div id="ec-month-body"><div class="tab-skeleton"><div class="tab-sk-row w100"></div><div class="tab-sk-row w100"></div></div></div>
+    </div>
+
+    <!-- WEEK & PLANNING -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ec-week" data-tab="week" aria-labelledby="tab-ec-week" hidden>
+      <div class="ec-bar">
+        <div class="ec-nav">
+          <button class="btn btn-sm btn-ghost" id="ec-wprev" aria-label="Previous week">‹</button>
+          <span class="ec-label" id="ec-week-label"></span>
+          <button class="btn btn-sm btn-ghost" id="ec-wnext" aria-label="Next week">›</button>
+          <button class="btn btn-sm btn-ghost" id="ec-wtoday">This week</button>
+        </div>
+        <div class="ec-nav">
+          <label for="ec-room" class="ec-muted">Room</label>
+          <select id="ec-room" style="background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-text);border-radius:8px;padding:6px 9px"></select>
+          <a class="btn btn-sm btn-ghost" id="ec-plan-editor" href="/admin/curriculum/planning">Open the planning editor →</a>
+        </div>
+      </div>
+      <p class="ec-muted" style="margin:0 0 12px">The weekly plan is shown here, not stored here — it is read live from the planning editor, which is still where it is written.</p>
+      <div id="ec-week-body"><div class="tab-skeleton"><div class="tab-sk-row w100"></div></div></div>
+    </div>
+
+    <!-- LIST -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ec-list" data-tab="list" aria-labelledby="tab-ec-list" hidden>
+      <div class="ec-bar"><h2 class="page-title" style="font-size:1.05rem;margin:0">The next eight weeks</h2></div>
+      <div id="ec-list-body"><div class="tab-skeleton"><div class="tab-sk-row w80"></div><div class="tab-sk-row w60"></div></div></div>
+    </div>
+
+    <!-- MANAGERS' HUB -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ec-managers" data-tab="managers" aria-labelledby="tab-ec-managers" hidden>
+      <div id="ec-mgr-body"><div class="tab-skeleton"><div class="tab-sk-row w80"></div><div class="tab-sk-row w60"></div></div></div>
+    </div>
+
+    <!-- PIPPIN -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ec-pippin" data-tab="pippin" aria-labelledby="tab-ec-pippin" hidden>
+      <div id="ec-pippin-body"><div class="tab-skeleton"><div class="tab-sk-row w80"></div><div class="tab-sk-row w60"></div></div></div>
+    </div>
+
+    <!-- FEEDS -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ec-feeds" data-tab="feeds" aria-labelledby="tab-ec-feeds" hidden>
+      <div id="ec-feeds-body"><div class="tab-skeleton"><div class="tab-sk-row w80"></div></div></div>
+    </div>
+
+    <!-- TERM DATES -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ec-terms" data-tab="term-dates" aria-labelledby="tab-ec-terms" hidden>
+      <div class="ec-card">
+        <h3>Term dates</h3>
+        <p class="ec-muted">Term and half-term dates live in one place and are shown on the Parents layer of this calendar. They are edited on their own page, which is unchanged.</p>
+        <p><a class="btn btn-sm btn-primary" href="/term-dates.html">Open Term dates →</a></p>
+      </div>
+      <div id="ec-terms-body"></div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  var API = '/api/calendar-hub';
+  var S = { meta: null, layersOn: {}, month: null, week: null, room: '', items: [], loaded: {} };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var ymd = function (d) { return d.toISOString().slice(0, 10); };
+  var LAYER_LABEL = { nursery: 'Nursery (internal)', parents: 'Parents', managers: "Managers" };
+  var LAYER_TOKEN = { nursery: '--c-blue', parents: '--c-green', managers: '--c-purple' };
+
+  function api(path, opts) { return Wren.api(API + path, opts); }
+
+  function fmtDate(s) {
+    if (!s) return '';
+    var d = new Date(s + 'T12:00:00');
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  function mondayOf(d) { var x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(12, 0, 0, 0); return x; }
+
+  // ── meta, then whichever tab asked first ───────────────────────────────────
+  var metaP = null;
+  function meta() {
+    if (!metaP) metaP = api('/meta').then(function (m) {
+      S.meta = m;
+      (m.layers || []).forEach(function (l) { S.layersOn[l] = true; });
+      return m;
+    }).catch(function (e) { S.meta = { layers: ['nursery', 'parents'], can: {}, rooms: [], error: e }; return S.meta; });
+    return metaP;
+  }
+
+  function wantedLayers() {
+    return Object.keys(S.layersOn).filter(function (l) { return S.layersOn[l]; });
+  }
+
+  function renderLayerChips() {
+    var box = $('ec-layers'); if (!box || !S.meta) return;
+    box.innerHTML = (S.meta.layers || []).map(function (l) {
+      return '<button class="ec-chip' + (S.layersOn[l] ? '' : ' off') + '" data-layer="' + l +
+        '" aria-pressed="' + (S.layersOn[l] ? 'true' : 'false') +
+        '" style="color:var(' + LAYER_TOKEN[l] + ')"><span class="dot"></span>' + esc(LAYER_LABEL[l]) + '</button>';
+    }).join('');
+    box.querySelectorAll('[data-layer]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var l = b.dataset.layer; S.layersOn[l] = !S.layersOn[l];
+        renderLayerChips(); loadMonth();
+      });
+    });
+    var note = $('ec-audience-note');
+    if (note) {
+      var bits = [];
+      if (S.meta.layers.indexOf('nursery') >= 0) bits.push('<strong>Nursery</strong> is seen by every member of staff on the nursery app and on HR, read-only.');
+      if (S.meta.layers.indexOf('parents') >= 0) bits.push('<strong>Parents</strong> is seen by everyone, families included — only what is published, and never anything about one child.');
+      if (S.meta.layers.indexOf('managers') >= 0) bits.push('<strong>Managers</strong> is Toby, the office manager and the admissions lead only, with a message thread on each event.');
+      note.innerHTML = bits.join(' ');
+    }
+  }
+
+  // ── MONTH ──────────────────────────────────────────────────────────────────
+  function loadMonth() {
+    var el = $('ec-month-body'); if (!el) return;
+    var y = S.month.getFullYear(), m = S.month.getMonth();
+    var first = new Date(y, m, 1), last = new Date(y, m + 1, 0);
+    var gridStart = mondayOf(first);
+    var gridEnd = new Date(gridStart); gridEnd.setDate(gridEnd.getDate() + 41);
+    $('ec-month-label').textContent = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    var layers = wantedLayers();
+    if (!layers.length) { el.innerHTML = '<p class="ec-muted">No layer is switched on.</p>'; return; }
+    api('/items?from=' + ymd(gridStart) + '&to=' + ymd(gridEnd) + '&layers=' + layers.join(','))
+      .then(function (r) {
+        S.items = r.items || [];
+        // A run of days (a term, a closure week) is drawn ONCE where it starts, and
+        // again at the top of each later week, not on all forty-two cells — otherwise
+        // "Autumn 1" fills the month and pushes the actual events behind "+21 more".
+        var byDay = {};
+        S.items.forEach(function (i) {
+          var start = i.date, end = i.end_date || i.date;
+          var multi = end !== start;
+          var d = new Date(start + 'T12:00:00'), stop = new Date(end + 'T12:00:00');
+          var guard = 0;
+          while (d <= stop && guard++ < 400) {
+            var k = ymd(d);
+            var first = (k === start) || d.getDay() === 1;      // its own first day, or a Monday
+            if (!multi || first) (byDay[k] = byDay[k] || []).push({ it: i, cont: multi && k !== start });
+            d.setDate(d.getDate() + 1);
+          }
+        });
+        var DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        var today = ymd(new Date());
+        var rows = '';
+        for (var w = 0; w < 6; w++) {
+          var cells = '';
+          for (var dd = 0; dd < 7; dd++) {
+            var cur = new Date(gridStart); cur.setDate(cur.getDate() + w * 7 + dd);
+            var k2 = ymd(cur);
+            var cls = (cur.getMonth() !== m ? ' out' : '') + (k2 === today ? ' ec-today' : '');
+            var list = (byDay[k2] || []).slice(0, 4).map(function (e) {
+              var i = e.it;
+              return '<button class="ec-ev" data-key="' + esc(i.key) + '" style="color:var(' + (i.token || '--c-blue') + ')" title="' + esc(i.title) +
+                (i.end_date && i.end_date !== i.date ? ' (to ' + esc(i.end_date) + ')' : '') + '">' +
+                (e.cont ? '↳ ' : '') +
+                (i.start_time ? '<span class="t">' + esc(i.start_time) + '</span> ' : '') +
+                (i.icon ? esc(i.icon) + ' ' : '') + esc(i.title) + '</button>';
+            }).join('');
+            var more = (byDay[k2] || []).length > 4 ? '<span class="ec-muted" style="font-size:.7rem">+' + ((byDay[k2] || []).length - 4) + ' more</span>' : '';
+            cells += '<td class="' + cls + '"><div class="ec-dnum">' + cur.getDate() + '</div>' + list + more + '</td>';
+          }
+          rows += '<tr>' + cells + '</tr>';
+        }
+        el.innerHTML = '<table class="ec-grid"><thead><tr>' +
+          DAYS.map(function (d) { return '<th>' + d + '</th>'; }).join('') +
+          '</tr></thead><tbody>' + rows + '</tbody></table>';
+        el.querySelectorAll('.ec-ev').forEach(function (b) {
+          b.addEventListener('click', function () { openItem(b.dataset.key); });
+        });
+      })
+      .catch(function (e) {
+        el.innerHTML = '<p class="ec-refuse">Could not load the calendar: ' + esc((e && e.error) || e) + '</p>';
+      });
+  }
+
+  function itemByKey(k) { for (var i = 0; i < S.items.length; i++) if (S.items[i].key === k) return S.items[i]; return null; }
+
+  function openItem(key) {
+    var i = itemByKey(key); if (!i) return;
+    var when = fmtDate(i.date) + (i.end_date && i.end_date !== i.date ? ' → ' + fmtDate(i.end_date) : '') +
+      (i.start_time ? ', ' + i.start_time + (i.end_time ? '–' + i.end_time : '') : ' (all day)');
+    var body = document.createElement('div');
+    var canEdit = i.source === 'events' && ((i.layer === 'nursery' && S.meta.can.nursery) ||
+      (i.layer === 'parents' && S.meta.can.parents) || (i.layer === 'managers' && S.meta.can.managers));
+    body.innerHTML =
+      '<p><span class="ec-pill" style="color:var(' + (i.token || '--c-blue') + ')">' + esc(i.category_label || '') + '</span> ' +
+      '<span class="ec-pill">' + esc(LAYER_LABEL[i.layer] || i.layer) + '</span>' +
+      (i.is_published === false ? ' <span class="ec-pill" style="color:var(--c-warn)">Not published</span>' : '') + '</p>' +
+      '<p><strong>' + esc(when) + '</strong></p>' +
+      (i.location ? '<p class="ec-muted">Where: ' + esc(i.location) + '</p>' : '') +
+      (i.room_name ? '<p class="ec-muted">Room: ' + esc(i.room_name) + '</p>' : '') +
+      (i.overlay ? '<p class="ec-theme">' + esc(i.theme ? 'Theme: ' + i.theme : 'Planned activities') + '</p>' +
+        (i.activities && i.activities.length ? '<ul class="ec-acts">' + i.activities.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul>' : '') +
+        (i.resources && i.resources.length ? '<p class="ec-res">Resources: ' + esc(i.resources.join('; ')) + '</p>' : '') : '') +
+      (i.description ? '<p style="white-space:pre-wrap">' + esc(i.description) + '</p>' : '') +
+      (i.editable === false && i.edit_href ? '<p class="ec-muted">Shown here, edited on its own page: <a href="' + esc(i.edit_href) + '">open it →</a></p>' : '') +
+      '<div id="ec-detail-extra"></div>';
+    var buttons = [];
+    if (canEdit) buttons.push({ label: 'Edit', class: 'btn-ghost', close: true, action: function () { openForm(i); } });
+    if (canEdit) buttons.push({ label: 'Unpublish', class: 'btn-ghost', close: true, action: function () {
+      api('/items/' + i.id, { method: 'DELETE' }).then(function () { Wren.toast('Unpublished', 'success'); loadMonth(); })
+        .catch(function (e) { Wren.toast((e && e.error) || 'Could not unpublish', 'error'); });
+    } });
+    if (S.meta.can.managers && i.source === 'events') {
+      buttons.push({ label: '📨 Send to Toby’s Pippin', class: 'btn-ghost', close: true, action: function () { openPippin({ source_kind: 'event', source_id: i.id, type: 'calendar_event', title: i.title }); } });
+    }
+    buttons.push({ label: 'Close', class: 'btn-ghost' });
+    Wren.modal(i.title, body, buttons);
+    if (i.layer === 'managers' && S.meta.can.managers) renderThread($('ec-detail-extra'), 'event:' + i.id);
+  }
+
+  // ── create / edit ──────────────────────────────────────────────────────────
+  function openForm(existing) {
+    var e = existing || {};
+    var layers = (S.meta.layers || []).filter(function (l) { return S.meta.can[l]; });
+    if (!layers.length) { Wren.toast('You do not have permission to add calendar items', 'error'); return; }
+    var startLayer = e.layer || layers[0];
+    var box = document.createElement('div');
+    function cats(layer) {
+      return ((S.meta.categories || {})[layer] || []).map(function (c) {
+        return '<option value="' + c.key + '"' + (e.category === c.key ? ' selected' : '') + '>' + esc(c.icon + ' ' + c.label) + '</option>';
+      }).join('');
+    }
+    box.innerHTML =
+      '<div class="ec-form">' +
+      '<div><label for="f-layer">Layer</label><select id="f-layer">' + layers.map(function (l) {
+        return '<option value="' + l + '"' + (l === startLayer ? ' selected' : '') + '>' + esc(LAYER_LABEL[l]) + '</option>'; }).join('') + '</select></div>' +
+      '<div><label for="f-cat">Kind</label><select id="f-cat">' + cats(startLayer) + '</select></div>' +
+      '<div class="ec-wide"><label for="f-title">Title</label><input id="f-title" maxlength="160" value="' + esc(e.title || '') + '"></div>' +
+      '<div><label for="f-date">Date</label><input id="f-date" type="date" value="' + esc(e.date || ymd(new Date())) + '"></div>' +
+      '<div><label for="f-end">Last day (optional)</label><input id="f-end" type="date" value="' + esc(e.end_date || '') + '"></div>' +
+      '<div><label for="f-start">Start time</label><input id="f-start" type="time" value="' + esc(e.start_time || '') + '"></div>' +
+      '<div><label for="f-etime">End time</label><input id="f-etime" type="time" value="' + esc(e.end_time || '') + '"></div>' +
+      '<div class="ec-wide"><label for="f-loc">Where (optional)</label><input id="f-loc" maxlength="200" value="' + esc(e.location || '') + '"></div>' +
+      '<div class="ec-wide"><label for="f-desc">Details (optional)</label><textarea id="f-desc" rows="3">' + esc(e.description || '') + '</textarea></div>' +
+      '<div id="f-parent-only"><label for="f-aud">Who it is for</label><select id="f-aud"><option value="all">Everyone</option>' +
+        (S.meta.rooms || []).map(function (r) { return '<option value="' + r.id + '"' + (String(e.audience) === String(r.id) ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') +
+        '</select></div>' +
+      '<div><label for="f-pub">Published</label><select id="f-pub"><option value="1"' + (e.is_published === false ? '' : ' selected') + '>Yes</option><option value="0"' + (e.is_published === false ? ' selected' : '') + '>No — draft</option></select></div>' +
+      '<div id="f-rsvp-wrap"><label for="f-rsvp">Ask families to reply</label><select id="f-rsvp"><option value="0"' + (e.rsvp_required ? '' : ' selected') + '>No</option><option value="1"' + (e.rsvp_required ? ' selected' : '') + '>Yes</option></select></div>' +
+      '</div>' +
+      '<p class="ec-muted" id="f-hint" style="margin-top:10px"></p>';
+
+    function syncLayer() {
+      var l = $('f-layer').value;
+      $('f-cat').innerHTML = cats(l);
+      var isParents = l === 'parents';
+      $('f-parent-only').style.display = isParents ? '' : 'none';
+      $('f-rsvp-wrap').style.display = isParents ? '' : 'none';
+      $('f-hint').innerHTML = isParents
+        ? 'Families will see this once it is published, and get an in-app notification. Never put a child’s name on it.'
+        : (l === 'managers'
+          ? 'Only Toby, the office manager and the admissions lead see this, and each of you can add, edit and change it. It has its own message thread.'
+          : 'Every member of staff sees this on the nursery app and on HR, read-only. Families never see it.');
+    }
+    Wren.modal(existing ? 'Edit calendar item' : 'Add to the calendar', box, [
+      { label: 'Cancel', class: 'btn-ghost' },
+      { label: existing ? 'Save' : 'Add', class: 'btn-primary', close: false, action: function () {
+        var payload = {
+          layer: $('f-layer').value, category: $('f-cat').value,
+          title: $('f-title').value.trim(), event_date: $('f-date').value,
+          end_date: $('f-end').value || null,
+          start_time: $('f-start').value || null, end_time: $('f-etime').value || null,
+          location: $('f-loc').value || null, description: $('f-desc').value || null,
+          is_published: $('f-pub').value === '1',
+        };
+        if (payload.layer === 'parents') {
+          payload.audience = $('f-aud').value;
+          payload.rsvp_required = $('f-rsvp').value === '1';
+        }
+        if (!payload.title) { Wren.toast('A title is needed', 'error'); return; }
+        var p = existing && existing.id
+          ? api('/items/' + existing.id, { method: 'PUT', body: payload })
+          : api('/items', { method: 'POST', body: payload });
+        p.then(function () {
+          Wren.toast(existing ? 'Saved' : 'Added to the calendar', 'success');
+          document.querySelectorAll('.wren-modal-overlay .modal-close').forEach(function (b) { b.click(); });
+          loadMonth();
+        }).catch(function (err) { Wren.toast((err && err.error) || 'Could not save', 'error'); });
+      } },
+    ]);
+    $('f-layer').addEventListener('change', syncLayer);
+    syncLayer();
+  }
+
+  // ── WEEK & PLANNING ────────────────────────────────────────────────────────
+  function loadWeek() {
+    var el = $('ec-week-body'); if (!el) return;
+    var mon = mondayOf(S.week);
+    var fri = new Date(mon); fri.setDate(fri.getDate() + 6);
+    $('ec-week-label').textContent = 'Week of ' + mon.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    var q = '/items?from=' + ymd(mon) + '&to=' + ymd(fri) + (S.room ? '&room_id=' + S.room : '');
+    api(q).then(function (r) {
+      var items = r.items || [];
+      var NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+      var html = '';
+      for (var d = 0; d < 5; d++) {
+        var day = new Date(mon); day.setDate(day.getDate() + d);
+        var k = ymd(day);
+        var mine = items.filter(function (i) {
+          var end = i.end_date || i.date;
+          return i.date <= k && k <= end;
+        });
+        var plan = mine.filter(function (i) { return i.overlay; });
+        var rest = mine.filter(function (i) { return !i.overlay; });
+        html += '<div class="ec-day"><h4>' + NAMES[d] + '<span>' + day.getDate() + ' ' + day.toLocaleDateString('en-GB', { month: 'short' }) + '</span></h4>';
+        plan.forEach(function (p) {
+          html += '<div class="ec-theme">' + esc(p.theme ? 'Theme: ' + p.theme : 'Planned activities') + (p.room_name ? ' <span class="ec-muted">· ' + esc(p.room_name) + '</span>' : '') + '</div>';
+          if (p.activities && p.activities.length) html += '<ul class="ec-acts">' + p.activities.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul>';
+          if (p.resources && p.resources.length) html += '<div class="ec-res">Resources: ' + esc(p.resources.join('; ')) + '</div>';
+        });
+        if (!plan.length) html += '<div class="ec-muted" style="font-size:.76rem">No plan for this day yet.</div>';
+        rest.forEach(function (i) {
+          html += '<button class="ec-ev" data-key="' + esc(i.key) + '" style="color:var(' + (i.token || '--c-blue') + ');margin-top:5px" title="' + esc(i.title) + '">' +
+            (i.start_time ? '<span class="t">' + esc(i.start_time) + '</span> ' : '') + (i.icon ? esc(i.icon) + ' ' : '') + esc(i.title) + '</button>';
+        });
+        html += '</div>';
+      }
+      S.items = items;
+      el.innerHTML = '<div class="ec-week">' + html + '</div>';
+      el.querySelectorAll('.ec-ev').forEach(function (b) { b.addEventListener('click', function () { openItem(b.dataset.key); }); });
+      var link = $('ec-plan-editor');
+      if (link) link.href = '/admin/curriculum/planning?week=' + ymd(mon) + (S.room ? '&room=' + S.room : '');
+    }).catch(function (e) { el.innerHTML = '<p class="ec-refuse">Could not load the week: ' + esc((e && e.error) || e) + '</p>'; });
+  }
+
+  // ── LIST ───────────────────────────────────────────────────────────────────
+  function loadList() {
+    var el = $('ec-list-body'); if (!el) return;
+    var from = new Date(); var to = new Date(); to.setDate(to.getDate() + 56);
+    api('/items?from=' + ymd(from) + '&to=' + ymd(to) + '&planning=0').then(function (r) {
+      var items = (r.items || []);
+      if (!items.length) { el.innerHTML = '<p class="ec-muted">Nothing in the next eight weeks.</p>'; return; }
+      S.items = items;
+      el.innerHTML = '<table class="ec-list"><thead><tr><th>When</th><th>What</th><th>Layer</th><th>Kind</th></tr></thead><tbody>' +
+        items.map(function (i) {
+          return '<tr><td style="white-space:nowrap">' + esc(fmtDate(i.date)) + (i.start_time ? '<br><span class="ec-muted">' + esc(i.start_time) + '</span>' : '') + '</td>' +
+            '<td><button class="ec-ev" data-key="' + esc(i.key) + '" style="color:var(' + (i.token || '--c-blue') + ')">' + (i.icon ? esc(i.icon) + ' ' : '') + esc(i.title) + '</button>' +
+            (i.is_published === false ? ' <span class="ec-pill" style="color:var(--c-warn)">draft</span>' : '') + '</td>' +
+            '<td><span class="ec-pill" style="color:var(' + LAYER_TOKEN[i.layer] + ')">' + esc(LAYER_LABEL[i.layer] || i.layer) + '</span></td>' +
+            '<td class="ec-muted">' + esc(i.category_label || '') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+      el.querySelectorAll('.ec-ev').forEach(function (b) { b.addEventListener('click', function () { openItem(b.dataset.key); }); });
+    }).catch(function (e) { el.innerHTML = '<p class="ec-refuse">' + esc((e && e.error) || e) + '</p>'; });
+  }
+
+  // ── MANAGERS' HUB ──────────────────────────────────────────────────────────
+  function loadManagers() {
+    var el = $('ec-mgr-body'); if (!el) return;
+    if (!S.meta.can.managers) {
+      el.innerHTML = '<div class="ec-card"><h3>Managers’ hub</h3><p class="ec-muted">This is Toby, the office manager and the admissions lead only. The shared managers’ calendar, a message thread on each of its events, a general channel and shared notes live here.</p></div>';
+      return;
+    }
+    el.innerHTML =
+      '<div class="ec-card"><h3>General channel</h3><div id="ec-general"></div></div>' +
+      '<div class="ec-card"><h3>Shared notes</h3>' +
+        '<div class="ec-form" style="margin-bottom:10px"><div class="ec-wide"><label for="n-title">A new note</label><input id="n-title" maxlength="200" placeholder="Something the three of us need to remember"></div>' +
+        '<div class="ec-wide"><label for="n-body">Detail (optional)</label><textarea id="n-body" rows="2"></textarea></div>' +
+        '<div><button class="btn btn-sm btn-primary" id="n-add">Add the note</button></div></div>' +
+        '<div id="ec-notes"></div></div>' +
+      '<div class="ec-card"><h3>Managers’ events</h3><p class="ec-muted">Each one has its own thread. Add them on the Month tab with the layer set to Managers.</p><div id="ec-mgr-events"></div></div>';
+    renderThread($('ec-general'), 'general');
+    loadNotes();
+    $('n-add').addEventListener('click', function () {
+      var t = $('n-title').value.trim(); if (!t) { Wren.toast('A title is needed', 'error'); return; }
+      api('/notes', { method: 'POST', body: { title: t, body: $('n-body').value || null } })
+        .then(function () { $('n-title').value = ''; $('n-body').value = ''; loadNotes(); })
+        .catch(function (e) { Wren.toast((e && e.error) || 'Could not add the note', 'error'); });
+    });
+    var from = new Date(); from.setDate(from.getDate() - 14);
+    var to = new Date(); to.setDate(to.getDate() + 120);
+    api('/items?from=' + ymd(from) + '&to=' + ymd(to) + '&layers=managers&planning=0').then(function (r) {
+      var box = $('ec-mgr-events'); if (!box) return;
+      var items = r.items || [];
+      if (!items.length) { box.innerHTML = '<p class="ec-muted">Nothing on the managers’ layer yet.</p>'; return; }
+      box.innerHTML = items.map(function (i) {
+        return '<div class="ec-msg"><span class="who">' + esc(i.title) + '</span><span class="when">' + esc(fmtDate(i.date)) +
+          (i.start_time ? ' · ' + esc(i.start_time) : '') + '</span>' +
+          ' <button class="btn btn-sm btn-ghost" data-ev="' + i.id + '">Thread' + (i.message_count ? ' (' + i.message_count + ')' : '') + '</button>' +
+          ' <button class="btn btn-sm btn-ghost" data-pip="' + i.id + '" data-t="' + esc(i.title) + '">📨 Send to Toby’s Pippin</button></div>';
+      }).join('');
+      box.querySelectorAll('[data-ev]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var host = document.createElement('div');
+          Wren.modal('Thread', host, [{ label: 'Close', class: 'btn-ghost' }]);
+          renderThread(host, 'event:' + b.dataset.ev);
+        });
+      });
+      box.querySelectorAll('[data-pip]').forEach(function (b) {
+        b.addEventListener('click', function () { openPippin({ source_kind: 'event', source_id: Number(b.dataset.pip), type: 'calendar_event', title: b.dataset.t }); });
+      });
+    }).catch(function () {});
+  }
+
+  function loadNotes() {
+    var box = $('ec-notes'); if (!box) return;
+    api('/notes').then(function (notes) {
+      if (!notes.length) { box.innerHTML = '<p class="ec-muted">No notes yet.</p>'; return; }
+      box.innerHTML = notes.map(function (n) {
+        return '<div class="ec-msg"><span class="who">' + (n.pinned ? '📌 ' : '') + esc(n.title) + '</span>' +
+          '<span class="when">' + esc(n.author || '') + '</span>' +
+          (n.body ? '<div class="body">' + esc(n.body) + '</div>' : '') +
+          '<div style="margin-top:5px"><button class="btn btn-sm btn-ghost" data-pin="' + n.id + '" data-v="' + (n.pinned ? '0' : '1') + '">' + (n.pinned ? 'Unpin' : 'Pin') + '</button> ' +
+          '<button class="btn btn-sm btn-ghost" data-npip="' + n.id + '">📨 Send to Pippin</button> ' +
+          '<button class="btn btn-sm btn-ghost" data-ndel="' + n.id + '">Remove</button></div></div>';
+      }).join('');
+      box.querySelectorAll('[data-pin]').forEach(function (b) { b.addEventListener('click', function () {
+        api('/notes/' + b.dataset.pin, { method: 'PATCH', body: { pinned: b.dataset.v === '1' } }).then(loadNotes); }); });
+      box.querySelectorAll('[data-ndel]').forEach(function (b) { b.addEventListener('click', function () {
+        api('/notes/' + b.dataset.ndel, { method: 'DELETE' }).then(loadNotes); }); });
+      box.querySelectorAll('[data-npip]').forEach(function (b) { b.addEventListener('click', function () {
+        openPippin({ source_kind: 'note', source_id: Number(b.dataset.npip), type: 'note' }); }); });
+    }).catch(function (e) { box.innerHTML = '<p class="ec-refuse">' + esc((e && e.error) || e) + '</p>'; });
+  }
+
+  function renderThread(host, thread) {
+    if (!host) return;
+    host.innerHTML = '<p class="ec-muted">Loading…</p>';
+    api('/messages?thread=' + encodeURIComponent(thread)).then(function (r) {
+      var msgs = r.messages || [];
+      host.innerHTML =
+        '<div style="max-height:320px;overflow:auto">' +
+        (msgs.length ? msgs.map(function (m) {
+          return '<div class="ec-msg"><span class="who">' + esc(m.author || 'Manager') + '</span>' +
+            '<span class="when">' + new Date(m.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) +
+            (m.edited_at ? ' · edited' : '') + '</span>' +
+            '<div class="body">' + esc(m.body) + '</div>' +
+            (m.staff_id === r.me ? '<button class="btn btn-sm btn-ghost" data-del="' + m.id + '">Withdraw</button>' : '') + '</div>';
+        }).join('') : '<p class="ec-muted">Nothing here yet.</p>') + '</div>' +
+        '<div class="ec-form" style="margin-top:10px"><div class="ec-wide"><label for="m-' + esc(thread) + '">Add to the thread</label>' +
+        '<textarea id="m-' + esc(thread) + '" rows="2" placeholder="Just between the three of us"></textarea></div>' +
+        '<div><button class="btn btn-sm btn-primary" data-post="1">Post</button></div></div>';
+      host.querySelector('[data-post]').addEventListener('click', function () {
+        var ta = host.querySelector('textarea');
+        var body = ta.value.trim(); if (!body) return;
+        api('/messages', { method: 'POST', body: { thread: thread, body: body } })
+          .then(function () { ta.value = ''; renderThread(host, thread); })
+          .catch(function (e) { Wren.toast((e && e.error) || 'Could not post', 'error'); });
+      });
+      host.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () {
+        api('/messages/' + b.dataset.del, { method: 'DELETE' }).then(function () { renderThread(host, thread); }); }); });
+      api('/messages/read', { method: 'POST', body: { thread: thread } }).catch(function () {});
+    }).catch(function (e) { host.innerHTML = '<p class="ec-refuse">' + esc((e && e.error) || e) + '</p>'; });
+  }
+
+  // ── SEND TO PIPPIN ─────────────────────────────────────────────────────────
+  function openPippin(seed) {
+    var box = document.createElement('div');
+    box.innerHTML =
+      '<p class="ec-muted">This leaves Wren and lands at Toby’s house. Calendar events go on his <strong>shared household calendar</strong>, which other people at home can see — so keep it generic.</p>' +
+      '<div class="ec-form">' +
+      '<div><label for="p-type">What it becomes</label><select id="p-type">' +
+        ['calendar_event', 'todo', 'plan', 'note'].map(function (t) {
+          var L = { calendar_event: 'Calendar event', todo: 'To-do', plan: 'Plan', note: 'Note' };
+          return '<option value="' + t + '"' + ((seed.type || 'calendar_event') === t ? ' selected' : '') + '>' + L[t] + '</option>';
+        }).join('') + '</select></div>' +
+      '<div class="ec-wide"><label for="p-title">Title (no names, no dates)</label><input id="p-title" maxlength="120" value="' + esc(seed.title || '') + '"></div>' +
+      '<div id="p-when-wrap"><label for="p-start">When</label><input id="p-start" type="datetime-local"></div>' +
+      '<div id="p-due-wrap" style="display:none"><label for="p-due">Due</label><input id="p-due" type="date"></div>' +
+      '<div class="ec-wide" id="p-note-wrap"><label for="p-note">A line of detail (optional)</label><textarea id="p-note" rows="2"></textarea></div>' +
+      '<div class="ec-wide" id="p-steps-wrap" style="display:none"><label for="p-steps">Steps, one a line</label><textarea id="p-steps" rows="4"></textarea></div>' +
+      '</div>' +
+      '<div id="p-preview" style="margin-top:12px"></div>';
+    var sendBtn = { label: 'Send to Toby’s Pippin (home calendar, shared at home)', class: 'btn-primary', close: false, action: doSend };
+    Wren.modal('Send to Toby’s Pippin', box, [
+      { label: 'Cancel', class: 'btn-ghost' },
+      { label: 'Check it first', class: 'btn-ghost', close: false, action: function () { preview(false); } },
+      sendBtn,
+    ]);
+    var lastPreviewOk = false;
+
+    function syncType() {
+      var t = $('p-type').value;
+      $('p-when-wrap').style.display = t === 'calendar_event' ? '' : 'none';
+      $('p-due-wrap').style.display = t === 'todo' ? '' : 'none';
+      $('p-note-wrap').style.display = (t === 'calendar_event' || t === 'note') ? '' : 'none';
+      $('p-steps-wrap').style.display = t === 'plan' ? '' : 'none';
+      lastPreviewOk = false; $('p-preview').innerHTML = '';
+    }
+    $('p-type').addEventListener('change', syncType);
+    syncType();
+
+    function payload() {
+      var t = $('p-type').value;
+      var p = { source_kind: seed.source_kind, source_id: seed.source_id, type: t, title: $('p-title').value.trim() };
+      if (t === 'calendar_event') {
+        var v = $('p-start').value;           // 2026-10-21T14:00
+        p.start = v ? v.slice(0, 16) : '';
+        p.note = $('p-note').value || '';
+      } else if (t === 'todo') {
+        p.due = $('p-due').value || ''; p.priority = 'normal';
+      } else if (t === 'plan') {
+        p.steps = $('p-steps').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      } else {
+        p.body = $('p-note').value || '';
+      }
+      return p;
+    }
+
+    function showPreview(r) {
+      var h = '';
+      if (r.stripped && r.stripped.length) h += '<p class="ec-ok">Taken out before sending: ' + esc(r.stripped.join(', ')) + '.</p>';
+      (r.refusals || []).forEach(function (f) { h += '<p class="ec-refuse">' + esc(f.message) + '</p>'; });
+      if (r.ok) {
+        h += '<p class="ec-ok">This is exactly what will be sent. It lands in: <strong>' + esc(r.lands || '') + '</strong>.</p>' +
+          '<div class="ec-pre">' + esc(r.preview) + '</div>';
+        if (!r.connected) h += '<p class="ec-refuse">The bridge to Pippin is not connected on this server, so nothing can be sent yet.</p>';
+      }
+      (r.notes || []).forEach(function (n) { h += '<p class="ec-muted">' + esc(n) + '</p>'; });
+      $('p-preview').innerHTML = h;
+      lastPreviewOk = !!(r.ok && r.connected);
+    }
+
+    function preview(thenSend) {
+      return Wren.api('/api/pippin/preview', { method: 'POST', body: payload() })
+        .then(function (r) { showPreview(r); if (thenSend && lastPreviewOk) realSend(); })
+        .catch(function (e) { $('p-preview').innerHTML = '<p class="ec-refuse">' + esc((e && e.error) || e) + '</p>'; });
+    }
+
+    function realSend() {
+      Wren.api('/api/pippin/send', { method: 'POST', body: payload() })
+        .then(function (r) {
+          Wren.toast(r.duplicate ? 'Already at home — nothing duplicated' : 'Delivered to Pippin', 'success');
+          document.querySelectorAll('.wren-modal-overlay .modal-close').forEach(function (b) { b.click(); });
+        })
+        .catch(function (e) {
+          var h = '';
+          if (e && e.refusals) e.refusals.forEach(function (f) { h += '<p class="ec-refuse">' + esc(f.message) + '</p>'; });
+          else h = '<p class="ec-refuse">' + esc((e && (e.message || e.error)) || 'Could not send') + '</p>';
+          $('p-preview').innerHTML = h;
+        });
+    }
+
+    // Send always previews on the server first: the sender sees what crosses.
+    function doSend() { if (lastPreviewOk) realSend(); else preview(true); }
+  }
+
+  function loadPippin() {
+    var el = $('ec-pippin-body'); if (!el) return;
+    if (!S.meta.can.managers) {
+      el.innerHTML = '<div class="ec-card"><h3>Sent to Pippin</h3><p class="ec-muted">Sending things to Toby’s home app is for Toby, the office manager and the admissions lead.</p></div>';
+      return;
+    }
+    Wren.api('/api/pippin/config').then(function (cfg) {
+      var head = '<div class="ec-card"><h3>Send to Toby’s Pippin</h3>' +
+        '<p class="ec-muted">One click sends a calendar event, a to-do, a plan or a note from Roost to Toby’s home app. ' +
+        (cfg.connected ? 'The bridge is <strong>connected</strong>.' : 'The bridge is <strong>not connected</strong> on this server, so nothing can be sent yet.') + '</p>' +
+        '<ul class="ec-muted" style="font-size:.84rem">' + (cfg.rules || []).map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
+        '<p><button class="btn btn-sm btn-primary" id="p-new">Send something now</button></p></div>' +
+        '<div class="ec-card"><h3>What has been sent</h3><div id="p-log"></div></div>';
+      el.innerHTML = head;
+      $('p-new').addEventListener('click', function () { openPippin({ source_kind: 'adhoc', type: 'todo' }); });
+      Wren.api('/api/pippin/sends?limit=50').then(function (rows) {
+        var box = $('p-log');
+        if (!rows.length) { box.innerHTML = '<p class="ec-muted">Nothing has been sent yet.</p>'; return; }
+        box.innerHTML = '<table class="ec-list"><thead><tr><th>When</th><th>What</th><th>Type</th><th>Status</th><th></th></tr></thead><tbody>' +
+          rows.map(function (r) {
+            var tone = r.status === 'delivered' ? '--c-ok' : r.status === 'withdrawn' ? '--c-muted' : '--c-red';
+            return '<tr><td style="white-space:nowrap">' + new Date(r.sent_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</td>' +
+              '<td>' + esc(r.title) + '<br><span class="ec-muted" style="font-size:.72rem">' + esc(r.sent_by_name || '') + '</span></td>' +
+              '<td class="ec-muted">' + esc(r.item_type) + '</td>' +
+              '<td><span class="ec-pill" style="color:var(' + tone + ')">' + esc(r.status) + '</span>' +
+              (r.home_status ? ' <span class="ec-muted" style="font-size:.72rem">' + esc(r.home_status) + '</span>' : '') +
+              (r.error ? '<div class="ec-muted" style="font-size:.72rem">' + esc(r.error) + '</div>' : '') + '</td>' +
+              '<td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" data-ref="' + r.id + '">Check</button>' +
+              (r.status === 'delivered' ? ' <button class="btn btn-sm btn-ghost" data-wd="' + r.id + '">Withdraw</button>' : '') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+        box.querySelectorAll('[data-ref]').forEach(function (b) { b.addEventListener('click', function () {
+          Wren.api('/api/pippin/sends/' + b.dataset.ref + '/refresh', { method: 'POST' }).then(loadPippin)
+            .catch(function (e) { Wren.toast((e && e.error) || 'Could not check', 'error'); }); }); });
+        box.querySelectorAll('[data-wd]').forEach(function (b) { b.addEventListener('click', function () {
+          Wren.api('/api/pippin/sends/' + b.dataset.wd + '/withdraw', { method: 'POST' }).then(loadPippin)
+            .catch(function (e) { Wren.toast((e && e.message) || 'Could not withdraw', 'error'); }); }); });
+      }).catch(function () {});
+    }).catch(function (e) {
+      el.innerHTML = '<p class="ec-refuse">' + esc((e && e.error) || e) + '</p>';
+    });
+  }
+
+  // ── FEEDS ──────────────────────────────────────────────────────────────────
+  function loadFeeds() {
+    var el = $('ec-feeds-body'); if (!el) return;
+    api('/feeds').then(function (r) {
+      el.innerHTML = '<div class="ec-card"><h3>Subscribe on your phone</h3>' +
+        '<p class="ec-muted">Read-only links, one per layer, and private to you. Add one in your phone’s calendar as a <em>subscribed calendar</em>. If a link ever gets out, press Replace and the old one stops working.</p>' +
+        (r.feeds || []).map(function (f) {
+          var url = window.location.origin + f.path;
+          return '<div class="ec-msg"><span class="who">' + esc(f.label) + '</span>' +
+            '<div class="ec-url" id="u-' + esc(f.layer) + '">' + esc(url) + '</div>' +
+            '<div style="margin-top:5px"><button class="btn btn-sm btn-ghost" data-copy="' + esc(url) + '">Copy the link</button> ' +
+            '<a class="btn btn-sm btn-ghost" href="' + esc(f.path) + '">Download the .ics</a> ' +
+            '<button class="btn btn-sm btn-ghost" data-regen="' + esc(f.layer) + '">Replace it</button></div></div>';
+        }).join('') + '</div>';
+      el.querySelectorAll('[data-copy]').forEach(function (b) { b.addEventListener('click', function () {
+        navigator.clipboard.writeText(b.dataset.copy).then(function () { Wren.toast('Link copied', 'success'); },
+          function () { Wren.toast('Copy it by hand — the browser would not', 'warning'); }); }); });
+      el.querySelectorAll('[data-regen]').forEach(function (b) { b.addEventListener('click', function () {
+        api('/feeds/regenerate', { method: 'POST', body: { layer: b.dataset.regen } })
+          .then(function () { Wren.toast('Replaced — re-add it on your phone', 'success'); loadFeeds(); })
+          .catch(function (e) { Wren.toast((e && e.error) || 'Could not replace it', 'error'); }); }); });
+    }).catch(function (e) { el.innerHTML = '<p class="ec-refuse">' + esc((e && e.error) || e) + '</p>'; });
+  }
+
+  // ── TERM DATES (read-only glance; the editor is its own page) ──────────────
+  function loadTerms() {
+    var el = $('ec-terms-body'); if (!el) return;
+    var from = new Date(); from.setMonth(from.getMonth() - 6);
+    var to = new Date(); to.setMonth(to.getMonth() + 14);
+    api('/items?from=' + ymd(from) + '&to=' + ymd(to) + '&layers=parents&planning=0').then(function (r) {
+      var terms = (r.items || []).filter(function (i) { return i.source === 'school_terms'; });
+      if (!terms.length) { el.innerHTML = '<p class="ec-muted">No term dates are stored yet.</p>'; return; }
+      el.innerHTML = '<div class="ec-card"><table class="ec-list"><thead><tr><th>Term</th><th>From</th><th>To</th></tr></thead><tbody>' +
+        terms.map(function (t) { return '<tr><td>' + esc(t.title) + '</td><td>' + esc(fmtDate(t.date)) + '</td><td>' + esc(fmtDate(t.end_date)) + '</td></tr>'; }).join('') +
+        '</tbody></table></div>';
+    }).catch(function () {});
+  }
+
+  // ── tab entry points ───────────────────────────────────────────────────────
+  window.wrenLoadTab_events_calendar_month = function () {
+    S.month = new Date();
+    meta().then(function () {
+      renderLayerChips(); loadMonth();
+      $('ec-prev').addEventListener('click', function () { S.month.setMonth(S.month.getMonth() - 1); loadMonth(); });
+      $('ec-next').addEventListener('click', function () { S.month.setMonth(S.month.getMonth() + 1); loadMonth(); });
+      $('ec-today').addEventListener('click', function () { S.month = new Date(); loadMonth(); });
+      $('ec-add').addEventListener('click', function () { openForm(null); });
+    });
+  };
+  window['wrenLoadTab_events-calendar_month'] = window.wrenLoadTab_events_calendar_month;
+
+  window['wrenLoadTab_events-calendar_week'] = function () {
+    S.week = new Date();
+    meta().then(function () {
+      var sel = $('ec-room');
+      if (sel) {
+        sel.innerHTML = '<option value="">Every room</option>' + (S.meta.rooms || []).map(function (r) {
+          return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
+        sel.addEventListener('change', function () { S.room = sel.value; loadWeek(); });
+      }
+      loadWeek();
+      $('ec-wprev').addEventListener('click', function () { S.week.setDate(S.week.getDate() - 7); loadWeek(); });
+      $('ec-wnext').addEventListener('click', function () { S.week.setDate(S.week.getDate() + 7); loadWeek(); });
+      $('ec-wtoday').addEventListener('click', function () { S.week = new Date(); loadWeek(); });
+    });
+  };
+  window['wrenLoadTab_events-calendar_list']     = function () { meta().then(loadList); };
+  window['wrenLoadTab_events-calendar_managers'] = function () { meta().then(loadManagers); };
+  window['wrenLoadTab_events-calendar_pippin']   = function () { meta().then(loadPippin); };
+  window['wrenLoadTab_events-calendar_feeds']    = function () { meta().then(loadFeeds); };
+  window['wrenLoadTab_events-calendar_term-dates'] = function () { meta().then(loadTerms); };
+})();
+</script>
+</section>

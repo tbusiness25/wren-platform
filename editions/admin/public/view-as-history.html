@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>View-as history — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b320 — tokens only, no bare hex. Checked in light and dark. */
+.va-intro{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:13px 15px;
+  font-size:.83rem;color:var(--c-muted);line-height:1.6;margin-bottom:16px;max-width:900px}
+.va-intro b{color:var(--c-text)}
+
+.va-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;
+  padding:12px 15px;margin-bottom:10px;border-left:4px solid var(--c-border)}
+.va-card.live{border-left-color:var(--c-amber)}
+.va-card.done{border-left-color:var(--c-border)}
+.va-top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.va-who{font-weight:700;font-size:.95rem;color:var(--c-text)}
+.va-meta{font-size:.78rem;color:var(--c-muted)}
+.va-pill{border-radius:999px;padding:2px 10px;font-size:.72rem;font-weight:700;
+  border:1px solid var(--c-border);color:var(--c-muted);white-space:nowrap}
+.va-pill.live{border-color:var(--c-amber);color:var(--c-amber)}
+.va-actions{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap}
+.va-btn{border:1px solid var(--c-border);background:var(--c-bg);color:var(--c-text);
+  border-radius:9px;padding:7px 13px;font-size:.8rem;font-family:inherit;cursor:pointer;min-height:36px}
+.va-btn:hover{border-color:var(--c-blue)}
+.va-btn.danger{border-color:var(--c-red);color:var(--c-red)}
+.va-pages{margin-top:10px;border-top:1px solid var(--c-border);padding-top:9px;
+  font-size:.78rem;color:var(--c-muted);max-height:320px;overflow:auto}
+.va-pages table{width:100%;border-collapse:collapse}
+.va-pages td{padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap}
+.va-pages td.p{white-space:normal;word-break:break-all;color:var(--c-text)}
+.va-empty{color:var(--c-muted);font-size:.86rem;padding:20px 0}
+</style>
+</head>
+<body>
+<div class="v2-page">
+  <h1 class="page-title">👁️ View-as history</h1>
+
+  <div class="va-intro">
+    Every time a manager opened Finch or Seed as somebody else: <b>who looked, whose account,
+    when, and every page they saw</b>. A view-as session is read only and lasts thirty minutes —
+    nothing on this list could have changed, sent or saved anything.
+    <br><br>
+    This list is the reason Wren does not have a master password. With a shared password every
+    login looks like the real person, and afterwards there is no way to answer
+    <b>“did the parent do that, or did we?”</b> — which is exactly the question a safeguarding
+    or GDPR complaint turns on.
+  </div>
+
+  <div id="va-list"><div class="va-empty">Loading…</div></div>
+</div>
+
+<script>
+const api = (u, o) => Wren.api(u, o);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function when(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' +
+         d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function mins(a, b) {
+  if (!a || !b) return '';
+  const m = Math.round((new Date(b) - new Date(a)) / 60000);
+  return m <= 0 ? '' : ' · ' + m + ' min' + (m === 1 ? '' : 's');
+}
+
+/* A parent is identified here by address because that IS their account name in
+   Finch, and this screen exists to answer "whose account". It is manager-only
+   and Roost-only (the route 404s on every other host). */
+function subjectOf(s) {
+  if (s.subject_kind === 'staff') return (s.subject_label || 'a member of staff') + ' (staff #' + s.subject_staff_id + ')';
+  return s.subject_email || s.subject_label || 'a parent';
+}
+
+function card(s) {
+  const live = s.live === true;
+  const ended = s.ended_at ? 'ended ' + when(s.ended_at) + (s.ended_reason === 'ended_by_manager' ? ' (ended from here)' : '')
+    : (new Date(s.expires_at) < new Date() ? 'expired ' + when(s.expires_at) : 'open');
+  return '<div class="va-card ' + (live ? 'live' : 'done') + '" data-id="' + s.id + '">' +
+    '<div class="va-top">' +
+      '<span class="va-who">' + esc(s.actor_name || ('staff #' + s.actor_staff_id)) + '</span>' +
+      '<span class="va-meta">viewed <b>' + esc(subjectOf(s)) + '</b> on ' +
+        (s.portal === 'hr' ? 'Seed (staff)' : 'Finch (parents)') + '</span>' +
+      (live ? '<span class="va-pill live">live now</span>' : '') +
+    '</div>' +
+    '<div class="va-meta">' + when(s.started_at) +
+      (s.redeemed_at ? '' : ' · link never opened') +
+      mins(s.started_at, s.ended_at || s.expires_at) +
+      ' · ' + (s.page_views || 0) + ' page' + (Number(s.page_views) === 1 ? '' : 's') +
+      (Number(s.blocked) ? ' · ' + s.blocked + ' write' + (Number(s.blocked) === 1 ? '' : 's') + ' blocked' : '') +
+      ' · ' + esc(ended) + '</div>' +
+    '<div class="va-actions">' +
+      '<button class="va-btn" data-act="pages">Pages viewed</button>' +
+      (live ? '<button class="va-btn danger" data-act="end">End this session</button>' : '') +
+    '</div>' +
+    '<div class="va-pages" hidden></div>' +
+  '</div>';
+}
+
+async function load() {
+  const el = document.getElementById('va-list');
+  try {
+    const d = await api('/api/view-as/history');
+    const list = (d && d.sessions) || [];
+    el.innerHTML = list.length
+      ? list.map(card).join('')
+      : '<div class="va-empty">Nobody has used “View as” yet.</div>';
+  } catch (e) {
+    /* Wren.api rejects with the server's JSON body, so the useful text is .error. */
+    el.innerHTML = '<div class="va-empty">Could not load: ' + esc((e && (e.message || e.error)) || 'unknown') + '</div>';
+  }
+}
+
+document.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.va-btn');
+  if (!btn) return;
+  const card = btn.closest('.va-card');
+  const id = card.dataset.id;
+
+  if (btn.dataset.act === 'end') {
+    // Roost's shell (wren-shell-v2.js) exposes Wren.api but no Wren.confirm —
+    // that one lives in wren-core.js, which Roost does not load.
+    if (!window.confirm('End this view-as session now?')) return;
+    try { await api('/api/view-as/history/' + id + '/end', { method: 'POST' }); } catch (e) {}
+    load();
+    return;
+  }
+
+  const box = card.querySelector('.va-pages');
+  if (!box.hidden) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = 'Loading…';
+  try {
+    const d = await api('/api/view-as/history/' + id);
+    const pv = (d && d.page_views) || [];
+    box.innerHTML = pv.length
+      ? '<table>' + pv.map(p =>
+          '<tr><td>' + when(p.at) + '</td><td>' + esc(p.method || '') + '</td>' +
+          '<td class="p">' + esc(p.path || '') + '</td>' +
+          '<td>' + (p.status === 403 ? 'blocked' : '') + '</td></tr>').join('') + '</table>'
+      : 'No pages were opened in this session.';
+  } catch (e) {
+    box.textContent = 'Could not load the pages for this session.';
+  }
+});
+
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

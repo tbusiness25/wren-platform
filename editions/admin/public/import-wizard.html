@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Import Wizard — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── Wizard step indicator ── */
+    .wiz-indicator {
+      display: flex; align-items: center; gap: 0;
+      margin-bottom: 28px; overflow-x: auto; padding-bottom: 4px;
+    }
+    .wiz-step { display: flex; flex-direction: column; align-items: center; min-width: 56px; }
+    .wiz-num {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; font-weight: 700;
+      background: #1e293b; border: 2px solid #2d3748; color: #64748b;
+      transition: all .2s;
+    }
+    .wiz-step.active .wiz-num  { background: #4a9abf; border-color: #4a9abf; color: #fff; }
+    .wiz-step.done  .wiz-num   { background: #22c55e; border-color: #22c55e; color: #fff; }
+    .wiz-lbl { font-size: .65rem; color: #64748b; margin-top: 4px; white-space: nowrap; text-align: center; }
+    .wiz-step.active .wiz-lbl  { color: #4a9abf; }
+    .wiz-step.done  .wiz-lbl   { color: #22c55e; }
+    .wiz-line { flex: 1; height: 2px; background: #2d3748; min-width: 16px; margin-bottom: 16px; transition: background .2s; }
+    .wiz-line.done { background: #22c55e; }
+
+    /* ── Cards & source grid ── */
+    .source-grid, .entity-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
+      margin-top: 16px;
+    }
+    .source-card, .entity-card {
+      background: #1e293b; border: 2px solid #2d3748; border-radius: 12px;
+      padding: 16px 12px; cursor: pointer; transition: all .15s;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      position: relative;
+    }
+    .source-card:hover:not(.disabled), .entity-card:hover { border-color: #4a9abf; }
+    .source-card.selected, .entity-card.selected { border-color: #4a9abf; background: #0f2233; }
+    .source-card.disabled { opacity: .45; cursor: default; }
+    .source-card input, .entity-card input { position: absolute; opacity: 0; pointer-events: none; }
+    .source-icon { font-size: 2rem; }
+    .source-name, .entity-name { font-size: .9rem; font-weight: 600; color: #f1f5f9; }
+    .source-desc, .entity-desc { font-size: .75rem; color: #94a3b8; text-align: center; }
+    .badge-soon {
+      background: #1e3a5f; color: #60a5fa; font-size: .65rem; padding: 2px 8px;
+      border-radius: 99px; font-weight: 600;
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed #2d3748; border-radius: 12px; padding: 48px 24px;
+      text-align: center; cursor: pointer; transition: all .2s; margin-top: 12px;
+    }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: #4a9abf; background: #0f2233; }
+    .upload-zone .up-icon { font-size: 3rem; margin-bottom: 12px; }
+    .upload-zone p { margin: 6px 0; color: #94a3b8; }
+    .upload-zone .up-cta { color: #4a9abf; text-decoration: underline; cursor: pointer; }
+    .upload-status { margin-top: 12px; padding: 10px 14px; border-radius: 8px; display: none; }
+    .upload-status.ok  { background: #052e16; color: #86efac; border: 1px solid #166534; }
+    .upload-status.err { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+
+    /* ── Preview table ── */
+    .preview-meta { color: #94a3b8; font-size: .85rem; margin-bottom: 10px; }
+    .encoding-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .encoding-row label { font-size: .8rem; color: #94a3b8; }
+    .encoding-row select { background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 5px 8px; font-size: .8rem; }
+    .preview-scroll { overflow-x: auto; }
+    .preview-tbl { width: 100%; border-collapse: collapse; font-size: .78rem; min-width: 500px; }
+    .preview-tbl th { background: #0f172a; color: #4a9abf; padding: 7px 10px;
+      text-align: left; border-bottom: 1px solid #2d3748; white-space: nowrap; }
+    .preview-tbl td { padding: 5px 10px; border-bottom: 1px solid #1e293b; color: #cbd5e1;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .preview-tbl tr:hover td { background: #1e293b; }
+
+    /* ── Column mapping ── */
+    .mapping-header { display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+    .tpl-suggestion { background: #0f2233; border: 1px solid #1d4ed8; border-radius: 8px;
+      padding: 10px 14px; display: flex; align-items: center; gap: 10px;
+      font-size: .85rem; margin-bottom: 12px; }
+    .mapping-row {
+      display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid #1e293b;
+    }
+    .mapping-row:last-child { border-bottom: none; }
+    .map-label { font-size: .85rem; color: #f1f5f9; }
+    .map-hint { font-size: .72rem; color: #64748b; margin-top: 2px; }
+    .map-arrow { text-align: center; color: #4a9abf; font-weight: 700; }
+    .map-select {
+      width: 100%; background: #0f172a; border: 1px solid #2d3748; color: #f1f5f9;
+      border-radius: 8px; padding: 7px 8px; font-size: .82rem;
+    }
+    .map-select:focus { border-color: #4a9abf; outline: none; }
+    .tpl-save-row { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
+    .tpl-save-row input { flex: 1; background: #0f172a; border: 1px solid #2d3748;
+      color: #f1f5f9; border-radius: 8px; padding: 7px 10px; font-size: .85rem; }
+
+    /* ── Validation results ── */
+    .val-summary { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .val-stat { background: #1e293b; border-radius: 10px; padding: 12px 20px;
+      text-align: center; min-width: 100px; }
+    .val-stat .vs-num { font-size: 1.6rem; font-weight: 700; display: block; }
+    .val-stat .vs-lbl { font-size: .75rem; color: #94a3b8; }
+    .vs-ok  { color: #22c55e; }
+    .vs-err { color: #ef4444; }
+    .vs-warn { color: #f59e0b; }
+    .err-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .err-tbl th { text-align: left; padding: 7px 10px; color: #94a3b8; border-bottom: 1px solid #2d3748; }
+    .err-tbl td { padding: 6px 10px; border-bottom: 1px solid #1e293b; }
+    .err-tbl .err-row { color: #94a3b8; font-size: .75rem; }
+    .err-tbl .err-msg { color: #fca5a5; }
+    .err-tbl .err-val { font-family: monospace; color: #94a3b8; font-size: .75rem; max-width: 140px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Dry-run & commit ── */
+    .dr-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px; margin-bottom: 20px; }
+    .dr-card { background: #1e293b; border-radius: 10px; padding: 16px; text-align: center; }
+    .dr-num { font-size: 2rem; font-weight: 700; display: block; }
+    .dr-lbl { font-size: .75rem; color: #94a3b8; margin-top: 2px; }
+    .dr-create { color: #22c55e; }
+    .dr-update { color: #4a9abf; }
+    .dr-skip   { color: #f59e0b; }
+    .dr-total  { color: #94a3b8; }
+    .commit-box { background: #1e293b; border: 2px solid #e07820; border-radius: 12px;
+      padding: 20px 24px; margin-bottom: 20px; }
+    .commit-box p { margin: 6px 0; color: #cbd5e1; }
+    .commit-box strong { color: #f1f5f9; }
+
+    /* ── Done ── */
+    .done-icon { font-size: 4rem; text-align: center; margin: 12px 0; }
+    .done-title { font-size: 1.5rem; font-weight: 700; text-align: center;
+      color: #22c55e; margin-bottom: 8px; }
+    .done-stats { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin: 16px 0; }
+    .done-stat { background: #1e293b; border-radius: 8px; padding: 10px 18px; text-align: center; }
+    .done-stat .dn { font-size: 1.3rem; font-weight: 700; }
+    .done-stat .dl { font-size: .75rem; color: #94a3b8; }
+    .done-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+
+    /* ── Wizard footer nav ── */
+    .wiz-footer { display: flex; justify-content: space-between; align-items: center;
+      margin-top: 24px; padding-top: 16px; border-top: 1px solid #2d3748; }
+
+    /* ── Badge helpers ── */
+    .badge-req { background: #7f1d1d; color: #fca5a5; font-size: .65rem; padding: 1px 6px;
+      border-radius: 4px; margin-left: 4px; }
+    .badge-opt { background: #1e293b; color: #64748b; font-size: .65rem; padding: 1px 6px;
+      border-radius: 4px; margin-left: 4px; }
+
+    /* ── Alert ── */
+    .alert-info { background: #0f2233; border: 1px solid #1d4ed8; color: #93c5fd;
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+    .alert-warn { background: #1c1205; border: 1px solid #92400e; color: #fde68a;
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+    .alert-danger { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5;
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+
+    /* ── Spinner inline ── */
+    .spin-sm { width: 18px; height: 18px; border: 2px solid #2d3748;
+      border-top-color: #4a9abf; border-radius: 50%; animation: spin .7s linear infinite;
+      display: inline-block; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── b214: EyLog entity picker ── */
+    .ent-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      margin: 14px 0; }
+    .ent-card { border: 1px solid var(--c-border, #2d3748); border-radius: 10px; padding: 12px 14px;
+      background: var(--c-surface, #111827); cursor: pointer; transition: border-color .15s, background .15s; }
+    .ent-card:hover { border-color: var(--c-blue, #4a9abf); }
+    .ent-card.on { border-color: var(--c-orange, #e07820); background: var(--c-orange-light, #1c1205); }
+    .ent-head { display: flex; align-items: center; gap: 9px; }
+    .ent-head input { width: 17px; height: 17px; accent-color: var(--c-orange, #e07820); flex: none; }
+    .ent-name { font-weight: 600; color: var(--c-text, #f1f5f9); }
+    .ent-what { font-size: .74rem; color: var(--c-text-muted, #94a3b8); margin: 7px 0 0 26px; line-height: 1.45; }
+    .ent-meta { font-size: .68rem; color: var(--c-muted, #64748b); margin: 6px 0 0 26px; line-height: 1.45; }
+    .ent-meta b { color: var(--c-text-muted, #94a3b8); font-weight: 600; }
+    .authorise-box { border: 1px solid var(--c-amber, #92400e); background: var(--c-amber-light, #1c1205);
+      border-radius: 8px; padding: 13px 16px; margin: 14px 0; color: var(--c-text, #fde68a); font-size: .82rem; line-height: 1.5; }
+    .authorise-box label { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; margin-top: 10px; }
+    .authorise-box input { width: 17px; height: 17px; margin-top: 2px; accent-color: var(--c-orange, #e07820); flex: none; }
+    .skip-list { margin: 10px 0 0; padding: 0; list-style: none; }
+    .skip-list li { border-left: 3px solid var(--c-amber, #92400e); padding: 6px 0 6px 11px; margin-bottom: 7px;
+      font-size: .76rem; color: var(--c-text-muted, #94a3b8); line-height: 1.45; }
+    .skip-list b { color: var(--c-text, #f1f5f9); font-weight: 600; }
+    .skip-refs { font-family: monospace; font-size: .68rem; color: var(--c-muted, #64748b); }
+    .ent-tbl { width: 100%; border-collapse: collapse; font-size: .78rem; margin-top: 10px; }
+    .ent-tbl th, .ent-tbl td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--c-border, #2d3748); }
+    .ent-tbl th:first-child, .ent-tbl td:first-child { text-align: left; }
+    .ent-tbl th { color: var(--c-text-muted, #94a3b8); font-weight: 600; font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .04em; }
+    .ent-tbl td { color: var(--c-text, #f1f5f9); }
+    .ent-tbl td.z { color: var(--c-muted, #64748b); }
+
+    /* ── EyLog log tail ── */
+    .eylog-log {
+      background: #0f172a; border: 1px solid #2d3748; border-radius: 8px;
+      padding: 12px 14px; font-family: monospace; font-size: .72rem; color: #94a3b8;
+      max-height: 260px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📥 Import Wizard</div>
+    <div class="page-actions" id="hdr-actions"></div>
+  </div>
+
+  <div class="card" id="wiz-indicator-card">
+    <div class="wiz-indicator" id="wiz-indicator"></div>
+  </div>
+
+  <div class="card" id="wiz-body">
+    <div class="loading-state"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+const STATE = {
+  step: 1,
+  jobId: sessionStorage.getItem('wren_import_job') || null,
+  sourceKind: 'csv',
+  targetEntity: null,
+  encoding: 'utf-8',
+  headers: [],
+  preview: [],
+  totalRows: 0,
+  mapping: {},
+  templates: [],
+  validationResult: null,
+  dryRunResult: null,
+  commitResult: null,
+  schemas: {},
+  eylog: {
+    jobId: sessionStorage.getItem('wren_eylog_job') || null,
+    info: null,
+    sourceMode: null,   // 'creds' | 'export'
+    stage: 'connect',   // connect -> choose -> preview -> running -> report  (b214)
+    preview: null,
+    reportContent: null,
+    pollHandle: null,
+    entities: null,     // b214: picked entity keys
+    catalogue: null,    // b214: what each entity fetches / dedupes on
+  },
+  tapestry: {
+    jobId: sessionStorage.getItem('wren_tapestry_job') || null,
+    stage: 'upload',    // upload -> preview -> report
+    filesFound: null,
+    preview: null,
+    dryRun: null,
+    reportContent: null,
+  },
+  brighthr: {
+    jobId: sessionStorage.getItem('wren_brighthr_job') || null,
+    stage: 'upload',    // upload -> preview -> report
+    empUploaded: false,
+    absUploaded: false,
+    preview: null,
+    dryRun: null,
+    reportContent: null,
+  }
+};
+
+const STEP_LABELS = [
+  'Source', 'Entity', 'Upload', 'Preview',
+  'Mapping', 'Validate', 'Dry run', 'Commit', 'Done'
+];
+// b214: 'choose' sits between Connect and Preview — the setting picks what to bring
+// across before anything is fetched, and the dry-run is what unlocks 'Run'.
+const EYLOG_STAGE_LABELS = { connect: 'Connect', choose: 'Choose', preview: 'Dry run', running: 'Run', report: 'Report' };
+
+const NON_CSV_SOURCES = ['ctf','famly'];
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  if (!['manager','deputy_manager','admin'].includes(Wren.user?.role)) {
+    document.getElementById('wren-content').innerHTML =
+      '<div class="alert-danger" style="margin:24px">Import wizard is restricted to managers.</div>';
+    return;
+  }
+
+  // Load schemas and templates in parallel
+  try {
+    const [schemas, templates] = await Promise.all([
+      Wren.api('/api/import/schemas'),
+      Wren.api('/api/import/templates').catch(() => [])
+    ]);
+    STATE.schemas = schemas;
+    STATE.templates = templates;
+  } catch (e) {
+    showError('Failed to load wizard configuration: ' + (e.error || e.message || 'Unknown error'));
+    return;
+  }
+
+  renderIndicator();
+  showStep(1);
+}
+
+// ── Step indicator ────────────────────────────────────────────────────────────
+function renderIndicator() {
+  const el = document.getElementById('wiz-indicator');
+  let html = '';
+  for (let i = 1; i <= 9; i++) {
+    const done   = STATE.step > i;
+    const active = STATE.step === i;
+    html += `<div class="wiz-step${active?' active':''}${done?' done':''}">
+      <div class="wiz-num">${done ? '✓' : i}</div>
+      <div class="wiz-lbl">${STEP_LABELS[i-1]}</div>
+    </div>`;
+    if (i < 9) html += `<div class="wiz-line${STATE.step > i ? ' done' : ''}"></div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── Show step ─────────────────────────────────────────────────────────────────
+function showStep(n) {
+  STATE.step = n;
+  renderIndicator();
+  const body = document.getElementById('wiz-body');
+  const renderers = [null,step1,step2,step3,step4,step5,step6,step7,step8,step9];
+  body.innerHTML = renderers[n]();
+  wireStep(n);
+  body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Wire up step interactivity ────────────────────────────────────────────────
+function wireStep(n) {
+  document.getElementById('btn-back')?.addEventListener('click', goBack);
+  document.getElementById('btn-next')?.addEventListener('click', advance);
+  document.getElementById('btn-upload-continue')?.addEventListener('click', advance);
+  if (n === 1) {
+    document.querySelectorAll('.source-card:not(.disabled)').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.source-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        STATE.sourceKind = card.dataset.val;
+      });
+    });
+  }
+  if (n === 2) {
+    document.querySelectorAll('.entity-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.entity-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        STATE.targetEntity = card.dataset.val;
+      });
+    });
+  }
+  if (n === 3) {
+    const zone  = document.getElementById('upload-zone');
+    const input = document.getElementById('file-input');
+    if (!zone || !input) return;
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) handleFileSelect(file);
+    });
+    input.addEventListener('change', () => { if (input.files[0]) handleFileSelect(input.files[0]); });
+  }
+  if (n === 4) {
+    document.getElementById('btn-reparse')?.addEventListener('click', reloadPreview);
+  }
+  if (n === 5) {
+    document.getElementById('btn-save-tpl')?.addEventListener('click', saveTemplate);
+    document.getElementById('btn-apply-tpl')?.addEventListener('click', applyTemplate);
+  }
+  if (n === 6) {
+    document.getElementById('btn-dl-errors-6')?.addEventListener('click', downloadErrors);
+  }
+  if (n === 7) {
+    document.getElementById('btn-dl-skipped-7')?.addEventListener('click', downloadErrors);
+  }
+  if (n === 8) {
+    document.getElementById('btn-commit')?.addEventListener('click', commitImport);
+  }
+  if (n === 9) {
+    document.getElementById('btn-dl-errors-9')?.addEventListener('click', downloadErrors);
+    document.getElementById('btn-dl-report-9')?.addEventListener('click', () => {
+      Wren.download(`/api/import/jobs/${STATE.jobId}/report.md`, 'import-report.md').catch(e=>alert(e?.error||'Report unavailable'));
+    });
+    document.getElementById('btn-start-fresh')?.addEventListener('click', startFresh);
+  }
+}
+
+// ── Step 1: Source picker ─────────────────────────────────────────────────────
+function step1() {
+  const sources = [
+    { val: 'csv',      icon: '📄', name: 'CSV File',   desc: 'Generic comma-separated',    avail: true },
+    { val: 'ctf',      icon: '🏫', name: 'CTF',         desc: 'Common Transfer File (DfE)', avail: false },
+    { val: 'tapestry', icon: '🌿', name: 'Tapestry',    desc: 'Tapestry export',             avail: true },
+    { val: 'eylog',    icon: '📚', name: 'EYLog',       desc: 'Login or official export',    avail: true },
+    { val: 'brighthr', icon: '💼', name: 'BrightHR',    desc: 'BrightHR export',             avail: true },
+    { val: 'famly',    icon: '👨‍👩‍👧', name: 'Famly',       desc: 'Famly export',               avail: false },
+  ];
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Where is your data coming from?</h3>
+    <p style="color:#94a3b8;margin-top:0">Choose the format to import.</p>
+    <div class="source-grid">
+      ${sources.map(s => `
+        <label class="source-card${s.val===STATE.sourceKind?' selected':''}${!s.avail?' disabled':''}"
+               data-val="${s.val}">
+          <input type="radio" name="source" value="${s.val}" ${s.avail?'':'disabled'}>
+          <div class="source-icon">${s.icon}</div>
+          <div class="source-name">${s.name}</div>
+          <div class="source-desc">${s.desc}</div>
+          ${!s.avail ? '<span class="badge-soon">Coming soon</span>' : ''}
+        </label>`).join('')}
+    </div>
+    ${wizFooter(false, true, 'Choose source & continue')}`;
+}
+
+// ── Step 2: Target entity ─────────────────────────────────────────────────────
+function step2() {
+  const entities = Object.entries(STATE.schemas).map(([key, s]) => ({
+    val: key, icon: entityIcon(key), name: s.label, desc: s.description
+  }));
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">What data are you importing?</h3>
+    <p style="color:#94a3b8;margin-top:0">Choose the target entity in Wren.</p>
+    <div class="entity-grid">
+      ${entities.map(e => `
+        <label class="entity-card${e.val===STATE.targetEntity?' selected':''}" data-val="${e.val}">
+          <input type="radio" name="entity" value="${e.val}">
+          <div class="source-icon">${e.icon}</div>
+          <div class="entity-name">${e.name}</div>
+          <div class="entity-desc">${e.desc}</div>
+        </label>`).join('')}
+    </div>
+    ${wizFooter(true, true, 'Choose entity & continue')}`;
+}
+
+function entityIcon(key) {
+  return {children:'👶',staff:'👤',parents:'👪',attendance:'📋',observations:'👁️',funding:'💷',contacts:'📇'}[key] || '📂';
+}
+
+// ── Step 3: Upload ────────────────────────────────────────────────────────────
+function step3() {
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Upload your CSV file</h3>
+    <p style="color:#94a3b8;margin-top:0">Max 50 MB · CSV or TXT only</p>
+    <input type="file" id="file-input" accept=".csv,.txt" style="display:none">
+    <div class="upload-zone" id="upload-zone">
+      <div class="up-icon">📁</div>
+      <p>Drag &amp; drop your file here</p>
+      <p>or <span class="up-cta">browse to select</span></p>
+      <p style="font-size:.75rem">Max 50 MB · .csv or .txt</p>
+    </div>
+    <div class="upload-status" id="upload-status"></div>
+    ${wizFooter(true, false, 'Upload & continue', 'btn-upload-continue', true)}`;
+}
+
+async function handleFileSelect(file) {
+  const status = document.getElementById('upload-status');
+  const btnContinue = document.getElementById('btn-upload-continue');
+  status.style.display = 'none';
+
+  // Validate size client-side first
+  if (file.size > 50 * 1024 * 1024) {
+    status.className = 'upload-status err';
+    status.textContent = `File is ${(file.size/1024/1024).toFixed(1)} MB — exceeds 50 MB limit`;
+    status.style.display = 'block';
+    return;
+  }
+  if (!/\.(csv|txt)$/i.test(file.name)) {
+    status.className = 'upload-status err';
+    status.textContent = 'Only CSV or TXT files are accepted';
+    status.style.display = 'block';
+    return;
+  }
+
+  // Show uploading
+  status.className = 'upload-status ok';
+  status.innerHTML = '<span class="spin-sm"></span> Uploading…';
+  status.style.display = 'block';
+  if (btnContinue) btnContinue.disabled = true;
+
+  try {
+    // Create job if needed
+    if (!STATE.jobId) {
+      const j = await Wren.api('/api/import/jobs', {
+        method: 'POST',
+        body: { source_kind: STATE.sourceKind, target_entity: STATE.targetEntity }
+      });
+      STATE.jobId = j.id;
+      sessionStorage.setItem('wren_import_job', j.id);
+    }
+
+    // Upload file via raw fetch (Wren.api forces JSON content-type)
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = Wren.getToken();
+    const res = await fetch(`/api/import/jobs/${STATE.jobId}/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw err;
+    }
+    const data = await res.json();
+
+    status.innerHTML = `✓ Uploaded <strong>${file.name}</strong> (${(file.size/1024).toFixed(0)} KB)`;
+    if (btnContinue) { btnContinue.disabled = false; btnContinue.textContent = 'Continue to preview →'; }
+
+    // Load preview immediately
+    const preview = await Wren.api(`/api/import/jobs/${STATE.jobId}/preview?encoding=${STATE.encoding}`);
+    STATE.headers   = preview.headers;
+    STATE.preview   = preview.preview;
+    STATE.totalRows = preview.total_rows;
+
+  } catch (e) {
+    status.className = 'upload-status err';
+    status.textContent = 'Upload failed: ' + (e.error || e.message || 'Unknown error');
+    if (btnContinue) btnContinue.disabled = true;
+  }
+}
+
+// ── Step 4: Preview ───────────────────────────────────────────────────────────
+function step4() {
+  if (!STATE.headers.length) {
+    return `<div class="alert-warn">No preview data loaded. Go back and upload a file.</div>
+            ${wizFooter(true, false)}`;
+  }
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Preview — first ${STATE.preview.length} rows</h3>
+    <div class="encoding-row">
+      <label>File encoding:
+        <select id="encoding-sel">
+          <option value="utf-8"      ${STATE.encoding==='utf-8'      ?'selected':''}>UTF-8 (default)</option>
+          <option value="win-1252"   ${STATE.encoding==='win-1252'   ?'selected':''}>Windows-1252 (legacy)</option>
+          <option value="iso-8859-1" ${STATE.encoding==='iso-8859-1' ?'selected':''}>ISO-8859-1 / Latin-1</option>
+        </select>
+      </label>
+      <button class="btn btn-ghost btn-sm" id="btn-reparse">Re-parse</button>
+    </div>
+    <p class="preview-meta">${STATE.totalRows.toLocaleString()} data rows · ${STATE.headers.length} columns detected</p>
+    <div class="preview-scroll">
+      <table class="preview-tbl">
+        <thead><tr>${STATE.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${STATE.preview.map(row =>
+            `<tr>${STATE.headers.map((_,i) => `<td title="${esc(row[i]||'')}">${esc(row[i]||'')}</td>`).join('')}</tr>`
+          ).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${wizFooter(true, true, 'Looks good — set up mapping →')}`;
+}
+
+async function reloadPreview() {
+  const sel = document.getElementById('encoding-sel');
+  if (sel) STATE.encoding = sel.value;
+  const btn = document.getElementById('btn-reparse');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Parsing…'; }
+  try {
+    const preview = await Wren.api(`/api/import/jobs/${STATE.jobId}/preview?encoding=${STATE.encoding}`);
+    STATE.headers   = preview.headers;
+    STATE.preview   = preview.preview;
+    STATE.totalRows = preview.total_rows;
+    showStep(4);
+  } catch (e) {
+    Wren.toast('Re-parse failed: ' + (e.error || e.message), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-parse'; }
+  }
+}
+
+// ── Step 5: Column mapping ────────────────────────────────────────────────────
+function step5() {
+  const schema = STATE.schemas[STATE.targetEntity];
+  if (!schema) return `<div class="alert-warn">Unknown entity. Go back to step 2.</div>${wizFooter(true,false)}`;
+
+  // Find matching template
+  const matchedTpl = findMatchingTemplate();
+
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Map columns to Wren fields</h3>
+    <p style="color:#94a3b8;margin-top:0">
+      For each Wren field, pick the matching column from your CSV.
+      Required fields <span class="badge-req">required</span> must be mapped.
+    </p>
+
+    ${matchedTpl ? `
+    <div class="tpl-suggestion">
+      <span>💡 Template <strong>${esc(matchedTpl.name)}</strong> matches your columns.</span>
+      <button class="btn btn-ghost btn-sm" id="btn-apply-tpl" data-tpl='${JSON.stringify(matchedTpl.mapping_json)}'>
+        Apply template
+      </button>
+    </div>` : ''}
+
+    <div class="mapping-header">
+      <span style="color:#94a3b8;font-size:.85rem">${schema.fields.length} fields · ${STATE.headers.length} source columns</span>
+    </div>
+
+    <div id="mapping-rows">
+      ${schema.fields.map(f => {
+        const autoCol = autoMatch(f.key, STATE.headers);
+        const currentVal = STATE.mapping[f.key] || autoCol || '';
+        return `
+        <div class="mapping-row">
+          <div>
+            <div class="map-label">${esc(f.label)}<span class="${f.required?'badge-req':'badge-opt'}">${f.required?'required':'optional'}</span></div>
+            ${f.hint ? `<div class="map-hint">${esc(f.hint)}</div>` : ''}
+            ${f.type==='enum' ? `<div class="map-hint">Values: ${f.values.join(', ')}</div>` : ''}
+          </div>
+          <div class="map-arrow">→</div>
+          <div>
+            <select class="map-select" data-field="${f.key}" id="map_${f.key}">
+              <option value="">— not mapped —</option>
+              ${STATE.headers.map(h =>
+                `<option value="${esc(h)}"${h===currentVal?' selected':''}>${esc(h)}</option>`
+              ).join('')}
+            </select>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="tpl-save-row">
+      <input type="text" id="tpl-name-input" placeholder="Template name (optional)…">
+      <button class="btn btn-ghost btn-sm" id="btn-save-tpl">💾 Save mapping as template</button>
+    </div>
+    ${wizFooter(true, true, 'Save mapping & validate →')}`;
+}
+
+function autoMatch(fieldKey, headers) {
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const fk = norm(fieldKey);
+  return headers.find(h => {
+    const hn = norm(h);
+    return hn === fk || hn.includes(fk) || fk.includes(hn);
+  }) || '';
+}
+
+function findMatchingTemplate() {
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'');
+  const normHeaders = new Set(STATE.headers.map(norm));
+  let best = null, bestScore = 0;
+  for (const tpl of STATE.templates) {
+    if (tpl.target_entity && tpl.target_entity !== STATE.targetEntity) continue;
+    const cols = Object.values(tpl.mapping_json).filter(Boolean);
+    if (!cols.length) continue;
+    const matches = cols.filter(c => normHeaders.has(norm(c))).length;
+    const score = matches / cols.length;
+    if (score >= 0.5 && score > bestScore) { best = tpl; bestScore = score; }
+  }
+  return best;
+}
+
+function applyTemplate() {
+  const btn = document.getElementById('btn-apply-tpl');
+  if (!btn) return;
+  const mapping = JSON.parse(btn.dataset.tpl || '{}');
+  Object.entries(mapping).forEach(([field, col]) => {
+    const sel = document.getElementById(`map_${field}`);
+    if (sel) sel.value = col || '';
+  });
+  Wren.toast('Template applied', 'success');
+}
+
+async function saveTemplate() {
+  const name = document.getElementById('tpl-name-input')?.value?.trim();
+  if (!name) { Wren.toast('Enter a template name first', 'warning'); return; }
+  const mapping = readCurrentMapping();
+  try {
+    await Wren.api('/api/import/templates', {
+      method: 'POST',
+      body: { name, source_kind: STATE.sourceKind, target_entity: STATE.targetEntity, mapping }
+    });
+    Wren.toast(`Template "${name}" saved`, 'success');
+    // Refresh templates list
+    STATE.templates = await Wren.api('/api/import/templates').catch(() => STATE.templates);
+  } catch (e) {
+    Wren.toast('Save failed: ' + (e.error || e.message), 'error');
+  }
+}
+
+function readCurrentMapping() {
+  const mapping = {};
+  document.querySelectorAll('.map-select').forEach(sel => {
+    if (sel.value) mapping[sel.dataset.field] = sel.value;
+  });
+  return mapping;
+}
+
+// ── Step 6: Validation ────────────────────────────────────────────────────────
+function step6() {
+  if (!STATE.validationResult) {
+    return `
+      <h3 style="margin-top:0;color:#f1f5f9">Validating ${STATE.totalRows.toLocaleString()} rows…</h3>
+      <div style="text-align:center;padding:40px">
+        <div class="spinner"></div>
+        <p style="color:#94a3b8;margin-top:16px">Running schema validation on all rows…</p>
+      </div>`;
+  }
+
+  const vr = STATE.validationResult;
+  const validRows = vr.total - vr.error_count;
+  const errors = vr.errors || [];
+  const shown = errors.slice(0, 100);
+  const mappedFields = Object.keys(STATE.mapping || {});
+  const mappedPreview = vr.mapped_preview || [];
+  const dateFormats = vr.date_formats || {};
+
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Validation results</h3>
+    <div class="val-summary">
+      <div class="val-stat"><span class="vs-num vs-ok">${validRows.toLocaleString()}</span><span class="vs-lbl">valid rows</span></div>
+      <div class="val-stat"><span class="vs-num vs-err">${vr.error_count.toLocaleString()}</span><span class="vs-lbl">errors</span></div>
+      <div class="val-stat"><span class="vs-num vs-warn">${vr.total.toLocaleString()}</span><span class="vs-lbl">total rows</span></div>
+    </div>
+
+    ${vr.dedupe_key ? `<div class="alert-info" style="margin-top:0">🔑 Dedupe key: ${esc(vr.dedupe_key)}</div>` : ''}
+
+    ${Object.keys(dateFormats).length ? `
+    <div class="alert-info" style="margin-top:0">
+      📅 Date format detected — ${Object.entries(dateFormats).map(([f,d]) => `<strong>${esc(f)}</strong>: ${esc(d.detected)} (${d.sampled} sampled${d.invalid_count?`, ${d.invalid_count} unparseable`:''})`).join(' · ')}
+    </div>` : ''}
+
+    ${mappedPreview.length ? `
+    <h4 style="color:#f1f5f9;margin-bottom:6px">Preview — first ${mappedPreview.length} mapped rows</h4>
+    <div class="preview-scroll" style="margin-bottom:14px">
+      <table class="preview-tbl">
+        <thead><tr>${mappedFields.map(f => `<th>${esc(f)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${mappedPreview.map(row => `<tr>${mappedFields.map(f => `<td title="${esc(row[f]||'')}">${esc(row[f]||'')}</td>`).join('')}</tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : ''}
+
+    ${vr.valid ? `
+      <div class="alert-info">✓ All rows passed validation. Ready for dry run.</div>
+    ` : `
+      <div class="alert-warn">
+        ${vr.error_count} row${vr.error_count!==1?'s':''} have errors.
+        You can download the error list or skip bad rows and continue.
+      </div>
+      ${errors.length > 0 ? `
+      <div class="preview-scroll" style="max-height:260px;overflow-y:auto;margin-bottom:12px">
+        <table class="err-tbl">
+          <thead><tr><th>Row</th><th>Field</th><th>Error</th><th>Value</th></tr></thead>
+          <tbody>
+            ${shown.map(e => `
+            <tr>
+              <td class="err-row">${e.row}</td>
+              <td style="color:#94a3b8;font-size:.8rem">${esc(e.field||'')}</td>
+              <td class="err-msg">${esc(e.error||'')}</td>
+              <td class="err-val">${esc(e.value||'')}</td>
+            </tr>`).join('')}
+            ${errors.length > 100 ? `<tr><td colspan="4" style="color:#64748b;text-align:center;padding:8px">…${errors.length-100} more errors not shown</td></tr>` : ''}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btn-dl-errors-6">⬇ Download error list (CSV)</button>
+      ` : ''}
+    `}
+
+    ${wizFooter(true, true, vr.valid ? 'Run dry run →' : 'Skip errors & continue →')}`;
+}
+
+// ── Step 7: Dry run ───────────────────────────────────────────────────────────
+function step7() {
+  if (!STATE.dryRunResult) {
+    return `
+      <h3 style="margin-top:0;color:#f1f5f9">Running dry run…</h3>
+      <div style="text-align:center;padding:40px">
+        <div class="spinner"></div>
+        <p style="color:#94a3b8;margin-top:16px">Simulating import inside a transaction (will not be committed)…</p>
+      </div>`;
+  }
+
+  const dr = STATE.dryRunResult;
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Dry-run results</h3>
+    <p style="color:#94a3b8;margin-top:0">No data was written — this is a preview of what will happen on commit.</p>
+    <div class="dr-stats">
+      <div class="dr-card"><span class="dr-num dr-create">${dr.created.toLocaleString()}</span><div class="dr-lbl">to create</div></div>
+      <div class="dr-card"><span class="dr-num dr-update">${dr.updated.toLocaleString()}</span><div class="dr-lbl">to update</div></div>
+      <div class="dr-card"><span class="dr-num dr-skip">${dr.skipped.toLocaleString()}</span><div class="dr-lbl">to skip</div></div>
+      <div class="dr-card"><span class="dr-num dr-total">${dr.total.toLocaleString()}</span><div class="dr-lbl">total rows</div></div>
+    </div>
+    ${dr.skipped > 0 ? `
+    <div class="alert-warn">
+      ${dr.skipped} row${dr.skipped!==1?'s':''} will be skipped (validation errors or missing linked records).
+      <button class="btn btn-ghost btn-sm" id="btn-dl-skipped-7" style="margin-left:8px">⬇ Download skipped rows</button>
+    </div>` : ''}
+    ${(dr.created + dr.updated) === 0 ? `
+    <div class="alert-warn">⚠ No rows would be imported. Check your column mapping and try again.</div>
+    ` : `
+    <div class="alert-info">✓ Dry run complete. ${(dr.created+dr.updated).toLocaleString()} records will be imported.</div>
+    `}
+    ${wizFooter(true, (dr.created + dr.updated) > 0, 'Proceed to commit →')}`;
+}
+
+// ── Step 8: Commit ────────────────────────────────────────────────────────────
+function step8() {
+  const dr = STATE.dryRunResult || {};
+  const entityLabel = STATE.schemas[STATE.targetEntity]?.label || STATE.targetEntity;
+  return `
+    <h3 style="margin-top:0;color:#f1f5f9">Ready to import</h3>
+    <div class="commit-box">
+      <p>Entity: <strong>${esc(entityLabel)}</strong></p>
+      <p>Source: <strong>${esc(STATE.sourceKind.toUpperCase())} file</strong></p>
+      <p>Rows to create: <strong style="color:#22c55e">${(dr.created||0).toLocaleString()}</strong></p>
+      <p>Rows to update: <strong style="color:#4a9abf">${(dr.updated||0).toLocaleString()}</strong></p>
+      <p>Rows to skip:   <strong style="color:#f59e0b">${(dr.skipped||0).toLocaleString()}</strong></p>
+    </div>
+    <div class="alert-warn">
+      ⚠ This will write to the production database. Rows that already exist will be updated (not duplicated).
+    </div>
+    <div id="commit-status"></div>
+    ${wizFooter(true, false)}
+    <div style="margin-top:12px;text-align:center">
+      <button class="btn btn-primary" style="background:#e07820;border-color:#e07820;min-width:200px;font-size:1rem;padding:14px 28px"
+              id="btn-commit">
+        ✓ Confirm Import
+      </button>
+    </div>`;
+}
+
+async function commitImport() {
+  const btn = document.getElementById('btn-commit');
+  const status = document.getElementById('commit-status');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Importing…'; }
+
+  try {
+    const result = await Wren.api(`/api/import/jobs/${STATE.jobId}/commit`, {
+      method: 'POST',
+      body: { encoding: STATE.encoding }
+    });
+    STATE.commitResult = result;
+    // Keep STATE.jobId in memory (only clear the session-resume key) — the Done screen's
+    // report/error downloads need it; startFresh() clears it for real when the user leaves.
+    sessionStorage.removeItem('wren_import_job');
+    showStep(9);
+  } catch (e) {
+    if (status) {
+      status.className = 'alert-danger';
+      status.textContent = 'Import failed: ' + (e.error || e.message || 'Unknown error');
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = '✓ Retry Import'; }
+  }
+}
+
+// ── Step 9: Done ──────────────────────────────────────────────────────────────
+function step9() {
+  const cr = STATE.commitResult || {};
+  const entityLabel = STATE.schemas[STATE.targetEntity]?.label || STATE.targetEntity;
+  const entityHref = { children: '/admin/children/list', staff: '/staff.html', observations: '/observations.html' }[STATE.targetEntity] || '/index.html';
+  return `
+    <div style="text-align:center;padding:16px 0">
+      <div class="done-icon">🎉</div>
+      <div class="done-title">Import complete!</div>
+      <p style="color:#94a3b8">${entityLabel} imported successfully.</p>
+    </div>
+    <div class="done-stats">
+      <div class="done-stat"><div class="dn" style="color:#22c55e">${(cr.created||0).toLocaleString()}</div><div class="dl">created</div></div>
+      <div class="done-stat"><div class="dn" style="color:#4a9abf">${(cr.updated||0).toLocaleString()}</div><div class="dl">updated</div></div>
+      <div class="done-stat"><div class="dn" style="color:#f59e0b">${(cr.skipped||0).toLocaleString()}</div><div class="dl">skipped</div></div>
+      <div class="done-stat"><div class="dn" style="color:#94a3b8">${(cr.total||0).toLocaleString()}</div><div class="dl">total rows</div></div>
+    </div>
+    ${(cr.errors||[]).length > 0 ? `
+    <div style="text-align:center;margin-top:8px">
+      <button class="btn btn-ghost" id="btn-dl-errors-9">⬇ Download skipped-row report</button>
+    </div>` : ''}
+    <div class="done-actions">
+      <a href="${entityHref}" class="btn btn-primary">View ${entityLabel.toLowerCase()}</a>
+      <button class="btn btn-ghost" id="btn-dl-report-9">⬇ Download reconciliation report (.md)</button>
+      <button class="btn btn-ghost" id="btn-start-fresh">Start another import</button>
+      <a href="/audit.html" class="btn btn-ghost">View audit log</a>
+    </div>`;
+}
+
+// ── Advance / back ────────────────────────────────────────────────────────────
+async function advance() {
+  const n = STATE.step;
+
+  if (n === 1) {
+    if (NON_CSV_SOURCES.includes(STATE.sourceKind)) {
+      Wren.toast(`${STATE.sourceKind.toUpperCase()} import is coming in a future release. Please use CSV for now.`, 'info', 5000);
+      return;
+    }
+    if (STATE.sourceKind === 'eylog') { enterEylogFlow(); return; }
+    if (STATE.sourceKind === 'tapestry') { enterTapestryFlow(); return; }
+    if (STATE.sourceKind === 'brighthr') { enterBrightHRFlow(); return; }
+    showStep(2);
+    return;
+  }
+
+  if (n === 2) {
+    if (!STATE.targetEntity) { Wren.toast('Please choose a target entity', 'warning'); return; }
+    // Create/update job with entity selection
+    try {
+      if (!STATE.jobId) {
+        const j = await Wren.api('/api/import/jobs', {
+          method: 'POST', body: { source_kind: STATE.sourceKind, target_entity: STATE.targetEntity }
+        });
+        STATE.jobId = j.id;
+        sessionStorage.setItem('wren_import_job', j.id);
+      } else {
+        await Wren.api(`/api/import/jobs/${STATE.jobId}/mapping`, {
+          method: 'POST', body: { mapping: STATE.mapping || {}, target_entity: STATE.targetEntity }
+        });
+      }
+    } catch (e) { /* non-critical if job already exists */ }
+    showStep(3);
+    return;
+  }
+
+  if (n === 3) {
+    if (!STATE.headers.length) { Wren.toast('Please upload a file first', 'warning'); return; }
+    showStep(4);
+    return;
+  }
+
+  if (n === 4) {
+    showStep(5);
+    return;
+  }
+
+  if (n === 5) {
+    const mapping = readCurrentMapping();
+    if (!Object.keys(mapping).length) { Wren.toast('Map at least one column before continuing', 'warning'); return; }
+
+    // Validate required fields are mapped
+    const schema = STATE.schemas[STATE.targetEntity];
+    const missingRequired = schema.fields.filter(f => f.required && !mapping[f.key]);
+    if (missingRequired.length) {
+      Wren.toast(`Please map required field${missingRequired.length>1?'s':''}: ${missingRequired.map(f=>f.label).join(', ')}`, 'warning', 5000);
+      return;
+    }
+
+    STATE.mapping = mapping;
+
+    // Save mapping to server
+    const btn = document.getElementById('btn-next');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Saving…'; }
+    try {
+      await Wren.api(`/api/import/jobs/${STATE.jobId}/mapping`, {
+        method: 'POST', body: { mapping, target_entity: STATE.targetEntity }
+      });
+    } catch (e) {
+      Wren.toast('Failed to save mapping: ' + (e.error || e.message), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save mapping & validate →'; }
+      return;
+    }
+
+    // Proceed to validation step (step 6 auto-runs)
+    STATE.validationResult = null;
+    showStep(6);
+    runValidation();
+    return;
+  }
+
+  if (n === 6) {
+    // Continue from validation → dry run
+    STATE.dryRunResult = null;
+    showStep(7);
+    runDryRun();
+    return;
+  }
+
+  if (n === 7) {
+    showStep(8);
+    return;
+  }
+}
+
+async function runValidation() {
+  try {
+    const result = await Wren.api(`/api/import/jobs/${STATE.jobId}/validate`, {
+      method: 'POST', body: { encoding: STATE.encoding }
+    });
+    STATE.validationResult = result;
+    showStep(6);
+  } catch (e) {
+    STATE.validationResult = { valid: false, errors: [{ row:0, field:'', error: e.error||e.message, value:'' }], total: 0, error_count: 1 };
+    showStep(6);
+  }
+}
+
+async function runDryRun() {
+  try {
+    const result = await Wren.api(`/api/import/jobs/${STATE.jobId}/dry-run`, {
+      method: 'POST', body: { encoding: STATE.encoding }
+    });
+    STATE.dryRunResult = result;
+    showStep(7);
+  } catch (e) {
+    Wren.toast('Dry run failed: ' + (e.error || e.message || 'Unknown error'), 'error');
+    showStep(7); // re-render with null result to show error state
+  }
+}
+
+function goBack() {
+  if (STATE.step > 1) showStep(STATE.step - 1);
+}
+
+function startFresh() {
+  Object.assign(STATE, {
+    step: 1, jobId: null, sourceKind: 'csv', targetEntity: null,
+    encoding: 'utf-8', headers: [], preview: [], totalRows: 0,
+    mapping: {}, validationResult: null, dryRunResult: null, commitResult: null
+  });
+  sessionStorage.removeItem('wren_import_job');
+  showStep(1);
+}
+
+// ── Download errors ───────────────────────────────────────────────────────────
+function downloadErrors() {
+  if (!STATE.jobId) { Wren.toast('No job to download errors from', 'warning'); return; }
+  const token = Wren.getToken();
+  const a = document.createElement('a');
+  a.href = `/api/import/jobs/${STATE.jobId}/errors.csv`;
+  a.click();
+}
+
+// ── Wizard footer helper ──────────────────────────────────────────────────────
+function wizFooter(showBack, showNext, nextLabel = 'Continue →', nextId = 'btn-next', nextDisabled = false) {
+  return `
+    <div class="wiz-footer">
+      <div>${showBack ? `<button class="btn btn-ghost" id="btn-back">← Back</button>` : '<span></span>'}</div>
+      <div>${showNext ? `<button class="btn btn-primary" id="${nextId}"${nextDisabled?' disabled':''}>${nextLabel}</button>` : ''}</div>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EYLOG MIGRATION FLOW (b118) — bypasses the generic 9-step CSV wizard entirely.
+// Stages: connect (creds/export) → preview (dry-run counts) → running (poll) → report
+// ════════════════════════════════════════════════════════════════════════════
+async function enterEylogFlow() {
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  renderEylogIndicator('connect');
+  try {
+    STATE.eylog.info = await Wren.api('/api/import/eylog/info');
+    STATE.eylog.catalogue = STATE.eylog.info.entities || null;   // b214 entity picker
+  } catch (e) {
+    showError('Failed to load EyLog wizard info: ' + (e.error || e.message));
+    return;
+  }
+  if (!STATE.eylog.info.allowed) {
+    body.innerHTML = `
+      <h3 style="margin-top:0;color:#f1f5f9">EyLog import unavailable on this instance</h3>
+      <div class="alert-warn">${esc(STATE.eylog.info.reason || 'Not available on this instance.')}</div>
+      <div class="wiz-footer"><button class="btn btn-ghost" id="btn-eylog-back-to-source">← Back to source picker</button><span></span></div>`;
+    document.getElementById('btn-eylog-back-to-source')?.addEventListener('click', () => showStep(1));
+    return;
+  }
+  if (!STATE.eylog.jobId) {
+    try {
+      const j = await Wren.api('/api/import/eylog/jobs', { method: 'POST' });
+      STATE.eylog.jobId = j.id;
+      sessionStorage.setItem('wren_eylog_job', j.id);
+    } catch (e) {
+      showError('Failed to create EyLog job: ' + (e.error || e.message));
+      return;
+    }
+  }
+  renderEylogConnect();
+}
+
+function renderEylogIndicator(stage) {
+  const el = document.getElementById('wiz-indicator');
+  const keys = Object.keys(EYLOG_STAGE_LABELS);
+  const idx = keys.indexOf(stage);
+  let html = '';
+  keys.forEach((k, i) => {
+    const done = i < idx, active = i === idx;
+    html += `<div class="wiz-step${active?' active':''}${done?' done':''}">
+      <div class="wiz-num">${done ? '✓' : i+1}</div>
+      <div class="wiz-lbl">${EYLOG_STAGE_LABELS[k]}</div>
+    </div>`;
+    if (i < keys.length - 1) html += `<div class="wiz-line${done ? ' done' : ''}"></div>`;
+  });
+  el.innerHTML = html;
+}
+
+// ── Stage: Connect (creds or export upload) ───────────────────────────────────
+function renderEylogConnect() {
+  STATE.eylog.stage = 'connect';
+  renderEylogIndicator('connect');
+  const body = document.getElementById('wiz-body');
+  const mode = STATE.eylog.sourceMode || 'creds';
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Connect to EyLog</h3>
+    <p style="color:#94a3b8;margin-top:0">Target schema for this instance: <strong style="color:#4a9abf">${esc(STATE.eylog.info.schema)}</strong> (locked — cannot be changed here)</p>
+    <div class="source-grid" style="grid-template-columns:repeat(2,1fr);max-width:420px">
+      <label class="source-card${mode==='creds'?' selected':''}" data-mode="creds">
+        <div class="source-icon">🔑</div><div class="source-name">EyLog login</div>
+        <div class="source-desc">Pull live via API</div>
+      </label>
+      <label class="source-card${mode==='export'?' selected':''}" data-mode="export">
+        <div class="source-icon">📦</div><div class="source-name">Official export</div>
+        <div class="source-desc">Upload a ZIP</div>
+      </label>
+    </div>
+    <div id="eylog-connect-body" style="margin-top:20px"></div>
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-eylog-back-to-source">← Back to source picker</button>
+      <span></span>
+    </div>`;
+  document.getElementById('btn-eylog-back-to-source')?.addEventListener('click', () => showStep(1));
+  document.querySelectorAll('#wiz-body .source-card').forEach(card => {
+    card.addEventListener('click', () => {
+      STATE.eylog.sourceMode = card.dataset.mode;
+      renderEylogConnect();
+    });
+  });
+  renderEylogConnectBody(mode);
+}
+
+function renderEylogConnectBody(mode) {
+  const el = document.getElementById('eylog-connect-body');
+  if (!el) return;
+  if (mode === 'export') {
+    el.innerHTML = `
+      <input type="file" id="eylog-file-input" accept=".zip" style="display:none">
+      <div class="upload-zone" id="eylog-upload-zone">
+        <div class="up-icon">📁</div>
+        <p>Drag &amp; drop the EyLog export ZIP here</p>
+        <p>or <span class="up-cta">browse to select</span></p>
+        <p style="font-size:.75rem">Max 300 MB · .zip only</p>
+      </div>
+      <div class="upload-status" id="eylog-upload-status"></div>
+      <div style="margin-top:14px;text-align:right">
+        <button class="btn btn-primary" id="btn-eylog-to-preview" disabled>Choose what to import →</button>
+      </div>`;
+    const zone = document.getElementById('eylog-upload-zone');
+    const input = document.getElementById('eylog-file-input');
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) handleEylogFileSelect(file);
+    });
+    input.addEventListener('change', () => { if (input.files[0]) handleEylogFileSelect(input.files[0]); });
+    document.getElementById('btn-eylog-to-preview')?.addEventListener('click', renderEylogEntityPicker);
+  } else {
+    el.innerHTML = `
+      <div style="max-width:420px">
+        <label class="map-label">Serial ID<span class="badge-req">required</span></label>
+        <input type="text" id="eylog-serial" class="map-select" style="margin-bottom:10px" placeholder="EyLog Serial-ID">
+        <label class="map-label">Password<span class="badge-req">required</span></label>
+        <input type="password" id="eylog-password" class="map-select" style="margin-bottom:10px" placeholder="EyLog Password">
+        <label class="map-label">Nursery URL<span class="badge-req">required</span></label>
+        <input type="text" id="eylog-base" class="map-select" style="margin-bottom:10px" placeholder="https://theirsetting.eylog.co.uk/">
+        <p class="map-hint">System → "Show Serial ID and Password" in EyLog. Held in memory for this job only — never stored or logged.</p>
+      </div>
+      <div id="eylog-creds-status"></div>
+      <div style="margin-top:14px;text-align:right">
+        <button class="btn btn-primary" id="btn-eylog-save-creds">Choose what to import →</button>
+      </div>`;
+    document.getElementById('btn-eylog-save-creds')?.addEventListener('click', saveEylogCredsAndPreview);
+  }
+}
+
+async function handleEylogFileSelect(file) {
+  const status = document.getElementById('eylog-upload-status');
+  const btn = document.getElementById('btn-eylog-to-preview');
+  status.style.display = 'none';
+  if (!/\.(zip)$/i.test(file.name)) {
+    status.className = 'upload-status err'; status.textContent = 'Only ZIP files are accepted';
+    status.style.display = 'block'; return;
+  }
+  if (file.size > 300 * 1024 * 1024) {
+    status.className = 'upload-status err';
+    status.textContent = `File is ${(file.size/1024/1024).toFixed(0)} MB — exceeds 300 MB limit`;
+    status.style.display = 'block'; return;
+  }
+  status.className = 'upload-status ok';
+  status.innerHTML = '<span class="spin-sm"></span> Uploading &amp; unpacking…';
+  status.style.display = 'block';
+  if (btn) btn.disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = Wren.getToken();
+    const res = await fetch(`/api/import/eylog/${STATE.eylog.jobId}/upload`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw data;
+    status.innerHTML = `✓ Uploaded — found ${data.files_found} EyLog file(s)`;
+    if (btn) btn.disabled = false;
+  } catch (e) {
+    status.className = 'upload-status err';
+    status.textContent = 'Upload failed: ' + (e.error || e.message || 'Unknown error');
+    if (btn) btn.disabled = true;
+  }
+}
+
+async function saveEylogCredsAndPreview() {
+  const serial = document.getElementById('eylog-serial')?.value.trim();
+  const password = document.getElementById('eylog-password')?.value;
+  const base = document.getElementById('eylog-base')?.value.trim();
+  const status = document.getElementById('eylog-creds-status');
+  if (!serial || !password || !base) {
+    Wren.toast('Serial, password and nursery URL are all required', 'warning');
+    return;
+  }
+  const btn = document.getElementById('btn-eylog-save-creds');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Saving…'; }
+  try {
+    await Wren.api(`/api/import/eylog/${STATE.eylog.jobId}/creds`, {
+      method: 'POST', body: { serial, password, base }
+    });
+    // The password only ever lived in this field and in the server's memory — clear the
+    // field now so it is not sitting in the DOM behind the next screen.
+    const pw = document.getElementById('eylog-password');
+    if (pw) pw.value = '';
+    renderEylogEntityPicker();
+  } catch (e) {
+    if (status) { status.className = 'alert-danger'; status.textContent = 'Failed: ' + (e.error || e.message); }
+    if (btn) { btn.disabled = false; btn.textContent = 'Choose what to import →'; }
+  }
+}
+
+// ── Stage: Choose (b214) — what does this setting actually want brought across? ──
+// Independently tickable, because a setting joining mid-year wants children and their
+// parents today and may never want five years of observations.
+function renderEylogEntityPicker() {
+  STATE.eylog.stage = 'choose';
+  renderEylogIndicator('choose');
+  const cat = STATE.eylog.catalogue || STATE.eylog.info?.entities || [];
+  if (!STATE.eylog.entities) {
+    STATE.eylog.entities = (STATE.eylog.info?.default_entities || ['children', 'contacts']).slice();
+  }
+  const picked = new Set(STATE.eylog.entities);
+  const viaLogin = STATE.eylog.sourceMode === 'creds';
+
+  const cards = cat.map(e => `
+    <label class="ent-card${picked.has(e.key) ? ' on' : ''}" data-key="${esc(e.key)}">
+      <div class="ent-head">
+        <input type="checkbox" data-ent="${esc(e.key)}"${picked.has(e.key) ? ' checked' : ''}>
+        <span class="ent-name">${esc(e.label)}</span>
+      </div>
+      <div class="ent-what">${esc(e.fetches)}</div>
+      <div class="ent-meta"><b>Goes into:</b> ${esc(e.writes)}</div>
+      <div class="ent-meta"><b>Re-run safe:</b> ${esc(e.dedupe)}</div>
+    </label>`).join('');
+
+  document.getElementById('wiz-body').innerHTML = `
+    <h3 style="margin-top:0;color:var(--c-text,#f1f5f9)">What should Wren bring across?</h3>
+    <p style="color:var(--c-text-muted,#94a3b8);margin-top:0">
+      Tick only what you need now — you can come back and run this again for anything else.
+      Every re-run updates the same records rather than making duplicates.</p>
+    <div class="ent-grid">${cards}</div>
+
+    <div class="authorise-box">
+      <strong>This reads another setting&rsquo;s live records.</strong>
+      ${viaLogin
+        ? 'Using the EyLog login you just entered, Wren will sign in as that setting and fetch exactly what is ticked above. The login is held in memory for this import only — it is never written to the database, a log file or the report, and it is forgotten the moment the import finishes.'
+        : 'Wren will read exactly what is ticked above out of the export file you uploaded.'}
+      Photos and videos are never downloaded &mdash; only listed.
+      <label>
+        <input type="checkbox" id="eylog-authorised">
+        <span>I have the setting&rsquo;s authority to move this data into Wren, and I am
+        the right person to be doing it.</span>
+      </label>
+    </div>
+
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-eylog-back-connect">← Back</button>
+      <button class="btn btn-primary" id="btn-eylog-to-dryrun" disabled>Dry run →</button>
+    </div>`;
+
+  const okBtn = document.getElementById('btn-eylog-to-dryrun');
+  const auth = document.getElementById('eylog-authorised');
+  const sync = () => {
+    okBtn.disabled = !(auth.checked && STATE.eylog.entities.length);
+  };
+  auth.addEventListener('change', sync);
+
+  document.querySelectorAll('#wiz-body input[data-ent]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const key = cb.dataset.ent;
+      const set = new Set(STATE.eylog.entities);
+      cb.checked ? set.add(key) : set.delete(key);
+      // keep the catalogue's own order so the sections stay in dependency order
+      STATE.eylog.entities = cat.map(e => e.key).filter(k => set.has(k));
+      cb.closest('.ent-card').classList.toggle('on', cb.checked);
+      sync();
+    });
+  });
+  sync();
+
+  document.getElementById('btn-eylog-back-connect')?.addEventListener('click', renderEylogConnect);
+  okBtn.addEventListener('click', saveEylogEntitiesAndPreview);
+}
+
+async function saveEylogEntitiesAndPreview() {
+  const btn = document.getElementById('btn-eylog-to-dryrun');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Saving…'; }
+  try {
+    const r = await Wren.api(`/api/import/eylog/${STATE.eylog.jobId}/entities`, {
+      method: 'POST', body: { entities: STATE.eylog.entities }
+    });
+    (r.warnings || []).forEach(w => Wren.toast(w, 'warning'));
+  } catch (e) {
+    Wren.toast('Could not save your selection: ' + (e.error || e.message), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Dry run →'; }
+    return;
+  }
+  runEylogPreview();
+}
+
+// ── Stage: Preview (dry-run counts, nothing written) ──────────────────────────
+async function runEylogPreview() {
+  STATE.eylog.stage = 'preview';
+  renderEylogIndicator('preview');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Running preview…</h3>
+    <div style="text-align:center;padding:40px">
+      <div class="spinner"></div>
+      <p style="color:#94a3b8;margin-top:16px">Dry-run inside a transaction — nothing is written yet. This can take a moment for a live EyLog pull.</p>
+    </div>`;
+  try {
+    const result = await Wren.api(`/api/import/eylog/${STATE.eylog.jobId}/preview`);
+    STATE.eylog.preview = result;
+    renderEylogPreview();
+  } catch (e) {
+    body.innerHTML = `
+      <h3 style="margin-top:0;color:#f1f5f9">Preview failed</h3>
+      <div class="alert-danger">${esc(e.error || e.message || 'Unknown error')}</div>
+      ${e.output_tail ? `<pre class="eylog-log">${esc(e.output_tail)}</pre>` : ''}
+      <div class="wiz-footer">
+        <button class="btn btn-ghost" id="btn-eylog-back-connect">← Back</button>
+        <button class="btn btn-primary" id="btn-eylog-retry-preview">Retry preview</button>
+      </div>`;
+    document.getElementById('btn-eylog-back-connect')?.addEventListener('click', renderEylogConnect);
+    document.getElementById('btn-eylog-retry-preview')?.addEventListener('click', runEylogPreview);
+  }
+}
+
+function eylogSectionCards(sections) {
+  return sections.map(s => {
+    if (s.error) {
+      return `<div class="dr-card"><span class="dr-num dr-skip">⚠</span><div class="dr-lbl">${esc(s.name)}</div>
+        <div style="font-size:.7rem;color:#94a3b8;margin-top:4px">${esc(s.error)}</div></div>`;
+    }
+    if (s.name === 'media') {
+      return `<div class="dr-card"><span class="dr-num dr-total">${s.total}</span><div class="dr-lbl">media (manifest only)</div></div>`;
+    }
+    return `<div class="dr-card">
+      <span class="dr-num ${(s.new||0) > 0 ? 'dr-create' : 'dr-total'}">${s.new ?? '—'}</span>
+      <div class="dr-lbl">${esc(s.name)} — new</div>
+      <div style="font-size:.7rem;color:#64748b;margin-top:4px">source ${s.source ?? '—'} · eligible ${s.eligible ?? '—'}${s.skipped ? ` · skipped ${s.skipped}` : ''}${s.stmtLinks!==undefined ? ` · ${s.stmtLinks} links` : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+// b214 — per-entity counts and every skipped row with its reason. The dry-run is what
+// unlocks Run; changing the selection afterwards re-locks it (the server enforces the
+// same rule, this is just the visible half).
+function eylogCountsTable(sections) {
+  const rows = sections.filter(s => !s.error && s.name !== 'media').map(s => `
+    <tr>
+      <td>${esc(s.name)}</td>
+      <td class="${s.source ? '' : 'z'}">${s.source ?? '—'}</td>
+      <td class="${s.eligible ? '' : 'z'}">${s.eligible ?? '—'}</td>
+      <td class="${s.inTarget ? '' : 'z'}">${s.inTarget ?? '—'}</td>
+      <td style="color:${(s.new||0) > 0 ? 'var(--c-green,#4ade80)' : 'var(--c-muted,#64748b)'};font-weight:600">${s.new ?? '—'}</td>
+      <td class="${s.skipped ? '' : 'z'}">${s.skipped || 0}</td>
+    </tr>`).join('');
+  const media = sections.find(s => s.name === 'media');
+  const errs = sections.filter(s => s.error).map(s => `
+    <tr><td>${esc(s.name)}</td><td colspan="5" style="text-align:left;color:var(--c-amber,#fde68a)">⚠ ${esc(s.error)}</td></tr>`).join('');
+  return `<table class="ent-tbl">
+    <thead><tr><th>What</th><th>In EyLog</th><th>Usable</th><th>Already here</th><th>New</th><th>Skipped</th></tr></thead>
+    <tbody>${rows}${errs}${media ? `<tr><td>media</td><td>${media.total}</td>
+      <td colspan="4" style="text-align:left;color:var(--c-text-muted,#94a3b8)">listed only — photos and videos are not downloaded</td></tr>` : ''}</tbody>
+  </table>`;
+}
+
+function eylogSkipList(sections) {
+  const items = [];
+  for (const s of sections) {
+    for (const r of (s.skipReasons || [])) {
+      items.push(`<li><b>${esc(s.name)}</b> — ${r.count} row${r.count === 1 ? '' : 's'} skipped: ${esc(r.reason)}
+        ${r.refs && r.refs.length ? `<br><span class="skip-refs">EyLog ref${r.refs.length === 1 ? '' : 's'}: ${esc(r.refs.join(', '))}</span>` : ''}</li>`);
+    }
+  }
+  if (!items.length) return '<p style="color:var(--c-text-muted,#94a3b8)">Nothing would be skipped.</p>';
+  return `<ul class="skip-list">${items.join('')}</ul>`;
+}
+
+function renderEylogPreview() {
+  const body = document.getElementById('wiz-body');
+  const sections = STATE.eylog.preview?.sections || [];
+  const totalNew = sections.filter(s => !s.error && s.name !== 'media').reduce((a,s) => a + (s.new || 0), 0);
+  const totalSkip = sections.reduce((a,s) => a + (s.skipped || 0), 0);
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:var(--c-text,#f1f5f9)">Dry run — nothing has been written</h3>
+    <p style="color:var(--c-text-muted,#94a3b8);margin-top:0">
+      This ran the whole import inside a transaction and rolled it back. Here is exactly what
+      would land, and exactly what would not.</p>
+    ${eylogCountsTable(sections)}
+    <h4 style="color:var(--c-text,#f1f5f9);margin:22px 0 0">Rows that would be skipped${totalSkip ? ` (${totalSkip})` : ''}</h4>
+    ${eylogSkipList(sections)}
+    <div class="alert-info" style="margin-top:18px">✓ Dry run complete — ${totalNew} new record${totalNew === 1 ? '' : 's'} would be written. Nothing has changed yet.</div>
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-eylog-back-choose">← Change what to import</button>
+      <button class="btn btn-primary" style="background:var(--c-orange,#e07820);border-color:var(--c-orange,#e07820)" id="btn-eylog-run">Import for real →</button>
+    </div>`;
+  // Going back to the picker deliberately drops the dry-run: the server refuses to
+  // commit a selection it has not previewed, so the UI must not pretend otherwise.
+  document.getElementById('btn-eylog-back-choose')?.addEventListener('click', renderEylogEntityPicker);
+  document.getElementById('btn-eylog-run')?.addEventListener('click', startEylogRun);
+}
+
+// ── Stage: Running (background job on the server; poll for progress) ─────────
+async function startEylogRun() {
+  STATE.eylog.stage = 'running';
+  renderEylogIndicator('running');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Importing…</h3>
+    <div style="text-align:center;padding:20px 0"><div class="spinner"></div></div>
+    <pre class="eylog-log" id="eylog-log-tail">starting…</pre>`;
+  try {
+    await Wren.api(`/api/import/eylog/${STATE.eylog.jobId}/start`, { method: 'POST' });
+  } catch (e) {
+    Wren.toast(e.error || e.message || 'Failed to start import', 'error');
+    // b214: the server refuses to commit without a dry-run for THIS selection — if that
+    // is why we were turned away, put the user back on the dry-run rather than the
+    // stale preview they were looking at.
+    if (e.needs_dry_run) { runEylogPreview(); return; }
+    renderEylogPreview();
+    return;
+  }
+  pollEylogStatus();
+}
+
+function pollEylogStatus() {
+  if (STATE.eylog.pollHandle) clearTimeout(STATE.eylog.pollHandle);
+  const tick = async () => {
+    try {
+      const s = await Wren.api(`/api/import/eylog/${STATE.eylog.jobId}/status`);
+      const logEl = document.getElementById('eylog-log-tail');
+      if (logEl) { logEl.textContent = s.log_tail || '(no output yet)'; logEl.scrollTop = logEl.scrollHeight; }
+      if (s.status === 'committed') {
+        STATE.eylog.preview = { sections: s.preview?.sections || [] };
+        if (s.entities) STATE.eylog.entities = s.entities;
+        renderEylogReport();
+        return;
+      }
+      if (s.status === 'failed') {
+        renderEylogFailed(s.log_tail);
+        return;
+      }
+      STATE.eylog.pollHandle = setTimeout(tick, 2000);
+    } catch (e) {
+      STATE.eylog.pollHandle = setTimeout(tick, 4000);
+    }
+  };
+  tick();
+}
+
+function renderEylogFailed(logTail) {
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Import failed</h3>
+    <div class="alert-danger">The import process exited with an error — see the log below.</div>
+    <pre class="eylog-log">${esc(logTail || '')}</pre>
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-eylog-back-connect">← Back</button>
+      <button class="btn btn-ghost" id="btn-eylog-redry">Dry run again</button>
+      <button class="btn btn-primary" id="btn-eylog-retry-run">Retry</button>
+    </div>`;
+  document.getElementById('btn-eylog-back-connect')?.addEventListener('click', renderEylogConnect);
+  document.getElementById('btn-eylog-redry')?.addEventListener('click', runEylogPreview);
+  document.getElementById('btn-eylog-retry-run')?.addEventListener('click', startEylogRun);
+}
+
+// ── Stage: Report ──────────────────────────────────────────────────────────────
+async function renderEylogReport() {
+  STATE.eylog.stage = 'report';
+  renderEylogIndicator('report');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  let content = '';
+  try {
+    const r = await Wren.api(`/api/import/eylog/${STATE.eylog.jobId}/report`);
+    content = r.content;
+  } catch (e) {
+    content = '(report unavailable: ' + (e.error || e.message) + ')';
+  }
+  STATE.eylog.reportContent = content;
+  const sections = STATE.eylog.preview?.sections || [];
+  const picked = (STATE.eylog.entities || []).map(k =>
+    (STATE.eylog.catalogue || []).find(e => e.key === k)?.label || k);
+  body.innerHTML = `
+    <div style="text-align:center;padding:16px 0">
+      <div class="done-icon">🎉</div>
+      <div class="done-title">Import complete!</div>
+      ${picked.length ? `<div style="color:var(--c-text-muted,#94a3b8);font-size:.85rem">${esc(picked.join(' · '))}</div>` : ''}
+    </div>
+    ${eylogCountsTable(sections)}
+    <h4 style="color:var(--c-text,#f1f5f9);margin:22px 0 0">Rows skipped</h4>
+    ${eylogSkipList(sections)}
+    <h4 style="color:var(--c-text,#f1f5f9)">Reconciliation report</h4>
+    <pre class="eylog-log" style="max-height:360px">${esc(content)}</pre>
+    <div class="done-actions">
+      <button class="btn btn-primary" id="btn-eylog-download-report">⬇ Download report (.md)</button>
+      <button class="btn btn-ghost" id="btn-eylog-rerun">Re-run (top-up)</button>
+      <button class="btn btn-ghost" id="btn-eylog-fresh">Start another import</button>
+    </div>`;
+  document.getElementById('btn-eylog-download-report')?.addEventListener('click', () => {
+    Wren.download(`/api/import/eylog/${STATE.eylog.jobId}/report.md`, 'eylog-import-report.md').catch(e=>alert(e?.error||'Report unavailable'));
+  });
+  document.getElementById('btn-eylog-rerun')?.addEventListener('click', runEylogPreview);
+  document.getElementById('btn-eylog-fresh')?.addEventListener('click', () => {
+    sessionStorage.removeItem('wren_eylog_job');
+    STATE.eylog = { jobId: null, info: null, sourceMode: null, stage: 'connect', preview: null,
+                    reportContent: null, pollHandle: null, entities: null, catalogue: null };
+    showStep(1);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TAPESTRY & BRIGHTHR BUNDLE FLOWS (b119) — same shape as the EyLog flow above but
+// synchronous (no background job/polling): upload -> preview (dry-run) -> report.
+// ════════════════════════════════════════════════════════════════════════════
+const BUNDLE_STAGE_LABELS = { upload: 'Upload', preview: 'Preview', report: 'Report' };
+
+function renderBundleIndicator(stage) {
+  const el = document.getElementById('wiz-indicator');
+  const keys = Object.keys(BUNDLE_STAGE_LABELS);
+  const idx = keys.indexOf(stage);
+  let html = '';
+  keys.forEach((k, i) => {
+    const done = i < idx, active = i === idx;
+    html += `<div class="wiz-step${active?' active':''}${done?' done':''}">
+      <div class="wiz-num">${done ? '✓' : i+1}</div>
+      <div class="wiz-lbl">${BUNDLE_STAGE_LABELS[k]}</div>
+    </div>`;
+    if (i < keys.length - 1) html += `<div class="wiz-line${done ? ' done' : ''}"></div>`;
+  });
+  el.innerHTML = html;
+}
+
+// ── Tapestry ──────────────────────────────────────────────────────────────────
+async function enterTapestryFlow() {
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  renderBundleIndicator('upload');
+  if (!STATE.tapestry.jobId) {
+    try {
+      const j = await Wren.api('/api/import/tapestry/jobs', { method: 'POST' });
+      STATE.tapestry.jobId = j.id;
+      sessionStorage.setItem('wren_tapestry_job', j.id);
+    } catch (e) {
+      showError('Failed to create Tapestry job: ' + (e.error || e.message));
+      return;
+    }
+  }
+  renderTapestryUpload();
+}
+
+function renderTapestryUpload() {
+  STATE.tapestry.stage = 'upload';
+  renderBundleIndicator('upload');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Upload your Tapestry export</h3>
+    <p style="color:#94a3b8;margin-top:0">A ZIP containing children.csv, observations.csv, attendance.csv, parents.csv.</p>
+    <input type="file" id="tapestry-file-input" accept=".zip" style="display:none">
+    <div class="upload-zone" id="tapestry-upload-zone">
+      <div class="up-icon">📁</div>
+      <p>Drag &amp; drop the Tapestry export ZIP here</p>
+      <p>or <span class="up-cta">browse to select</span></p>
+      <p style="font-size:.75rem">Max 200 MB · .zip only</p>
+    </div>
+    <div class="upload-status" id="tapestry-upload-status"></div>
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-tapestry-back-to-source">← Back to source picker</button>
+      <button class="btn btn-primary" id="btn-tapestry-to-preview" disabled>Preview import →</button>
+    </div>`;
+  document.getElementById('btn-tapestry-back-to-source')?.addEventListener('click', () => showStep(1));
+  const zone = document.getElementById('tapestry-upload-zone');
+  const input = document.getElementById('tapestry-file-input');
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleTapestryFileSelect(file);
+  });
+  input.addEventListener('change', () => { if (input.files[0]) handleTapestryFileSelect(input.files[0]); });
+  document.getElementById('btn-tapestry-to-preview')?.addEventListener('click', runTapestryPreview);
+}
+
+async function handleTapestryFileSelect(file) {
+  const status = document.getElementById('tapestry-upload-status');
+  const btn = document.getElementById('btn-tapestry-to-preview');
+  status.style.display = 'none';
+  if (!/\.(zip)$/i.test(file.name)) {
+    status.className = 'upload-status err'; status.textContent = 'Only ZIP files are accepted';
+    status.style.display = 'block'; return;
+  }
+  if (file.size > 200 * 1024 * 1024) {
+    status.className = 'upload-status err';
+    status.textContent = `File is ${(file.size/1024/1024).toFixed(0)} MB — exceeds 200 MB limit`;
+    status.style.display = 'block'; return;
+  }
+  status.className = 'upload-status ok';
+  status.innerHTML = '<span class="spin-sm"></span> Uploading &amp; unpacking…';
+  status.style.display = 'block';
+  if (btn) btn.disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = Wren.getToken();
+    const res = await fetch(`/api/import/tapestry/${STATE.tapestry.jobId}/upload`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw data;
+    const preview = await Wren.api(`/api/import/tapestry/${STATE.tapestry.jobId}/preview`);
+    STATE.tapestry.filesFound = preview;
+    status.innerHTML = `✓ Uploaded — children ${preview.children}, observations ${preview.observations}, attendance ${preview.attendance}, parents ${preview.parents}`;
+    if (btn) btn.disabled = false;
+  } catch (e) {
+    status.className = 'upload-status err';
+    status.textContent = 'Upload failed: ' + (e.error || e.message || 'Unknown error');
+    if (btn) btn.disabled = true;
+  }
+}
+
+async function runTapestryPreview() {
+  STATE.tapestry.stage = 'preview';
+  renderBundleIndicator('preview');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Running dry run…</h3>
+    <div style="text-align:center;padding:40px">
+      <div class="spinner"></div>
+      <p style="color:#94a3b8;margin-top:16px">Simulating the import inside a transaction — nothing is written yet.</p>
+    </div>`;
+  try {
+    const result = await Wren.api(`/api/import/tapestry/${STATE.tapestry.jobId}/dry-run`, { method: 'POST' });
+    STATE.tapestry.dryRun = result;
+    renderTapestryPreview();
+  } catch (e) {
+    body.innerHTML = `
+      <h3 style="margin-top:0;color:#f1f5f9">Dry run failed</h3>
+      <div class="alert-danger">${esc(e.error || e.message || 'Unknown error')}</div>
+      <div class="wiz-footer">
+        <button class="btn btn-ghost" id="btn-tapestry-back-upload">← Back</button>
+        <button class="btn btn-primary" id="btn-tapestry-retry">Retry</button>
+      </div>`;
+    document.getElementById('btn-tapestry-back-upload')?.addEventListener('click', renderTapestryUpload);
+    document.getElementById('btn-tapestry-retry')?.addEventListener('click', runTapestryPreview);
+  }
+}
+
+function tapestrySectionCards(detail) {
+  const push = (name, r) => `
+    <div class="dr-card">
+      <span class="dr-num ${(r.created||0) > 0 ? 'dr-create' : 'dr-total'}">${r.created||0}</span>
+      <div class="dr-lbl">${esc(name)} — new</div>
+      <div style="font-size:.7rem;color:#64748b;margin-top:4px">${r.updated!==undefined?`updated ${r.updated} · `:''}${r.duplicate!==undefined?`already imported ${r.duplicate} · `:''}skipped ${(r.errors||[]).length}</div>
+    </div>`;
+  return [
+    push('children', detail.children),
+    push('parents (contact updates)', detail.parents),
+    push('observations', detail.observations),
+    push('attendance', detail.attendance),
+  ].join('');
+}
+
+function renderTapestryPreview() {
+  const body = document.getElementById('wiz-body');
+  const dr = STATE.tapestry.dryRun;
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Preview — would import</h3>
+    <p style="color:#94a3b8;margin-top:0">No data was written — this is a dry run.</p>
+    <div class="dr-stats">${tapestrySectionCards(dr.detail)}</div>
+    <div class="alert-info">✓ Dry run complete. ${dr.imported} record(s) will be created/updated.</div>
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-tapestry-back-upload">← Back</button>
+      <button class="btn btn-primary" style="background:#e07820;border-color:#e07820" id="btn-tapestry-commit">Run import for real →</button>
+    </div>`;
+  document.getElementById('btn-tapestry-back-upload')?.addEventListener('click', renderTapestryUpload);
+  document.getElementById('btn-tapestry-commit')?.addEventListener('click', commitTapestry);
+}
+
+async function commitTapestry() {
+  const btn = document.getElementById('btn-tapestry-commit');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Importing…'; }
+  try {
+    const result = await Wren.api(`/api/import/tapestry/${STATE.tapestry.jobId}/commit`, { method: 'POST' });
+    STATE.tapestry.commit = result;
+    renderTapestryReport();
+  } catch (e) {
+    Wren.toast('Import failed: ' + (e.error || e.message), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry import'; }
+  }
+}
+
+async function renderTapestryReport() {
+  STATE.tapestry.stage = 'report';
+  renderBundleIndicator('report');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  let content = '';
+  try {
+    const r = await Wren.api(`/api/import/tapestry/${STATE.tapestry.jobId}/report`);
+    content = r.content;
+  } catch (e) { content = '(report unavailable: ' + (e.error||e.message) + ')'; }
+  STATE.tapestry.reportContent = content;
+  const cr = STATE.tapestry.commit;
+  body.innerHTML = `
+    <div style="text-align:center;padding:16px 0">
+      <div class="done-icon">🎉</div>
+      <div class="done-title">Import complete!</div>
+    </div>
+    <div class="dr-stats">${tapestrySectionCards(cr.detail)}</div>
+    <h4 style="color:#f1f5f9">Reconciliation report</h4>
+    <pre class="eylog-log" style="max-height:360px">${esc(content)}</pre>
+    <div class="done-actions">
+      <button class="btn btn-primary" id="btn-tapestry-download-report">⬇ Download report (.md)</button>
+      <button class="btn btn-ghost" id="btn-tapestry-fresh">Start another import</button>
+    </div>`;
+  document.getElementById('btn-tapestry-download-report')?.addEventListener('click', () => {
+    Wren.download(`/api/import/tapestry/${STATE.tapestry.jobId}/report.md`, 'tapestry-import-report.md').catch(e=>alert(e?.error||'Report unavailable'));
+  });
+  document.getElementById('btn-tapestry-fresh')?.addEventListener('click', () => {
+    sessionStorage.removeItem('wren_tapestry_job');
+    STATE.tapestry = { jobId: null, stage: 'upload', filesFound: null, preview: null, dryRun: null, reportContent: null };
+    showStep(1);
+  });
+}
+
+// ── BrightHR ──────────────────────────────────────────────────────────────────
+async function enterBrightHRFlow() {
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  renderBundleIndicator('upload');
+  if (!STATE.brighthr.jobId) {
+    try {
+      const j = await Wren.api('/api/import/brighthr/jobs', { method: 'POST' });
+      STATE.brighthr.jobId = j.id;
+      sessionStorage.setItem('wren_brighthr_job', j.id);
+    } catch (e) {
+      showError('Failed to create BrightHR job: ' + (e.error || e.message));
+      return;
+    }
+  }
+  renderBrightHRUpload();
+}
+
+function renderBrightHRUpload() {
+  STATE.brighthr.stage = 'upload';
+  renderBundleIndicator('upload');
+  const body = document.getElementById('wiz-body');
+  const bh = STATE.brighthr;
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Upload your BrightHR export</h3>
+    <p style="color:#94a3b8;margin-top:0">CSV export from BrightHR — employees is required, absences is optional. Or pull live via the API instead (System → Integrations).</p>
+    <div style="margin-bottom:18px">
+      <div class="map-label">Employees CSV<span class="badge-req">required</span></div>
+      <input type="file" id="brighthr-emp-input" accept=".csv,.txt" style="display:none">
+      <div class="upload-zone" id="brighthr-emp-zone" style="padding:20px">
+        <div class="up-icon">📁</div>
+        <p>${bh.empUploaded ? '✓ employees.csv uploaded' : 'Drag & drop employees.csv, or browse'}</p>
+      </div>
+    </div>
+    <div style="margin-bottom:18px">
+      <div class="map-label">Absences CSV<span class="badge-opt">optional</span></div>
+      <input type="file" id="brighthr-abs-input" accept=".csv,.txt" style="display:none">
+      <div class="upload-zone" id="brighthr-abs-zone" style="padding:20px">
+        <div class="up-icon">📁</div>
+        <p>${bh.absUploaded ? '✓ absences.csv uploaded' : 'Drag & drop absences.csv, or browse'}</p>
+      </div>
+    </div>
+    <div class="upload-status" id="brighthr-upload-status"></div>
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-brighthr-back-to-source">← Back to source picker</button>
+      <button class="btn btn-primary" id="btn-brighthr-to-preview" ${bh.empUploaded?'':'disabled'}>Preview import →</button>
+    </div>`;
+  document.getElementById('btn-brighthr-back-to-source')?.addEventListener('click', () => showStep(1));
+
+  const wireZone = (zoneId, inputId, kind) => {
+    const zone = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) handleBrightHRFileSelect(file, kind);
+    });
+    input.addEventListener('change', () => { if (input.files[0]) handleBrightHRFileSelect(input.files[0], kind); });
+  };
+  wireZone('brighthr-emp-zone', 'brighthr-emp-input', 'employees');
+  wireZone('brighthr-abs-zone', 'brighthr-abs-input', 'absences');
+  document.getElementById('btn-brighthr-to-preview')?.addEventListener('click', runBrightHRPreview);
+}
+
+async function handleBrightHRFileSelect(file, kind) {
+  const status = document.getElementById('brighthr-upload-status');
+  status.style.display = 'block';
+  status.className = 'upload-status ok';
+  status.innerHTML = `<span class="spin-sm"></span> Uploading ${kind}.csv…`;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = Wren.getToken();
+    const res = await fetch(`/api/import/brighthr/${STATE.brighthr.jobId}/upload/${kind}`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw data;
+    if (kind === 'employees') STATE.brighthr.empUploaded = true;
+    else STATE.brighthr.absUploaded = true;
+    renderBrightHRUpload();
+  } catch (e) {
+    status.className = 'upload-status err';
+    status.textContent = `Upload failed: ` + (e.error || e.message || 'Unknown error');
+  }
+}
+
+async function runBrightHRPreview() {
+  STATE.brighthr.stage = 'preview';
+  renderBundleIndicator('preview');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Running dry run…</h3>
+    <div style="text-align:center;padding:40px">
+      <div class="spinner"></div>
+      <p style="color:#94a3b8;margin-top:16px">Simulating the import inside a transaction — nothing is written yet.</p>
+    </div>`;
+  try {
+    const result = await Wren.api(`/api/import/brighthr/${STATE.brighthr.jobId}/dry-run`, { method: 'POST' });
+    STATE.brighthr.dryRun = result;
+    renderBrightHRPreview();
+  } catch (e) {
+    body.innerHTML = `
+      <h3 style="margin-top:0;color:#f1f5f9">Dry run failed</h3>
+      <div class="alert-danger">${esc(e.error || e.message || 'Unknown error')}</div>
+      <div class="wiz-footer">
+        <button class="btn btn-ghost" id="btn-brighthr-back-upload">← Back</button>
+        <button class="btn btn-primary" id="btn-brighthr-retry">Retry</button>
+      </div>`;
+    document.getElementById('btn-brighthr-back-upload')?.addEventListener('click', renderBrightHRUpload);
+    document.getElementById('btn-brighthr-retry')?.addEventListener('click', runBrightHRPreview);
+  }
+}
+
+function brighthrSectionCards(dr) {
+  const emp = dr.employees, abs = dr.absences;
+  return `
+    <div class="dr-card">
+      <span class="dr-num ${(emp.created||0)>0?'dr-create':'dr-total'}">${emp.created||0}</span>
+      <div class="dr-lbl">employees — new</div>
+      <div style="font-size:.7rem;color:#64748b;margin-top:4px">updated ${emp.updated||0} · contracts ${emp.contractsCreated||0} · skipped ${emp.skipped||0}</div>
+    </div>
+    <div class="dr-card">
+      <span class="dr-num ${(abs.created||0)>0?'dr-create':'dr-total'}">${abs.created||0}</span>
+      <div class="dr-lbl">absences — new</div>
+      <div style="font-size:.7rem;color:#64748b;margin-top:4px">already imported ${abs.duplicate||0} · skipped ${abs.skipped||0}</div>
+    </div>`;
+}
+
+function renderBrightHRPreview() {
+  const body = document.getElementById('wiz-body');
+  const dr = STATE.brighthr.dryRun;
+  body.innerHTML = `
+    <h3 style="margin-top:0;color:#f1f5f9">Preview — would import</h3>
+    <p style="color:#94a3b8;margin-top:0">No data was written — this is a dry run.</p>
+    <div class="dr-stats">${brighthrSectionCards(dr)}</div>
+    <div class="alert-info">✓ Dry run complete.</div>
+    <div class="wiz-footer">
+      <button class="btn btn-ghost" id="btn-brighthr-back-upload">← Back</button>
+      <button class="btn btn-primary" style="background:#e07820;border-color:#e07820" id="btn-brighthr-commit">Run import for real →</button>
+    </div>`;
+  document.getElementById('btn-brighthr-back-upload')?.addEventListener('click', renderBrightHRUpload);
+  document.getElementById('btn-brighthr-commit')?.addEventListener('click', commitBrightHR);
+}
+
+async function commitBrightHR() {
+  const btn = document.getElementById('btn-brighthr-commit');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-sm"></span> Importing…'; }
+  try {
+    const result = await Wren.api(`/api/import/brighthr/${STATE.brighthr.jobId}/commit`, { method: 'POST' });
+    STATE.brighthr.commit = result;
+    renderBrightHRReport();
+  } catch (e) {
+    Wren.toast('Import failed: ' + (e.error || e.message), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry import'; }
+  }
+}
+
+async function renderBrightHRReport() {
+  STATE.brighthr.stage = 'report';
+  renderBundleIndicator('report');
+  const body = document.getElementById('wiz-body');
+  body.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  let content = '';
+  try {
+    const r = await Wren.api(`/api/import/brighthr/${STATE.brighthr.jobId}/report`);
+    content = r.content;
+  } catch (e) { content = '(report unavailable: ' + (e.error||e.message) + ')'; }
+  STATE.brighthr.reportContent = content;
+  const cr = STATE.brighthr.commit;
+  body.innerHTML = `
+    <div style="text-align:center;padding:16px 0">
+      <div class="done-icon">🎉</div>
+      <div class="done-title">Import complete!</div>
+    </div>
+    <div class="dr-stats">${brighthrSectionCards(cr)}</div>
+    <h4 style="color:#f1f5f9">Reconciliation report</h4>
+    <pre class="eylog-log" style="max-height:360px">${esc(content)}</pre>
+    <div class="done-actions">
+      <button class="btn btn-primary" id="btn-brighthr-download-report">⬇ Download report (.md)</button>
+      <button class="btn btn-ghost" id="btn-brighthr-fresh">Start another import</button>
+    </div>`;
+  document.getElementById('btn-brighthr-download-report')?.addEventListener('click', () => {
+    Wren.download(`/api/import/brighthr/${STATE.brighthr.jobId}/report.md`, 'brighthr-import-report.md').catch(e=>alert(e?.error||'Report unavailable'));
+  });
+  document.getElementById('btn-brighthr-fresh')?.addEventListener('click', () => {
+    sessionStorage.removeItem('wren_brighthr_job');
+    STATE.brighthr = { jobId: null, stage: 'upload', empUploaded: false, absUploaded: false, preview: null, dryRun: null, reportContent: null };
+    showStep(1);
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function showError(msg) {
+  document.getElementById('wiz-body').innerHTML =
+    `<div class="alert-danger">${esc(msg)}</div>`;
+}
+</script>
+</body>
+</html>

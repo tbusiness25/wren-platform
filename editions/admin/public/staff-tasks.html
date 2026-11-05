@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Tasks (incl. action plans) — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<!-- b501 — the one shared task detail / create form / accountability panel -->
+<script src="/js/wren-task-detail.js?v=b501" defer></script>
+<style>
+/* b209 — the manager board: everything assigned, who is overdue, and the
+   completion rate over time. Deliberately a SEPARATE page from /tasks.html
+   (the owner's own to-do list) rather than a rewrite of it. */
+.st-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.st-stat{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:14px}
+.st-stat .n{font-size:28px;font-weight:800;color:#f1f5f9;line-height:1}
+.st-stat .l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-top:5px}
+.st-stat.bad{border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.07)}
+.st-stat.bad .n{color:#ef4444}
+.st-stat.good .n{color:#22c55e}
+
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.chip{padding:6px 14px;border-radius:6px;font-size:12px;background:#1e293b;border:1px solid #2d3748;color:#94a3b8;cursor:pointer;transition:.15s}
+.chip.active{background:#4a9abf22;border-color:#4a9abf;color:#4a9abf}
+.filter-bar select{background:#1e293b;border:1px solid #2d3748;color:#f1f5f9;border-radius:6px;padding:6px 10px;font-size:12px}
+
+.st-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:14px;margin-bottom:10px}
+.st-card.overdue{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.06)}
+.st-card.done{opacity:.6}
+.st-head{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.st-title{flex:1;min-width:200px;font-size:15px;font-weight:700;color:#f1f5f9}
+.st-desc{font-size:12.5px;color:#94a3b8;margin-top:5px;line-height:1.45}
+.st-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;background:rgba(148,163,184,.14);color:#94a3b8}
+.pill.late{background:#ef444422;color:#ef4444}
+.pill.due{background:#4a9abf22;color:#4a9abf}
+.pill.urgent{background:#ef444422;color:#ef4444}
+.pill.high{background:#f59e0b22;color:#f59e0b}
+.pill.repeat{background:#e0782022;color:#e07820}
+.pill.files{background:#22c55e22;color:#22c55e}
+.pill.esc{background:#f59e0b22;color:#f59e0b}
+.who{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.who span{font-size:11.5px;padding:4px 10px;border-radius:20px;background:rgba(148,163,184,.12);color:#cbd5e1}
+.who span.done{background:rgba(34,197,94,.16);color:#22c55e}
+
+.trend{display:flex;align-items:flex-end;gap:10px;height:120px;padding:10px 4px 0;overflow-x:auto}
+.trend .bar{flex:1;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.trend .fill{width:100%;background:#4a9abf;border-radius:5px 5px 0 0;min-height:3px;transition:.2s}
+.trend .fill.low{background:#ef4444}
+.trend .fill.mid{background:#f59e0b}
+.trend .cap{font-size:11px;color:#94a3b8;white-space:nowrap}
+.trend .val{font-size:12px;font-weight:700;color:#f1f5f9}
+
+table.st-people{width:100%;border-collapse:collapse;font-size:13px}
+table.st-people th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;padding:8px 10px;border-bottom:1px solid #2d3748}
+table.st-people td{padding:9px 10px;border-bottom:1px solid #2d3748;color:#f1f5f9}
+table.st-people td.od{color:#ef4444;font-weight:700}
+
+.modal-overlay{position:fixed;inset:0;background:#0009;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:#1e293b;border:1px solid #2d3748;border-radius:16px;padding:24px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:14px}
+.modal label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:14px 0 6px}
+.modal input,.modal select,.modal textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #2d3748;background:#0f172a;color:#f1f5f9;font-size:14px;font-family:inherit}
+.modal textarea{min-height:70px;resize:vertical}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.staff-grid{display:flex;flex-wrap:wrap;gap:7px;max-height:180px;overflow-y:auto}
+.staff-opt{padding:7px 12px;border-radius:8px;border:1px solid #2d3748;background:rgba(148,163,184,.08);color:#f1f5f9;font-size:13px;cursor:pointer}
+.staff-opt.on{background:#4a9abf33;border-color:#4a9abf;color:#4a9abf;font-weight:700}
+.hint{font-size:11.5px;color:#94a3b8;margin-top:6px;line-height:1.45}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">Tasks (incl. action plans)</div>
+    <div style="display:flex;gap:8px">
+      <a class="btn" href="/tasks.html">My task list →</a>
+      <button class="btn btn-primary" id="btn-assign">+ Assign a task</button>
+    </div>
+  </div>
+
+  <div class="st-stats" id="st-stats"></div>
+
+  <div class="filter-bar">
+    <span class="chip active" data-status="open">Open</span>
+    <span class="chip" data-status="done">Done</span>
+    <span class="chip" data-status="all">All</span>
+    <span class="chip" data-overdue="1">Overdue only</span>
+    <span class="chip" data-projects="1">Projects &amp; action plans</span>
+    <select id="f-assignee"><option value="">Everyone</option></select>
+    <select id="f-room"><option value="">All rooms</option></select>
+  </div>
+
+  <div id="st-list"><div class="loading-state"><div class="spinner"></div></div></div>
+
+  <h2 class="section-title" style="margin-top:28px">Who is doing what</h2>
+  <div class="st-stat" style="padding:12px 14px" id="st-acc"></div>
+
+  <h2 class="section-title" style="margin-top:28px">Completion rate by month</h2>
+  <div class="st-stat" style="padding:16px">
+    <div class="trend" id="st-trend"></div>
+    <div class="hint">Measured against the work that was <strong>due</strong> in each month —
+      of the tasks with a deadline that month, how many are marked done.</div>
+  </div>
+
+  <h2 class="section-title" style="margin-top:28px">By person</h2>
+  <div class="st-stat" style="padding:6px 8px">
+    <table class="st-people" id="st-people"><tbody></tbody></table>
+  </div>
+</div>
+
+<div id="modal-host"></div>
+
+<script>
+let BOARD = [], STATS = null, STAFF = [], ROOMS = [];
+let F = { status: 'open', overdue: false, projects: false, assignee: '', room: '' };
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+const fmtDate = d => d ? new Date(String(d).split('T')[0] + 'T00:00:00')
+  .toLocaleDateString('en-GB', { day:'numeric', month:'short' }) : 'No due date';
+const fmtTime = t => { const m = String(t||'').match(/(\d{1,2})[:.](\d{2})/);
+  return m ? ('0'+m[1]).slice(-2)+':'+m[2] : ''; };
+
+async function loadAll() {
+  const qs = new URLSearchParams();
+  qs.set('status', F.status);
+  if (F.overdue) qs.set('overdue', '1');
+  if (F.projects) qs.set('projects', '1');
+  if (F.assignee) qs.set('assignee', F.assignee);
+  if (F.room) qs.set('room_id', F.room);
+  const [board, stats] = await Promise.all([
+    Wren.api('/api/tasks/board?' + qs.toString()).catch(e => { console.error(e); return []; }),
+    Wren.api('/api/tasks/stats?months=6').catch(e => { console.error(e); return null; }),
+  ]);
+  BOARD = Array.isArray(board) ? board : [];
+  STATS = stats;
+  renderStats(); renderBoard(); renderTrend(); renderPeople();
+}
+
+function renderStats() {
+  const t = (STATS && STATS.totals) || {};
+  const latest = STATS && STATS.trend && STATS.trend.length
+    ? STATS.trend[STATS.trend.length - 1] : null;
+  document.getElementById('st-stats').innerHTML =
+      `<div class="st-stat"><div class="n">${t.open_total ?? '—'}</div><div class="l">Open tasks</div></div>`
+    + `<div class="st-stat ${t.overdue_total ? 'bad' : 'good'}"><div class="n">${t.overdue_total ?? '—'}</div><div class="l">Overdue now</div></div>`
+    + `<div class="st-stat"><div class="n">${latest && latest.completion_rate != null ? latest.completion_rate + '%' : '—'}</div><div class="l">Done this month</div></div>`
+    + `<div class="st-stat"><div class="n">${t.escalated_total ?? '—'}</div><div class="l">Escalated to a manager</div></div>`;
+}
+
+function renderBoard() {
+  const el = document.getElementById('st-list');
+  if (!BOARD.length) { el.innerHTML = '<div class="empty-state">No tasks match these filters.</div>'; return; }
+  el.innerHTML = BOARD.map(t => {
+    let pills = '';
+    if (t.is_overdue) pills += '<span class="pill late">Overdue</span>';
+    pills += `<span class="pill due">${esc(fmtDate(t.due_date))}${fmtTime(t.time_of_day) ? ' · ' + esc(fmtTime(t.time_of_day)) : ''}</span>`;
+    if (t.priority === 'urgent') pills += '<span class="pill urgent">Urgent</span>';
+    else if (t.priority === 'high') pills += '<span class="pill high">High</span>';
+    if (t.repeat_rule) pills += `<span class="pill repeat">Repeats ${esc(t.repeat_rule)}</span>`;
+    if (t.room_name) pills += `<span class="pill">${esc(t.room_name)}</span>`;
+    if (t.attachment_count) pills += `<span class="pill files">📎 ${t.attachment_count}</span>`;
+    if (t.escalated_at) pills += '<span class="pill esc">Escalated</span>';
+    if (t.created_by_name) pills += `<span class="pill">by ${esc(t.created_by_name)}</span>`;
+
+    const who = (t.assignees || []).length
+      ? `<div class="who">${t.assignees.map(a =>
+          `<span class="${a.status === 'done' ? 'done' : ''}">${a.status === 'done' ? '✓ ' : ''}${esc(a.name)}</span>`).join('')}</div>`
+      : '<div class="who"><span>Unassigned</span></div>';
+
+    if (t.subtasks_total) pills += `<span class="pill due">Project ${t.subtasks_done}/${t.subtasks_total}</span>`;
+    if (t.mode === 'smart') pills += '<span class="pill repeat">SMART</span>';
+    if (t.evidence_required) pills += '<span class="pill high">Evidence</span>';
+    return `<div class="st-card ${t.is_overdue ? 'overdue' : ''} ${t.status === 'done' ? 'done' : ''}" data-task-open="${t.id}" style="cursor:pointer">
+      <div class="st-head"><div class="st-title">${esc(t.title)}</div>
+        <button class="btn" data-act="files" data-id="${t.id}">Open</button></div>
+      ${t.description ? `<div class="st-desc">${esc(t.description)}</div>` : ''}
+      <div class="st-meta">${pills}</div>${who}
+      ${t.completion_note ? `<div class="hint">Completion note: ${esc(t.completion_note)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderTrend() {
+  const host = document.getElementById('st-trend');
+  const trend = (STATS && STATS.trend) || [];
+  if (!trend.length) { host.innerHTML = '<div class="hint">No tasks carried a due date in this period.</div>'; return; }
+  host.innerHTML = trend.map(m => {
+    const r = m.completion_rate == null ? 0 : m.completion_rate;
+    const cls = r >= 80 ? '' : r >= 50 ? 'mid' : 'low';
+    const label = new Date(m.month + '-01T00:00:00').toLocaleDateString('en-GB', { month:'short', year:'2-digit' });
+    return `<div class="bar" title="${m.completed} of ${m.due_tasks} done${m.still_overdue ? `, ${m.still_overdue} still overdue` : ''}">
+      <div class="val">${m.completion_rate == null ? '—' : r + '%'}</div>
+      <div class="fill ${cls}" style="height:${Math.max(3, r * 0.75)}px"></div>
+      <div class="cap">${label}</div></div>`;
+  }).join('');
+}
+
+function renderPeople() {
+  const rows = (STATS && STATS.by_staff) || [];
+  const tb = document.querySelector('#st-people tbody');
+  if (!rows.length) { tb.innerHTML = '<tr><td class="hint">Nothing assigned yet.</td></tr>'; return; }
+  tb.innerHTML = '<tr><th>Person</th><th>Open</th><th>Overdue</th><th>Completed</th></tr>'
+    + rows.map(r => `<tr><td>${esc(r.name)} <span class="pill">${esc(r.role || '')}</span></td>
+        <td>${r.open_tasks}</td>
+        <td class="${r.overdue_tasks ? 'od' : ''}">${r.overdue_tasks}</td>
+        <td>${r.completed_recent}</td></tr>`).join('');
+}
+
+// ── Assign / files / detail: the one shared component (public/js/wren-task-detail.js) ──
+function closeModal() { /* the shared component owns its own dialogs */ }
+function openAssign() { WrenTaskDetail.create({ onSaved: loadAll }); }
+function openFiles(id) { WrenTaskDetail.open(id, { onChange: loadAll }); }
+
+document.addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (chip) {
+    if (chip.dataset.overdue) { F.overdue = !F.overdue; chip.classList.toggle('active', F.overdue); }
+    else if (chip.dataset.projects) { F.projects = !F.projects; chip.classList.toggle('active', F.projects); }
+    else {
+      document.querySelectorAll('.chip[data-status]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active'); F.status = chip.dataset.status;
+    }
+    return loadAll();
+  }
+  if (e.target.closest('#btn-assign')) return openAssign();
+  const act = e.target.closest('[data-act]');
+  if (act && act.dataset.act === 'files') { e.stopPropagation(); return openFiles(act.dataset.id); }
+  const card = e.target.closest('[data-task-open]');
+  if (card) return WrenTaskDetail.open(Number(card.dataset.taskOpen), { onChange: loadAll });
+});
+
+document.addEventListener('change', e => {
+  if (e.target.id === 'f-assignee') { F.assignee = e.target.value; loadAll(); }
+  if (e.target.id === 'f-room')     { F.room = e.target.value; loadAll(); }
+});
+
+document.addEventListener('wren:ready', async () => {
+  const [staffRes, roomsRes] = await Promise.all([
+    Wren.api('/api/tasks/assignable-staff').catch(() => ({ staff: [] })),
+    Wren.api('/api/admin/rooms').catch(() => []),
+  ]);
+  STAFF = staffRes.staff || [];
+  ROOMS = Array.isArray(roomsRes) ? roomsRes : (roomsRes && roomsRes.rooms) || [];
+  document.getElementById('f-assignee').innerHTML = '<option value="">Everyone</option>'
+    + STAFF.map(s => `<option value="${s.id}">${esc(s.first_name + ' ' + s.last_name)}</option>`).join('');
+  document.getElementById('f-room').innerHTML = '<option value="">All rooms</option>'
+    + ROOMS.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
+  if (new URLSearchParams(location.search).get('projects') === '1') {   // the old Action Plans entry lands here
+    F.projects = true; const c = document.querySelector('.chip[data-projects]'); if (c) c.classList.add('active');
+  }
+  loadAll();
+  WrenTaskDetail.accountability(document.getElementById('st-acc'), { onChange: loadAll });
+  WrenTaskDetail.autoOpen({ onChange: loadAll });   // the link inside a task notification: ?task=<id>
+});
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

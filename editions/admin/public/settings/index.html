@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Settings — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<!-- fledge-off (2026-10-26): the one Fledge switch, before anything paints -->
+<script src="/js/wren-fledge.js?v=fledgeoff1"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* b171 (2026-07-28) — EyLog-parity Settings hub: left-nav categories +
+       a content panel, matching the order of EyLog's Settings left-nav so
+       staff coming from EyLog find things where they expect them. */
+    .settings-hub { display:grid; grid-template-columns: 240px 1fr; gap:20px; align-items:start; }
+    @media (max-width: 860px) { .settings-hub { grid-template-columns: 1fr; } }
+    .settings-nav { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:8px; position:sticky; top:12px; }
+    .settings-nav a { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; color:#cbd5e1; text-decoration:none; font-size:.88rem; font-weight:600; }
+    .settings-nav a:hover { background:#243144; color:#f1f5f9; }
+    .settings-nav a.active { background:rgba(74,154,191,.18); color:#4a9abf; }
+    .settings-nav .nav-icon { width:18px; text-align:center; flex-shrink:0; }
+    .settings-panel { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:24px; min-height:320px; }
+    .settings-panel h2 { margin:0 0 6px; font-size:1.15rem; }
+    .settings-panel .panel-sub { color:#94a3b8; font-size:.85rem; margin:0 0 20px; }
+    .settings-link-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background:#0f2235; border-radius:10px; margin-bottom:10px; }
+    .settings-link-row .lr-label { font-weight:600; font-size:.92rem; }
+    .settings-link-row .lr-note { color:#94a3b8; font-size:.78rem; margin-top:2px; }
+    .coming-soon-box { text-align:center; padding:40px 20px; color:#94a3b8; }
+    .coming-soon-box .cs-icon { font-size:2rem; margin-bottom:10px; }
+    .coming-soon-box h3 { color:#f1f5f9; margin:0 0 6px; }
+    .eylog-badge { display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:2px 8px; border-radius:6px; background:rgba(224,120,32,.15); color:#e07820; margin-left:8px; }
+    .room-edit-row { display:grid; grid-template-columns: 1fr 120px 90px; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid #263449; }
+    .room-edit-row:last-child { border-bottom:none; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">⚙️ Settings</div>
+      <div class="page-subtitle" style="color:#94a3b8;font-size:.85rem">Organised to match EyLog's Settings menu, so anything you know how to find there, you can find here.</div>
+    </div>
+  </div>
+
+  <div class="settings-hub">
+    <nav class="settings-nav" id="settings-nav"></nav>
+    <div class="settings-panel" id="settings-panel">
+      <div style="color:#94a3b8">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// b171 (2026-07-28) — category map. Each entry either points at real, already-
+// working Wren pages ('links') or is a stub ('comingSoon') where no dedicated
+// config page exists yet. Order matches EyLog's Settings left-nav exactly.
+const CATEGORIES = [
+  {
+    id: 'nursery-details', icon: '🏫', label: 'Nursery Details',
+    desc: 'Nursery name, address, phone, email and opening hours.',
+    links: [
+      { label: 'Nursery details & contact info', href: '/settings.html', note: 'Name / address / phone — General settings' },
+      { label: 'Opening hours & first-run setup', href: '/setup.html', note: 'Also used for first-time onboarding' },
+    ],
+  },
+  {
+    id: 'groups', icon: '🚪', label: 'Groups',
+    desc: "Your rooms / age-groups (EyLog calls these \"Groups\"). Edit names and capacities below, or use the setup wizard to add a new room.",
+    custom: 'groups',
+  },
+  {
+    id: 'managers', icon: '🧑‍🤝‍🧑', label: 'Managers',
+    desc: 'Staff directory — managers, deputies, room leaders and practitioners.',
+    links: [
+      { label: 'Staff Overview', href: '/staff.html', note: 'Full staff list, roles, filter by room' },
+      { label: 'Permissions matrix', href: '/admin/permissions', note: 'Per-staff capability grants' },
+    ],
+  },
+  {
+    id: 'privacy', icon: '🔒', label: 'Privacy',
+    desc: 'What parents and the app are allowed to see and share.',
+    links: [
+      { label: 'Parent Permissions matrix', href: '/admin/system/settings', note: 'Portal / API / calendar / email visibility per data type' },
+      { label: 'Data Governance dashboard', href: '/admin/data-governance/dashboard', note: 'Retention, exports, GDPR tooling' },
+      { label: 'Cloudflare Access control', href: '/cf-access.html', note: 'Who can reach which portal from where' },
+    ],
+  },
+  {
+    id: 'observations', icon: '📝', label: 'Observations',
+    desc: 'Defaults and framework linkage used when staff log observations.',
+    comingSoon: 'No dedicated Observations settings page yet — observation defaults are currently just "whatever framework is active" (see Frameworks below). A settings page to override per-room observation defaults is on the backlog.',
+    links: [
+      { label: 'Observations (data entry)', href: '/observations.html', note: "Where staff actually log observations — not a settings page" },
+    ],
+  },
+  {
+    id: 'custom-frameworks', icon: '🧩', label: 'Custom Frameworks',
+    desc: 'Build your own curriculum framework (areas, aspects, age bands, statements).',
+    comingSoon: 'The backend already exists (full CRUD + AI-assisted builder API at /api/custom-frameworks) but there is no admin UI wired up to it yet. Building that UI is a good next job — the API is ready.',
+  },
+  // b298 (2026-09-10) — Toby: "In terms of funding dates and term dates, these can
+  // be options in the Settings menu … the termly dates are for the planning and the
+  // funding dates are for the funding in the settings." Two entries, not one, and
+  // each says what it is NOT — that confusion is what deleted the breaks on
+  // 2026-09-09 when the half-terms were rewritten to funding boundaries.
+  {
+    id: 'term-dates', icon: '📅', label: 'Term dates',
+    desc: 'Used for planning: half-terms, weekly plans and the breaks in between. NOT the funding periods.',
+    links: [
+      { label: 'Open Term dates →', href: '/term-dates.html', note: "The six half-terms a year, the holidays between them, and a warning before a date moves under a plan", primary: true },
+      { label: 'Funding dates (the other calendar)', href: '/funding-dates.html', note: 'Entitlement hours, rates and what the council pays' },
+      { label: 'Planning', href: '/termly-plan.html', note: 'Where the half-terms are actually planned' },
+    ],
+  },
+  {
+    id: 'funding-dates', icon: '💷', label: 'Funding dates',
+    desc: 'Used for funding: entitlement hours, rates and what the council pays. NOT the teaching half-terms.',
+    links: [
+      { label: 'Open Funding dates →', href: '/funding-dates.html', note: 'Autumn 1 Sep–31 Dec, Spring 1 Jan–31 Mar, Summer 1 Apr–31 Aug, plus the rate per band', primary: true },
+      { label: 'Allocate children to a funding period →', href: '/funding.html?full=1&tab=allocation', note: 'Who claims what, and whose declaration is outstanding' },
+      { label: 'Term dates (the other calendar)', href: '/term-dates.html', note: 'Half-terms and breaks — what planning runs on' },
+    ],
+  },
+  // b299 — the invoice's own settings. It sits next to the two calendars because
+  // that is the order a manager meets them: what a term IS, when the funding runs,
+  // then what the bill for it says.
+  {
+    id: 'invoices', icon: '🧾', label: 'Invoices',
+    desc: 'What every invoice says — the registrations in the letterhead, the session window '
+        + 'the weekly breakdown prints, the 52/12 calculation factor, and the free-text footer.',
+    links: [
+      { label: 'Open Invoice settings →', href: '/settings.html#invoice-settings-card', primary: true,
+        note: 'Email, company + Ofsted registration, session times, calculation factor, footer' },
+      { label: 'Fee schedule & extras', href: '/fee-schedule.html',
+        note: 'Day rates and chargeable extras. A charge may not be scaled by funded hours — that is the funding shortfall' },
+      { label: 'Invoices & billing', href: '/admin/finance#invoices',
+        note: 'Raise, send and reconcile the invoices themselves' },
+    ],
+  },
+  {
+    id: 'frameworks', icon: '📚', label: 'Frameworks',
+    desc: 'Which curriculum framework(s) are active for the setting.',
+    links: [
+      { label: 'Framework selection (setup)', href: '/setup.html', note: 'Statutory framework + overlay picker' },
+      { label: 'Fledge — our progress framework', href: '/fledge-framework.html', note: "What children can do by the end of a band. Not the curriculum — that is the termly planning. Default since 2026-07-17" },
+      { label: 'Phonics scheme setting', href: '/phonics.html', note: 'School-scheme picker (14 DfE schemes)' },
+    ],
+  },
+  {
+    id: 'reports', icon: '📊', label: 'Reports',
+    desc: 'Generate and manage parent/termly reports.',
+    links: [
+      { label: 'Reports', href: '/reports.html', note: 'Generated reports, write, and parent-facing tab' },
+    ],
+  },
+  {
+    id: 'daily-diary-registers', icon: '📔', label: 'Daily Diary & Registers',
+    desc: 'Meal/nap/nappy categories, cut-off times, register configuration.',
+    comingSoon: 'No dedicated config page yet for diary categories or register cut-off times — these are currently fixed in code. Flag to Toby if a specific setting is needed here.',
+    links: [
+      { label: 'Sidebar / nav layout', href: '/nav-settings.html', note: 'Not diary settings, but adjacent — sidebar ordering' },
+    ],
+  },
+  {
+    id: 'accident-sheets', icon: '🩹', label: 'Accident Sheets',
+    desc: 'Configure the accident/injury report form.',
+    links: [
+      { label: 'Incidents (data entry & review)', href: '/incidents.html', note: 'Where accidents are actually logged' },
+      { label: 'Module Builder', href: '/module-builder.html', note: 'Generic form builder — can define a custom Accident Report module/template' },
+    ],
+  },
+  {
+    id: 'medicine-forms', icon: '💊', label: 'Medicine Forms',
+    desc: 'Configure the medicine administration / consent form.',
+    comingSoon: 'No dedicated Medicine Forms settings page yet. Medicine.html handles data entry/audit only. Could be built with the Module Builder (same pattern as Accident Sheets) if wanted.',
+    links: [
+      { label: 'Medicine Records', href: '/medicine.html', note: 'Data entry & audit trail' },
+    ],
+  },
+  {
+    id: 'food-menus', icon: '🍽️', label: 'Food Menus',
+    desc: 'Menu groups (Summer/Winter rotations), weekly menus, room/age variations.',
+    links: [
+      { label: 'Open Food Menus →', href: '/settings/food-menus.html', note: 'Manage rotation groups, weeks, and this week’s menu', primary: true },
+    ],
+  },
+  {
+    id: 'report-templates', icon: '🧾', label: 'Report Templates',
+    desc: 'Templates used when generating parent/termly reports.',
+    comingSoon: 'No template-management UI yet. Reports currently use one fixed layout — a template library (like the contract-templates pattern used elsewhere in Wren) is on the backlog.',
+    links: [
+      { label: 'Reports (write / generate)', href: '/reports.html?tab=write', note: 'Where reports are actually written' },
+    ],
+  },
+  {
+    id: 'parents', icon: '👨‍👩‍👧', label: 'Parents',
+    desc: 'Parent-portal permissions and visibility.',
+    links: [
+      { label: 'Parent Permissions matrix', href: '/admin/system/settings', note: 'Same matrix as Privacy above' },
+      { label: 'Parent app feedback', href: '/parent-app-feedback.html', note: 'Feedback triage, not settings' },
+    ],
+  },
+  {
+    id: 'system', icon: '🧭', label: 'System',
+    desc: 'Integrations, backups, security, permissions, approvals, audit log.',
+    links: [
+      { label: 'System →', href: '/admin/system/settings', note: 'Full System section — already comprehensive', primary: true },
+    ],
+  },
+];
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderNav(activeId) {
+  const nav = document.getElementById('settings-nav');
+  nav.innerHTML = CATEGORIES.map(c => `
+    <a href="#${c.id}" data-id="${c.id}" class="${c.id === activeId ? 'active' : ''}">
+      <span class="nav-icon">${c.icon}</span><span>${esc(c.label)}</span>
+    </a>
+  `).join('');
+  nav.querySelectorAll('a').forEach(a => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    location.hash = a.dataset.id;
+    renderPanel(a.dataset.id);
+    renderNav(a.dataset.id);
+  }));
+}
+
+function renderPanel(id) {
+  const cat = CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
+  const panel = document.getElementById('settings-panel');
+  let html = `<h2>${cat.icon} ${esc(cat.label)}</h2><p class="panel-sub">${esc(cat.desc)}</p>`;
+
+  if (cat.custom === 'groups') {
+    html += `<div id="groups-editor"><div style="color:#94a3b8">Loading rooms…</div></div>
+      <div style="margin-top:16px"><a href="/setup.html" class="btn btn-ghost btn-sm">+ Add a new room (setup wizard) →</a></div>`;
+    panel.innerHTML = html;
+    loadGroups();
+    return;
+  }
+
+  if (Array.isArray(cat.links)) {
+    cat.links.forEach(l => {
+      html += `
+        <div class="settings-link-row"${/fledge/i.test(l.href || '') ? ' data-fledge' : ''}>
+          <div>
+            <div class="lr-label">${esc(l.label)}</div>
+            <div class="lr-note">${esc(l.note || '')}</div>
+          </div>
+          <a class="btn ${l.primary ? 'btn-primary' : 'btn-ghost'} btn-sm" href="${esc(l.href)}">Open →</a>
+        </div>`;
+    });
+  }
+
+  if (cat.comingSoon) {
+    html += `
+      <div class="coming-soon-box" style="margin-top:${cat.links ? '18px' : '0'}">
+        <div class="cs-icon">🛠️</div>
+        <h3>Coming soon<span class="eylog-badge">EyLog parity</span></h3>
+        <p style="max-width:520px;margin:0 auto">${esc(cat.comingSoon)}</p>
+      </div>`;
+  }
+
+  panel.innerHTML = html;
+}
+
+async function loadGroups() {
+  const el = document.getElementById('groups-editor');
+  try {
+    const rooms = await Wren.api('/api/admin/rooms');
+    el.innerHTML = rooms.map(r => `
+      <div class="room-edit-row" data-id="${r.id}">
+        <input class="form-control" data-field="display_name" value="${esc(r.display_name || r.name)}">
+        <input class="form-control" type="number" min="1" data-field="capacity" value="${esc(r.capacity ?? '')}" placeholder="Capacity">
+        <button class="btn btn-sm btn-ghost btn-save-room">Save</button>
+      </div>
+    `).join('') || '<div style="color:#94a3b8">No rooms configured yet.</div>';
+    el.querySelectorAll('.btn-save-room').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('.room-edit-row');
+        const id = row.dataset.id;
+        const display_name = row.querySelector('[data-field="display_name"]').value;
+        const capacity = row.querySelector('[data-field="capacity"]').value;
+        try {
+          await Wren.api(`/api/admin/rooms/${id}`, { method: 'PUT', body: { display_name, capacity } });
+          Wren.toast('Room updated', 'success');
+        } catch (e) {
+          Wren.toast('Could not save room: ' + (e.error || e.message || 'error'), 'error');
+        }
+      });
+    });
+  } catch (e) {
+    el.innerHTML = `<div style="color:#ef4444">Could not load rooms: ${esc(e.error || e.message || 'error')}</div>`;
+  }
+}
+
+function init() {
+  const id = (location.hash || '#nursery-details').slice(1);
+  renderNav(id);
+  renderPanel(id);
+}
+
+document.addEventListener('wren:ready', init);
+window.addEventListener('hashchange', () => {
+  const id = (location.hash || '#nursery-details').slice(1);
+  renderPanel(id);
+  renderNav(id);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <meta name="theme-color" content="#080f1e">
+  <!-- PWA installability (b-pwa): see app.html for rationale — declared directly
+       so Roost's own square icon wins over wren-shell-v2.js's generic fallback. -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Roost">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Admin Login — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js?v=20260922-download" defer></script>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="wren-logo">
+        <span class="logo-w">w</span><span class="logo-ren">ren</span>
+        <span class="logo-edition">ADMIN</span>
+      </div>
+      <p>Roost — management dashboard</p>
+    </div>
+
+    <!-- login-20261023: say which portal this is and who it is for, before anything else. -->
+    <div class="wlh-portal">
+      <b>Roost</b> — for managers and the office only. Sign in with <b>your email and PIN</b>,
+      then the 6-digit code from your authenticator app.
+    </div>
+
+    <div id="step-email">
+      <div class="form-group">
+        <label class="form-label" for="email">Your email address</label>
+        <input type="email" class="form-control" id="email" placeholder="you@example.com" autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="email">
+      </div>
+      <button id="continue-btn" class="btn btn-primary btn-block">Continue →</button>
+      <!-- b210: the Google button renders itself here, and only if SSO is
+           configured for this portal. PIN entry above is untouched. -->
+      <div id="google-sso-slot"></div>
+      <!-- b233: same again for Wren's own identity provider. Renders nothing
+           unless Wren ID is configured AND enabled for this portal. -->
+      <div id="oidc-sso-slot"></div>
+      <p id="email-error" style="color:var(--c-red);text-align:center;font-size:.85rem;margin-top:10px;display:none"></p>
+      <div class="wlh-wrong" id="wrong-place"></div>
+    </div>
+
+    <div id="step-pin" style="display:none">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-weight:700;font-size:1.1rem;color:var(--c-navy)" id="pin-name"></div>
+        <p style="font-size:.875rem;color:#64748b" id="pin-prompt">Enter your PIN</p>
+      </div>
+      <div class="pin-dots" id="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" data-val="1">1</button>
+        <button class="pin-key" data-val="2">2</button>
+        <button class="pin-key" data-val="3">3</button>
+        <button class="pin-key" data-val="4">4</button>
+        <button class="pin-key" data-val="5">5</button>
+        <button class="pin-key" data-val="6">6</button>
+        <button class="pin-key" data-val="7">7</button>
+        <button class="pin-key" data-val="8">8</button>
+        <button class="pin-key" data-val="9">9</button>
+        <button class="pin-key" data-val="back">⌫</button>
+        <button class="pin-key" data-val="0">0</button>
+        <button class="pin-key" data-val="cancel" style="font-size:.75rem">Back</button>
+      </div>
+      <p id="pin-error" style="color:var(--c-red);text-align:center;margin-top:12px;display:none">Incorrect PIN</p>
+      <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;font-size:.8rem;color:#64748b;cursor:pointer">
+        <input type="checkbox" id="remember-device" style="accent-color:var(--c-navy,#4a9abf)">
+        Trust this device for 30 days (don't use on shared devices)
+      </label>
+    </div>
+
+    <!-- Step 3: TOTP challenge (shown only when server returns requires_totp:true) -->
+    <div id="step-totp" style="display:none">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-size:2rem;margin-bottom:8px">🔐</div>
+        <div style="font-weight:700;font-size:1.1rem;color:var(--c-text)">Two-factor verification</div>
+        <p style="font-size:.875rem;color:var(--c-muted);margin-top:6px">Enter the 6-digit code from your authenticator app</p>
+        <p class="wlh-help" style="text-align:center">Open the authenticator app on your phone (Google or Microsoft Authenticator)
+          and type the code shown for <b>Wren</b>. It changes every 30 seconds. It is <b>not</b> an email or text code.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+        <input type="text" id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code"
+               placeholder="000000"
+               style="flex:1;text-align:center;font-size:1.5rem;letter-spacing:.25rem;padding:12px;border-radius:12px;border:2px solid var(--c-border);background:var(--c-card);color:var(--c-text);outline:none">
+        <button id="totp-submit-btn" class="btn btn-primary" style="padding:12px 20px;white-space:nowrap">Verify →</button>
+      </div>
+      <p id="totp-error" style="color:var(--c-red);text-align:center;margin-top:8px;display:none">Invalid code — try again</p>
+      <!-- 2026-10-27: same choice on the code step — a Wren ID sign-in never shows the PIN step. -->
+      <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;font-size:.8rem;color:#64748b;cursor:pointer">
+        <input type="checkbox" id="remember-device-totp" style="width:18px;height:18px;accent-color:var(--c-navy,#4a9abf)">
+        Trust this device for 30 days (don't use on shared devices)
+      </label>
+      <div style="text-align:center;margin-top:16px">
+        <a href="#" id="use-recovery-link" style="font-size:.8rem;color:var(--c-muted);text-decoration:underline">Use a recovery code instead</a>
+      </div>
+      <div id="recovery-input-wrap" style="display:none;margin-top:12px">
+        <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XX"
+               style="width:100%;text-align:center;font-size:1rem;padding:10px;border-radius:12px;border:2px solid var(--c-border);background:var(--c-card);color:var(--c-text);box-sizing:border-box;text-transform:uppercase">
+        <p style="font-size:.75rem;color:var(--c-muted);margin-top:6px;text-align:center">Enter one of the recovery codes you saved when you set up the app. Lost them and your phone? Ask Toby to reset your two-step sign-in.</p>
+      </div>
+    </div>
+
+    <div id="demo-hint" style="text-align:center;margin-top:16px;display:none">
+      <span class="badge badge-orange">Demo: try olivia@demo.wren / PIN: 1234</span>
+    </div>
+
+    <!-- b126 (2026-07-21): shown instead of the PIN pad when the login/refresh
+         response is roost_restricted — a valid PIN, but Roost is allowlisted.
+         2026-10-06: the two links below are LADN's defaults; showRoostDenied()
+         points them at the redirect the server sends, so a refused person on
+         another setting (htps, childrenscorner) stays in their own setting. -->
+    <div id="roost-denied" style="display:none;text-align:center;margin-top:8px;padding:16px;border-radius:12px;background:var(--c-danger-soft);border:1px solid var(--c-danger)">
+      <p style="color:var(--c-danger);font-weight:700;margin:0 0 8px">Roost is restricted to authorised managers</p>
+      <p id="roost-denied-msg" style="color:var(--c-text);font-size:.875rem;margin:0 0 14px">This dashboard is limited to a small allowlist of managers. Use your usual portal instead:</p>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <a id="roost-denied-ey" href="https://ey.example-nursery.co.uk/" class="btn btn-primary" style="text-decoration:none">EY Portal</a>
+        <a id="roost-denied-hr" href="https://hr.example-nursery.co.uk/" class="btn btn-ghost" style="text-decoration:none">HR Portal</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 2026-10-13: where to land after signing in. ?next= is set by the shell when it bounces an
+  // expired session here; kept in sessionStorage so SSO / Wren ID round trips keep it too.
+  // Same-origin absolute paths only (never //host, never back to login).
+  window.wrenNextPath = function () {
+    try {
+      var q = new URLSearchParams(location.search).get('next');
+      if (q) sessionStorage.setItem('wrenNext', q);
+      var n = q || sessionStorage.getItem('wrenNext') || '';
+      if (!/^\/(?![\/\\])/.test(n) || /^\/login/i.test(n)) return '/admin/dashboard';
+      return n;
+    } catch (_) { return '/admin/dashboard'; }
+  };
+  window.wrenGoNext = function () {
+    var n = window.wrenNextPath();
+    try { sessionStorage.removeItem('wrenNext'); } catch (_) {}
+    window.location.href = n;
+  };
+  window.wrenNextPath();
+</script>
+<!-- ── b210: Google Workspace SSO ──────────────────────────────────────────────
+     A SECOND door to the same session, not a replacement: PIN login above is
+     unchanged and stays the way in for staff with no Workspace mailbox, or for
+     a manager locked out of Google. The button only appears once Toby has
+     created the OAuth client (see /api/auth/google/config). -->
+<script>
+  // Computed here, above the main script, so tryDeviceLogin() below can stand
+  // down while an SSO hand-off is being redeemed.
+  window.WREN_SSO_PENDING = !!new URLSearchParams(location.search).get('sso');
+  window.WREN_SSO = {
+    redirect: window.wrenNextPath(),
+    // Google SSO goes through the SAME TOTP gate as a PIN login — reuse this
+    // page's existing TOTP step rather than letting SSO skip a second factor.
+    onTotp: function (t) {
+      challengeToken = t;
+      document.getElementById('step-email').style.display = 'none';
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-totp').style.display = 'block';
+      setTimeout(function () { document.getElementById('totp-code').focus(); }, 50);
+    },
+    // Roost's manager allowlist refused the minted token.
+    onDenied: function (d) { showRoostDenied(d); }
+  };
+</script>
+<script src="/js/wren-google-sso.js?v=b210"></script>
+
+<!-- ── b233: Wren ID (self-hosted Authentik) ──────────────────────────────────
+     A THIRD door to the same session. PIN login above is unchanged and stays
+     the way in when the IdP is unreachable or a staff member is locked out of
+     it — an appliance that owns its own login must not turn an IdP outage into
+     a lockout. The button only appears once the OAuth client exists and
+     WREN_OIDC_ISSUER is set (see /api/auth/oidc/config). Cloudflare Access is
+     not weakened by this: it still sits in front of admin. in production. -->
+<script>
+  window.WREN_OIDC = {
+    redirect: window.wrenNextPath(),
+    // Wren ID goes through the SAME TOTP gate as a PIN login — reuse this
+    // page's existing TOTP step rather than letting SSO skip a second factor.
+    onTotp: function (t) {
+      challengeToken = t;
+      document.getElementById('step-email').style.display = 'none';
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-totp').style.display = 'block';
+      setTimeout(function () { document.getElementById('totp-code').focus(); }, 50);
+    },
+    // Roost's manager allowlist refused the minted token.
+    onDenied: function (d) { showRoostDenied(d); }
+  };
+</script>
+<script>
+  // login-20261023: compact — Wren ID is a small "instead" link, not a second big button.
+  window.WREN_OIDC.compact = true;
+</script>
+<script src="/js/wren-oidc-sso.js?v=login20261023"></script>
+<script src="/js/wren-login-help.js?v=login20261023"></script>
+
+<script>
+let staffEmail = '';
+let pin = '';
+let challengeToken = '';
+// PIN length (4 or 6) for this account. Defaults to 4; updated after email
+// entry so 6-digit admins auto-submit at 6 and 4-digit users are unaffected.
+let MAX_PIN = 4;
+
+async function findStaff() {
+  // login-20261023: lower-cased (phones capitalise the first letter); the server matches case-insensitively too.
+  const email = document.getElementById('email').value.trim().toLowerCase();
+  const emailErr = document.getElementById('email-error');
+  if (emailErr) emailErr.style.display = 'none';
+  if (!email || email.indexOf('@') === -1) {
+    if (emailErr) { emailErr.textContent = 'Type your email address first.'; emailErr.style.display = 'block'; }
+    return;
+  }
+  staffEmail = email;
+  MAX_PIN = 4;
+  try {
+    const r = await fetch('/api/auth/pin-length?email=' + encodeURIComponent(email));
+    if (r.ok) { const d = await r.json(); MAX_PIN = (d.pin_length === 6) ? 6 : 4; }
+  } catch {}
+  renderDots(MAX_PIN);
+  document.getElementById('step-email').style.display = 'none';
+  document.getElementById('step-pin').style.display = 'block';
+  document.getElementById('pin-name').textContent = email;
+  document.getElementById('pin-prompt').textContent = 'Enter your ' + MAX_PIN + '-digit PIN';
+}
+
+function renderDots(n) {
+  const box = document.getElementById('pin-dots');
+  if (!box) return;
+  box.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const span = document.createElement('span');
+    span.className = 'pin-dot';
+    box.appendChild(span);
+  }
+}
+
+function updateDots() {
+  document.querySelectorAll('.pin-dot').forEach((d, i) => d.classList.toggle('filled', i < pin.length));
+}
+
+// Remember-device (2026-07-04): if this browser holds a trusted-device cookie,
+// silently mint a fresh session and skip the PIN entirely.
+(async function tryDeviceLogin() {
+  // b210/b233: an SSO hand-off is being redeemed (Google or Wren ID) — let that
+  // finish rather than racing it with a remember-device re-mint.
+  if (window.WREN_SSO_PENDING) return;
+  if (!!new URLSearchParams(location.search).get('oidc')) return;
+  try {
+    const r = await fetch('/api/auth/refresh', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (d && d.error === 'roost_restricted') showRoostDenied(d);
+      return;
+    }
+    if (d.token && d.staff) {
+      sessionStorage.setItem('wrenToken', d.token);
+      window.wrenGoNext();
+    }
+  } catch (_) { /* no trusted device — normal login */ }
+})();
+
+function showRoostDenied(d) {
+  // 2026-10-06: follow the server's redirect hints (src/lib/roost-redirect.js, and
+  // LADN's own gates) so the links lead to THIS setting's portals. With no hint,
+  // LADN keeps its defaults; a getwren-hosted setting shows no link rather than
+  // LADN's.
+  const r = (d && d.redirect) || null;
+  const ok = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
+  const ey = document.getElementById('roost-denied-ey');
+  const hr = document.getElementById('roost-denied-hr');
+  if (r && (ok(r.ey) || ok(r.hr))) {
+    if (ok(r.ey)) ey.href = r.ey; else ey.style.display = 'none';
+    if (ok(r.hr)) hr.href = r.hr; else hr.style.display = 'none';
+  } else if (/(^|\.)getwren\.co\.uk$/.test(location.hostname)) {
+    ey.style.display = 'none';
+    hr.style.display = 'none';
+    document.getElementById('roost-denied-msg').textContent = 'This dashboard is limited to a small allowlist of managers. Ask the owner to add you.';
+  }
+  document.getElementById('step-email').style.display = 'none';
+  document.getElementById('step-pin').style.display = 'none';
+  document.getElementById('step-totp').style.display = 'none';
+  document.getElementById('roost-denied').style.display = 'block';
+}
+
+async function submitPin() {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: staffEmail, pin,
+        remember: !!(document.getElementById('remember-device') || {}).checked })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (data && data.error === 'roost_restricted') { showRoostDenied(data); return; }
+      // b491 (2026-10-12): persistent account lockout — show the real reason, not "Incorrect PIN".
+      // login-20261023: every other reason in plain English too.
+      const errEl = document.getElementById('pin-error');
+      errEl.textContent = window.WrenLoginHelp ? WrenLoginHelp.staffError(res.status, data) : 'Incorrect PIN';
+      errEl.style.display = 'block';
+      pin = ''; updateDots(); return;
+    }
+    // b491 (2026-10-12): role requires 2FA but has never enrolled — go straight to
+    // guided setup with a narrow enrolment-only token; nothing else opens until it's done.
+    if (data.requires_totp_enrollment) {
+      sessionStorage.setItem('wrenToken', data.enroll_token);
+      window.location.href = '/totp-setup.html?required=1';
+      return;
+    }
+    if (data.requires_totp) {
+      // Advance to TOTP step
+      challengeToken = data.challenge_token;
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-totp').style.display = 'block';
+      setTimeout(() => document.getElementById('totp-code').focus(), 50);
+      return;
+    }
+    sessionStorage.setItem('wrenToken', data.token);
+    window.wrenGoNext();
+  } catch {
+    const errEl = document.getElementById('pin-error');
+    errEl.textContent = 'Couldn’t reach Wren — check your connection and try again.';
+    errEl.style.display = 'block';
+    pin = ''; updateDots();
+  }
+}
+
+// 2026-10-27: the two trust boxes (PIN step, code step) are one choice, and this
+// browser remembers it was ticked last time so it doesn't have to be ticked every visit.
+function wrenTrustChecked() {
+  return ['remember-device', 'remember-device-totp'].some(function (id) {
+    const el = document.getElementById(id); return !!(el && el.checked);
+  });
+}
+(function wireTrustBoxes() {
+  const ids = ['remember-device', 'remember-device-totp'];
+  let saved = false;
+  try { saved = localStorage.getItem('wrenTrustDevice') === '1'; } catch (_) {}
+  ids.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.checked = saved;
+    el.addEventListener('change', function () {
+      ids.forEach(function (o) { const x = document.getElementById(o); if (x) x.checked = el.checked; });
+      try { localStorage.setItem('wrenTrustDevice', el.checked ? '1' : '0'); } catch (_) {}
+    });
+  });
+})();
+
+async function submitTotp() {
+  const codeInput = document.getElementById('totp-code');
+  const recoveryInput = document.getElementById('recovery-code');
+  const recoveryVisible = document.getElementById('recovery-input-wrap').style.display !== 'none';
+  const code = recoveryVisible ? recoveryInput.value.trim() : codeInput.value.trim();
+  if (!code) return;
+
+  document.getElementById('totp-error').style.display = 'none';
+  try {
+    const res = await fetch('/api/auth/totp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge_token: challengeToken, code, remember: wrenTrustChecked() })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (data && data.error === 'roost_restricted') { showRoostDenied(data); return; }
+      // b491 (2026-10-12): persistent account lockout applies to the TOTP step too.
+      document.getElementById('totp-error').textContent = window.WrenLoginHelp ? WrenLoginHelp.totpError(data) : (data.error || 'Invalid code — try again');
+      document.getElementById('totp-error').style.display = 'block';
+      codeInput.value = '';
+      return;
+    }
+    sessionStorage.setItem('wrenToken', data.token);
+    window.wrenGoNext();
+  } catch {
+    document.getElementById('totp-error').style.display = 'block';
+  }
+}
+
+document.querySelectorAll('.pin-key').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const val = btn.dataset.val;
+    document.getElementById('pin-error').style.display = 'none';
+    if (val === 'back') { pin = pin.slice(0,-1); updateDots(); }
+    else if (val === 'cancel') {
+      pin = '';
+      document.getElementById('step-pin').style.display = 'none';
+      document.getElementById('step-email').style.display = 'block';
+    } else if (pin.length < MAX_PIN) {
+      pin += val; updateDots();
+      if (pin.length === MAX_PIN) submitPin();
+    }
+  });
+});
+
+(function() {
+  var t = sessionStorage.getItem('wrenToken');
+  if (!t) return;
+  fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t } })
+    .then(function(r) { if (r.ok) window.wrenGoNext(); else sessionStorage.removeItem('wrenToken'); })
+    .catch(function() { sessionStorage.removeItem('wrenToken'); });
+})();
+
+fetch('/api/edition').then(r => r.json()).then(d => {
+  if (d.demo) document.getElementById('demo-hint').style.display = 'block';
+}).catch(() => {});
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.WrenLoginHelp) WrenLoginHelp.renderWrongPlace('wrong-place', 'admin', ['hr', 'ey', 'parents']);
+  const emailInput = document.getElementById('email');
+  if (emailInput) emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') findStaff(); });
+  const contBtn = document.getElementById('continue-btn');
+  if (contBtn) contBtn.addEventListener('click', findStaff);
+
+  const totpInput = document.getElementById('totp-code');
+  if (totpInput) {
+    totpInput.addEventListener('input', () => {
+      if (totpInput.value.replace(/\D/g,'').length === 6) submitTotp();
+    });
+    totpInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitTotp(); });
+  }
+  const totpBtn = document.getElementById('totp-submit-btn');
+  if (totpBtn) totpBtn.addEventListener('click', submitTotp);
+
+  const recovLink = document.getElementById('use-recovery-link');
+  if (recovLink) {
+    recovLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      const wrap = document.getElementById('recovery-input-wrap');
+      const visible = wrap.style.display !== 'none';
+      wrap.style.display = visible ? 'none' : 'block';
+      recovLink.textContent = visible ? 'Use a recovery code instead' : 'Use authenticator app instead';
+      if (!visible) document.getElementById('recovery-code').focus();
+    });
+  }
+  const recovInput = document.getElementById('recovery-code');
+  if (recovInput) {
+    recovInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitTotp(); });
+    recovInput.addEventListener('input', () => { recovInput.value = recovInput.value.toUpperCase(); });
+  }
+});
+</script>
+<script src="/js/wren-install.js?v=20261101" defer></script>
+</body>
+</html>

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Leave Record — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <!-- Before the shell: wren:ready fires synchronously inside the shell's own
+       deferred execution, so anything loaded after it is still undefined. -->
+  <script src="/js/wren-leave-card.js?v=b522" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* b522 — tokens only; no hex, rgb() or named colour anywhere on this page. */
+    .lp-wrap { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:16px;align-items:start; }
+    @media(max-width:900px){ .lp-wrap{grid-template-columns:minmax(0,1fr);} }
+    .lp-panel { background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;
+                padding:16px;margin-bottom:16px; }
+    .lp-panel h3 { margin:0 0 3px;font-size:1rem; }
+    .lp-panel .lp-hint { font-size:11px;color:var(--c-muted);margin-bottom:12px;line-height:1.5; }
+    .lp-row { display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px; }
+    .lp-row label { font-size:11px;color:var(--c-muted);font-weight:700;display:flex;gap:6px;align-items:center; }
+    .lp-row input, .lp-row select, .lp-row textarea {
+      background:var(--c-surface-2);border:1px solid var(--c-border-strong);color:var(--c-text);
+      border-radius:8px;padding:7px 10px;font-size:13px;font-family:inherit; }
+    .lp-btn { background:var(--c-blue);color:var(--c-on-blue);border:none;border-radius:9px;
+              padding:8px 14px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer; }
+    .lp-btn.sec { background:var(--c-surface-2);color:var(--c-text);border:1px solid var(--c-border-strong); }
+    .lp-btn:disabled { opacity:.5;cursor:default; }
+    .lp-msg { font-size:11.5px;color:var(--c-muted); }
+    .lp-ok  { color:var(--c-ok);font-weight:700; }
+    .lp-bad { color:var(--c-danger);font-weight:700; }
+    .lp-empty { color:var(--c-muted);font-size:13px;padding:20px;text-align:center; }
+    /* The working-pattern editor: one row a day, Monday first. */
+    table.lp-pat { width:100%;border-collapse:collapse;font-size:12px; }
+    table.lp-pat th { text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.05em;
+                      color:var(--c-muted);padding:5px 6px; }
+    table.lp-pat td { padding:4px 6px;border-top:1px solid var(--c-border); }
+    table.lp-pat input[type=time] { width:104px; }
+    table.lp-pat input[type=number] { width:62px; }
+    table.lp-pat tr.off { opacity:.5; }
+    table.lp-pat tfoot td { border-top:1px solid var(--c-border-strong);font-weight:800; }
+    .lp-pill { display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
+               background:color-mix(in srgb, var(--c-info) 18%, transparent);
+               border:1px solid color-mix(in srgb, var(--c-info) 45%, transparent);color:var(--c-text); }
+    .lp-tabs { display:flex;gap:4px;background:var(--c-surface);border-radius:10px;padding:4px;margin-bottom:14px;flex-wrap:wrap; }
+    .lp-tab { flex:1;min-width:80px;padding:8px;border-radius:8px;border:none;background:transparent;
+              color:var(--c-muted);font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:600; }
+    .lp-tab.on { background:var(--c-blue);color:var(--c-on-blue);font-weight:800; }
+    .lp-sub { display:none; } .lp-sub.on { display:block; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title" id="lp-title">Leave Record</div>
+      <div class="page-subtitle" id="lp-sub">Allowance, every deduction, and sickness</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <label class="lp-msg">Leave year <select id="lp-year"></select></label>
+      <a href="/staff/leave.html" class="btn btn-secondary btn-sm">&larr; All staff</a>
+    </div>
+  </div>
+
+  <div class="lp-wrap">
+    <!-- ── LEFT: the card, the workings, the pattern ───────────────────── -->
+    <div>
+      <div id="lp-card" style="margin-bottom:16px;"></div>
+
+      <div class="lp-panel">
+        <h3>How that figure was reached</h3>
+        <div class="lp-hint">
+          Every step, in order. This is the answer to &ldquo;why is my balance that&rdquo; — if a figure
+          is ever disputed, this is the page to read out.
+        </div>
+        <div id="lp-workings"><div class="lp-empty">Loading…</div></div>
+      </div>
+
+      <div class="lp-panel">
+        <h3>Working pattern</h3>
+        <div class="lp-hint">
+          The hours contracted on each day. This is what every bank-holiday deduction is costed from,
+          so a day with no times cannot be costed — set the times and the deductions follow immediately.
+          Saving here writes the same schedule the rota and ratio engines already read.
+        </div>
+        <div id="lp-pattern"><div class="lp-empty">Loading…</div></div>
+        <div class="lp-row" style="margin-top:10px;">
+          <button class="lp-btn" id="lp-pat-save">Save the pattern</button>
+          <button class="lp-btn sec" id="lp-pat-preset">Copy a preset…</button>
+          <span class="lp-msg" id="lp-pat-msg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: ledger, adjustments, settings, sickness ──────────────── -->
+    <div>
+      <div class="lp-tabs">
+        <button class="lp-tab on" data-sub="ledger">Ledger</button>
+        <button class="lp-tab"    data-sub="adjust">Adjust</button>
+        <button class="lp-tab"    data-sub="settings">This person&rsquo;s settings</button>
+        <button class="lp-tab"    data-sub="sick">Sickness</button>
+      </div>
+
+      <div class="lp-sub on" id="sub-ledger">
+        <div class="lp-panel">
+          <h3>Every hour that has come off this allowance</h3>
+          <div class="lp-hint">
+            Holiday comes from the bookings themselves, so this can never disagree with the calendar.
+            Bank holidays and closures are worked out from the working pattern. A line struck through has
+            been exempted and is kept, with the reason, rather than deleted.
+          </div>
+          <div class="lp-row" id="lp-ledger-legend"></div>
+          <div id="lp-ledger"><div class="lp-empty">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="lp-sub" id="sub-adjust">
+        <div class="lp-panel">
+          <h3>Adjust the balance by hand</h3>
+          <div class="lp-hint">
+            A <strong>positive</strong> figure gives hours back; a <strong>negative</strong> one takes them away.
+            The label is what the ledger will read, so write it as you would say it.
+          </div>
+          <div class="lp-row">
+            <label>Hours <input type="number" id="lp-adj-hours" step="0.25" style="width:96px;" placeholder="e.g. 7.5 or -3"></label>
+            <label>Date <input type="date" id="lp-adj-date"></label>
+          </div>
+          <div class="lp-row">
+            <label style="flex:1;min-width:230px;">Label
+              <input type="text" id="lp-adj-label" style="flex:1;" maxlength="120"
+                     placeholder="Goodwill hours after the February cover"></label>
+          </div>
+          <div class="lp-row">
+            <label style="flex:1;min-width:230px;">Note (optional)
+              <input type="text" id="lp-adj-detail" style="flex:1;" maxlength="300"></label>
+          </div>
+          <div class="lp-row">
+            <button class="lp-btn" id="lp-adj-save">Add it to the ledger</button>
+            <span class="lp-msg" id="lp-adj-msg"></span>
+          </div>
+        </div>
+
+        <div class="lp-panel">
+          <h3>Opening balance &mdash; the switch from BrightHR</h3>
+          <div class="lp-hint">
+            The figure copied out of BrightHR for this person. Import everybody at once from
+            <a href="/staff/leave.html">Absence &amp; Leave &rarr; Set-up</a>, or set one here.
+          </div>
+          <div class="lp-row">
+            <label>Hours <input type="number" id="lp-ob-hours" step="0.25" style="width:96px;"></label>
+            <label>As at <input type="date" id="lp-ob-asat"></label>
+          </div>
+          <div class="lp-row">
+            <label style="flex:1;min-width:260px;">This figure is
+              <select id="lp-ob-mode" style="flex:1;">
+                <option value="carry_in">hours carried into this leave year</option>
+                <option value="replaces_remaining">the remaining balance on that day</option>
+              </select></label>
+          </div>
+          <div class="lp-hint" id="lp-ob-means"></div>
+          <div class="lp-row">
+            <button class="lp-btn" id="lp-ob-save">Save</button>
+            <button class="lp-btn sec" id="lp-ob-clear">Clear it</button>
+            <span class="lp-msg" id="lp-ob-msg"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lp-sub" id="sub-settings">
+        <div class="lp-panel">
+          <h3>Just for this person</h3>
+          <div class="lp-hint">
+            Leave these alone and this person follows the setting&rsquo;s policy, which is what almost
+            everybody should do.
+          </div>
+          <div class="lp-row">
+            <label>Weeks of leave <input type="number" id="lp-weeks" step="0.1" min="0" max="12" style="width:86px;"></label>
+            <span class="lp-msg" id="lp-weeks-default"></span>
+          </div>
+          <div class="lp-row">
+            <label>Carried in (hours) <input type="number" id="lp-carryin" step="0.25" min="0" style="width:96px;"></label>
+            <label>Carry cap (hours) <input type="number" id="lp-carrycap" step="0.25" min="0" style="width:96px;"></label>
+          </div>
+          <div class="lp-row">
+            <label style="flex:1;min-width:260px;">How leave accrues
+              <select id="lp-accrual" style="flex:1;">
+                <option value="fixed">A fixed yearly allowance (a regular contract)</option>
+                <option value="irregular_1207">12.07% of the hours actually worked (irregular hours or part-year)</option>
+              </select></label>
+          </div>
+          <div class="lp-hint" id="lp-accrual-note"></div>
+          <div class="lp-row">
+            <label><input type="checkbox" id="lp-ov"> Override the figure by hand</label>
+          </div>
+          <div class="lp-row" id="lp-ov-fields" style="display:none;">
+            <label>Allowance (hours) <input type="number" id="lp-ov-hours" step="0.25" min="0" style="width:106px;"></label>
+            <label style="flex:1;min-width:230px;">Why
+              <input type="text" id="lp-ov-reason" style="flex:1;" maxlength="200"
+                     placeholder="Agreed with the accountant for 2027"></label>
+          </div>
+          <div class="lp-row">
+            <button class="lp-btn" id="lp-set-save">Save</button>
+            <button class="lp-btn sec" id="lp-recompute">Recalculate</button>
+            <span class="lp-msg" id="lp-set-msg"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lp-sub" id="sub-sick">
+        <div class="lp-panel">
+          <h3>Sickness</h3>
+          <div class="lp-hint">
+            The Bradford score is spells&nbsp;&times;&nbsp;spells&nbsp;&times;&nbsp;days over a rolling
+            52&nbsp;weeks, so it weighs frequent short absence far more heavily than one long illness.
+            It is a prompt for a conversation, never a decision on its own.
+          </div>
+          <div id="lp-sick"><div class="lp-empty">Loading…</div></div>
+          <div class="lp-row" style="margin-top:12px;">
+            <a class="lp-btn sec" href="/staff/absence-mgmt.html">Sickness records &amp; return-to-work</a>
+            <a class="lp-btn sec" href="/staff/absence-warnings.html">Absence warnings</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===========================================================================
+ * One person's leave record: the card, the workings, the ledger, the working
+ * pattern, the per-person settings and their sickness.
+ *
+ * The working-pattern editor posts to /api/work-patterns/staff/:id/apply —
+ * the endpoint that already existed and that the rota and ratio engines already
+ * read. It is not a second place to keep a working pattern; it is a second
+ * doorway to the only one, which is why changing a pattern here moves the
+ * bank-holiday deductions immediately.
+ * ===========================================================================*/
+var LC = null, DATA = null, PAT = null, PRESETS = null, POLICY = null;
+var STAFF = Number(new URLSearchParams(location.search).get('staff') || 0);
+var DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']; // dow 0..6 = Mon..Sun
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return LC ? LC.esc(s) : String(s == null ? '' : s); }
+function hrs(n) { return LC ? LC.hours(n) : (n == null ? '—' : n + ' h'); }
+function ymd(v) { return v ? String(v).slice(0, 10) : null; }
+function onDate() { return $('lp-year').value + '-06-15'; }
+
+document.addEventListener('click', function (e) {
+  var t = e.target.closest('.lp-tab'); if (!t) return;
+  document.querySelectorAll('.lp-tab').forEach(function (x) { x.classList.toggle('on', x === t); });
+  document.querySelectorAll('.lp-sub').forEach(function (p) {
+    p.classList.toggle('on', p.id === 'sub-' + t.dataset.sub);
+  });
+  if (t.dataset.sub === 'sick' && !$('lp-sick').dataset.loaded) loadSickness();
+});
+
+async function boot() {
+  LC = window.WrenLeaveCard;
+  if (!LC) { $('lp-card').innerHTML = '<div class="lp-empty">The leave card component did not load.</div>'; return; }
+  if (!STAFF) { $('lp-card').innerHTML = '<div class="lp-empty">No member of staff was named in the link.</div>'; return; }
+
+  var y = new Date().getFullYear();
+  var sel = $('lp-year'); sel.innerHTML = '';
+  for (var i = y - 2; i <= y + 2; i++) {
+    sel.innerHTML += '<option value="' + i + '"' + (i === y ? ' selected' : '') + '>' + i + '</option>';
+  }
+  sel.addEventListener('change', function () { load(); loadPattern(); });
+  $('lp-ledger-legend').innerHTML = LC.legend(['holiday', 'bank_holiday', 'closure', 'adjustment']);
+
+  try { POLICY = await Wren.api('/api/leave/policy'); } catch (e) { POLICY = null; }
+  if (POLICY) {
+    $('lp-weeks-default').textContent = 'The setting gives ' + POLICY.policy.contractWeeks
+      + ' weeks. Leave this blank to follow it.';
+  }
+  await Promise.all([load(), loadPattern()]);
+}
+document.addEventListener('wren:ready', boot);
+
+/* ── The card, the workings, the ledger ──────────────────────────────────*/
+async function load() {
+  try { DATA = await Wren.api('/api/leave/allowance/' + STAFF + '?on=' + encodeURIComponent(onDate())); }
+  catch (e) { $('lp-card').innerHTML = '<div class="lp-empty">' + esc(e.message || e) + '</div>'; return; }
+
+  $('lp-title').textContent = DATA.staff_name || ('Staff #' + STAFF);
+  $('lp-sub').textContent = 'Leave ' + (DATA.year ? DATA.year.label : '')
+    + (DATA.pattern && DATA.pattern.weekly_hours
+        ? ' · ' + DATA.pattern.weekly_hours + ' h a week over ' + DATA.pattern.days_per_week
+          + (DATA.pattern.days_per_week === 1 ? ' day' : ' days')
+        : ' · no working pattern on file');
+
+  LC.render($('lp-card'), DATA, {});
+  LC.renderWorkings($('lp-workings'), DATA.allowance && DATA.allowance.workings);
+  LC.renderLedger($('lp-ledger'), DATA.ledger, { canEdit: true });
+
+  // Per-person settings reflect what is stored, blank where it follows policy.
+  var a = DATA.allowance || {};
+  $('lp-accrual').value = a.accrualMode === 'irregular_1207' ? 'irregular_1207' : 'fixed';
+  $('lp-carryin').value = a.carryInHours || '';
+  $('lp-carrycap').value = a.carryCapHours || '';
+  $('lp-weeks').value = (POLICY && a.contractWeeks === POLICY.policy.contractWeeks) ? '' : (a.contractWeeks || '');
+  $('lp-ov').checked = !!DATA.manual_override;
+  $('lp-ov-fields').style.display = DATA.manual_override ? '' : 'none';
+  if (DATA.manual_override) $('lp-ov-hours').value = a.allowanceHours;
+  renderAccrualNote();
+
+  var ob = DATA.opening_balance;
+  $('lp-ob-hours').value = ob ? ob.hours : '';
+  $('lp-ob-mode').value = ob ? ob.mode : 'carry_in';
+  $('lp-ob-asat').value = (ob && ob.asAt) || (DATA.year ? DATA.year.yearStart : '');
+  renderObMeans();
+}
+
+/* The ledger's Exempt / Reinstate buttons. */
+$('lp-ledger').addEventListener('click', async function (e) {
+  var b = e.target.closest('button[data-act]'); if (!b) return;
+  var id = b.dataset.id, act = b.dataset.act;
+  if (act === 'void') {
+    var reason = prompt('Why does this no longer come off the allowance?\n\n'
+      + 'It is kept on the ledger with this reason beside it, so the record still shows that it once did.');
+    if (!reason || !reason.trim()) return;
+    b.disabled = true;
+    try { await Wren.api('/api/leave/ledger/' + id + '/void', { method: 'POST', body: { reason: reason.trim() } }); }
+    catch (err) { alert(err.message || err); b.disabled = false; return; }
+  } else {
+    b.disabled = true;
+    try { await Wren.api('/api/leave/ledger/' + id + '/unvoid', { method: 'POST', body: {} }); }
+    catch (err) { alert(err.message || err); b.disabled = false; return; }
+  }
+  await load();
+});
+
+/* ── A hand adjustment ───────────────────────────────────────────────────*/
+$('lp-adj-save').addEventListener('click', async function () {
+  var btn = this, h = Number($('lp-adj-hours').value);
+  if (!h) { $('lp-adj-msg').innerHTML = '<span class="lp-bad">Enter a number of hours.</span>'; return; }
+  btn.disabled = true; $('lp-adj-msg').textContent = 'Saving…';
+  try {
+    await Wren.api('/api/leave/ledger/' + STAFF, { method: 'POST', body: {
+      hours: h,
+      label: $('lp-adj-label').value.trim(),
+      detail: $('lp-adj-detail').value.trim() || null,
+      entry_date: $('lp-adj-date').value || null,
+      on: onDate(),
+    } });
+    $('lp-adj-msg').innerHTML = '<span class="lp-ok">Added.</span>';
+    $('lp-adj-hours').value = ''; $('lp-adj-label').value = ''; $('lp-adj-detail').value = '';
+    await load();
+  } catch (e) { $('lp-adj-msg').innerHTML = '<span class="lp-bad">' + esc(e.message || e) + '</span>'; }
+  btn.disabled = false;
+});
+
+/* ── Opening balance ─────────────────────────────────────────────────────*/
+function renderObMeans() {
+  var m = $('lp-ob-mode').value, d = $('lp-ob-asat').value || '(the date above)';
+  $('lp-ob-means').innerHTML = m === 'carry_in'
+    ? 'Added <strong>on top of</strong> the allowance Wren calculates for this leave year.'
+    : 'Treated as the balance on <strong>' + esc(d) + '</strong>. Wren will then ignore every deduction '
+      + 'dated before that day, because BrightHR already counted them.';
+}
+$('lp-ob-mode').addEventListener('change', renderObMeans);
+$('lp-ob-asat').addEventListener('change', renderObMeans);
+
+async function saveOb(hours) {
+  $('lp-ob-msg').textContent = 'Saving…';
+  try {
+    await Wren.api('/api/leave/opening-balance/' + STAFF, { method: 'PUT', body: {
+      hours: hours,
+      mode: $('lp-ob-mode').value,
+      as_at: $('lp-ob-asat').value || null,
+      on: onDate(),                      // names the LEAVE YEAR being edited
+    } });
+    $('lp-ob-msg').innerHTML = '<span class="lp-ok">Saved.</span>';
+    await load();
+  } catch (e) { $('lp-ob-msg').innerHTML = '<span class="lp-bad">' + esc(e.message || e) + '</span>'; }
+}
+$('lp-ob-save').addEventListener('click', function () {
+  var h = Number($('lp-ob-hours').value);
+  if (!($('lp-ob-hours').value !== '' && h >= 0)) {
+    $('lp-ob-msg').innerHTML = '<span class="lp-bad">Enter a number of hours, or use Clear.</span>'; return;
+  }
+  saveOb(h);
+});
+$('lp-ob-clear').addEventListener('click', function () { $('lp-ob-hours').value = ''; saveOb(null); });
+
+/* ── Per-person settings ─────────────────────────────────────────────────*/
+function renderAccrualNote() {
+  $('lp-accrual-note').innerHTML = $('lp-accrual').value === 'irregular_1207'
+    ? 'The allowance becomes <strong>12.07% of the hours this person actually works</strong>, read from their '
+      + 'clock-in records, and grows with every shift. Use it for irregular-hours and part-year staff only '
+      + '— on a regular contract it would under-pay them.'
+    : 'A fixed yearly allowance: weeks of leave &times; contracted weekly hours, pro-rated if they start '
+      + 'or leave part-way through the year.';
+}
+$('lp-accrual').addEventListener('change', renderAccrualNote);
+$('lp-ov').addEventListener('change', function () {
+  $('lp-ov-fields').style.display = this.checked ? '' : 'none';
+});
+
+$('lp-set-save').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true; $('lp-set-msg').textContent = 'Saving…';
+  var body = {
+    on: onDate(),
+    accrual_mode: $('lp-accrual').value,
+    manual_override: $('lp-ov').checked,
+  };
+  if ($('lp-weeks').value !== '')    body.contract_weeks = Number($('lp-weeks').value);
+  if ($('lp-carryin').value !== '')  body.carry_in_hours = Number($('lp-carryin').value);
+  if ($('lp-carrycap').value !== '') body.carry_cap_hours = Number($('lp-carrycap').value);
+  if ($('lp-ov').checked) {
+    body.allowance_hours = Number($('lp-ov-hours').value);
+    body.override_reason = $('lp-ov-reason').value.trim();
+  }
+  try {
+    await Wren.api('/api/leave/allowance/' + STAFF, { method: 'PUT', body: body });
+    $('lp-set-msg').innerHTML = '<span class="lp-ok">Saved.</span>';
+    await load();
+  } catch (e) { $('lp-set-msg').innerHTML = '<span class="lp-bad">' + esc(e.message || e) + '</span>'; }
+  btn.disabled = false;
+});
+
+$('lp-recompute').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true; $('lp-set-msg').textContent = 'Recalculating…';
+  try {
+    await Wren.api('/api/leave/allowance/' + STAFF + '/recompute', { method: 'POST', body: { on: onDate() } });
+    $('lp-set-msg').innerHTML = '<span class="lp-ok">Recalculated and written down.</span>';
+    await load();
+  } catch (e) { $('lp-set-msg').innerHTML = '<span class="lp-bad">' + esc(e.message || e) + '</span>'; }
+  btn.disabled = false;
+});
+
+/* ── The working-pattern editor ──────────────────────────────────────────*/
+async function loadPattern() {
+  try { PAT = await Wren.api('/api/work-patterns/staff/' + STAFF); }
+  catch (e) { $('lp-pattern').innerHTML = '<div class="lp-empty">' + esc(e.message || e) + '</div>'; return; }
+  renderPattern();
+}
+
+function renderPattern() {
+  var byDow = {};
+  (PAT.days || []).forEach(function (d) { byDow[Number(d.day_of_week)] = d; });
+  var html = '<table class="lp-pat"><thead><tr><th>Day</th><th>Works</th><th>Start</th><th>End</th>'
+           + '<th>Unpaid break</th><th>Hours</th></tr></thead><tbody>';
+  for (var dow = 0; dow <= 6; dow++) {
+    var d = byDow[dow] || {};
+    var works = !!(d && !d.is_off && d.shift_start && d.shift_end);
+    html += '<tr class="' + (works ? '' : 'off') + '" data-dow="' + dow + '">'
+      + '<td>' + DAYS[dow] + '</td>'
+      + '<td><input type="checkbox" class="lp-pd-on"' + (works ? ' checked' : '') + '></td>'
+      + '<td><input type="time" class="lp-pd-s" value="' + esc((d.shift_start || '').slice(0, 5)) + '"></td>'
+      + '<td><input type="time" class="lp-pd-e" value="' + esc((d.shift_end || '').slice(0, 5)) + '"></td>'
+      + '<td><input type="number" class="lp-pd-b" min="0" max="240" step="5" value="'
+        + (d.lunch_break_minutes == null ? 60 : d.lunch_break_minutes) + '"> min</td>'
+      + '<td class="lp-pd-h">—</td></tr>';
+  }
+  html += '</tbody><tfoot><tr><td colspan="5">Contracted hours a week</td>'
+        + '<td id="lp-pat-total">—</td></tr></tfoot></table>';
+  $('lp-pattern').innerHTML = html;
+  recalcPattern();
+}
+
+/* The SAME arithmetic the server uses: end − start − unpaid break. Kept here
+ * only so the total updates as you type; the server recomputes it on save and
+ * the server's answer is the one that counts. */
+function dayHours(tr) {
+  if (!tr.querySelector('.lp-pd-on').checked) return 0;
+  var s = tr.querySelector('.lp-pd-s').value, e = tr.querySelector('.lp-pd-e').value;
+  if (!s || !e) return 0;
+  var sm = Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
+  var em = Number(e.slice(0, 2)) * 60 + Number(e.slice(3, 5));
+  var br = Number(tr.querySelector('.lp-pd-b').value) || 0;
+  return Math.max(0, em - sm - br) / 60;
+}
+
+function recalcPattern() {
+  var total = 0;
+  $('lp-pattern').querySelectorAll('tr[data-dow]').forEach(function (tr) {
+    var h = dayHours(tr);
+    total += h;
+    tr.querySelector('.lp-pd-h').textContent = h ? (Math.round(h * 100) / 100) + ' h' : '—';
+    tr.classList.toggle('off', !h);
+  });
+  var t = Math.round(total * 100) / 100;
+  var el = $('lp-pat-total'); if (el) el.textContent = t + ' h';
+  // Say immediately what the allowance WOULD be, before anything is saved.
+  var weeks = POLICY ? POLICY.policy.contractWeeks : 5.6;
+  $('lp-pat-msg').innerHTML = t > 0
+    ? '<span class="lp-msg">' + weeks + ' weeks × ' + t + ' h = <strong>'
+      + (Math.round(weeks * t * 100) / 100) + ' h</strong> a year, bank holidays included.</span>'
+    : '';
+}
+$('lp-pattern').addEventListener('input', recalcPattern);
+$('lp-pattern').addEventListener('change', recalcPattern);
+
+$('lp-pat-save').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true; $('lp-pat-msg').textContent = 'Saving…';
+  var days = [];
+  $('lp-pattern').querySelectorAll('tr[data-dow]').forEach(function (tr) {
+    var on = tr.querySelector('.lp-pd-on').checked;
+    var s = tr.querySelector('.lp-pd-s').value, e = tr.querySelector('.lp-pd-e').value;
+    var works = on && s && e;
+    days.push({
+      day_of_week: Number(tr.dataset.dow),
+      shift_start: works ? s : null,
+      shift_end: works ? e : null,
+      is_off: !works,
+      lunch_break_minutes: works ? (Number(tr.querySelector('.lp-pd-b').value) || 0) : 0,
+    });
+  });
+  try {
+    await Wren.api('/api/work-patterns/staff/' + STAFF + '/apply', { method: 'POST', body: { days: days } });
+    // The allowance is recomputed from the new pattern, and the bank-holiday
+    // deductions follow it on the very next read — which is this one.
+    await Wren.api('/api/leave/allowance/' + STAFF + '/recompute', { method: 'POST', body: { on: onDate() } });
+    $('lp-pat-msg').innerHTML = '<span class="lp-ok">Saved. The allowance and the bank-holiday '
+      + 'deductions have been reworked from it.</span>';
+    await Promise.all([loadPattern(), load()]);
+  } catch (e) { $('lp-pat-msg').innerHTML = '<span class="lp-bad">' + esc(e.message || e) + '</span>'; }
+  btn.disabled = false;
+});
+
+$('lp-pat-preset').addEventListener('click', async function () {
+  if (!PRESETS) {
+    try { PRESETS = await Wren.api('/api/work-patterns/presets'); }
+    catch (e) { $('lp-pat-msg').innerHTML = '<span class="lp-bad">' + esc(e.message || e) + '</span>'; return; }
+  }
+  if (!PRESETS.length) { $('lp-pat-msg').innerHTML = '<span class="lp-msg">No presets are set up.</span>'; return; }
+  var pick = prompt('Copy which pattern into the boxes above?\n\n'
+    + PRESETS.map(function (p, i) { return (i + 1) + '. ' + p.name + ' (' + (p.weekly_hours || '?') + ' h)'; }).join('\n')
+    + '\n\nType a number. Nothing is saved until you press Save.');
+  var n = Number(pick);
+  if (!n || n < 1 || n > PRESETS.length) return;
+  var p = PRESETS[n - 1];
+  var byDow = {}; (p.days || []).forEach(function (d) { byDow[Number(d.day_of_week)] = d; });
+  $('lp-pattern').querySelectorAll('tr[data-dow]').forEach(function (tr) {
+    var d = byDow[Number(tr.dataset.dow)] || {};
+    var works = !!(d && !d.is_off && d.shift_start && d.shift_end);
+    tr.querySelector('.lp-pd-on').checked = works;
+    tr.querySelector('.lp-pd-s').value = works ? String(d.shift_start).slice(0, 5) : '';
+    tr.querySelector('.lp-pd-e').value = works ? String(d.shift_end).slice(0, 5) : '';
+    tr.querySelector('.lp-pd-b').value = d.break_minutes == null ? 60 : d.break_minutes;
+  });
+  recalcPattern();
+  $('lp-pat-msg').innerHTML = '<span class="lp-msg">Copied &ldquo;' + esc(p.name)
+    + '&rdquo; into the boxes. Nothing is saved yet.</span>';
+});
+
+/* ── Sickness ────────────────────────────────────────────────────────────*/
+async function loadSickness() {
+  $('lp-sick').dataset.loaded = '1';
+  var bf = null, recs = [];
+  try { bf = await Wren.api('/api/absence/bradford/' + STAFF); } catch (e) { bf = null; }
+  try {
+    var all = await Wren.api('/api/absence/all?staff_id=' + STAFF);
+    recs = (all || []).filter(function (r) {
+      var k = LC.typeKey(r.request_type || r.absence_type);
+      return k === 'sick' && Number(r.staff_id) === STAFF;
+    });
+  } catch (e) { recs = []; }
+
+  var head = bf
+    ? '<div class="lp-row"><span class="lp-pill">Bradford ' + (bf.score == null ? '—' : bf.score)
+      + '</span><span class="lp-pill">' + (bf.instances || 0) + ' spell'
+      + ((bf.instances || 0) === 1 ? '' : 's') + '</span><span class="lp-pill">'
+      + (bf.days_total || 0) + ' days</span><span class="lp-msg">rolling 52 weeks</span></div>'
+    : '<div class="lp-msg">No Bradford score available.</div>';
+
+  $('lp-sick').innerHTML = head + (!recs.length
+    ? '<div class="lp-empty">No sickness is recorded for this person.</div>'
+    : '<table class="lp-pat" style="margin-top:10px;"><thead><tr><th>From</th><th>To</th><th>Days</th>'
+      + '<th>Recorded</th></tr></thead><tbody>'
+      + recs.map(function (r) {
+          return '<tr><td>' + esc(ymd(r.start_date)) + '</td><td>' + esc(ymd(r.end_date)) + '</td>'
+            + '<td>' + esc(r.days_count == null ? (r.duration_days == null ? '—' : r.duration_days) : r.days_count) + '</td>'
+            + '<td>' + esc(r.record_source === 'hr_absences' ? 'imported from BrightHR' : 'in Wren') + '</td></tr>';
+        }).join('') + '</tbody></table>');
+}
+</script>
+</body>
+</html>

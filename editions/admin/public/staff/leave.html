@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Absence &amp; Leave — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <!-- The shared allowance card. Loaded BEFORE the shell: wren:ready fires
+       synchronously inside wren-shell-v2.js's own deferred execution, so a
+       component loaded after it is still undefined when page code runs
+       (b229's gotcha, and reference_wren_ready_fires_before_later_defer). -->
+  <script src="/js/wren-leave-card.js?v=b522" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* b522 — every colour is a --c-* token or a color-mix() of one. No hex. */
+    .lv-tabs { display:flex;gap:4px;background:var(--c-surface);border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap; }
+    .lv-tab { flex:1;min-width:92px;padding:9px;border-radius:8px;border:none;background:transparent;
+              color:var(--c-muted);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600; }
+    .lv-tab.on { background:var(--c-blue);color:var(--c-on-blue);font-weight:800; }
+    .lv-pane { display:none; } .lv-pane.on { display:block; }
+
+    .lv-stats { display:grid;grid-template-columns:repeat(auto-fill,minmax(146px,1fr));gap:12px;margin-bottom:18px; }
+    .lv-stat { background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:13px;text-align:center; }
+    .lv-stat b { display:block;font-size:1.45rem;font-weight:800;line-height:1;color:var(--c-text); }
+    .lv-stat span { display:block;font-size:9.5px;color:var(--c-muted);margin-top:5px;font-weight:700;
+                    text-transform:uppercase;letter-spacing:.05em; }
+    .lv-stat.warn b { color:var(--c-warn); } .lv-stat.bad b { color:var(--c-danger); }
+
+    .lv-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px; }
+    .lv-panel { background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:16px;margin-bottom:16px; }
+    .lv-panel h3 { margin:0 0 4px;font-size:1rem; }
+    .lv-panel .lv-hint { font-size:11px;color:var(--c-muted);margin-bottom:12px; }
+    .lv-row { display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px; }
+    .lv-row select, .lv-row input, .lv-row textarea {
+      background:var(--c-surface-2);border:1px solid var(--c-border-strong);color:var(--c-text);
+      border-radius:8px;padding:7px 10px;font-size:13px;font-family:inherit; }
+    .lv-row label { font-size:11px;color:var(--c-muted);font-weight:700; }
+    .lv-btn { background:var(--c-blue);color:var(--c-on-blue);border:none;border-radius:9px;
+              padding:8px 14px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer; }
+    .lv-btn.sec { background:var(--c-surface-2);color:var(--c-text);border:1px solid var(--c-border-strong); }
+    .lv-btn:disabled { opacity:.5;cursor:default; }
+
+    /* ── Who's off ───────────────────────────────────────────────────────── */
+    .lv-off { display:flex;flex-direction:column;gap:8px; }
+    /* flex-wrap matters: without it the type chip, the name, the dates and the
+       Open button are one unbreakable line, and on a phone the button pushes
+       past the right edge of the page. */
+    .lv-offrow { display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;
+                 background:var(--c-surface-2);font-size:13px;flex-wrap:wrap; }
+    .lv-offrow .lv-btn { padding:5px 10px;font-size:11.5px; }
+    .lv-offrow .lv-who { font-weight:700;flex:1;min-width:110px; }
+    .lv-offrow .lv-when { font-size:11px;color:var(--c-muted);font-variant-numeric:tabular-nums;white-space:nowrap; }
+
+    /* ── Year calendar: one row per person, one cell per day ───────────────
+       The whole point of the year view is seeing the whole year, so the table
+       is laid out FIXED at 100% of the panel and the 365 day cells share
+       whatever is left after the name column. At 9px a cell it was 3,285px
+       wide and showed January. min-width keeps it usable on a phone, where it
+       does then scroll — but on a desktop the year fits, which is the view. */
+    .lv-cal-wrap { overflow-x:auto;padding-bottom:6px; }
+    table.lv-cal { border-collapse:separate;border-spacing:1px;font-size:10px;
+                   width:100%;min-width:760px;table-layout:fixed; }
+    table.lv-cal col.lv-c-name { width:112px; }
+    table.lv-cal th { font-weight:700;color:var(--c-muted);font-size:9px;padding:2px 4px;text-align:left; }
+    table.lv-cal thead th.lv-m { text-align:center;background:transparent;
+                                 border-bottom:1px solid var(--c-border);padding:0 0 3px;
+                                 overflow:hidden;white-space:nowrap; }
+    table.lv-cal td.lv-name { white-space:nowrap;padding-right:8px;font-size:11px;font-weight:600;
+                              overflow:hidden;text-overflow:ellipsis; }
+    table.lv-cal td.lv-d { height:16px;border-radius:2px;padding:0;
+                           background:color-mix(in srgb, var(--c-text) 6%, transparent); }
+    table.lv-cal td.lv-d.we { background:color-mix(in srgb, var(--c-text) 12%, transparent); }
+    table.lv-cal td.lv-d.mb { box-shadow:inset 1px 0 0 var(--c-border-strong); }
+
+    /* ── Year calendar, month view ───────────────────────────────────────── */
+    .lv-mon { display:grid;grid-template-columns:repeat(7,1fr);gap:4px; }
+    .lv-mon .lv-dow { font-size:9px;font-weight:700;color:var(--c-muted);text-align:center;
+                      text-transform:uppercase;letter-spacing:.04em; }
+    .lv-mon .lv-cell { min-height:62px;border-radius:8px;padding:4px;background:var(--c-surface-2);
+                       border:1px solid var(--c-border);font-size:10px;overflow:hidden; }
+    .lv-mon .lv-cell.out { opacity:.35; }
+    .lv-mon .lv-cell.bh { background:color-mix(in srgb, var(--c-purple) 16%, var(--c-surface-2)); }
+    .lv-mon .lv-cell .lv-dn { font-weight:800;font-size:11px;color:var(--c-muted); }
+    .lv-mon .lv-pip { display:block;border-radius:4px;padding:1px 4px;margin-top:2px;
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600; }
+
+    .lv-note { font-size:11.5px;color:var(--c-muted);line-height:1.55; }
+    .lv-note strong { color:var(--c-text); }
+    .lv-ok   { color:var(--c-ok);font-weight:700;font-size:12px; }
+    .lv-bad  { color:var(--c-danger);font-weight:700;font-size:12px; }
+    .lv-empty { color:var(--c-muted);font-size:13px;padding:22px;text-align:center; }
+    .lv-pre { background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:10px;
+              padding:10px;font-size:11px;max-height:290px;overflow:auto; }
+    table.lv-tbl { width:100%;border-collapse:collapse;font-size:12px; }
+    table.lv-tbl th { text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.05em;
+                      color:var(--c-muted);padding:6px 8px;border-bottom:1px solid var(--c-border); }
+    table.lv-tbl td { padding:7px 8px;border-bottom:1px solid var(--c-border); }
+    table.lv-tbl tr:last-child td { border-bottom:none; }
+    .lv-bf { display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px; }
+    .lv-bf-low       { background:color-mix(in srgb, var(--c-ok) 18%, transparent);     color:var(--c-text); }
+    .lv-bf-moderate  { background:color-mix(in srgb, var(--c-warn) 20%, transparent);   color:var(--c-text); }
+    .lv-bf-high      { background:color-mix(in srgb, var(--c-danger) 20%, transparent); color:var(--c-text); }
+    .lv-bf-very_high { background:color-mix(in srgb, var(--c-danger) 34%, transparent); color:var(--c-text);
+                       border:1px solid color-mix(in srgb, var(--c-danger) 60%, transparent); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Absence &amp; Leave</div>
+      <div class="page-subtitle">Who is off, the team calendar, and everyone's allowance in hours</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="/staff/absence-mgmt.html" class="btn btn-secondary btn-sm">Requests &amp; approvals</a>
+      <a href="/staff/absence-warnings.html" class="btn btn-secondary btn-sm">Absence warnings</a>
+    </div>
+  </div>
+
+  <div class="lv-stats" id="lv-stats"></div>
+
+  <div class="lv-tabs">
+    <button class="lv-tab on" data-pane="today">Today &amp; this week</button>
+    <button class="lv-tab"    data-pane="team">Team calendar</button>
+    <button class="lv-tab"    data-pane="people">Allowances</button>
+    <button class="lv-tab"    data-pane="sick">Sickness</button>
+    <button class="lv-tab"    data-pane="setup">Set-up</button>
+  </div>
+
+  <!-- ─────────────── TODAY ─────────────── -->
+  <div class="lv-pane on" id="pane-today">
+    <div class="lv-panel">
+      <h3>Off today</h3>
+      <div class="lv-hint" id="lv-today-date"></div>
+      <div class="lv-off" id="lv-today"><div class="lv-empty">Loading…</div></div>
+    </div>
+    <div class="lv-panel">
+      <h3>Off in the next seven days</h3>
+      <div class="lv-hint">Approved and pending, from the same records the calendar draws.</div>
+      <div class="lv-off" id="lv-week"><div class="lv-empty">Loading…</div></div>
+    </div>
+    <div class="lv-panel">
+      <h3>Waiting for a decision</h3>
+      <div class="lv-hint">Approve or decline on the Requests page — this is the count, so nothing sits unseen.</div>
+      <div class="lv-off" id="lv-pending"><div class="lv-empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ─────────────── TEAM CALENDAR ─────────────── -->
+  <div class="lv-pane" id="pane-team">
+    <div class="lv-panel">
+      <div class="lv-row">
+        <label>Year <select id="lv-cal-year"></select></label>
+        <label>View
+          <select id="lv-cal-view">
+            <option value="year">Whole year, one row each</option>
+            <option value="month">One month, in detail</option>
+          </select>
+        </label>
+        <label id="lv-cal-monthwrap" style="display:none;">Month <select id="lv-cal-month"></select></label>
+        <span id="lv-cal-legend" style="margin-left:auto;"></span>
+      </div>
+      <div id="lv-cal"><div class="lv-empty">Loading…</div></div>
+      <div class="lv-hint" style="margin-top:10px;" id="lv-cal-note"></div>
+    </div>
+  </div>
+
+  <!-- ─────────────── ALLOWANCES ─────────────── -->
+  <div class="lv-pane" id="pane-people">
+    <div class="lv-row">
+      <label>Leave year <select id="lv-year"></select></label>
+      <label>Sort
+        <select id="lv-sort">
+          <option value="name">Name</option>
+          <option value="remaining">Least remaining first</option>
+          <option value="remaining-desc">Most remaining first</option>
+          <option value="pct">Lowest % left first</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="lv-onlyproblem"> Only people with no allowance</label>
+      <button class="lv-btn sec" id="lv-recompute" style="margin-left:auto;">Recalculate everyone</button>
+    </div>
+    <div class="lv-grid" id="lv-people"><div class="lv-empty">Loading…</div></div>
+  </div>
+
+  <!-- ─────────────── SICKNESS ─────────────── -->
+  <div class="lv-pane" id="pane-sick">
+    <div class="lv-panel">
+      <h3>Sickness</h3>
+      <div class="lv-hint">
+        The Bradford score is spells&nbsp;&times;&nbsp;spells&nbsp;&times;&nbsp;days over a rolling 52&nbsp;weeks —
+        it weights <em>frequent short</em> absence far more heavily than one long one. The spells and days
+        columns follow the window you pick. A score is a prompt to have a conversation, never a decision.
+      </div>
+      <div class="lv-row">
+        <label>Window
+          <select id="lv-sick-months">
+            <option value="3">3 months</option><option value="6">6 months</option>
+            <option value="12" selected>12 months</option><option value="24">24 months</option>
+          </select>
+        </label>
+      </div>
+      <div id="lv-sick"><div class="lv-empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ─────────────── SET-UP ─────────────── -->
+  <div class="lv-pane" id="pane-setup">
+    <div class="lv-panel">
+      <h3>How the allowance is worked out</h3>
+      <div class="lv-note" id="lv-policy-words"></div>
+      <div class="lv-row" style="margin-top:14px;">
+        <label>Weeks of leave <input type="number" id="lv-weeks" step="0.1" min="0" max="12" style="width:86px;"></label>
+        <label>Holiday year starts <input type="text" id="lv-ystart" placeholder="MM-DD" style="width:86px;"></label>
+        <label>Carry-over cap (hours) <input type="number" id="lv-cap" step="0.5" min="0" max="400" style="width:92px;"></label>
+      </div>
+      <div class="lv-row">
+        <label><input type="checkbox" id="lv-bh"> Deduct bank holidays that fall on a contracted working day</label>
+      </div>
+      <div class="lv-row">
+        <label><input type="checkbox" id="lv-clo"> Deduct nursery closure days the same way</label>
+      </div>
+      <div class="lv-note" id="lv-clo-warn" style="margin-bottom:12px;"></div>
+      <div class="lv-row">
+        <button class="lv-btn" id="lv-savepolicy">Save</button>
+        <span id="lv-policy-msg" class="lv-note"></span>
+      </div>
+    </div>
+
+    <div class="lv-panel">
+      <h3>Bank holidays</h3>
+      <div class="lv-hint">
+        Cached from the gov.uk England-and-Wales list. Every allowance is worked out from this cache,
+        never from the internet, so nobody's balance changes because gov.uk is having a bad day.
+      </div>
+      <div class="lv-row">
+        <button class="lv-btn sec" id="lv-bh-refresh">Check gov.uk for changes</button>
+        <span id="lv-bh-msg" class="lv-note"></span>
+      </div>
+      <div id="lv-bh-list"></div>
+    </div>
+
+    <div class="lv-panel">
+      <h3>Opening balances — the switch from BrightHR</h3>
+      <div class="lv-hint">
+        Paste or upload one row per person with the figure from BrightHR. Preview first: nothing is written
+        until you say so, and a row that does not match exactly one member of staff is reported rather than guessed at.
+      </div>
+      <div class="lv-row">
+        <label>These figures are
+          <select id="lv-ob-mode">
+            <option value="carry_in">hours carried INTO the new leave year (added on top of the calculated allowance)</option>
+            <option value="replaces_remaining">the REMAINING balance on a given day (Wren then counts only deductions from that day)</option>
+          </select>
+        </label>
+      </div>
+      <div class="lv-row">
+        <label>As at <input type="date" id="lv-ob-asat"></label>
+        <label>Leave year <select id="lv-ob-year"></select></label>
+        <label>CSV file <input type="file" id="lv-ob-file" accept=".csv,text/csv"></label>
+      </div>
+      <textarea id="lv-ob-csv" rows="6" style="width:100%;font-family:ui-monospace,monospace;font-size:11.5px;"
+        placeholder="Employee,Remaining Hours,Notes&#10;Demo Deputy,37.5,&#10;12,8.25,part-timer"></textarea>
+      <div class="lv-row" style="margin-top:10px;">
+        <button class="lv-btn sec" id="lv-ob-preview">Preview</button>
+        <button class="lv-btn" id="lv-ob-import" disabled>Import the matched rows</button>
+        <span id="lv-ob-msg" class="lv-note"></span>
+      </div>
+      <div id="lv-ob-out"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===========================================================================
+ * The Roost leave dashboard.
+ *
+ * It reads TWO APIs on purpose and does not re-implement either:
+ *   /api/leave    the allowance, the policy, the bank-holiday cache, the import
+ *   /api/absence  the calendar, who is off, and the requests queue — exactly
+ *                 the endpoints the existing Absence page already uses, so
+ *                 there is one answer to "who is off on the 3rd" and this page
+ *                 is not a second one.
+ * ===========================================================================*/
+var LC = null;                     // WrenLeaveCard, once the shell is ready
+var PEOPLE = [], POLICY = null, CAL = null, SICK = null;
+var TODAY = new Date().toISOString().slice(0, 10);
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return LC ? LC.esc(s) : String(s == null ? '' : s); }
+function hrs(n) { return LC ? LC.hours(n) : (n == null ? '—' : n + ' h'); }
+
+/* A pg DATE arrives as an ISO timestamp — slice it, never String() a Date. */
+function ymd(v) { return v ? String(v).slice(0, 10) : null; }
+function dmy(v) {
+  var s = ymd(v); if (!s) return '—';
+  var p = s.split('-'); return p[2] + '/' + p[1] + '/' + p[0];
+}
+function daysInYear(y) {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 366 : 365;
+}
+function addDays(s, n) {
+  var d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────*/
+document.addEventListener('click', function (e) {
+  var t = e.target.closest('.lv-tab'); if (!t) return;
+  document.querySelectorAll('.lv-tab').forEach(function (x) { x.classList.toggle('on', x === t); });
+  document.querySelectorAll('.lv-pane').forEach(function (p) {
+    p.classList.toggle('on', p.id === 'pane-' + t.dataset.pane);
+  });
+  if (t.dataset.pane === 'team' && !CAL) loadCalendar();
+  if (t.dataset.pane === 'sick' && !SICK) loadSickness();
+});
+
+/* ── Boot ─────────────────────────────────────────────────────────────────*/
+async function boot() {
+  LC = window.WrenLeaveCard;
+  if (!LC) { $('lv-people').innerHTML = '<div class="lv-empty">The leave card component did not load.</div>'; return; }
+
+  var y = new Date().getFullYear();
+  [['lv-year', 0], ['lv-cal-year', 0], ['lv-ob-year', 0]].forEach(function (pair) {
+    var sel = $(pair[0]); if (!sel) return;
+    sel.innerHTML = '';
+    for (var i = y - 2; i <= y + 2; i++) {
+      sel.innerHTML += '<option value="' + i + '"' + (i === y ? ' selected' : '') + '>' + i + '</option>';
+    }
+  });
+  var ms = $('lv-cal-month'); var MN = ['January','February','March','April','May','June',
+    'July','August','September','October','November','December'];
+  ms.innerHTML = MN.map(function (n, i) {
+    return '<option value="' + (i + 1) + '"' + (i === new Date().getMonth() ? ' selected' : '') + '>' + n + '</option>';
+  }).join('');
+  $('lv-ob-asat').value = TODAY;
+  $('lv-cal-legend').innerHTML = LC.legend(['holiday', 'bank_holiday', 'closure', 'sick', 'toil', 'other']);
+
+  await Promise.all([loadPolicy(), loadPeople(), loadToday()]);
+}
+document.addEventListener('wren:ready', boot);
+
+/* ── Policy + bank holidays ───────────────────────────────────────────────*/
+async function loadPolicy() {
+  try { POLICY = await Wren.api('/api/leave/policy'); }
+  catch (e) { $('lv-policy-words').textContent = 'Could not load the policy: ' + (e.message || e); return; }
+  var p = POLICY.policy;
+  $('lv-policy-words').innerHTML = (POLICY.explanation || [])
+    .map(function (s) { return '<div style="margin-bottom:5px;">' + esc(s) + '</div>'; }).join('');
+  $('lv-weeks').value = p.contractWeeks;
+  $('lv-ystart').value = p.yearStartMd;
+  $('lv-cap').value = p.carryCapHours;
+  $('lv-bh').checked = !!p.bhDeduct;
+  $('lv-clo').checked = !!p.closureDeduct;
+  renderClosureWarning();
+  var bhs = POLICY.bank_holidays || [];
+  $('lv-bh-list').innerHTML = !bhs.length
+    ? '<div class="lv-empty">No bank holidays cached for this leave year.</div>'
+    : '<table class="lv-tbl"><thead><tr><th>Date</th><th>Day</th><th>Name</th></tr></thead><tbody>'
+      + bhs.map(function (b) {
+          var d = new Date(b.date + 'T00:00:00Z');
+          return '<tr><td>' + dmy(b.date) + '</td><td>'
+            + ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getUTCDay()]
+            + '</td><td>' + esc(b.name) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      + '<div class="lv-hint" style="margin-top:8px;">'
+      + (POLICY.bank_holidays_fetched_at
+          ? 'Last checked against gov.uk: ' + esc(String(POLICY.bank_holidays_fetched_at).slice(0, 16).replace('T', ' '))
+          : 'Never checked against gov.uk — the cache was seeded by hand.') + '</div>';
+}
+
+function renderClosureWarning() {
+  var on = $('lv-clo').checked;
+  var n = (POLICY && POLICY.closures || []).length;
+  $('lv-clo-warn').innerHTML = on
+    ? '<strong>On.</strong> Each of the ' + n + ' closure day' + (n === 1 ? '' : 's') + ' listed for this leave year '
+      + 'will come off the allowance of everyone contracted to work that day. This changes what every member of staff '
+      + 'is owed, so it is worth telling them before you save it.'
+    : '<strong>Off.</strong> Closure days cost nobody any allowance. The ' + n + ' closure day'
+      + (n === 1 ? '' : 's') + ' listed for this leave year '
+      + (n ? 'are' : 'would be') + ' simply days the nursery is shut. Closure dates are set in Settings → Closure dates.';
+}
+$('lv-clo').addEventListener('change', renderClosureWarning);
+
+$('lv-savepolicy').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true; $('lv-policy-msg').textContent = 'Saving…';
+  try {
+    var r = await Wren.api('/api/leave/policy', { method: 'PUT', body: {
+      contract_weeks: Number($('lv-weeks').value),
+      year_start_md: $('lv-ystart').value.trim(),
+      carry_cap_hours: Number($('lv-cap').value),
+      bh_deduct: $('lv-bh').checked,
+      closure_deduct: $('lv-clo').checked,
+    } });
+    $('lv-policy-msg').innerHTML = '<span class="lv-ok">Saved.</span>'
+      + (r.note ? ' <span class="lv-bad">' + esc(r.note) + '</span>' : '');
+    PEOPLE = []; await loadPolicy(); await loadPeople();
+  } catch (e) { $('lv-policy-msg').innerHTML = '<span class="lv-bad">' + esc(e.message || e) + '</span>'; }
+  btn.disabled = false;
+});
+
+$('lv-bh-refresh').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true; $('lv-bh-msg').textContent = 'Asking gov.uk…';
+  try {
+    var r = await Wren.api('/api/leave/bank-holidays/refresh', { method: 'POST', body: {} });
+    $('lv-bh-msg').innerHTML = '<span class="lv-ok">' + r.fetched + ' dates read, '
+      + r.inserted + ' new, ' + r.updated + ' refreshed (' + esc(r.first) + ' to ' + esc(r.last) + ').</span>';
+    await loadPolicy();
+  } catch (e) {
+    // A failed refresh must read as "nothing changed", because nothing did.
+    $('lv-bh-msg').innerHTML = '<span class="lv-bad">' + esc(e.message || e)
+      + ' Nothing was changed — the cached dates are exactly as they were.</span>';
+  }
+  btn.disabled = false;
+});
+
+/* ── Allowances ───────────────────────────────────────────────────────────*/
+async function loadPeople() {
+  var on = $('lv-year').value + '-06-15';
+  $('lv-people').innerHTML = '<div class="lv-empty">Working out everyone’s allowance…</div>';
+  try { var r = await Wren.api('/api/leave/allowances?on=' + encodeURIComponent(on)); PEOPLE = r.people || []; renderStats(r.totals, r.year); }
+  catch (e) { $('lv-people').innerHTML = '<div class="lv-empty">' + esc(e.message || e) + '</div>'; return; }
+  renderPeople();
+}
+$('lv-year').addEventListener('change', loadPeople);
+$('lv-sort').addEventListener('change', renderPeople);
+$('lv-onlyproblem').addEventListener('change', renderPeople);
+
+function renderStats(t, year) {
+  if (!t) return;
+  $('lv-stats').innerHTML = [
+    { v: t.people, l: 'Active staff' },
+    { v: hrs(t.allowance_hours), l: 'Allowance ' + (year ? year.label : '') },
+    { v: hrs(t.remaining_hours), l: 'Still to take' },
+    { v: hrs(t.bank_holiday_hours), l: 'Bank holidays' },
+    { v: t.pending_hours ? hrs(t.pending_hours) : '0 h', l: 'Awaiting a decision',
+      c: t.pending_hours ? 'warn' : '' },
+    { v: t.without_a_pattern, l: 'No allowance yet', c: t.without_a_pattern ? 'bad' : '' },
+  ].map(function (s) {
+    return '<div class="lv-stat ' + (s.c || '') + '"><b>' + esc(s.v) + '</b><span>' + esc(s.l) + '</span></div>';
+  }).join('');
+}
+
+function renderPeople() {
+  var list = PEOPLE.slice();
+  if ($('lv-onlyproblem').checked) list = list.filter(function (p) { return !p.set; });
+  var s = $('lv-sort').value;
+  list.sort(function (a, b) {
+    if (s === 'name') return String(a.staff_name || '').localeCompare(String(b.staff_name || ''));
+    // Someone with no figure sorts LAST in every numeric order: a blank is not
+    // a zero, and putting them at the top of "least remaining" would read as
+    // "these people have no holiday left", which is the opposite of the truth.
+    var av = a.set ? a[s === 'pct' ? 'percent_remaining' : 'remaining_hours'] : null;
+    var bv = b.set ? b[s === 'pct' ? 'percent_remaining' : 'remaining_hours'] : null;
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return s === 'remaining-desc' ? bv - av : av - bv;
+  });
+  if (!list.length) { $('lv-people').innerHTML = '<div class="lv-empty">Nobody to show.</div>'; return; }
+  $('lv-people').innerHTML = '';
+  list.forEach(function (p) {
+    var holder = document.createElement('div');
+    $('lv-people').appendChild(holder);
+    LC.render(holder, { staff_name: p.staff_name, role: p.role, year: p.year || null,
+      balance: { set: p.set, notSetReason: p.not_set_reason,
+                 totalAvailableHours: p.total_available_hours, takenHours: p.taken_hours,
+                 bookedHours: p.booked_hours, remainingHours: p.remaining_hours,
+                 percentRemaining: p.percent_remaining, holidayHours: p.taken_hours != null
+                   ? Math.round(((p.taken_hours + p.booked_hours) - (p.bank_holiday_hours || 0) - (p.closure_hours || 0)) * 100) / 100
+                   : null,
+                 bankHolidayHours: p.bank_holiday_hours, closureHours: p.closure_hours,
+                 adjustmentHours: p.adjustment_hours, pendingHours: p.pending_hours },
+      allowance: { accrualMode: p.accrual_mode, contractWeeks: POLICY && POLICY.policy.contractWeeks,
+                   allowanceHours: p.allowance_hours, notSetReason: p.not_set_reason },
+      pattern: p.pattern, in_days: p.in_days, manual_override: p.manual_override,
+      opening_balance: p.opening_balance,
+    }, { href: '/staff/leave-person.html?staff=' + p.staff_id });
+  });
+  // The dashboard holds the year the API answered for; each card shows it.
+  if (PEOPLE.length && PEOPLE[0].year) { /* year already on the card */ }
+}
+
+$('lv-recompute').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true; var was = btn.textContent; btn.textContent = 'Recalculating…';
+  try {
+    var r = await Wren.api('/api/leave/recompute-all', { method: 'POST',
+      body: { on: $('lv-year').value + '-06-15' } });
+    btn.textContent = r.written + ' written';
+    await loadPeople();
+  } catch (e) { btn.textContent = 'Failed'; console.error(e); }
+  setTimeout(function () { btn.textContent = was; btn.disabled = false; }, 2200);
+});
+
+/* ── Who's off ────────────────────────────────────────────────────────────*/
+async function loadToday() {
+  $('lv-today-date').textContent = dmy(TODAY);
+  var to = addDays(TODAY, 7);
+  var rows = [];
+  try {
+    rows = await Wren.api('/api/absence/calendar?from=' + TODAY + '&to=' + to);
+  } catch (e) {
+    $('lv-today').innerHTML = $('lv-week').innerHTML = '<div class="lv-empty">' + esc(e.message || e) + '</div>';
+  }
+  var today = (rows || []).filter(function (r) {
+    return ymd(r.start_date) <= TODAY && ymd(r.end_date) >= TODAY;
+  });
+  var week = (rows || []).filter(function (r) { return ymd(r.start_date) > TODAY; });
+  $('lv-today').innerHTML = offRows(today, 'Everybody is in today.');
+  $('lv-week').innerHTML = offRows(week, 'Nobody is booked off in the next seven days.');
+
+  try {
+    var pend = await Wren.api('/api/absence/pending');
+    $('lv-pending').innerHTML = !pend.length
+      ? '<div class="lv-empty">Nothing is waiting for a decision.</div>'
+      : pend.map(function (r) {
+          return '<div class="lv-offrow"><span class="wlc-chip" style="' + LC.typeStyle(r.request_type || r.absence_type) + '">'
+            + esc(LC.typeOf(r.request_type || r.absence_type).label) + '</span>'
+            + '<span class="lv-who">' + esc(r.staff_name || ('Staff #' + r.staff_id)) + '</span>'
+            + '<span class="lv-when">' + dmy(r.start_date) + ' → ' + dmy(r.end_date) + '</span>'
+            + '<a class="lv-btn sec" href="/staff/absence-mgmt.html">Decide</a></div>';
+        }).join('');
+  } catch (e) { $('lv-pending').innerHTML = '<div class="lv-empty">' + esc(e.message || e) + '</div>'; }
+}
+
+function offRows(rows, emptyText) {
+  if (!rows.length) return '<div class="lv-empty">' + esc(emptyText) + '</div>';
+  return rows.map(function (r) {
+    var k = r.request_type || r.absence_type;
+    return '<div class="lv-offrow">'
+      + '<span class="wlc-chip" style="' + LC.typeStyle(k) + '">' + esc(LC.typeOf(k).label) + '</span>'
+      + '<span class="lv-who">' + esc(r.staff_name || ('Staff #' + r.staff_id)) + '</span>'
+      + (r.room_name ? '<span class="lv-when">' + esc(r.room_name) + '</span>' : '')
+      + '<span class="lv-when">' + dmy(r.start_date)
+      + (ymd(r.end_date) !== ymd(r.start_date) ? ' → ' + dmy(r.end_date) : '') + '</span>'
+      + (r.status === 'pending' ? '<span class="wlc-chip wlc-chip-pending">pending</span>' : '')
+      + '<a class="lv-btn sec" href="/staff/leave-person.html?staff=' + r.staff_id + '">Open</a></div>';
+  }).join('');
+}
+
+/* ── Team calendar ────────────────────────────────────────────────────────*/
+$('lv-cal-view').addEventListener('change', function () {
+  $('lv-cal-monthwrap').style.display = this.value === 'month' ? '' : 'none';
+  renderCalendar();
+});
+$('lv-cal-year').addEventListener('change', loadCalendar);
+$('lv-cal-month').addEventListener('change', renderCalendar);
+
+async function loadCalendar() {
+  var y = $('lv-cal-year').value;
+  $('lv-cal').innerHTML = '<div class="lv-empty">Loading the year…</div>';
+  try {
+    CAL = await Wren.api('/api/absence/calendar?view=grid&from=' + y + '-01-01&to=' + y + '-12-31');
+    var bh = await Wren.api('/api/leave/bank-holidays?from=' + y + '-01-01&to=' + y + '-12-31');
+    CAL.bank_holidays = bh.dates || [];
+  } catch (e) { $('lv-cal').innerHTML = '<div class="lv-empty">' + esc(e.message || e) + '</div>'; return; }
+  renderCalendar();
+}
+
+/* date -> [{staff_id, type, status}] */
+function calIndex() {
+  var ix = {};
+  (CAL.absences || []).forEach(function (a) {
+    var s = ymd(a.start_date), e = ymd(a.end_date) || s;
+    for (var d = s, i = 0; d <= e && i < 400; d = addDays(d, 1), i++) {
+      (ix[d] = ix[d] || []).push({ staff_id: a.staff_id, type: a.request_type, status: a.status });
+    }
+  });
+  return ix;
+}
+
+function renderCalendar() {
+  if (!CAL) return;
+  var y = Number($('lv-cal-year').value);
+  var ix = calIndex();
+  var bhSet = {}; (CAL.bank_holidays || []).forEach(function (b) { bhSet[b.date] = b.name; });
+  var note = (CAL.absences || []).length + ' absence record'
+    + ((CAL.absences || []).length === 1 ? '' : 's') + ' in ' + y
+    + ' · ' + (CAL.bank_holidays || []).length + ' bank holidays'
+    + ' · bank holidays are shown for everyone; whether one costs a person any allowance '
+    + 'depends on their own working pattern, which the person page shows.';
+  $('lv-cal-note').textContent = note;
+
+  if ($('lv-cal-view').value === 'month') return renderMonth(y, Number($('lv-cal-month').value), ix, bhSet);
+
+  // ── Year view: one row per person, one small cell per day ───────────────
+  var MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var html = '<div class="lv-cal-wrap"><table class="lv-cal">'
+    + '<colgroup><col class="lv-c-name">' + '<col>'.repeat(daysInYear(y)) + '</colgroup>'
+    + '<thead><tr><th></th>';
+  for (var m = 1; m <= 12; m++) {
+    html += '<th class="lv-m" colspan="' + new Date(Date.UTC(y, m, 0)).getUTCDate() + '">' + MN[m - 1] + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  (CAL.staff || []).forEach(function (st) {
+    html += '<tr><td class="lv-name" title="' + esc(st.name) + '">' + esc(st.short_name || st.name) + '</td>';
+    for (var m = 1; m <= 12; m++) {
+      var last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      for (var dd = 1; dd <= last; dd++) {
+        var date = y + '-' + String(m).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+        var dow = new Date(date + 'T00:00:00Z').getUTCDay();
+        var hit = (ix[date] || []).filter(function (x) { return x.staff_id === st.id; })[0];
+        var cls = 'lv-d' + (dow === 0 || dow === 6 ? ' we' : '') + (dd === 1 ? ' mb' : '');
+        var style = '', title = date;
+        if (hit) {
+          style = LC.typeBar(hit.type) + (hit.status === 'pending' ? 'opacity:.5;' : '');
+          title = date + ' — ' + LC.typeOf(hit.type).label + (hit.status === 'pending' ? ' (pending)' : '');
+        } else if (bhSet[date]) {
+          style = LC.typeBar('bank_holiday') + 'opacity:.45;';
+          title = date + ' — ' + bhSet[date];
+        }
+        html += '<td class="' + cls + '" style="' + style + '" title="' + esc(title) + '"></td>';
+      }
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  $('lv-cal').innerHTML = html;
+}
+
+function renderMonth(y, m, ix, bhSet) {
+  var first = new Date(Date.UTC(y, m - 1, 1));
+  var startDow = (first.getUTCDay() + 6) % 7;         // Monday-first
+  var last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  var byId = {}; (CAL.staff || []).forEach(function (s) { byId[s.id] = s; });
+  var html = '<div class="lv-mon">'
+    + ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(function (d) { return '<div class="lv-dow">' + d + '</div>'; }).join('');
+  for (var i = 0; i < startDow; i++) html += '<div class="lv-cell out"></div>';
+  for (var dd = 1; dd <= last; dd++) {
+    var date = y + '-' + String(m).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+    var on = ix[date] || [];
+    html += '<div class="lv-cell' + (bhSet[date] ? ' bh' : '') + '">'
+      + '<div class="lv-dn">' + dd + '</div>'
+      + (bhSet[date] ? '<span class="lv-pip" style="' + LC.typeStyle('bank_holiday') + '">'
+          + esc(bhSet[date]) + '</span>' : '')
+      + on.slice(0, 4).map(function (x) {
+          var st = byId[x.staff_id];
+          return '<span class="lv-pip" style="' + LC.typeStyle(x.type)
+            + (x.status === 'pending' ? 'opacity:.6;' : '') + '" title="'
+            + esc((st ? st.name : 'Staff #' + x.staff_id) + ' — ' + LC.typeOf(x.type).label) + '">'
+            + esc(st ? (st.short_name || st.name) : '#' + x.staff_id) + '</span>';
+        }).join('')
+      + (on.length > 4 ? '<span class="lv-pip" style="' + LC.typeStyle('other') + '">+'
+          + (on.length - 4) + ' more</span>' : '')
+      + '</div>';
+  }
+  html += '</div>';
+  $('lv-cal').innerHTML = html;
+}
+
+/* ── Sickness ─────────────────────────────────────────────────────────────*/
+$('lv-sick-months').addEventListener('change', loadSickness);
+async function loadSickness() {
+  $('lv-sick').innerHTML = '<div class="lv-empty">Loading…</div>';
+  try { SICK = await Wren.api('/api/leave/sickness?months=' + $('lv-sick-months').value); }
+  catch (e) { $('lv-sick').innerHTML = '<div class="lv-empty">' + esc(e.message || e) + '</div>'; return; }
+  var ppl = (SICK.people || []).filter(function (p) {
+    return (p.bradford_rolling_12m && p.bradford_rolling_12m.score > 0) || (p.window && p.window.spells > 0);
+  });
+  if (!ppl.length) {
+    $('lv-sick').innerHTML = '<div class="lv-empty">No sickness recorded for anybody in this window.</div>';
+    return;
+  }
+  $('lv-sick').innerHTML = '<table class="lv-tbl"><thead><tr>'
+    + '<th>Name</th><th>Bradford (52 weeks)</th><th>Spells</th><th>Days</th>'
+    + '<th>Spells (' + SICK.months + " months)</th><th>Days (" + SICK.months + ' months)</th><th></th>'
+    + '</tr></thead><tbody>'
+    + ppl.map(function (p) {
+      var b = p.bradford_rolling_12m || {};
+      return '<tr><td><strong>' + esc(p.name) + '</strong></td>'
+        + '<td>' + (b.score == null ? '—' : '<span class="lv-bf lv-bf-' + esc(b.classification) + '">'
+            + b.score + '</span>') + '</td>'
+        + '<td>' + (b.instances == null ? '—' : b.instances) + '</td>'
+        + '<td>' + (b.days_total == null ? '—' : b.days_total) + '</td>'
+        + '<td>' + p.window.spells + '</td><td>' + p.window.days + '</td>'
+        + '<td><a class="lv-btn sec" href="/staff/leave-person.html?staff=' + p.staff_id + '">Open</a></td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+/* ── Opening balances ─────────────────────────────────────────────────────*/
+$('lv-ob-file').addEventListener('change', function () {
+  var f = this.files && this.files[0]; if (!f) return;
+  var fr = new FileReader();
+  fr.onload = function () { $('lv-ob-csv').value = String(fr.result || ''); };
+  fr.readAsText(f);
+});
+
+function obBody() {
+  return {
+    csv: $('lv-ob-csv').value,
+    as_at: $('lv-ob-asat').value,
+    on: $('lv-ob-year').value + '-06-15',       // names the LEAVE YEAR, not the as-at day
+    mode: $('lv-ob-mode').value,
+  };
+}
+
+$('lv-ob-preview').addEventListener('click', async function () {
+  $('lv-ob-msg').textContent = 'Checking…'; $('lv-ob-import').disabled = true;
+  try {
+    var r = await Wren.api('/api/leave/opening-balances/preview', { method: 'POST', body: obBody() });
+    $('lv-ob-msg').innerHTML = '<span class="lv-ok">' + r.ready + ' ready</span>'
+      + (r.problems ? ' · <span class="lv-bad">' + r.problems + ' to fix</span>' : '');
+    $('lv-ob-out').innerHTML = '<div class="lv-hint" style="margin:10px 0;"><strong>'
+      + esc(r.mode_means) + '</strong></div>'
+      + '<table class="lv-tbl"><thead><tr><th>Line</th><th>From the file</th><th>Matched</th>'
+      + '<th>Hours</th><th>Problem</th></tr></thead><tbody>'
+      + (r.rows || []).map(function (x) {
+          return '<tr><td>' + x.line + '</td><td>' + esc(x.who) + '</td>'
+            + '<td>' + (x.name ? esc(x.name) + ' <span class="lv-note">(#' + x.staff_id + ', by '
+                + esc(x.matched_on) + ')</span>' : '—') + '</td>'
+            + '<td>' + (x.hours == null ? esc(x.hours_raw) : hrs(x.hours)) + '</td>'
+            + '<td>' + (x.problem ? '<span class="lv-bad">' + esc(x.problem) + '</span>'
+                : '<span class="lv-ok">ok</span>') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    $('lv-ob-import').disabled = r.ready === 0;
+    $('lv-ob-import').dataset.skip = r.problems ? '1' : '';
+    $('lv-ob-import').textContent = r.problems
+      ? 'Import the ' + r.ready + ' matched rows and skip ' + r.problems
+      : 'Import all ' + r.ready + ' rows';
+  } catch (e) {
+    var msg = e && e.errors ? e.errors.join(' ') : (e.message || e);
+    $('lv-ob-msg').innerHTML = '<span class="lv-bad">' + esc(msg) + '</span>';
+    $('lv-ob-out').innerHTML = '';
+  }
+});
+
+$('lv-ob-import').addEventListener('click', async function () {
+  var btn = this; btn.disabled = true; $('lv-ob-msg').textContent = 'Importing…';
+  try {
+    var body = obBody();
+    if (btn.dataset.skip) body.skip_problems = true;
+    var r = await Wren.api('/api/leave/opening-balances/import', { method: 'POST', body: body });
+    $('lv-ob-msg').innerHTML = '<span class="lv-ok">' + r.written + ' opening balance'
+      + (r.written === 1 ? '' : 's') + ' written for ' + esc(r.year.label)
+      + (r.skipped ? ', ' + r.skipped + ' skipped' : '') + '.</span>';
+    PEOPLE = []; await loadPeople();
+  } catch (e) {
+    var msg = e && e.problems ? (e.error || 'Refused') : (e.message || e);
+    $('lv-ob-msg').innerHTML = '<span class="lv-bad">' + esc(msg) + '</span>';
+  }
+  btn.disabled = false;
+});
+</script>
+</body>
+</html>

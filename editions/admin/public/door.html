@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition"  content="ladn">
+  <meta name="wren-app-page" content="door">
+  <title>Front Door · Roost</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <style>
+    /* b195 — Roost door console. Chrome comes from wren-shell; this page owns only
+       its own layout, matching the card/pill idiom used across Roost pages. */
+    .door-wrap { max-width: 1000px; margin: 0 auto; padding: 18px; }
+    .door-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, 1fr); gap: 16px; }
+    @media (max-width: 820px) { .door-grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--c-navy-mid, #0f172a); border: 1px solid var(--c-border, #2d3748);
+      border-radius: 14px; padding: 14px; margin-bottom: 16px;
+    }
+    .card h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em;
+               color: var(--c-muted, #94a3b8); margin: 0 0 10px; font-weight: 700; }
+    #cam-wrap { position: relative; background: #0b1220; border-radius: 12px; overflow: hidden;
+                aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; }
+    #cam-img, #cam-stream { width: 100%; height: 100%; object-fit: cover; display: none; border: 0; }
+    #cam-ph { color: var(--c-muted, #94a3b8); font-size: .88rem; text-align: center; padding: 20px; }
+    #cam-ph .ico { display: block; font-size: 2.4rem; margin-bottom: 8px; opacity: .8; }
+    #live-badge { position: absolute; top: 10px; left: 10px; display: none;
+                  background: rgba(15,23,42,.85); border: 1px solid var(--c-border, #2d3748);
+                  color: #86efac; border-radius: 8px; font-size: .7rem; font-weight: 700; padding: 4px 8px; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 700;
+            border-radius: 999px; padding: 5px 11px; border: 1px solid var(--c-border, #2d3748);
+            background: rgba(148,163,184,.12); color: var(--c-muted, #94a3b8); }
+    .pill.is-closed { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.4); color: #86efac; }
+    .pill.is-open   { background: rgba(234,179,8,.14); border-color: rgba(234,179,8,.45); color: #fde68a; }
+    .pill.is-down   { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.4); color: #fca5a5; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    #banner { display: none; align-items: center; gap: 8px; font-size: .84rem; line-height: 1.4;
+              background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.4); color: #fde68a;
+              border-radius: 10px; padding: 11px 13px; margin-bottom: 16px; }
+    #btn-open { width: 100%; border: none; border-radius: 12px; padding: 15px; font-size: 1rem;
+                font-weight: 700; cursor: pointer; background: var(--c-blue, #4a9abf); color: #0f172a; }
+    #btn-open.is-armed { background: #ef4444; color: #fff; }
+    #btn-open:disabled { opacity: .5; cursor: not-allowed; }
+    #btn-cancel { width: 100%; margin-top: 8px; background: none; border: 1px solid var(--c-border, #2d3748);
+                  color: var(--c-muted, #94a3b8); border-radius: 12px; padding: 11px;
+                  font-size: .85rem; font-weight: 600; cursor: pointer; }
+    #open-msg { font-size: .8rem; color: var(--c-muted, #94a3b8); margin-top: 10px; min-height: 18px; text-align: center; }
+    #log { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; }
+    #log li { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--c-border, #2d3748); font-size: .84rem; }
+    #log li:last-child { border-bottom: 0; }
+    #log .when { color: var(--c-muted, #94a3b8); font-size: .76rem; white-space: nowrap; }
+    #log .what { flex: 1; min-width: 0; }
+    #log .what .sub { color: var(--c-muted, #94a3b8); font-size: .76rem; margin-top: 2px;
+                      overflow-wrap: anywhere; }
+    #log .thumb { width: 54px; height: 40px; object-fit: cover; border-radius: 6px; flex-shrink: 0; cursor: pointer; }
+    .gdpr-note { font-size: .74rem; color: var(--c-muted, #94a3b8); margin-top: 10px; line-height: 1.45; }
+  </style>
+</head>
+<body>
+<div class="door-wrap">
+  <div id="banner"><span>🔧</span><span id="banner-text"></span></div>
+
+  <div class="door-grid">
+    <div>
+      <div class="card">
+        <h2>Doorway camera</h2>
+        <div id="cam-wrap">
+          <span id="live-badge">● LIVE</span>
+          <video id="cam-stream" autoplay muted playsinline title="Front door live stream"></video>
+          <img id="cam-img" alt="Front door camera">
+          <div id="cam-ph"><span class="ico">📷</span>Connecting to the door camera…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Door</h2>
+        <div class="row">
+          <span>Front entrance</span>
+          <span class="pill" id="lock-pill">checking…</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Release</h2>
+        <button id="btn-open" type="button">🔓 Open door</button>
+        <button id="btn-cancel" type="button" hidden>Cancel</button>
+        <div id="open-msg"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Entry log</h2>
+        <ul id="log"><li><span class="what">Loading…</span></li></ul>
+        <p class="gdpr-note">
+          Doorway stills are CCTV. They are held for 31 days under the
+          <strong>cctv_footage</strong> retention policy and then deleted automatically.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell.js"></script>
+<script>
+/* b195 — Roost front-door console. Same API and the same two-step release as the
+   EY tablet page (/ey/door); this view adds the entry log with stills. */
+(function () {
+  function boot() {
+    if (!window.Wren || !Wren.api) return setTimeout(boot, 200);
+
+    var camImg = document.getElementById('cam-img');
+    var camStr = document.getElementById('cam-stream');
+    var camPh  = document.getElementById('cam-ph');
+    var pill   = document.getElementById('lock-pill');
+    var msgEl  = document.getElementById('open-msg');
+    var openBtn = document.getElementById('btn-open');
+    var cancelBtn = document.getElementById('btn-cancel');
+    var CFG = {};
+
+    function setMsg(t) { msgEl.textContent = t || ''; }
+    function token() { return (Wren.getToken && Wren.getToken()) || ''; }
+
+    // ── Config ───────────────────────────────────────────────────────────────
+    Wren.api('/api/door/config').then(function (cfg) {
+      CFG = cfg || {};
+      if (CFG.dry_run) {
+        document.getElementById('banner').style.display = 'flex';
+        document.getElementById('banner-text').textContent = CFG.device_configured
+          ? 'Dry-run mode — live door release is switched off. “Open door” is logged, nothing physically unlocks.'
+          : 'Dry-run mode — no door credentials available on this instance. “Open door” is logged only.';
+      }
+      if (!CFG.can_open) {
+        openBtn.disabled = true;
+        openBtn.textContent = CFG.on_site === false
+          ? '🔒 Off-site — the door can only be opened on the nursery network'
+          : '🔒 Your role cannot release the front door';
+      }
+      if (CFG.stream_available && CFG.stream_ticket_url) startStream();
+      else startSnaps();
+      pollStatus();
+    }).catch(function () { startSnaps(); pollStatus(); });
+
+    // ── Live stream (Stage 2) ────────────────────────────────────────────────
+    // <video> can't send a bearer header, so trade the JWT for a 60s ticket and play
+    // the proxied fMP4. Any failure drops back to the proven snapshot path.
+    function startStream() {
+      Wren.api(CFG.stream_ticket_url).then(function (t) {
+        if (!t || !t.url) throw new Error('no ticket');
+        camStr.src = t.url;
+        camStr.style.display = 'block';
+        camPh.style.display = 'none';
+        camImg.style.display = 'none';
+        document.getElementById('live-badge').style.display = 'block';
+        camStr.addEventListener('error', function () {
+          document.getElementById('live-badge').style.display = 'none';
+          camStr.style.display = 'none';
+          startSnaps();
+        }, { once: true });
+      }).catch(function () { startSnaps(); });
+    }
+
+    // ── Snapshot loop (~2s while visible) ────────────────────────────────────
+    var lastUrl = null, snapTimer = null;
+    function snap() {
+      if (document.hidden) return;
+      fetch('/api/door/snapshot?ts=' + Date.now(), { headers: { Authorization: 'Bearer ' + token() } })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then(function (b) {
+          if (lastUrl) URL.revokeObjectURL(lastUrl);
+          lastUrl = URL.createObjectURL(b);
+          camImg.src = lastUrl; camImg.style.display = 'block';
+          camStr.style.display = 'none'; camPh.style.display = 'none';
+        })
+        .catch(function () {
+          camImg.style.display = 'none'; camPh.style.display = 'block';
+          camPh.innerHTML = '<span class="ico">📷</span>Door camera unavailable.';
+        });
+    }
+    function startSnaps() {
+      if (snapTimer) return;
+      var tick = function () { snap(); snapTimer = setTimeout(tick, 2000); };
+      tick();
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { clearTimeout(snapTimer); snapTimer = null; }
+      else { startSnaps(); pollStatus(); loadLog(); }
+    });
+
+    // ── Lock state ───────────────────────────────────────────────────────────
+    var statusTimer = null;
+    function pollStatus() {
+      Wren.api('/api/door/status').then(function (r) {
+        pill.className = 'pill';
+        if (!r || r.reachable === false) { pill.classList.add('is-down'); pill.textContent = '⚠️ device unreachable'; }
+        else if (r.status === 'closed')  { pill.classList.add('is-closed'); pill.textContent = '🔒 Closed'; }
+        else if (r.status === 'open')    { pill.classList.add('is-open');   pill.textContent = '🔓 Open'; }
+        else                             { pill.textContent = 'Unknown'; }
+      }).catch(function () { pill.className = 'pill is-down'; pill.textContent = '⚠️ status unavailable'; });
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(pollStatus, 5000);
+    }
+
+    // ── Two-step release ─────────────────────────────────────────────────────
+    // Arming is deliberate: one tap only arms, a second within 5s releases, and
+    // the armed state expires by itself. Same contract as the EY tablet page.
+    var armed = false, armTimer = null;
+    function disarm(m) {
+      armed = false; clearTimeout(armTimer);
+      openBtn.classList.remove('is-armed');
+      openBtn.textContent = '🔓 Open door';
+      cancelBtn.hidden = true;
+      if (m !== undefined) setMsg(m);
+    }
+    cancelBtn.addEventListener('click', function () { disarm('Cancelled — not opened.'); });
+
+    openBtn.addEventListener('click', function () {
+      if (!armed) {
+        armed = true;
+        openBtn.classList.add('is-armed');
+        openBtn.textContent = '⚠️ Click again to open the door';
+        cancelBtn.hidden = false;
+        setMsg('Confirm within 5 seconds — this unlocks the front door.');
+        clearTimeout(armTimer);
+        armTimer = setTimeout(function () { disarm('Cancelled — not opened.'); }, 5000);
+        return;
+      }
+      disarm('Opening…');
+      openBtn.disabled = true;
+      Wren.api('/api/door/open', { method: 'POST', body: { reason: 'opened from Roost door console' } })
+        .then(function (r) {
+          setMsg((r && r.message) || 'Done.');
+          pollStatus(); loadLog();
+          setTimeout(function () { openBtn.disabled = false; }, 1500);
+        })
+        .catch(function (e) {
+          var m = (e && e.message) || 'error';
+          setMsg(/403/.test(m)
+            ? 'Not permitted — staff role and nursery network are both required.'
+            : 'Open failed: ' + m);
+          openBtn.disabled = false;
+        });
+    });
+
+    // ── Entry log ────────────────────────────────────────────────────────────
+    function esc(x) {
+      return String(x == null ? '' : x).replace(/[<>&"]/g, function (c) {
+        return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c];
+      });
+    }
+    function when(iso) {
+      var d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
+      if (s < 90) return 'just now';
+      if (s < 3600) return Math.round(s / 60) + 'm ago';
+      if (s < 86400) return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    }
+    var ICON = { ring: '🔔', open: '🔓', denied: '⛔', card: '💳' };
+    var LABEL = { ring: 'Doorbell rang', open: 'Door released', denied: 'Refused', card: 'Fob presented' };
+
+    function loadLog() {
+      Wren.api('/api/door/events?limit=40').then(function (rows) {
+        var ul = document.getElementById('log');
+        if (!rows || !rows.length) { ul.innerHTML = '<li><span class="what">No door activity yet.</span></li>'; return; }
+        ul.innerHTML = rows.map(function (r) {
+          return '<li>' +
+            (r.snapshot_url
+              ? '<img class="thumb" data-src="' + esc(r.snapshot_url) + '" alt="Doorway still">'
+              : '<span class="thumb" style="display:flex;align-items:center;justify-content:center;' +
+                'background:rgba(148,163,184,.1);border-radius:6px">' + (ICON[r.event_type] || '•') + '</span>') +
+            '<span class="what"><strong>' + esc(LABEL[r.event_type] || r.event_type) + '</strong>' +
+              (r.staff_name ? ' · ' + esc(r.staff_name) : '') +
+              '<div class="sub">' + esc(r.reason || '') + '</div></span>' +
+            '<span class="when">' + esc(when(r.created_at)) + '</span>' +
+          '</li>';
+        }).join('');
+        // Stills need the bearer token, so they load as blobs rather than <img src>.
+        ul.querySelectorAll('img.thumb[data-src]').forEach(function (im) {
+          fetch(im.getAttribute('data-src'), { headers: { Authorization: 'Bearer ' + token() } })
+            .then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })
+            .then(function (b) { im.src = URL.createObjectURL(b); })
+            .catch(function () { im.remove(); });
+        });
+      }).catch(function () {
+        document.getElementById('log').innerHTML = '<li><span class="what">Could not load the entry log.</span></li>';
+      });
+    }
+    loadLog();
+    setInterval(loadLog, 20000);
+  }
+  boot();
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Managers' guide — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+  /* Tokens only, no bare hex — same pattern as What's new in Wren / Staff Handbook. */
+  .mg-wrap { max-width: 820px; }
+  .mg-intro { font-size: .88rem; color: var(--c-muted); line-height: 1.65; margin: 4px 0 20px; }
+  .mg-intro b { color: var(--c-text); }
+
+  .mg-search-wrap { position: sticky; top: 0; z-index: 5; background: var(--c-bg); padding: 6px 0 12px; margin-bottom: 6px; }
+  .mg-search-box { position: relative; }
+  .mg-search {
+    width: 100%; min-height: 48px; padding: 11px 16px 11px 42px;
+    font-size: 1rem; font-family: inherit; color: var(--c-text);
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: 14px;
+  }
+  .mg-search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--c-muted); pointer-events: none; }
+  .mg-search:focus-visible { outline: none; border-color: var(--c-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-blue) 30%, transparent); }
+  .mg-search-count { font-size: .76rem; color: var(--c-muted); margin-top: 6px; min-height: 1.2em; }
+
+  .mg-index { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 24px; }
+  .mg-index a {
+    display: inline-flex; align-items: center; gap: 6px;
+    min-height: 36px; padding: 6px 12px;
+    border: 1px solid var(--c-border); border-radius: 999px;
+    background: var(--c-surface); color: var(--c-text);
+    font-size: .8rem; font-weight: 700; text-decoration: none;
+  }
+  .mg-index a:hover { border-color: var(--c-blue); }
+
+  .mg-topic { margin: 0 0 32px; scroll-margin-top: 20px; }
+  .mg-topic-h { font-size: 1.2rem; margin: 0 0 4px; display: flex; align-items: center; gap: 9px; }
+  .mg-topic-blurb { font-size: .84rem; color: var(--c-muted); margin: 0 0 12px; }
+  .mg-topic[hidden] { display: none; }
+
+  .mg-q { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; margin-bottom: 10px; }
+  .mg-q[hidden] { display: none; }
+  .mg-q > summary {
+    list-style: none; cursor: pointer; padding: 13px 16px;
+    font-weight: 700; font-size: .95rem; display: flex; align-items: center; gap: 10px;
+  }
+  .mg-q > summary::-webkit-details-marker { display: none; }
+  .mg-q > summary::before { content: '▸'; color: var(--c-muted); transition: transform .15s; flex-shrink: 0; }
+  .mg-q[open] > summary::before { transform: rotate(90deg); }
+  .mg-q > summary:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; border-radius: 12px; }
+  .mg-q[open] > summary { border-bottom: 1px solid var(--c-border); }
+
+  .mg-q-body { padding: 4px 16px 16px; font-size: .89rem; line-height: 1.6; max-width: 70ch; }
+  .mg-q-purpose { margin: 8px 0 10px; color: var(--c-muted); }
+  .mg-q-steps { margin: 0 0 12px; padding-left: 22px; }
+  .mg-q-steps li { margin: 6px 0; }
+  .mg-q-steps strong { color: var(--c-text); }
+
+  .mg-shot { margin: 12px 0; }
+  .mg-shot img {
+    display: block; width: 100%; max-width: 480px; height: auto;
+    border-radius: 10px; border: 1px solid var(--c-border-strong, var(--c-border));
+  }
+  .mg-shot figcaption { font-size: .76rem; color: var(--c-muted); margin-top: 6px; }
+
+  .mg-ifnot {
+    margin: 12px 0 0; padding: 10px 12px;
+    background: color-mix(in srgb, var(--c-warn) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c-warn) 40%, transparent);
+    border-radius: 10px; font-size: .83rem; line-height: 1.5;
+  }
+  .mg-ifnot strong { color: var(--c-warn); }
+
+  .mg-tbc {
+    margin: 10px 0 0; padding: 8px 12px;
+    background: color-mix(in srgb, var(--c-info) 12%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--c-info) 45%, transparent);
+    border-radius: 10px; font-size: .78rem; color: var(--c-muted);
+  }
+
+  .mg-empty { display: none; margin: 10px 2px; padding: 16px; text-align: center; color: var(--c-muted);
+    background: var(--c-surface); border: 1px dashed var(--c-border); border-radius: 12px; }
+  body.mg-is-empty .mg-empty { display: block; }
+  body.mg-is-filtering .mg-index { display: none; }
+
+  .mg-foot { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--c-border); font-size: .78rem; color: var(--c-muted); }
+  .mg-foot a { color: var(--c-blue); }
+
+  @media (max-width: 480px) {
+    .mg-shot img { max-width: 100%; }
+  }
+
+  /* ── Print: one topic per sheet, light paper, every answer open ──────────
+     colour-ok: print-only literal black-on-white — paper, never a themed
+     on-screen surface (see LADN-DESIGN-GUIDELINES.md colour rule). */
+  @media print {
+    .mg-search-wrap, .mg-index, .mg-foot, .wren-topbar, .wren-sidebar, #wren-sidebar { display: none !important; }
+    html, body { background: #ffffff; color: #111827; }
+    .mg-wrap { max-width: 100%; }
+    .mg-topic { page-break-before: always; margin: 0 0 14px; }
+    .mg-topic:first-of-type { page-break-before: auto; }
+    .mg-q { border: 1px solid #d1d5db; background: #fff; break-inside: avoid; }
+    .mg-q > summary::before { display: none; }
+    .mg-q-purpose { color: #4b5563; }
+    .mg-ifnot { background: #fff7e6; border-color: #e3b341; }
+    .mg-shot img { max-width: 360px; border-color: #d1d5db; }
+  }
+</style>
+</head>
+<body>
+<div class="v2-page">
+  <div class="mg-wrap">
+    <h1 class="page-title">📘 Managers' guide</h1>
+    <p class="mg-intro">
+      A plain-English tour of Wren for whoever is running the nursery — what each part is for,
+      and how to do the everyday things. It doesn't go deep; it gets you unstuck. Type a word
+      below to jump straight to the answer, or use the topic list.
+      For how to use the room tablets and the staff app day to day, see the
+      <a href="/guides/staff-guide.html">Staff guide</a> — this guide is written for managers.
+    </p>
+
+    <div class="mg-search-wrap">
+      <div class="mg-search-box">
+        <span class="mg-search-icon" aria-hidden="true">🔍</span>
+        <input type="search" id="mg-search" class="mg-search" placeholder="Search the guide… e.g. &quot;invoice&quot;, &quot;PIN&quot;, &quot;parent email&quot;"
+               aria-label="Search the managers' guide" inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="mg-search-count" id="mg-search-count" aria-live="polite"></div>
+    </div>
+
+    <nav class="mg-index" id="mg-index" aria-label="Jump to a topic"></nav>
+    <p class="mg-empty" id="mg-empty">Nothing matches that. Try a shorter word, or clear the box to see every topic.</p>
+
+    <div id="mg-topics">
+
+<section class="mg-topic" id="t-start-here" data-topic="🧭 Start here">
+  <h2 class="mg-topic-h">🧭 Start here</h2>
+  <p class="mg-topic-blurb">The four apps, and how to find your way around Roost.</p>
+
+  <details class="mg-q" open>
+    <summary>I'm still logging in as Toby — how do I sign in as myself?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">You already have your own account. Signing in as yourself (not Toby) means the system knows it's really you — which matters for safeguarding records, messages you send, and anything you approve.</p>
+      <ol class="mg-q-steps">
+        <li>Go to <strong>admin.example-nursery.co.uk</strong> in a browser (save it as a bookmark or an icon on your home screen).</li>
+        <li>Enter <strong>your own work email</strong> and tap <strong>Continue →</strong>.</li>
+        <li>Enter <strong>your own PIN</strong> on the number pad that appears. (Toby sets this for you — see "How do I reset a PIN" below if you don't have one yet.)</li>
+        <li>Tick <strong>"Trust this device for 30 days"</strong> if this is your own phone or computer — then you won't have to enter your PIN every time.</li>
+      </ol>
+      <div class="mg-shot">
+        <img src="/guides/img/mg-login-pin.webp" alt="The Roost sign-in screen, PIN pad step" loading="lazy">
+        <figcaption>The sign-in screen — email, then PIN, then "Trust this device".</figcaption>
+      </div>
+      <p class="mg-ifnot"><strong>If it doesn't work:</strong> "Incorrect PIN" means exactly that — ask Toby to reset it for you (see the Logins topic below). Don't keep guessing; a few wrong tries will temporarily lock the login.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>What are the four parts of Wren, and who uses which?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Wren is one system split into four addresses, each built for a different job.</p>
+      <ol class="mg-q-steps">
+        <li><strong>admin.example-nursery.co.uk</strong> — "Roost", the office system. Managers only. Everything in this guide.</li>
+        <li><strong>ey.example-nursery.co.uk</strong> — the room tablets. Every practitioner uses this for the register, diary, observations.</li>
+        <li><strong>hr.example-nursery.co.uk</strong> — the staff app, for everyone's own phone. Rota, holiday requests, payslips, CPD.</li>
+        <li><strong>parents.example-nursery.co.uk</strong> — the parents app. Parents only.</li>
+      </ol>
+      <p class="mg-q-purpose">All four talk to the same records underneath — a child's details only need entering once.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I find something quickly in Roost?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Roost has a search box that jumps straight to any page, child or member of staff.</p>
+      <ol class="mg-q-steps">
+        <li>Press <strong>Ctrl</strong> + <strong>K</strong> on the keyboard anywhere in Roost — or tap the <strong>Search</strong> button at the top.</li>
+        <li>Start typing a name or the thing you're after.</li>
+        <li>Press <strong>Enter</strong>, or tap the result.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>What's the sidebar, and what's "What needs me"?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">The left-hand menu groups everything into ten areas (Home, Children, Staff, Admissions, Finance, Curriculum, Comms, Operations, AI & Intelligence, Help & Training). The 🏠 <strong>Home</strong> row always takes you to <strong>Cockpit</strong> — your daily landing page.</p>
+      <ol class="mg-q-steps">
+        <li>Tap <strong>🏠 Home</strong> in the sidebar to get back to Cockpit from anywhere.</li>
+        <li>Tap <strong>🎯 What needs me</strong> (also under Home) for a single list of everything waiting on a manager — nothing is hidden on a separate page.</li>
+      </ol>
+      <div class="mg-shot">
+        <img src="/guides/img/mg-cockpit.webp" alt="The Cockpit home screen" loading="lazy">
+        <figcaption>Cockpit — what's waiting on you today.</figcaption>
+      </div>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-logins" data-topic="🔑 Logins">
+  <h2 class="mg-topic-h">🔑 Logins</h2>
+  <p class="mg-topic-blurb">Staff, tablets, and parents — how everyone gets in, and what to do when they can't.</p>
+
+  <details class="mg-q">
+    <summary>How do staff sign in to Roost or the staff app?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Email, then a PIN — the same login on Roost and on the staff app (hr.example-nursery.co.uk). Anyone who has set up a <strong>Wren ID</strong> can use that instead (see the Wren ID question below).</p>
+      <ol class="mg-q-steps">
+        <li>Enter your <strong>work email</strong>, tap <strong>Continue →</strong>.</li>
+        <li>Enter your <strong>PIN</strong> on the number pad.</li>
+        <li>Tick <strong>"Trust this device for 30 days (don't use on shared devices)"</strong> on your own phone or laptop — never on a shared room tablet.</li>
+      </ol>
+      <p class="mg-q-purpose">A few staff also have an extra six-digit code step (two-factor) — if you see that, it's because it was switched on for your account specifically.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How does a room tablet get set up?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">A tablet has to be "enrolled" once before it can show any child's details — this stops a lost or stolen tablet from being any use to whoever finds it.</p>
+      <ol class="mg-q-steps">
+        <li>On the tablet, sign in as any member of staff first.</li>
+        <li>Go to <strong>More → Settings → IT Settings</strong>.</li>
+        <li>Tap <strong>+ Enrol this device</strong>.</li>
+      </ol>
+      <p class="mg-q-purpose">To see every enrolled tablet, or remove one that's lost or being replaced:</p>
+      <ol class="mg-q-steps">
+        <li>In Roost, go to <strong>Settings → Devices &amp; Security</strong>.</li>
+        <li>Find the tablet in the list and tap <strong>Revoke</strong> to remove it.</li>
+      </ol>
+      <p class="mg-ifnot"><strong>If it doesn't work:</strong> a brand-new, unenrolled tablet will refuse to show any child's record — that's it working correctly, not a fault. Enrol it first.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I reset a member of staff's PIN?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Two ways — pick whichever is quicker.</p>
+      <ol class="mg-q-steps">
+        <li><strong>From their profile:</strong> Roost → <strong>Staff</strong> → open their name → tap <strong>Reset PIN</strong> (it says <strong>Set PIN</strong> if they've never had one).</li>
+        <li><strong>From the full list:</strong> Roost → <strong>Staff → Staff PINs</strong> — shows everyone and when their PIN was last set, so you can reset or remove one without opening their profile first.</li>
+      </ol>
+      <div class="mg-shot">
+        <img src="/guides/img/mg-staff-pins.webp" alt="The Staff PINs page" loading="lazy">
+        <figcaption>Staff → Staff PINs — reset anyone's PIN from one list.</figcaption>
+      </div>
+      <p class="mg-ifnot"><strong>If it doesn't work:</strong> Toby's own PIN can't be reset this way on purpose — only Toby can change it himself.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>What is Wren ID, and how do I send someone a new link when theirs has expired?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Wren ID is a second way into Roost and the staff app: an email address and a password the person chooses themselves. Their PIN keeps working too. Each person gets an email with a set-up link; the link lasts 14 days, and it stops working once it has been opened, so someone who opened it and didn't finish needs a new one.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → sidebar <strong>Staff</strong> group → <strong>🔑 Permissions</strong>.</li>
+        <li>Open the <strong>Wren ID</strong> tab.</li>
+        <li>Find the person. Their row says where they are: <strong>Password set</strong> (done), <strong>Invited</strong>, <strong>Opened</strong> (started but didn't finish) or <strong>Link expired</strong>.</li>
+        <li>Tap <strong>Re-send</strong> on their row. A fresh link goes to their email and the old one stops working.</li>
+        <li>To send to several people at once, tick them and tap <strong>Send invitation</strong> at the top.</li>
+      </ol>
+      <p class="mg-ifnot"><strong>If it doesn't work:</strong> if their row says <strong>No Wren ID yet</strong>, tap <strong>Create their Wren ID</strong> first, then Re-send. If the link never arrives, check the email on their staff record and their spam folder. You need to be signed in as yourself, not as Toby, to see who sent what.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I get a new starter their login?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">A new starter fills in their own details through a one-off link you send them — you don't have to set up their account by hand.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Staff → Induction</strong>.</li>
+        <li>Tap <strong>✉️ Onboard new starter by email</strong>.</li>
+        <li>Fill in their name and email, tap <strong>Create &amp; send welcome</strong>.</li>
+        <li>They get an email with a link to fill in their own details — no login needed for that part.</li>
+        <li>Once they've submitted it, come back to <strong>Induction</strong> and tap <strong>Approve &amp; activate</strong> next to their name — this is what actually creates their login.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How does a parent sign in for the first time?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">A parent never has a password to remember — they get a one-time code by email every time they sign in.</p>
+      <ol class="mg-q-steps">
+        <li>They go to <strong>parents.example-nursery.co.uk</strong>.</li>
+        <li>They enter the email address <strong>you have on file for them</strong>.</li>
+        <li>A one-time code lands in their inbox; they type it in to get access.</li>
+      </ol>
+      <p class="mg-q-purpose">This part of the login screen is currently run by our security provider (Cloudflare), not by Wren itself — so the page will briefly look slightly different from the rest of the parents app. That's expected.</p>
+      <div class="mg-tbc">[Toby to confirm] A newer, Wren-branded version of this code screen has been built and is being tested — once it's switched on, this answer will need a small update.</div>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I add or change a parent's email address?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">A parent's email is also their login — get it right, or they can't sign in.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Children</strong> → open the child → the <strong>👪 Family</strong> tab.</li>
+        <li>Edit the <strong>Email</strong> field under Parent/Carer 1 or 2, then save.</li>
+      </ol>
+      <p class="mg-q-purpose">Want to double-check what a parent actually sees? On the same Family tab there's a <strong>👁️ View [Name]'s Finch portal</strong> button — it shows you their app exactly as they see it, for 30 minutes, and it's all logged.</p>
+      <div class="mg-shot">
+        <img src="/guides/img/mg-family-tab.webp" alt="The Family tab on a child profile, showing the parent email field" loading="lazy">
+        <figcaption>Children → a child → Family — edit a parent's email here.</figcaption>
+      </div>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>A parent says the code didn't arrive — what do I do?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">There's no "resend" button inside Wren for this today — the code comes from our security provider's own page, not from Wren.</p>
+      <ol class="mg-q-steps">
+        <li>Check the email address on file is spelled correctly (Family tab, above).</li>
+        <li>Ask them to check their <strong>spam / junk folder</strong>.</li>
+        <li>Ask them to try again after a minute — codes do occasionally arrive late.</li>
+        <li>If it still doesn't arrive, ask Toby — this is one to escalate rather than something you can fix from Roost.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>A parent says they see no child in the app — what's happened?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Usually this means the email they signed in with isn't the one linked to their child's record.</p>
+      <ol class="mg-q-steps">
+        <li>Check the Family tab (above) for the exact email address on file.</li>
+        <li>Make sure it matches, character for character, what the parent is typing in.</li>
+        <li>If it genuinely doesn't match anything, ask Toby — a handful of newer sign-in routes show the parent a clear "ask the nursery to set one up" message, but the main one does not explain itself, by design.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Someone is locked out — what can I actually do?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">There's no self-service "I forgot my PIN" button for staff — a manager has to step in.</p>
+      <ol class="mg-q-steps">
+        <li><strong>A member of staff:</strong> reset their PIN yourself (see above).</li>
+        <li><strong>A parent:</strong> check their email on file, and see the two questions above.</li>
+        <li><strong>Yourself, if you're the one locked out:</strong> ask Toby — only he can reset his own login, and only another manager can reset yours.</li>
+      </ol>
+      <p class="mg-ifnot"><strong>If it doesn't work:</strong> too many wrong PIN attempts locks the login for a short time automatically — wait a few minutes before trying again rather than repeating the same PIN.</p>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-admissions" data-topic="🌱 Enquiries &amp; new starters">
+  <h2 class="mg-topic-h">🌱 Enquiries, waiting list, offers and starting a new child</h2>
+  <p class="mg-topic-blurb">From a first enquiry through to a child's first day.</p>
+
+  <details class="mg-q">
+    <summary>Where do I see new enquiries and the waiting list?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">One area covers the whole journey from enquiry to registered child.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Admissions</strong>.</li>
+        <li>Use the tabs across the top to move between <strong>occupancy</strong>, the <strong>pipeline</strong> (every enquiry's current stage) and the <strong>offer engine</strong>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I take a family from enquiry to starting with us?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Every step happens from the family's card in <strong>Admissions</strong>. The card moves along the pipeline by itself as you go, and never moves backwards. The button for the next step is always the highlighted one. Nothing is emailed to the family until you've seen the email and pressed <strong>Send</strong>.</p>
+      <ol class="mg-q-steps">
+        <li><strong>Viewing:</strong> book it from the card. When the room confirms it, you see the confirmation email and choose <strong>Send</strong> or <strong>Don't send</strong>.</li>
+        <li><strong>Waiting list:</strong> on the card, tap <strong>→ Waiting list</strong>.</li>
+        <li><strong>Offer:</strong> on the <strong>Waiting list</strong> tab, tap <strong>Offer</strong>. Check the pre-filled email (fill in any <strong>[CHECK: …]</strong> line, e.g. the deposit), then <strong>Send offer</strong>, or <strong>Mark as offered without emailing</strong> if you've told them another way.</li>
+        <li><strong>Their answer:</strong> tap <strong>Accepted</strong> or <strong>Declined</strong> on their row.</li>
+        <li><strong>Registration:</strong> once accepted, tap <strong>✉️ Send registration link…</strong>. Check the email and press <strong>Send</strong>, or <strong>Copy link instead</strong> to send it by WhatsApp.</li>
+        <li><strong>Approve:</strong> when they've filled it in, they appear in <strong>Children → pending</strong>. Approve them there. Their parents-app access, billing email and payment reference are set up automatically.</li>
+      </ol>
+      <p class="mg-ifnot"><strong>Deposit:</strong> when it arrives in the bank, use Finance → Reconcile → <strong>Deposit…</strong> on that line and type their surname. It finds them at any stage. We don't hold deposits: it goes onto their account and comes off their first bill.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do I record a deposit or set up settling-in sessions?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Once a child has accepted a place, their deposit and settling-in plan live on their own profile, not a separate admissions page.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Children</strong> → open the child's profile.</li>
+        <li>Open the <strong>🌱 Onboarding</strong> tab.</li>
+        <li>Tap <strong>Raise deposit (2 weeks fees)</strong> to note what's due. When it's paid, tap <strong>Pay</strong>: it goes onto their account as a payment and comes off their first bill (we don't hold deposits). If the money came in by bank transfer, record it from Reconcile → <strong>Deposit…</strong> instead.</li>
+        <li>Below it, edit the <strong>settling-in schedule</strong> — each session's length can be changed (15 minutes to 10 hours).</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-children" data-topic="👶 Children">
+  <h2 class="mg-topic-h">👶 Children</h2>
+  <p class="mg-topic-blurb">One profile per child holds everything — find it, and everything else follows.</p>
+
+  <details class="mg-q">
+    <summary>How do I find a child and see their full record?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Every child has one profile page with a row of tabs across the top — details, family, observations, diary, funding and more all live in the same place.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Children</strong>, or press <strong>Ctrl+K</strong> and type their name.</li>
+        <li>Tap the child to open their profile.</li>
+        <li>Use the tabs along the top — <strong>Details</strong>, <strong>Family</strong>, <strong>All About Me</strong>, <strong>Observations</strong>, <strong>Daily Diary</strong>, <strong>Funding &amp; Invoices</strong> and the rest — to move between the different parts of their record.</li>
+      </ol>
+      <div class="mg-shot">
+        <img src="/guides/img/mg-child-profile.webp" alt="A child profile page showing the row of tabs" loading="lazy">
+        <figcaption>A child's profile — one page, every tab along the top.</figcaption>
+      </div>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do I update allergies or medical details?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Allergy and medical information lives on the child's profile, under the details about who they are.</p>
+      <ol class="mg-q-steps">
+        <li>Open the child's profile → the <strong>All About Me</strong> tab.</li>
+        <li>Find <strong>Food Allergies</strong> (and the other medical fields nearby) and edit them.</li>
+        <li>Save.</li>
+      </ol>
+      <p class="mg-ifnot"><strong>If it doesn't work:</strong> there are currently two separate places allergy information can be entered on a child's record — if something looks like it hasn't "taken", check whether it needs updating in both. <span class="mg-tbc">[Toby to confirm which two, and whether this has been tidied up]</span></p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do I assign or change a child's key person?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Key person planning has its own tool, separate from the child's main profile.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Curriculum → Key-Person Planning</strong>.</li>
+      </ol>
+      <div class="mg-tbc">[Toby to confirm] the exact click path to change a key person inside this tool wasn't verified in detail for this guide — worth a quick walkthrough together.</div>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do room moves work?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Wren moves a child up a room automatically on the Monday on or after their 2nd birthday, unless you've told it otherwise.</p>
+      <ol class="mg-q-steps">
+        <li>Open the child's profile and find the <strong>Room moves</strong> section.</li>
+        <li>If a move needs to happen on a different date, set that there — once you have, the automatic rule leaves that child alone.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>A child is leaving — how do I send a keepsake and update their record?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Keepsakes is where a leaving child's memory book is put together and sent — it's the only place this happens.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → Comms → <strong>Keepsakes</strong>.</li>
+        <li>Find the child and tap <strong>🎁 Generate keepsake &amp; link</strong>.</li>
+        <li>To write the farewell message that goes inside it, follow the link on that page through to <strong>Leavers Book</strong> — write the message, tap <strong>✨ Regenerate AI message</strong> if you'd like a starting draft, then <strong>💾 Save</strong> and <strong>📄 Finalise &amp; Download PDF</strong>.</li>
+      </ol>
+      <p class="mg-ifnot"><strong>If it doesn't work:</strong> Leavers Book isn't in the sidebar or the Ctrl+K search — you can only reach it via the link inside Keepsakes, so start there.</p>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-daily" data-topic="📋 Daily running">
+  <h2 class="mg-topic-h">📋 Daily running</h2>
+  <p class="mg-topic-blurb">The register, ratios, the diary, sleep checks and the kitchen — mostly room-tablet jobs, with a manager's view on top.</p>
+
+  <details class="mg-q">
+    <summary>Where is the register, and how do I check ratios?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">The register itself is signed on the room tablets; Roost gives you the overview and the compliance record.</p>
+      <ol class="mg-q-steps">
+        <li>Day-to-day signing in/out happens on the room tablet: <strong>More → Child Register</strong>.</li>
+        <li>For the manager's ratio view: Roost → Operations → <strong>Room Headcounts</strong> — shows each scheduled check for the day per room (done, missed, or under ratio), with a <strong>Today</strong> and <strong>History</strong> tab.</li>
+      </ol>
+      <div class="mg-shot">
+        <img src="/guides/img/mg-room-headcounts.webp" alt="Room Headcounts page showing ratio status" loading="lazy">
+        <figcaption>Operations → Room Headcounts — live ratio status, with history.</figcaption>
+      </div>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do staff write the daily diary, and can I see it from Roost?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">The diary is written on the room tablet as it happens; you can see any child's diary from their profile.</p>
+      <ol class="mg-q-steps">
+        <li>Staff write it on the tablet from the room's home screen.</li>
+        <li>To check a child's diary from Roost: open their profile → <strong>Daily Diary</strong> tab.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where are the menus and kitchen records?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Menus are set up in Roost; the kitchen's day-to-day logs are their own page.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → Operations → <strong>Kitchen</strong> for the daily SFBB food-safety logs.</li>
+        <li>Menu planning itself: <strong>Settings → Food &amp; Menus</strong>.</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-learning" data-topic="🎓 Learning">
+  <h2 class="mg-topic-h">🎓 Learning</h2>
+  <p class="mg-topic-blurb">Observations, next steps, tracking against the framework, and planning.</p>
+
+  <details class="mg-q">
+    <summary>Where do I see a child's observations?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Observations are written on the tablet by the key person; you can read them from Roost at any time.</p>
+      <ol class="mg-q-steps">
+        <li>Open the child's profile → the <strong>Observations</strong> tab.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do "next steps" work now?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">A next step is something specific a child's key person is working on with them right now — kept short on purpose, rather than a long list nobody reviews.</p>
+      <ol class="mg-q-steps">
+        <li>A key person sets one from an observation, from the child's page, or from a termly update — up to about three "active" at a time per child.</li>
+        <li>They close one with a single tap on the tablet once the child can do it, ideally linked to the observation that shows it.</li>
+        <li>At each half-term review, every active next step is marked <strong>achieved</strong>, <strong>carried forward</strong> or <strong>retired</strong>, and new ones are set.</li>
+      </ol>
+      <p class="mg-q-purpose">On 5 October 2026 a one-off, Toby-approved tidy-up retired the old backlog of next steps imported from EyLog (most untouched for well over a year) so every child starts the new system with a small, current set.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do I see a child's progress against the framework?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">The Tracker Grid shows every child against the whole framework at a glance.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Curriculum → Tracker Grid</strong>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where are two-year checks and parent reports?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Both are written and reviewed from a child's own profile.</p>
+      <ol class="mg-q-steps">
+        <li>Open the child's profile → the <strong>2-Year Check</strong> tab, or the <strong>Reports</strong> tab for termly/transition reports.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where is room and curriculum planning?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">The termly and weekly plan that each room works from.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Curriculum → Planning</strong>.</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-safeguarding" data-topic="🛡️ Safeguarding, incidents, accidents, medicine">
+  <h2 class="mg-topic-h">🛡️ Safeguarding, incidents, accidents, medicine</h2>
+  <p class="mg-topic-blurb">Who can see what, and where each kind of record lives.</p>
+
+  <details class="mg-q">
+    <summary>Where do I review a safeguarding concern?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Every concern raised by staff lands in one manager queue for sign-off.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Safeguarding</strong>.</li>
+        <li>Use the tabs: <strong>concerns</strong> (active), <strong>sign-off queue</strong>, the full <strong>log</strong>, and the <strong>audit</strong> trail.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do accidents and incidents get signed off?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Staff log an accident or incident on the room tablet; a manager reviews and signs it off in Roost.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Accidents &amp; Incidents</strong> for anything about a specific child (reported from the room tablets).</li>
+        <li>Roost → <strong>Setting Incidents</strong> for whole-building events — fire, intruder, a lost child, an outbreak — which is a separate list from child accidents.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Who can see medicine records?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Medicine records aren't automatically manager-only any more — each member of staff can be individually given or refused access.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Medicine</strong> to view and record medicine given.</li>
+        <li>To change who can see it: give or remove the medicine permission on that person's staff record.</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-staff" data-topic="🧑‍🍼 Staff">
+  <h2 class="mg-topic-h">🧑‍🍼 Staff</h2>
+  <p class="mg-topic-blurb">Rota, absences, supervisions, CPD, performance, recruitment and staff documents.</p>
+
+  <details class="mg-q">
+    <summary>Where is the rota, and how do I approve a holiday request?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">The rota is built in Roost; staff request holiday from the staff app, and you approve it in Roost.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Staff → Rota</strong> to build and view it.</li>
+        <li>Roost sidebar → <strong>Staff → Absences</strong> for the calendar and the approval queue for holiday/sickness requests.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do I run a supervision?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Supervisions are recorded against the member of staff directly.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Staff</strong> → open the person → the <strong>Supervisions</strong> tab.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do I assign CPD / training, and find certificates?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Training can be assigned from the CPD Matrix; certificates show up on the person's own profile once a course is completed.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Staff → CPD Matrix</strong> — a grid of who needs what training.</li>
+        <li>For one person's record and their certificates: open their profile → <strong>Documents</strong>, or look for a <strong>Certificate</strong> link next to a completed course.</li>
+      </ol>
+      <p class="mg-tbc">[Toby to confirm] there are a few different CPD screens in Roost that overlap (CPD &amp; Knowledge, CPD Matrix, and tabs on the Staff page itself) — worth agreeing which one the office manager should treat as "the" one to check day to day.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do performance notes and formal warnings go?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">These are two different things in two different places.</p>
+      <ol class="mg-q-steps">
+        <li>General performance notes: open the person's profile → <strong>Performance</strong> tab.</li>
+        <li>A formal warning or disciplinary process: Roost sidebar → <strong>Staff → Disciplinary</strong>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where is recruitment, and where are staff documents?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Vacancies and applicants are manager-only and kept separate from everything else.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Staff → Recruitment</strong> for vacancies and the applicant pipeline.</li>
+        <li>A member of staff's own documents (contracts, certificates, reports): open their profile → <strong>Documents</strong>.</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-finance" data-topic="💷 Finance">
+  <h2 class="mg-topic-h">💷 Finance</h2>
+  <p class="mg-topic-blurb">How money moves through Wren since October — invoices, the bank feed, funding and family statements.</p>
+
+  <details class="mg-q">
+    <summary>How do monthly invoices get sent, and how do I fix one?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Invoices are not automatic — a manager runs them each month with one button, with a preview first.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Finance → Invoices &amp; Payments</strong> → <strong>Invoices</strong> tab → tap <strong>Generate invoices for a month…</strong> and pick the month.</li>
+        <li>Wren shows a <strong>Preview</strong> of what it's about to create — check it, then tap <strong>Generate</strong> to actually send them. Children who already have an invoice for the period are skipped automatically.</li>
+        <li>To fix a mistake on an invoice already sent: find it and use <strong>Regenerate</strong> (only works before it's locked/sent), <strong>Credit note</strong> (the usual way to correct a sent invoice), or <strong>Write off</strong> if it will never be paid.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I add a payment a family made (cash, a transfer, Tax-Free Childcare)?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">For money that isn't waiting in the bank list on Reconcile — cash, a cheque, or anything you've been told about.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Finance → Invoices &amp; Payments</strong> → <strong>Payments</strong> tab → <strong>Add payment…</strong></li>
+        <li>Type the child's name and pick them, then fill in the <strong>date</strong>, <strong>payment mode</strong> and <strong>amount</strong>. Add the reference if there is one.</li>
+        <li>Under <strong>Apply to</strong>, leave <strong>Oldest unpaid first</strong> unless the family told you which invoice it's for (<strong>A chosen invoice</strong>). <strong>On account (credit)</strong> keeps it as credit.</li>
+        <li>Tap <strong>Add payment</strong>. The family's statement updates straight away.</li>
+      </ol>
+      <p class="mg-q-purpose">A <strong>deposit</strong> is added the same way with payment mode <strong>Deposit</strong> — we don't hold deposits, so it goes straight onto the family's balance.</p>
+      <p class="mg-ifnot"><strong>Made a mistake?</strong> Tap the payment in the list and choose <strong>Undo</strong>. It's marked as reversed, never deleted, and the invoices it paid go back to owing.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I give a family a credit, or take money off an invoice?</summary>
+    <div class="mg-q-body">
+      <ol class="mg-q-steps">
+        <li><strong>Invoices &amp; Payments</strong> → <strong>Payments</strong> tab → <strong>Add credit note…</strong></li>
+        <li>Pick the child, the invoice it's for (or none), the amount and a short reason everyone will understand.</li>
+        <li>Tap to save — it shows on the family's statement at once.</li>
+      </ol>
+      <p class="mg-q-purpose">You can also open any invoice from the <strong>Invoices</strong> tab and use <strong>Credit note…</strong> or <strong>Write off…</strong> there.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How does bank reconciliation work?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Every morning Wren pulls in yesterday's bank transactions automatically; it only ever suggests a match — you confirm it.</p>
+      <ol class="mg-q-steps">
+        <li>Roost → <strong>Finance → Invoices &amp; Payments</strong> → <strong>Reconcile</strong> tab for the quick list, or <strong>Open full workbench</strong> for everything below.</li>
+        <li>For each unmatched line, Wren usually suggests which invoice it belongs to. If it's right, tap <strong>✓ Confirm</strong>.</li>
+        <li>If a payment covers more than one invoice, tap <strong>✂ Split…</strong>.</li>
+        <li>If it's a deposit rather than an invoice payment, tap <strong>🏷 Deposit…</strong>.</li>
+        <li>If it doesn't belong on this screen at all, tap <strong>🗑 Remove…</strong>.</li>
+        <li>Matched something by mistake? Find it under "Recently matched" and tap <strong>↩ Undo</strong>.</li>
+      </ol>
+      <p class="mg-q-purpose">The bank feed itself is our Barclays account, connected automatically every morning at 7:15am — nobody needs to download or upload a statement.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>What are the "LA-" and "TFC" references I see on invoices?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Two different reference numbers, both printed on every invoice.</p>
+      <ol class="mg-q-steps">
+        <li><strong>LA-XXXX</strong> is the family's own payment reference — Wren generates it, and it's what helps a payment match itself automatically.</li>
+        <li>The other reference (4 letters + 5 digits, e.g. <strong>AJON12345</strong>) is the child's own <strong>Tax-Free Childcare</strong> reference from HMRC, used when a parent pays through that scheme.</li>
+      </ol>
+      <p class="mg-q-purpose">If a family doesn't have a reference yet: Finance page → <strong>"Family payment references"</strong> section → <strong>Give every family a reference</strong>.</p>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Can parents pay by card?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Yes — card payments went live on 1 October 2026, reached from the parents app's Payments page.</p>
+      <ol class="mg-q-steps">
+        <li>A parent pays from <strong>parents.example-nursery.co.uk → Pay</strong>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where is funding — terms, codes, declarations, headcount?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">All of funding lives on one page, split into tabs.</p>
+      <ol class="mg-q-steps">
+        <li>For a quick look: <strong>Invoices &amp; Payments</strong> → <strong>Funding</strong> tab (this term's funded children and hours). For everything else: <strong>Finance (full) → Funding</strong>.</li>
+        <li>Tabs: <strong>Terms</strong>, <strong>Child Allocation</strong>, <strong>Summary &amp; Submission</strong>, <strong>Council Portal</strong>, <strong>Declarations</strong>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where do I read a family's statement — what they owe and what they've paid?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">A running ledger for the whole family, exactly as the parent sees it in their own app.</p>
+      <ol class="mg-q-steps">
+        <li><strong>Invoices &amp; Payments</strong> → <strong>Families</strong> tab → type the child's name. Or open any one of the family's children → the <strong>💷 Funding &amp; Invoices</strong> tab.</li>
+        <li>If the family has more than one child with us, this same ledger shows all of them together, with a running <strong>Balance</strong>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Is Xero still used?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Not for day-to-day payments any more — the Barclays bank feed above is the live source for reconciling what's been paid. Xero is still connected, but now mainly for pulling reports (profit &amp; loss, balance sheet) into Wren for a comparison view — it doesn't write anything back to Xero.</p>
+      <div class="mg-tbc">[Toby to confirm] the Reconcile screen still shows a "Sync from Xero" button alongside the Barclays feed, which could look confusing — worth deciding whether that button should be hidden now the bank feed is live.</div>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-comms" data-topic="💬 Talking to parents and staff">
+  <h2 class="mg-topic-h">💬 Talking to parents and staff</h2>
+  <p class="mg-topic-blurb">The inbox, messages, newsletters, and keeping the team in the loop.</p>
+
+  <details class="mg-q">
+    <summary>How does the Inbox work, and who can use it?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">The Inbox is where email to the nursery is read and answered, with Wren drafting a reply for you to check first.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Comms → Inbox</strong> (it's the first thing you see in Comms as of 5 October 2026).</li>
+        <li>Open an email. If Wren has drafted a reply, read it over.</li>
+        <li>Edit it if you need to, then tap <strong>Send</strong> — nothing ever goes out on its own; a person always presses Send.</li>
+      </ol>
+      <p class="mg-q-purpose">Only staff specifically given access can use the Inbox — currently Toby, the office manager and the admissions lead. Anyone else who tries sees a message explaining why, rather than a blank page.</p>
+      <div class="mg-shot">
+        <img src="/guides/img/mg-inbox.webp" alt="The Roost Inbox showing an AI-drafted reply" loading="lazy">
+        <figcaption>Comms → Inbox — check the drafted reply, then Send.</figcaption>
+      </div>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I tell the whole staff team something?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">A running noticeboard for the team, with control over who it's aimed at.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Comms → Tell the staff</strong>.</li>
+        <li>Write your notice, choose who it's for, and publish it.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I send a newsletter?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Newsletters go out to whichever group of parents you choose, not always everyone.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Comms → Newsletter</strong>.</li>
+        <li>Write it, then choose the audience before sending.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I post a "What's new in Wren" update?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">This is the page that tells the team (or parents) what's changed in Wren itself — and this very guide will likely be announced through it.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Help &amp; Training → What's new in Wren</strong>.</li>
+        <li>Tap <strong>Write an update</strong>, fill it in, choose who sees it, and publish.</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-compliance" data-topic="📋 Compliance">
+  <h2 class="mg-topic-h">📋 Compliance</h2>
+  <p class="mg-topic-blurb">Policies, inspection readiness, and what's ready for Ofsted.</p>
+
+  <details class="mg-q">
+    <summary>Where are our policies and terms &amp; conditions?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">One workspace for every policy document and the T&amp;Cs, with staff sign-off tracked.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Operations → Policies &amp; T&amp;C</strong>.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>How do I prepare for an Ofsted inspection?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Two related tools: one for getting ready when an inspection is called, and one for a general self-check at any time.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Operations → Inspection</strong> — action items, staff briefing packs, a gap analysis and the evidence to hand.</li>
+        <li>Roost sidebar → <strong>Operations → Inspection Toolkit</strong> — a self-evaluation against every EYFS judgement area, any time, not just when an inspection is called.</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where are risk assessments, fire safety and COSHH?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">Risk assessments ("Safety Checks") are managed on the room tablets, not in Roost.</p>
+      <ol class="mg-q-steps">
+        <li>On the room tablet: <strong>More → The Setting → Safety Checks</strong>.</li>
+      </ol>
+      <p class="mg-tbc">[Toby to confirm] fire safety and COSHH do not currently have a working screen anywhere in Wren, on any portal — if you need either right now, treat it as outside Wren until that's built.</p>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-reports" data-topic="🧾 Reports and exports">
+  <h2 class="mg-topic-h">🧾 Reports and exports</h2>
+  <p class="mg-topic-blurb">Where to build a report and get the numbers out.</p>
+
+  <details class="mg-q">
+    <summary>Where do I build a report or export a CSV?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">One page lets you pick exactly the fields you want, see what's missing, and export.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Operations → Reports</strong>.</li>
+        <li>Choose the fields you want (parent names, emails, emergency contacts, and more).</li>
+        <li>Save it, export as CSV, or print it directly.</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section class="mg-topic" id="t-help" data-topic="❓ Help">
+  <h2 class="mg-topic-h">❓ Help</h2>
+  <p class="mg-topic-blurb">Reporting a problem, and who to ask.</p>
+
+  <details class="mg-q">
+    <summary>How do I report a bug or suggest something?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">There's a floating 🐞 button for exactly this — though on Roost it's hidden by default, so look on the room tablet if you can't see it on your own screen.</p>
+      <ol class="mg-q-steps">
+        <li>On the room tablet: <strong>More → Help &amp; Account → Report a bug / feedback</strong>.</li>
+        <li>Choose <strong>🐞 Bug</strong>, <strong>💡 Idea</strong>, <strong>✅ Works well</strong> or <strong>💬 Feedback</strong>, and describe what happened.</li>
+      </ol>
+      <p class="mg-q-purpose">Fixes are reviewed and released every <strong>Friday at midnight</strong> — so something reported this week is usually live by the following week, not instantly.</p>
+      <div class="mg-tbc">[Toby to confirm] there's currently no obvious way to report a bug from inside Roost or the staff app themselves — only from the room tablet's More menu. Worth adding one to Roost directly.</div>
+    </div>
+  </details>
+
+  <details class="mg-q">
+    <summary>Where's the staff guide, and who do I ask if I'm stuck?</summary>
+    <div class="mg-q-body">
+      <p class="mg-q-purpose">For how staff use the room tablets and the staff app day to day, there's a separate guide written for them.</p>
+      <ol class="mg-q-steps">
+        <li>Roost sidebar → <strong>Help &amp; Training → Staff guide</strong>, or send staff the link directly: <strong>/guides/staff-guide.html</strong> on any portal.</li>
+        <li>Anything this guide doesn't answer — ask Toby.</li>
+      </ol>
+    </div>
+  </details>
+</section>
+
+    </div><!-- #mg-topics -->
+    <p class="mg-foot">Your Nursery · Wren managers' guide · last updated 5 October 2026 · see also the <a href="/guides/staff-guide.html">Staff guide</a></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var topics = Array.prototype.slice.call(document.querySelectorAll('.mg-topic'));
+  var indexNav = document.getElementById('mg-index');
+  topics.forEach(function (t) {
+    var a = document.createElement('a');
+    a.href = '#' + t.id;
+    a.textContent = t.dataset.topic || t.id;
+    indexNav.appendChild(a);
+  });
+
+  var input = document.getElementById('mg-search');
+  var countEl = document.getElementById('mg-search-count');
+  var qs = Array.prototype.slice.call(document.querySelectorAll('.mg-q'));
+  qs.forEach(function (q) { q.dataset.mgtext = (q.textContent || '').toLowerCase(); });
+
+  function applyFilter() {
+    var raw = input.value.trim().toLowerCase();
+    document.body.classList.toggle('mg-is-filtering', raw.length > 0);
+    var shown = 0;
+    topics.forEach(function (t) {
+      var anyShown = false;
+      Array.prototype.forEach.call(t.querySelectorAll('.mg-q'), function (q) {
+        var match = !raw || q.dataset.mgtext.indexOf(raw) !== -1;
+        q.hidden = !match;
+        if (match) { anyShown = true; shown++; if (raw) q.open = true; }
+      });
+      t.hidden = !anyShown;
+    });
+    document.body.classList.toggle('mg-is-empty', raw.length > 0 && shown === 0);
+    countEl.textContent = raw ? (shown + ' match' + (shown === 1 ? '' : 'es')) : '';
+  }
+  input.addEventListener('input', applyFilter);
+  applyFilter();
+
+  var openBeforePrint = null;
+  window.addEventListener('beforeprint', function () {
+    openBeforePrint = qs.filter(function (q) { return q.open; });
+    qs.forEach(function (q) { q.open = true; });
+  });
+  window.addEventListener('afterprint', function () {
+    if (!openBeforePrint) return;
+    qs.forEach(function (q) { q.open = openBeforePrint.indexOf(q) !== -1; });
+    openBeforePrint = null;
+  });
+}());
+</script>
+</body>
+</html>

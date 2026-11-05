@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inspection Toolkit · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ .it-wrap{padding:18px;max-width:980px;margin:0 auto;color:#f1f5f9}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:#94a3b8;font-size:.85rem;margin-bottom:6px;line-height:1.5}
+ .it-scaffold{color:#fbbf24;font-size:.78rem;margin-bottom:16px}
+ .it-area{background:#0f1a34;border:1px solid rgba(255,255,255,.1);border-radius:12px;margin-bottom:14px;overflow:hidden}
+ .it-area-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer}
+ .it-area-title{font-weight:700;font-size:1rem}
+ .it-rag{width:11px;height:11px;border-radius:50%;display:inline-block;margin-right:8px}
+ .it-rag.green{background:#4ade80}.it-rag.amber{background:#fbbf24}.it-rag.red{background:#f87171}
+ .it-progress{color:#94a3b8;font-size:.8rem}
+ .it-criteria{padding:0 16px 14px;display:none}
+ .it-area.open .it-criteria{display:block}
+ .it-crit{border-top:1px solid rgba(255,255,255,.08);padding:12px 0}
+ .it-crit-title{font-weight:600;font-size:.92rem;margin-bottom:4px}
+ .it-look{color:#94a3b8;font-size:.82rem;margin-bottom:8px;line-height:1.5}
+ .it-evidence{background:rgba(74,154,191,.12);border-left:3px solid #4a9abf;border-radius:0 8px 8px 0;padding:8px 10px;font-size:.84rem;margin-bottom:8px}
+ .it-evidence.red{background:rgba(239,68,68,.12);border-color:#f87171}
+ .it-evidence.amber{background:rgba(251,191,36,.12);border-color:#fbbf24}
+ .it-answer{width:100%;background:#0b1526;border:1px solid #334155;border-radius:8px;color:#f1f5f9;padding:10px;font-size:.88rem;min-height:70px;resize:vertical;font-family:inherit}
+ .it-crit-actions{display:flex;align-items:center;gap:10px;margin-top:8px}
+ .it-btn{padding:6px 13px;border-radius:8px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.8rem}
+ .it-btn.save{background:rgba(34,197,94,.18);color:#4ade80;border-color:rgba(34,197,94,.4)}
+ .it-saved-note{color:#94a3b8;font-size:.76rem}
+ .it-top-actions{margin-bottom:14px}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+</head><body data-portal="admin">
+<div class="it-wrap">
+  <h1>📘 Inspection Toolkit</h1>
+  <div class="sub">Every EYFS judgement area, what an inspector looks for, what Wren already knows, and space for your own answer — the self-evaluation.</div>
+  <div class="it-scaffold">⚠️ Criterion wording is a starting scaffold, not a transcription of Ofsted's own toolkit document — check it against the current text before relying on it for a real inspection.</div>
+  <div class="it-top-actions"><a class="it-btn" href="/api/inspection-toolkit/export" target="_blank" rel="noopener">Export as JSON</a></div>
+  <div id="it-areas">Loading…</div>
+</div>
+<script>
+(function(){
+  'use strict';
+  const esc = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+
+  async function load(){
+    const el = document.getElementById('it-areas');
+    el.innerHTML = 'Loading…';
+    try {
+      const d = await Wren.api('/api/inspection-toolkit/areas');
+      const areas = d.areas || [];
+      el.innerHTML = areas.map(a => `
+        <div class="it-area" data-area="${a.id}">
+          <div class="it-area-head">
+            <span class="it-area-title"><span class="it-rag ${a.rag}"></span>${esc(a.title)}</span>
+            <span class="it-progress">${a.answered}/${a.total} answered</span>
+          </div>
+          <div class="it-criteria">
+            ${a.criteria.map(c => `
+              <div class="it-crit" data-crit="${c.id}">
+                <div class="it-crit-title">${esc(c.criterion)}</div>
+                <div class="it-look">${esc(c.look_for)}</div>
+                ${c.evidence ? `<div class="it-evidence ${esc(c.evidence.rag||'')}">${esc(c.evidence.label)}${c.evidence.issues && c.evidence.issues.length ? '<br>' + c.evidence.issues.map(esc).join('<br>') : ''}</div>` : ''}
+                <textarea class="it-answer" placeholder="Your own answer — how would you evidence this to an inspector?">${esc(c.body||'')}</textarea>
+                <div class="it-crit-actions">
+                  <button class="it-btn save">Save answer</button>
+                  <span class="it-saved-note">${c.updated_at ? 'Last saved ' + new Date(c.updated_at).toLocaleString('en-GB') + (c.updated_by_name ? ' by ' + esc(c.updated_by_name) : '') + ' · v' + c.version : 'Not answered yet'}</span>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>`).join('');
+    } catch(e) { el.innerHTML = '<div style="color:#f87171">Could not load the toolkit — has the b356 migration been applied to this database?</div>'; }
+  }
+
+  document.addEventListener('wren:ready', function(){
+    document.getElementById('it-areas').addEventListener('click', async e => {
+      const head = e.target.closest('.it-area-head');
+      if (head) { head.closest('.it-area').classList.toggle('open'); return; }
+      const saveBtn = e.target.closest('.it-btn.save');
+      if (saveBtn) {
+        const critEl = saveBtn.closest('.it-crit');
+        const critId = critEl.dataset.crit;
+        const body = critEl.querySelector('.it-answer').value;
+        try { await Wren.api('/api/inspection-toolkit/criteria/' + critId + '/answer', { method:'PUT', body:{ body } }); Wren.toast('Saved','success'); load(); }
+        catch(x){ Wren.toast('Could not save','error'); }
+      }
+    });
+    load();
+  });
+})();
+</script>
+</body></html>

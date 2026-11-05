@@ -1,0 +1,205 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Room Headcounts · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf;--orange:#e07820}
+ .rh-wrap{padding:18px;max-width:1400px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+ .tabs{display:flex;gap:6px}
+ .tab{background:#0b1428;border:1px solid var(--bd);color:var(--mut);border-radius:9px;padding:8px 14px;
+   font-size:.85rem;font-weight:600;cursor:pointer;min-height:40px}
+ .tab.active{border-color:var(--blue);color:var(--txt);box-shadow:0 0 0 1px var(--blue) inset}
+ .spacer{flex:1}
+ select,input{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:8px;
+   padding:9px 10px;font-size:.85rem;font-family:inherit}
+ .btn{background:var(--blue);border:1px solid var(--blue);color:#04121b;border-radius:9px;padding:9px 15px;
+   font-size:.85rem;font-weight:700;cursor:pointer;min-height:40px}
+ .btn:hover{filter:brightness(1.08)}
+ .btn.ghost{background:transparent;color:var(--txt);border-color:var(--bd)}
+ .hide{display:none!important}
+ .empty{text-align:center;color:var(--mut);padding:40px 0;font-size:.9rem}
+ .banner{font-size:.82rem;color:var(--mut);margin:6px 0;min-height:1em}
+
+ .room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-bottom:18px}
+ .room-card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px}
+ .room-card h3{margin:0 0 10px;font-size:1.05rem}
+ .slot-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--bd)}
+ .slot-row:first-of-type{border-top:none}
+ .slot-time{font-weight:700;font-size:.88rem;min-width:54px}
+ .slot-meta{flex:1;font-size:.78rem;color:var(--mut)}
+ .badge{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 9px;border-radius:999px;
+   text-transform:uppercase;letter-spacing:.03em}
+ .b-scheduled{background:rgba(148,163,184,.15);color:var(--mut)}
+ .b-ok{background:rgba(34,197,94,.16);color:var(--ok)}
+ .b-bad{background:rgba(239,68,68,.16);color:var(--bad)}
+ .b-missed{background:rgba(239,68,68,.16);color:var(--bad)}
+
+ table{width:100%;border-collapse:collapse;font-size:.84rem}
+ th{text-align:left;color:var(--mut);font-weight:600;font-size:.72rem;text-transform:uppercase;
+   letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--bd)}
+ td{padding:9px 10px;border-bottom:1px solid var(--bd)}
+ tr:hover td{background:rgba(255,255,255,.02)}
+ .tbl-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--bd);border-radius:12px}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="rh-wrap">
+  <h1>🧮 Room Headcounts</h1>
+  <div class="sub">Scheduled headcounts, live ratio-compliance verdicts &amp; the Ofsted-ready audit trail.</div>
+
+  <div class="toolbar">
+    <div class="tabs">
+      <button class="tab active" data-view="today">Today</button>
+      <button class="tab" data-view="history">History</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="btn-refresh">Refresh</button>
+  </div>
+
+  <div class="banner" id="msg"></div>
+
+  <div id="view-today">
+    <div class="room-grid" id="room-grid"></div>
+  </div>
+
+  <div id="view-history" class="hide">
+    <div class="toolbar">
+      <label style="font-size:.75rem;color:var(--mut)">From <input type="date" id="f-from"></label>
+      <label style="font-size:.75rem;color:var(--mut)">To <input type="date" id="f-to"></label>
+      <select id="f-room"><option value="">All rooms</option></select>
+      <select id="f-status">
+        <option value="">All statuses</option>
+        <option value="completed">Completed</option>
+        <option value="missed">Missed</option>
+        <option value="scheduled">Scheduled</option>
+      </select>
+      <button class="btn ghost" id="btn-filter">Apply</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Date &amp; Time</th><th>Room</th><th>Status</th><th>Children</th><th>Staff</th><th>Required</th><th>Verdict</th><th>Completed By</th></tr></thead>
+        <tbody id="hist-body"></tbody>
+      </table>
+      <div class="empty hide" id="hist-empty">No headcounts in this range.</div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/room-headcounts';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  var STATE={view:'today',rooms:[]};
+
+  function api(p,opts){opts=opts||{};
+    return fetch(API+p,{method:opts.method||'GET',
+      headers:Object.assign({'Authorization':'Bearer '+TOKEN()},
+        opts.raw?{}:{'Content-Type':'application/json'}),
+      body:opts.body?(opts.raw?opts.body:JSON.stringify(opts.body)):undefined})
+    .then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};})
+      .catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){
+    return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+  function msg(t){el('msg').textContent=t||'';}
+  function fmtTime(iso){try{return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+  function fmtDateTime(iso){try{return new Date(iso).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+
+  function slotBadge(s){
+    if(s.status==='completed') return '<span class="badge '+(s.ratio_ok?'b-ok':'b-bad')+'">'+(s.ratio_ok?'Ratio OK':'Under ratio')+'</span>';
+    if(s.status==='missed') return '<span class="badge b-missed">Missed</span>';
+    return '<span class="badge b-scheduled">Scheduled</span>';
+  }
+
+  function loadToday(){
+    api('/overview').then(function(r){
+      if(!r.ok){msg('Failed to load: '+((r.j&&r.j.error)||('HTTP '+r.status)));return;}
+      msg('');
+      var byRoom={};
+      (r.j.slots||[]).forEach(function(s){ (byRoom[s.room_name]=byRoom[s.room_name]||[]).push(s); });
+      var rooms=Object.keys(byRoom);
+      if(!rooms.length){el('room-grid').innerHTML='<div class="empty">No headcounts scheduled today.</div>';return;}
+      el('room-grid').innerHTML=rooms.map(function(rn){
+        var slots=byRoom[rn];
+        var rows=slots.map(function(s){
+          var meta=s.status==='completed'
+            ? (s.children_present+' children · '+s.staff_present+' staff (need '+s.required_staff+') · '+esc((s.completed_by_first||'')+' '+(s.completed_by_last||'')))
+            : (s.status==='missed' ? 'Not completed in time' : 'Awaiting completion');
+          return '<div class="slot-row"><div class="slot-time">'+fmtTime(s.scheduled_for)+'</div>'
+            +'<div class="slot-meta">'+meta+'</div>'+slotBadge(s)+'</div>';
+        }).join('');
+        return '<div class="room-card"><h3>'+esc(rn)+'</h3>'+rows+'</div>';
+      }).join('');
+    });
+  }
+
+  function loadRoomFilter(){
+    api('/overview').then(function(r){
+      if(!r.ok) return;
+      var seen={}; var sel=el('f-room');
+      (r.j.slots||[]).forEach(function(s){
+        if(seen[s.room_id]) return; seen[s.room_id]=true;
+        var opt=document.createElement('option'); opt.value=s.room_id; opt.textContent=s.room_name;
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  function loadHistory(){
+    var qs=[];
+    if(el('f-from').value) qs.push('from='+el('f-from').value);
+    if(el('f-to').value) qs.push('to='+el('f-to').value);
+    if(el('f-room').value) qs.push('room_id='+el('f-room').value);
+    if(el('f-status').value) qs.push('status='+el('f-status').value);
+    api('/history'+(qs.length?'?'+qs.join('&'):'')).then(function(r){
+      if(!r.ok){msg('Failed to load history: '+((r.j&&r.j.error)||('HTTP '+r.status)));return;}
+      msg('');
+      var slots=r.j.slots||[];
+      el('hist-empty').classList.toggle('hide',!!slots.length);
+      el('hist-body').innerHTML=slots.map(function(s){
+        var verdict=s.status==='completed'
+          ? '<span class="badge '+(s.ratio_ok?'b-ok':'b-bad')+'">'+(s.ratio_ok?'OK':'UNDER')+'</span>'
+          : (s.status==='missed'?'<span class="badge b-missed">Missed</span>':'<span class="badge b-scheduled">—</span>');
+        return '<tr><td>'+fmtDateTime(s.scheduled_for)+'</td><td>'+esc(s.room_name)+'</td>'
+          +'<td>'+esc(s.status)+'</td><td>'+(s.children_present==null?'—':s.children_present)+'</td>'
+          +'<td>'+(s.staff_present==null?'—':s.staff_present)+'</td><td>'+(s.required_staff==null?'—':s.required_staff)+'</td>'
+          +'<td>'+verdict+'</td><td>'+esc(s.completed_by_first?((s.completed_by_first||'')+' '+(s.completed_by_last||'')):'—')+'</td></tr>';
+      }).join('');
+    });
+  }
+
+  function setView(v){
+    STATE.view=v;
+    document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.getAttribute('data-view')===v);});
+    el('view-today').classList.toggle('hide',v!=='today');
+    el('view-history').classList.toggle('hide',v!=='history');
+    if(v==='today') loadToday(); else loadHistory();
+  }
+
+  function defaultDates(){
+    var to=new Date(); var from=new Date(to.getTime()-13*86400000);
+    el('f-to').value=to.toISOString().slice(0,10);
+    el('f-from').value=from.toISOString().slice(0,10);
+  }
+
+  function init(){
+    document.querySelectorAll('.tab').forEach(function(t){t.onclick=function(){setView(t.getAttribute('data-view'));};});
+    el('btn-refresh').onclick=function(){ if(STATE.view==='today') loadToday(); else loadHistory(); };
+    el('btn-filter').onclick=loadHistory;
+    defaultDates();
+    loadRoomFilter();
+    loadToday();
+  }
+  document.addEventListener('wren:ready', init);
+})();
+</script>
+</body></html>

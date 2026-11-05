@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Stretch Reconciliation — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.sr-intro{background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:12px 14px;font-size:.82rem;color:#94a3b8;line-height:1.55;margin-bottom:14px}
+.sr-intro b{color:#cbd5e1}
+.sr-controls{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+.sr-controls label{display:flex;flex-direction:column;gap:4px;font-size:.72rem;color:#94a3b8}
+.sr-controls input{background:#0f172a;border:1px solid #2d3748;border-radius:7px;padding:7px 9px;color:#f1f5f9}
+.btn-pri{background:#4a9abf;border:1px solid #4a9abf;color:#fff;border-radius:7px;padding:8px 14px;font-size:.82rem;cursor:pointer}
+.sr-table{width:100%;border-collapse:collapse;font-size:.83rem}
+.sr-table th{text-align:right;color:#94a3b8;font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid #2d3748}
+.sr-table th:first-child,.sr-table td:first-child{text-align:left}
+.sr-table td{padding:9px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;text-align:right;font-variant-numeric:tabular-nums}
+.sr-table tr:hover td{background:#1e293b55}
+.v-ahead{color:#fbbf24}.v-under{color:#fca5a5}.v-instep{color:#86efac}
+.muted{color:#64748b;font-size:.8rem}
+.cal-note{background:#1e293b;border:1px solid #f59e0b44;border-radius:8px;padding:10px 12px;font-size:.76rem;color:#fbbf24;margin:14px 0;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header"><div class="page-title">Stretch Reconciliation — funded-hour leavers</div></div>
+  <div class="sr-intro">
+    <b>July-leavers evidence.</b> For each stretched-funded child with a leave date, this compares the annual funded
+    entitlement, the hours actually <b>delivered</b> (attendance register), the hours <b>claimable</b> under Ealing’s
+    term-time-only calendar (from <code>funding_terms</code> — no August), and the hours <b>claimed</b> if recorded.
+    Ealing pays term-time only; claims are never assumed to run to 31 Aug. <b>Read-only evidence — no claims are made.</b>
+  </div>
+  <div class="sr-controls">
+    <label>As of<input id="sr-asof" type="date"></label>
+    <button class="btn-pri" id="sr-run">Run report</button>
+    <span id="sr-meta" class="muted"></span>
+  </div>
+  <div class="cal-note" id="sr-calnote" style="display:none"></div>
+  <div style="overflow-x:auto"><table class="sr-table" id="sr-tbl"><thead><tr>
+    <th>Child</th><th>Leave date</th><th>Annual entitlement (h)</th><th>Term-time h/wk</th>
+    <th>Delivered (h)</th><th>Claimable (h)</th><th>Claimed (h)</th><th>Delta (h)</th><th>Verdict</th>
+  </tr></thead><tbody><tr><td colspan="9" class="muted">Run the report to load.</td></tr></tbody></table></div>
+</div>
+<script>
+const api=(u,o)=>window.Wren.api(u,o);
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const n1=v=>v==null?'—':Number(v).toFixed(1);
+async function run(){
+  const tb=document.querySelector('#sr-tbl tbody'); tb.innerHTML='<tr><td colspan="9" class="muted">Loading…</td></tr>';
+  const asof=document.getElementById('sr-asof').value;
+  try{
+    const d=await api('/api/fee-items/stretch-reconciliation'+(asof?('?as_of='+asof):''));
+    document.getElementById('sr-meta').textContent=d.count+' leaver(s) · term '+(d.term||'—')+' · as of '+d.as_of;
+    const cn=document.getElementById('sr-calnote'); if(d.calendar_note){cn.style.display='block';cn.textContent='⚠ '+d.calendar_note;}
+    if(!d.children.length){tb.innerHTML='<tr><td colspan="9" class="muted">No stretched-funded children with a leave date.</td></tr>';return;}
+    tb.innerHTML=d.children.map(c=>{
+      const vc=c.delta_hrs>0.5?'v-ahead':(c.delta_hrs<-0.5?'v-under':'v-instep');
+      return `<tr>
+        <td>#${c.child_id}</td><td>${esc(c.leave_date)}</td>
+        <td>${n1(c.annual_entitlement_hrs)}</td><td>${n1(c.termtime_weekly_hrs)}</td>
+        <td>${n1(c.delivered_hrs)}</td><td>${n1(c.claimable_hrs)}</td><td>${n1(c.claimed_hrs)}</td>
+        <td class="${vc}">${c.delta_hrs>0?'+':''}${n1(c.delta_hrs)}</td>
+        <td class="${vc}" style="text-align:left">${esc(c.verdict)}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){tb.innerHTML='<tr><td colspan="9" style="color:#ef4444">'+esc(e.error||e.message||'Error')+'</td></tr>';}
+}
+document.addEventListener('wren:ready',function(){
+  document.getElementById('sr-asof').value=new Date().toISOString().slice(0,10);
+  document.getElementById('sr-run').onclick=run;
+  run();
+});
+</script>
+</body>
+</html>

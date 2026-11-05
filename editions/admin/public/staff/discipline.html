@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Disciplinary — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* ── b318 — the disciplinary record ────────────────────────────────────
+       The screen is a LADDER, not a form. Each ACAS step is a rung, the rungs
+       above the one you are on are greyed, and the outcome box does not appear
+       until an invitation and a meeting exist. The server refuses out-of-order
+       writes regardless; this is the same refusal said earlier and more kindly. */
+    .d-tabs { display:flex;gap:4px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap; }
+    .d-tab { flex:1;min-width:110px;padding:8px;border-radius:8px;border:none;background:transparent;color:var(--c-muted);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600; }
+    .d-tab.active { background:var(--c-blue);color:#fff; }
+    .d-pane { display:none; } .d-pane.active { display:block; }
+    .card { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px 16px;margin-bottom:10px; }
+    .banner-info { background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted);border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.85rem;line-height:1.6; }
+    .banner-warn { background:var(--c-amber-light);border:1px solid var(--c-amber);color:var(--c-navy);border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:.84rem;line-height:1.6; }
+    .empty { color:var(--c-muted);padding:26px;text-align:center;font-size:.88rem;line-height:1.6; }
+    .pill { font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap; }
+    .pill-open { background:var(--c-amber-light);color:var(--c-amber); }
+    .pill-closed { background:var(--c-bg);color:var(--c-muted); }
+    .pill-live { background:var(--c-red-light);color:var(--c-red); }
+    .pill-spent { background:var(--c-bg);color:var(--c-muted); }
+    .pill-ok { background:var(--c-green-light);color:var(--c-green); }
+    .c-top { display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap; }
+    .c-who { font-weight:700;color:var(--c-text);font-size:1rem;flex:1;min-width:180px; }
+    .c-meta { font-size:.8rem;color:var(--c-muted);margin-top:5px;line-height:1.55; }
+    .c-concern { font-size:.87rem;color:var(--c-text);line-height:1.6;margin-top:8px; }
+
+    .ladder { margin:14px 0 4px;border-left:2px solid var(--c-border);padding-left:14px; }
+    .rung { position:relative;padding:9px 0 9px 4px; }
+    .rung::before { content:'';position:absolute;left:-21px;top:14px;width:10px;height:10px;border-radius:50%;
+      background:var(--c-bg);border:2px solid var(--c-border); }
+    .rung.done::before { background:var(--c-green);border-color:var(--c-green); }
+    .rung.next::before { background:var(--c-amber);border-color:var(--c-amber); }
+    .rung-t { font-weight:700;color:var(--c-text);font-size:.87rem; }
+    .rung.todo .rung-t { color:var(--c-muted);font-weight:600; }
+    .rung-h { font-size:.77rem;color:var(--c-muted);line-height:1.55;margin-top:3px; }
+    .rung-d { font-size:.8rem;color:var(--c-text);line-height:1.55;margin-top:4px; }
+    .rung-acts { margin-top:8px; }
+
+    .form-row { display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px; }
+    .form-row > div { flex:1;min-width:150px; }
+    label.lbl { display:block;font-size:11px;color:var(--c-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;font-weight:700; }
+    .chk { display:flex;gap:8px;align-items:center;font-size:.84rem;color:var(--c-text);margin:6px 0; }
+    .src { color:var(--c-muted);font-size:.76rem;line-height:1.55;margin-top:6px; }
+    table.t { width:100%;border-collapse:collapse;font-size:.85rem; }
+    table.t th { text-align:left;color:var(--c-muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:8px; }
+    table.t td { padding:8px;border-top:1px solid var(--c-border);color:var(--c-text);vertical-align:top; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Disciplinary</div>
+      <div class="page-subtitle">The ACAS steps, dated, with who was there — and an outcome you cannot record early</div>
+    </div>
+    <a href="/admin/staff/handbook-rules.html" class="btn btn-secondary btn-sm">Handbook &amp; Rules →</a>
+  </div>
+
+  <div class="banner-info" id="why"></div>
+
+  <div class="d-tabs">
+    <button class="d-tab active" data-pane="open">Open cases</button>
+    <button class="d-tab" data-pane="all">All cases</button>
+    <button class="d-tab" data-pane="warnings">Live warnings</button>
+    <button class="d-tab" data-pane="horizon">Six-month points</button>
+    <button class="d-tab" data-pane="new">Open a case</button>
+  </div>
+
+  <div class="d-pane active" id="pane-open"><div class="empty">Loading…</div></div>
+  <div class="d-pane" id="pane-all"><div class="empty">Loading…</div></div>
+  <div class="d-pane" id="pane-warnings"><div class="empty">Loading…</div></div>
+  <div class="d-pane" id="pane-horizon"><div class="empty">Loading…</div></div>
+
+  <div class="d-pane" id="pane-new">
+    <div class="card" style="max-width:600px">
+      <div class="form-row">
+        <div><label class="lbl">Member of staff</label><select class="form-control" id="n-staff"></select></div>
+        <div><label class="lbl">Kind</label><select class="form-control" id="n-type">
+          <option value="conduct">Conduct</option>
+          <option value="capability">Capability</option>
+          <option value="gross_misconduct">Alleged gross misconduct</option>
+        </select></div>
+      </div>
+      <div class="form-row">
+        <div><label class="lbl">Date opened</label><input type="date" class="form-control" id="n-date"></div>
+        <div><label class="lbl">Reference (optional)</label><input class="form-control" id="n-ref" placeholder="e.g. DISC-2026-004"></div>
+      </div>
+      <div style="margin-bottom:10px">
+        <label class="lbl">The concern, in your own words</label>
+        <textarea class="form-control" id="n-concern" rows="4"
+          placeholder="What has happened, when, and who raised it. This is step one and it is what the person will be told the meeting is about."></textarea>
+      </div>
+      <div class="chk"><input type="checkbox" id="n-susp"><label for="n-susp">They are suspended while this is investigated</label></div>
+      <div class="form-row" id="n-susp-dates" style="display:none">
+        <div><label class="lbl">Suspended from</label><input type="date" class="form-control" id="n-susp-from"></div>
+        <div><label class="lbl">Until (if known)</label><input type="date" class="form-control" id="n-susp-to"></div>
+        <div><label class="lbl">Pay</label><select class="form-control" id="n-susp-paid">
+          <option value="true">On full pay</option><option value="false">Unpaid</option></select></div>
+      </div>
+      <div class="src" id="n-susp-note" style="display:none">
+        Suspension on contractual pay is not disciplinary action and not a penalty —
+        Employee Handbook, Disciplinary Procedures A) 4) d).
+      </div>
+      <div style="margin-top:14px"><button class="btn btn-primary" id="n-save">Open the case</button></div>
+    </div>
+  </div>
+
+  <!-- One case, expanded -->
+  <div id="detail" style="display:none">
+    <div style="margin-bottom:12px"><button class="btn btn-ghost btn-sm" id="back">← back to the list</button></div>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<script>
+let CASES = [], STEPS_META = null, CUR = null, STAFF = [];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const errText = e => (e && (e.error || e.message)) || 'Something went wrong';
+const dstr = d => (d ? String(d).slice(0, 10) : '—');
+const human = k => String(k || '').replace(/_/g, ' ');
+
+const OUTCOME_LABEL = {
+  no_action: 'No action', informal: 'Informal word', verbal_warning: 'Formal verbal warning',
+  written_warning: 'Written warning', final_written_warning: 'Final written warning',
+  demotion: 'Demotion', suspension_without_pay: 'Suspension without pay', dismissal: 'Dismissal',
+};
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  document.querySelectorAll('.d-tab').forEach(b => b.addEventListener('click', () => {
+    closeDetail();
+    document.querySelectorAll('.d-tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.d-pane').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('pane-' + b.dataset.pane).classList.add('active');
+  }));
+  document.getElementById('back').addEventListener('click', closeDetail);
+  document.getElementById('n-save').addEventListener('click', createCase);
+  document.getElementById('n-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('n-susp').addEventListener('change', e => {
+    document.getElementById('n-susp-dates').style.display = e.target.checked ? 'flex' : 'none';
+    document.getElementById('n-susp-note').style.display = e.target.checked ? 'block' : 'none';
+  });
+  try { STEPS_META = await Wren.api('/api/discipline/steps'); } catch (_) { STEPS_META = null; }
+  renderWhy();
+  await Promise.all([loadCases(), loadWarnings(), loadHorizon(), loadStaff()]);
+}
+
+function renderWhy() {
+  const acas = STEPS_META && STEPS_META.rules.find(r => r.rule_key === 'discipline.acas_order');
+  const qual = STEPS_META && STEPS_META.rules.find(r => r.rule_key === 'discipline.qualifying_period');
+  document.getElementById('why').innerHTML =
+    `<b>${esc(acas ? acas.rule : 'Investigate, invite in writing, hold the meeting, then decide — and offer an appeal.')}</b>
+     <div style="margin-top:6px">${esc(acas ? acas.source : 'ACAS Code of Practice 1')}${acas && acas.source_url
+       ? ` · <a href="${esc(acas.source_url)}" target="_blank" rel="noopener">read the Code</a>` : ''}</div>
+     <div style="margin-top:10px">This screen is not here to make dismissal easier. It is here so a fair process is
+       the path of least resistance and can be proved afterwards. An outcome cannot be recorded before an
+       invitation and a meeting exist — the server refuses it, not just the button.</div>
+     ${qual ? `<div style="margin-top:10px">${esc(qual.rule)} <span style="opacity:.8">${esc(qual.source)}</span></div>` : ''}`;
+}
+
+async function loadStaff() {
+  try {
+    const staff = await Wren.api('/api/staff');
+    STAFF = (Array.isArray(staff) ? staff : (staff.staff || [])).filter(s => s.is_active !== false);
+    document.getElementById('n-staff').innerHTML = STAFF
+      .map(s => `<option value="${s.id}">${esc(s.first_name ? s.first_name + ' ' + s.last_name : s.name)}</option>`).join('');
+  } catch (_) { /* the select stays empty and the save will say so */ }
+}
+
+async function loadCases() {
+  try { CASES = await Wren.api('/api/discipline/cases'); }
+  catch (e) {
+    document.getElementById('pane-open').innerHTML = `<div class="empty">${esc(errText(e))}</div>`;
+    return;
+  }
+  const open = CASES.filter(c => c.status === 'open');
+  document.getElementById('pane-open').innerHTML = open.length
+    ? open.map(caseCard).join('')
+    : '<div class="empty">No open disciplinary cases.</div>';
+  document.getElementById('pane-all').innerHTML = CASES.length
+    ? CASES.map(caseCard).join('')
+    : '<div class="empty">Nothing recorded yet.</div>';
+  document.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openCase(b.dataset.open)));
+}
+
+function caseCard(c) {
+  return `<div class="card">
+    <div class="c-top">
+      <div class="c-who">${esc(c.staff_name)}
+        <div class="c-meta">${esc(human(c.case_type))} · opened ${dstr(c.opened_on)}${c.reference ? ' · ' + esc(c.reference) : ''}
+          · ${c.step_count} step${c.step_count === 1 ? '' : 's'} recorded</div></div>
+      <div style="display:flex;gap:6px;flex-direction:column;align-items:flex-end">
+        <span class="pill pill-${c.status === 'open' ? 'open' : 'closed'}">${esc(c.status)}</span>
+        ${c.outcome ? `<span class="pill ${c.warning_live ? 'pill-live' : 'pill-spent'}">${esc(OUTCOME_LABEL[c.outcome] || human(c.outcome))}</span>` : ''}
+      </div>
+    </div>
+    <div class="c-concern">${esc(c.concern)}</div>
+    <div style="margin-top:12px"><button class="btn btn-secondary btn-sm" data-open="${c.id}">Open the record</button></div>
+  </div>`;
+}
+
+/* Opening a case hides the panes with an inline display:none, which beats the
+   .active class in the cascade. Closing has to REMOVE that inline style rather
+   than set display:'' — otherwise every pane returns visible at once. */
+function closeDetail() {
+  CUR = null;
+  document.getElementById('detail').style.display = 'none';
+  document.querySelectorAll('.d-pane').forEach(p => p.style.removeProperty('display'));
+}
+
+async function openCase(id) {
+  try { CUR = await Wren.api('/api/discipline/cases/' + id); }
+  catch (e) { Wren.toast(errText(e), 'error', 6000); return; }
+  document.querySelectorAll('.d-pane').forEach(p => p.style.display = 'none');
+  document.getElementById('detail').style.display = '';
+  renderDetail();
+}
+
+function renderDetail() {
+  const c = CUR.case;
+  const byKey = {};
+  CUR.steps.forEach(s => { (byKey[s.step_key] = byKey[s.step_key] || []).push(s); });
+  const nextKey = CUR.next_step ? CUR.next_step.key : null;
+  const appealing = !!c.appeal_lodged_on;
+
+  const rungs = CUR.acas_steps.filter(s => s.required || appealing || byKey[s.key]).map(s => {
+    const done = !!byKey[s.key];
+    const cls = done ? 'done' : (s.key === nextKey ? 'next' : 'todo');
+    const entries = (byKey[s.key] || []).map(e => `
+      <div class="rung-d">${dstr(e.occurred_on)}${e.summary ? ' — ' + esc(e.summary) : ''}
+        ${e.accompanied_by ? `<br><span style="color:var(--c-muted)">Accompanied by ${esc(e.accompanied_by)}</span>` : ''}
+        ${e.companion_declined ? '<br><span style="color:var(--c-muted)">Offered a companion; declined</span>' : ''}
+        ${e.accompaniment_offered === false ? '<br><span style="color:var(--c-amber)">⚠ No record that the right to be accompanied was offered</span>' : ''}
+        ${e.attendees ? `<br><span style="color:var(--c-muted)">Present: ${esc(e.attendees)}</span>` : ''}
+        ${e.document_ref ? `<br><span style="color:var(--c-muted)">Letter: ${esc(e.document_ref)}</span>` : ''}
+      </div>`).join('');
+    const act = (!done && s.key === nextKey && s.key !== 'outcome')
+      ? `<div class="rung-acts"><button class="btn btn-secondary btn-sm" data-step="${esc(s.key)}">Record this step</button></div>` : '';
+    return `<div class="rung ${cls}">
+      <div class="rung-t">${esc(s.label)}</div>
+      <div class="rung-h">${esc(s.help)}</div>
+      ${entries}${act}
+    </div>`;
+  }).join('');
+
+  const gate = CUR.can_record_outcome;
+  const outcomeBox = c.outcome
+    ? `<div class="card"><div class="rung-t">Outcome</div>
+        <div class="rung-d" style="margin-top:6px"><b>${esc(OUTCOME_LABEL[c.outcome] || human(c.outcome))}</b>
+          on ${dstr(c.outcome_on)}${c.outcome_note ? ' — ' + esc(c.outcome_note) : ''}</div>
+        ${c.warning_expires_on ? `<div class="src">Disregarded for disciplinary purposes after ${dstr(c.warning_expires_on)}${CUR.warning ? ' — ' + esc(CUR.warning.source) : ''}.</div>` : ''}
+        ${c.outcome_letter_sent_at ? '<div class="src">Outcome letter marked sent.</div>'
+          : '<div class="banner-warn" style="margin-top:10px">The outcome and the right of appeal have to be given in writing (ACAS Code, para 19). <button class="btn btn-sm btn-secondary" id="letter-sent">Mark the letter sent</button></div>'}
+       </div>`
+    : gate.ok
+      ? `<div class="card">
+          <div class="rung-t">Record the outcome</div>
+          <div class="form-row" style="margin-top:10px">
+            <div><label class="lbl">Decision</label><select class="form-control" id="o-outcome">
+              ${Object.keys(OUTCOME_LABEL).map(k => `<option value="${k}">${esc(OUTCOME_LABEL[k])}</option>`).join('')}
+            </select></div>
+            <div><label class="lbl">Date</label><input type="date" class="form-control" id="o-date" value="${new Date().toISOString().slice(0,10)}"></div>
+          </div>
+          <div style="margin-bottom:10px"><label class="lbl">Reason given, in writing</label>
+            <textarea class="form-control" id="o-note" rows="3" placeholder="What was decided and why — this is what goes in the letter."></textarea></div>
+          <div class="chk"><input type="checkbox" id="o-letter"><label for="o-letter">The outcome letter has been sent, including the right of appeal</label></div>
+          <button class="btn btn-primary" id="o-save">Record the outcome</button>
+        </div>`
+      : `<div class="banner-warn"><b>The outcome cannot be recorded yet.</b><div style="margin-top:6px">${esc(gate.message)}</div></div>`;
+
+  const appealBox = c.outcome ? `<div class="card">
+      <div class="rung-t">Appeal</div>
+      <div class="rung-h">Anybody disciplined has the right to appeal. Heard by someone not involved in the decision where that is possible.</div>
+      <div class="form-row" style="margin-top:10px">
+        <div><label class="lbl">Lodged on</label><input type="date" class="form-control" id="a-lodged" value="${c.appeal_lodged_on ? dstr(c.appeal_lodged_on) : ''}"></div>
+        <div><label class="lbl">Heard on</label><input type="date" class="form-control" id="a-heard" value="${c.appeal_heard_on ? dstr(c.appeal_heard_on) : ''}"></div>
+        <div><label class="lbl">Result</label><input class="form-control" id="a-outcome" value="${esc(c.appeal_outcome || '')}" placeholder="upheld / dismissed / varied"></div>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="a-save">Save the appeal</button>
+    </div>` : '';
+
+  const pos = CUR.dismissal_position || {};
+  document.getElementById('detail-body').innerHTML = `
+    <div class="card">
+      <div class="c-top">
+        <div class="c-who">${esc(c.staff_name)}<div class="c-meta">${esc(c.job_title || '')} · ${esc(human(c.case_type))}
+          · opened ${dstr(c.opened_on)}${c.reference ? ' · ' + esc(c.reference) : ''}</div></div>
+        <span class="pill pill-${c.status === 'open' ? 'open' : 'closed'}">${esc(c.status)}</span>
+      </div>
+      <div class="c-concern">${esc(c.concern)}</div>
+      ${c.suspended_from ? `<div class="src">Suspended from ${dstr(c.suspended_from)}${c.suspended_to ? ' to ' + dstr(c.suspended_to) : ''}${c.suspension_paid === false ? ', unpaid' : ', on contractual pay'} — suspension is not a penalty (Employee Handbook, Disciplinary A) 4) d)).</div>` : ''}
+      ${pos.set ? `<div class="src" style="margin-top:8px"><b>${pos.qualifies_today ? 'Has unfair-dismissal protection today.' : 'Protection starts ' + esc(String(pos.protected_from).slice(0,10)) + '.'}</b>
+        ${esc(pos.note)} <span style="opacity:.85">${esc(pos.source)}</span></div>`
+        : `<div class="src" style="margin-top:8px">No employment start date on file, so the qualifying date cannot be worked out.</div>`}
+    </div>
+
+    ${CUR.accompaniment_gaps.length ? `<div class="banner-warn"><b>${esc(CUR.accompaniment_gaps[0].message)}</b>
+      <div style="margin-top:5px">${CUR.accompaniment_gaps.length} invitation${CUR.accompaniment_gaps.length === 1 ? '' : 's'} on this case
+      do not record that it was offered. ${esc(CUR.accompaniment_gaps[0].source)}.</div></div>` : ''}
+
+    <div class="card"><div class="ladder">${rungs}</div></div>
+    ${outcomeBox}
+    ${appealBox}
+    <div class="card">
+      <button class="btn btn-ghost btn-sm" id="c-close">${c.status === 'open' ? 'Close this case' : 'Reopen this case'}</button>
+    </div>`;
+
+  document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => recordStep(b.dataset.step)));
+  const os = document.getElementById('o-save'); if (os) os.addEventListener('click', saveOutcome);
+  const as = document.getElementById('a-save'); if (as) as.addEventListener('click', saveAppeal);
+  const ls = document.getElementById('letter-sent'); if (ls) ls.addEventListener('click', markLetterSent);
+  document.getElementById('c-close').addEventListener('click', toggleClosed);
+}
+
+async function recordStep(key) {
+  const meta = CUR.acas_steps.find(s => s.key === key) || { label: key };
+  const on = prompt(`${meta.label} — what date? (YYYY-MM-DD)`, new Date().toISOString().slice(0, 10));
+  if (!on) return;
+  const summary = prompt(`${meta.label} — a line about what happened (optional)`) || null;
+  const body = { step_key: key, occurred_on: on, summary };
+  if (key === 'invitation' || key === 'appeal_invitation') {
+    body.accompaniment_offered = confirm('Did the invitation tell them they may bring a colleague or union representative?\n\nOK = yes, Cancel = no / not recorded.');
+  }
+  if (key === 'meeting' || key === 'appeal_meeting') {
+    const who = prompt('Who accompanied them? (leave blank if nobody did)') || null;
+    if (who) body.accompanied_by = who; else body.companion_declined = true;
+    body.attendees = prompt('Who else was present? (optional)') || null;
+  }
+  try {
+    const r = await Wren.api(`/api/discipline/cases/${CUR.case.id}/steps`, { method: 'POST', body });
+    if (r.warning) Wren.toast(r.warning.detail, 'warning', 9000);
+    else Wren.toast('Recorded.', 'success');
+    await openCase(CUR.case.id);
+  } catch (e) {
+    Wren.toast(errText(e), 'error', 9000);
+  }
+}
+
+async function saveOutcome() {
+  const body = {
+    outcome: document.getElementById('o-outcome').value,
+    outcome_on: document.getElementById('o-date').value || undefined,
+    outcome_note: document.getElementById('o-note').value.trim() || undefined,
+    letter_sent: document.getElementById('o-letter').checked,
+  };
+  if (body.outcome === 'dismissal' && !confirm('Record a DISMISSAL?\n\nCheck the six-month point shown on this case first. From 1 January 2027 unfair-dismissal rights start at six months and the compensatory award is uncapped.')) return;
+  try {
+    const r = await Wren.api(`/api/discipline/cases/${CUR.case.id}/outcome`, { method: 'PUT', body });
+    Wren.toast(r.reminder || 'Recorded.', 'success', 8000);
+    await openCase(CUR.case.id); await loadCases(); await loadWarnings();
+  } catch (e) { Wren.toast(errText(e), 'error', 9000); }
+}
+
+async function markLetterSent() {
+  try {
+    await Wren.api(`/api/discipline/cases/${CUR.case.id}/outcome`, { method: 'PUT', body: {
+      outcome: CUR.case.outcome, outcome_on: dstr(CUR.case.outcome_on),
+      outcome_note: CUR.case.outcome_note || undefined, letter_sent: true } });
+    await openCase(CUR.case.id);
+  } catch (e) { Wren.toast(errText(e), 'error', 6000); }
+}
+
+async function saveAppeal() {
+  const body = {
+    appeal_lodged_on: document.getElementById('a-lodged').value || undefined,
+    appeal_heard_on: document.getElementById('a-heard').value || undefined,
+    appeal_outcome: document.getElementById('a-outcome').value.trim() || undefined,
+  };
+  try {
+    await Wren.api(`/api/discipline/cases/${CUR.case.id}/appeal`, { method: 'PUT', body });
+    Wren.toast('Saved.', 'success');
+    await openCase(CUR.case.id);
+  } catch (e) { Wren.toast(errText(e), 'error', 6000); }
+}
+
+async function toggleClosed() {
+  const open = CUR.case.status === 'open';
+  try {
+    await Wren.api(`/api/discipline/cases/${CUR.case.id}/close`, { method: 'PUT', body: { status: open ? 'closed' : 'open' } });
+    await openCase(CUR.case.id); await loadCases();
+  } catch (e) { Wren.toast(errText(e), 'error', 6000); }
+}
+
+async function createCase() {
+  const body = {
+    staff_id: Number(document.getElementById('n-staff').value),
+    case_type: document.getElementById('n-type').value,
+    concern: document.getElementById('n-concern').value.trim(),
+    opened_on: document.getElementById('n-date').value || undefined,
+    reference: document.getElementById('n-ref').value.trim() || undefined,
+  };
+  if (document.getElementById('n-susp').checked) {
+    body.suspended_from = document.getElementById('n-susp-from').value || undefined;
+    body.suspended_to = document.getElementById('n-susp-to').value || undefined;
+    body.suspension_paid = document.getElementById('n-susp-paid').value === 'true';
+  }
+  if (!body.staff_id || !body.concern) return Wren.toast('A person and a concern are both needed.', 'warning');
+  try {
+    const c = await Wren.api('/api/discipline/cases', { method: 'POST', body });
+    document.getElementById('n-concern').value = '';
+    document.getElementById('n-ref').value = '';
+    await loadCases();
+    Wren.toast('Case opened. The next step is an investigation.', 'success', 6000);
+    openCase(c.id);
+  } catch (e) { Wren.toast(errText(e), 'error', 8000); }
+}
+
+async function loadWarnings() {
+  const host = document.getElementById('pane-warnings');
+  try {
+    const r = await Wren.api('/api/discipline/warnings');
+    const row = w => `<tr><td>${esc(w.staff_name)}</td><td>${esc(OUTCOME_LABEL[w.outcome] || human(w.outcome))}</td>
+      <td>${dstr(w.outcome_on)}</td><td>${dstr(w.warning_expires_on)}</td><td style="color:var(--c-muted)">${esc(w.concern)}</td></tr>`;
+    host.innerHTML = `<div class="banner-info"><b>${esc(r.rule)}</b><div style="margin-top:6px">${esc(r.source)}</div></div>`
+      + (r.live.length ? `<div class="card"><div class="rung-t" style="margin-bottom:8px">Live</div><table class="t">
+          <tr><th>Who</th><th>Warning</th><th>Given</th><th>Expires</th><th>About</th></tr>${r.live.map(row).join('')}</table></div>`
+        : '<div class="empty">No live warnings.</div>')
+      + (r.spent.length ? `<div class="card"><div class="rung-t" style="margin-bottom:8px">Expired — normally disregarded</div><table class="t">
+          <tr><th>Who</th><th>Warning</th><th>Given</th><th>Expired</th><th>About</th></tr>${r.spent.map(row).join('')}</table></div>` : '');
+  } catch (e) { host.innerHTML = `<div class="empty">${esc(errText(e))}</div>`; }
+}
+
+/* ── Six-month points ──────────────────────────────────────────────────────
+   Dates, not advice. Who is inside the qualifying period today and when each
+   of them crosses the line, now that the line moves on 1 January 2027. */
+async function loadHorizon() {
+  const host = document.getElementById('pane-horizon');
+  try {
+    const r = await Wren.api('/api/employment-rules/dismissal-horizon');
+    const withDates = r.staff.filter(s => s.set).sort((a, b) => String(a.protected_from).localeCompare(String(b.protected_from)));
+    const without = r.staff.filter(s => !s.set);
+    host.innerHTML = `<div class="banner-info"><b>${esc(r.rule)}</b>
+        <div style="margin-top:6px">${esc(r.source)}${r.source_url ? ` · <a href="${esc(r.source_url)}" target="_blank" rel="noopener">read the source</a>` : ''}</div>
+        <div style="margin-top:10px">${r.not_yet_protected} of ${r.count} active staff are not yet protected.
+          These are dates, not advice: a fair process is expected whatever the length of service.</div></div>
+      <div class="card"><table class="t">
+        <tr><th>Who</th><th>Started</th><th>Service</th><th>Protected from</th><th></th></tr>
+        ${withDates.map(s => `<tr>
+          <td>${esc(s.name)}<div class="src">${esc(s.job_title || '')}</div></td>
+          <td>${dstr(s.employment_start)}</td>
+          <td>${s.service_months} months</td>
+          <td>${dstr(s.protected_from)}</td>
+          <td>${s.qualifies_today ? '<span class="pill pill-live">protected</span>' : '<span class="pill pill-ok">not yet</span>'}</td>
+        </tr>`).join('')}
+      </table></div>
+      ${without.length ? `<div class="card"><div class="rung-t">No start date on file</div>
+        <div class="src">These cannot be worked out until <code>contract_start</code> is set: ${without.map(s => esc(s.name)).join(', ')}.</div></div>` : ''}`;
+  } catch (e) { host.innerHTML = `<div class="empty">${esc(errText(e))}</div>`; }
+}
+</script>
+</body>
+</html>

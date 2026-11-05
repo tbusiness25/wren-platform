@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Leave Entitlement — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* b309 — every colour is a --c-* token; nothing here is a bare hex. */
+    .ent-stats { display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px; }
+    .ent-stat { background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:14px;text-align:center; }
+    .ent-stat-val { font-size:1.6rem;font-weight:800;color:var(--c-text);line-height:1; }
+    .ent-stat-lbl { font-size:10px;color:var(--c-muted);margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:.04em; }
+    .ent-stat.warn .ent-stat-val { color:var(--c-amber); }
+    .ent-stat.bad  .ent-stat-val { color:var(--c-red); }
+    .ent-row { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px 16px;margin-bottom:10px; }
+    .ent-row.notset { border-color:var(--c-amber);border-style:dashed; }
+    .ent-head { display:flex;align-items:center;gap:12px;flex-wrap:wrap; }
+    .ent-name { font-weight:700;color:var(--c-text);flex:1;min-width:150px; }
+    .ent-figs { display:flex;gap:18px;flex-wrap:wrap;align-items:baseline; }
+    .ent-fig  { text-align:right;min-width:74px; }
+    .ent-fig b { display:block;font-size:1.15rem;color:var(--c-text);line-height:1.1; }
+    .ent-fig span { font-size:10px;color:var(--c-muted);text-transform:uppercase;letter-spacing:.04em; }
+    .ent-notset { color:var(--c-amber);font-weight:700;font-size:.95rem; }
+    .ent-why { margin-top:10px;font-size:.8rem;color:var(--c-muted);line-height:1.5; }
+    .ent-work { margin-top:12px;border-top:1px solid var(--c-border);padding-top:10px;display:none; }
+    .ent-work.open { display:block; }
+    .work-step { display:flex;gap:10px;padding:6px 0;font-size:.82rem;border-bottom:1px dashed var(--c-border); }
+    .work-step:last-child { border-bottom:none; }
+    .work-step .wl { flex:0 0 195px;color:var(--c-text);font-weight:600; }
+    .work-step .wd { flex:1;color:var(--c-muted); }
+    .work-step .wv { flex:0 0 150px;text-align:right;color:var(--c-blue);font-weight:700; }
+    .pill { font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em; }
+    .pill-ok    { background:var(--c-green-light);color:var(--c-green); }
+    .pill-warn  { background:var(--c-amber-light);color:var(--c-amber); }
+    .pill-bad   { background:var(--c-red-light);color:var(--c-red); }
+    .pill-info  { background:var(--c-blue-light);color:var(--c-blue-dark); }
+    .ent-actions { display:flex;gap:8px;flex-wrap:wrap;margin-top:10px; }
+    .banner { border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.87rem;line-height:1.6; }
+    .banner-info { background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted); }
+    .banner-warn { background:var(--c-amber-light);border:1px solid var(--c-amber);color:var(--c-navy); }
+    .toolbar { display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px; }
+    @media (max-width:640px){ .work-step { flex-direction:column;gap:2px; } .work-step .wl,.work-step .wv { flex:none;text-align:left; } }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Leave Entitlement</div>
+      <div class="page-subtitle">What each person is owed this holiday year — and the workings behind it</div>
+    </div>
+    <a href="/admin/staff/absence-mgmt.html" class="btn btn-secondary btn-sm">← Absences</a>
+  </div>
+
+  <div class="banner banner-info" id="explainer">
+    Every figure on this page is calculated from the person's work pattern, this setting's
+    leave policy and the statutory minimum — never from a default. Where a figure cannot be
+    calculated the row says <b>not set</b> and explains why, because a wrong balance that
+    looks right is worse than a blank. Open <b>Show workings</b> on any row to see each step.
+  </div>
+
+  <div class="ent-stats" id="stats"></div>
+
+  <div class="toolbar">
+    <button class="btn btn-primary btn-sm" id="btn-recompute">Recalculate everyone</button>
+    <button class="btn btn-ghost btn-sm"   id="btn-roll">Preview the holiday-year roll</button>
+    <button class="btn btn-ghost btn-sm"   id="btn-expand">Show all workings</button>
+    <span style="flex:1"></span>
+    <label style="font-size:.8rem;color:var(--c-muted);display:flex;align-items:center;gap:6px">
+      <input type="checkbox" id="only-problems"> Only rows needing attention
+    </label>
+  </div>
+
+  <div id="rows"><div style="color:var(--c-muted);padding:24px;text-align:center">Loading…</div></div>
+</div>
+
+<!-- Manual override -->
+<div id="ov-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;overflow-y:auto">
+  <div style="background:var(--c-navy-mid);border:1px solid var(--c-border);border-radius:12px;max-width:460px;margin:8vh auto;padding:24px">
+    <h3 style="margin:0 0 6px;color:var(--c-text)" id="ov-title">Set entitlement by hand</h3>
+    <p style="margin:0 0 18px;color:var(--c-muted);font-size:.82rem;line-height:1.5">
+      This replaces the calculation for this person, this year only. The workings will show the
+      calculation <em>and</em> your override, so nobody has to guess which one is in force.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Entitlement (days) — leave blank to record "not set"</label>
+      <input type="number" class="form-control" id="ov-days" min="0" max="200" step="0.5" placeholder="e.g. 16.5">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Carried over from last year (days)</label>
+      <input type="number" class="form-control" id="ov-carried" min="0" max="60" step="0.5" placeholder="0">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Why — this is what the workings will show <span style="color:var(--c-red)">*</span></label>
+      <input type="text" class="form-control" id="ov-reason" placeholder="e.g. agreed at contract signing, 2026-07-01">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" id="ov-clear">Remove override</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost" id="ov-cancel">Cancel</button>
+      <button class="btn btn-primary" id="ov-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let ROWS = [];
+let OV_STAFF = null;
+
+document.addEventListener('wren:ready', load);
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const errText = e => (e && (e.error || e.message)) || 'Something went wrong';
+
+async function load() {
+  const host = document.getElementById('rows');
+  try {
+    ROWS = await Wren.api('/api/absence/entitlement');
+    render();
+  } catch (e) {
+    host.innerHTML = '<div class="banner banner-warn">Could not load entitlements: ' + esc(errText(e)) + '</div>';
+  }
+}
+
+function render() {
+  const onlyProblems = document.getElementById('only-problems').checked;
+  const set     = ROWS.filter(r => !r.not_set);
+  const notSet  = ROWS.filter(r =>  r.not_set);
+  const clash   = ROWS.filter(r =>  r.reconciles === false);
+  const noPattern = ROWS.filter(r => r.pattern_source === 'none');
+
+  document.getElementById('stats').innerHTML = [
+    stat(ROWS.length, 'Active staff', ''),
+    stat(set.length + ' / ' + ROWS.length, 'Entitlement set', notSet.length ? 'warn' : ''),
+    stat(notSet.length, 'Not set', notSet.length ? 'bad' : ''),
+    stat(clash.length, 'Disagree with BrightHR', clash.length ? 'warn' : ''),
+    stat(noPattern.length, 'No work pattern', noPattern.length ? 'warn' : ''),
+    stat(fmt(set.reduce((a, r) => a + (Number(r.remaining_days) || 0), 0)), 'Days still to take', ''),
+  ].join('');
+
+  const list = onlyProblems ? ROWS.filter(r => r.not_set || r.reconciles === false) : ROWS;
+  document.getElementById('rows').innerHTML = list.length
+    ? list.map(row).join('')
+    : '<div style="color:var(--c-muted);padding:24px;text-align:center">Nothing needs attention.</div>';
+
+  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => {
+    document.getElementById('work-' + b.dataset.toggle).classList.toggle('open');
+  }));
+  document.querySelectorAll('[data-override]').forEach(b => b.addEventListener('click', () => openOverride(+b.dataset.override)));
+}
+
+const stat = (v, l, cls) =>
+  `<div class="ent-stat ${cls}"><div class="ent-stat-val">${esc(v)}</div><div class="ent-stat-lbl">${esc(l)}</div></div>`;
+
+const fmt = n => (n == null ? '—' : (Math.round(Number(n) * 10) / 10).toString());
+
+function row(r) {
+  const figs = r.not_set
+    ? `<div class="ent-notset">Not set</div>`
+    : `<div class="ent-figs">
+         <div class="ent-fig"><b>${fmt(r.entitlement_days)}</b><span>allowance</span></div>
+         ${Number(r.carried_over_days) ? `<div class="ent-fig"><b>+${fmt(r.carried_over_days)}</b><span>carried</span></div>` : ''}
+         <div class="ent-fig"><b>${fmt(r.bank_holiday_days)}</b><span>bank hols</span></div>
+         <div class="ent-fig"><b>${fmt(r.taken_days)}</b><span>taken</span></div>
+         <div class="ent-fig"><b>${fmt(r.upcoming_days)}</b><span>booked</span></div>
+         <div class="ent-fig"><b style="color:var(--c-blue)">${fmt(r.remaining_days)}</b><span>left</span></div>
+       </div>`;
+
+  const pills = [];
+  if (r.source === 'manual_override') pills.push('<span class="pill pill-info">manual</span>');
+  if (r.pattern_source === 'none')    pills.push('<span class="pill pill-warn">no work pattern</span>');
+  if (r.reconciles === false)         pills.push('<span class="pill pill-bad">≠ BrightHR</span>');
+  if (r.reconciles === true)          pills.push('<span class="pill pill-ok">matches BrightHR</span>');
+  if (Number(r.top_up_days) > 0)      pills.push('<span class="pill pill-warn">statutory top-up</span>');
+
+  const why = r.not_set
+    ? `<div class="ent-why"><b style="color:var(--c-amber)">Why there is no figure:</b> ${esc(r.not_set_reason || 'unknown')}</div>`
+    : `<div class="ent-why">${esc(r.pattern_note || '')}${r.weekly_hours ? ' · ' + fmt(r.weekly_hours) + ' h a week' : ''} · statutory minimum ${fmt(r.statutory_floor_days)} days${r.reconcile_note ? ' · ' + esc(r.reconcile_note) : ''}</div>`;
+
+  const steps = (r.workings || []).map(w =>
+    `<div class="work-step"><div class="wl">${esc(w.label)}</div><div class="wd">${esc(w.detail)}</div><div class="wv">${esc(w.value)}</div></div>`).join('');
+
+  return `<div class="ent-row ${r.not_set ? 'notset' : ''}">
+    <div class="ent-head">
+      <div class="ent-name">${esc(r.name)} ${pills.join(' ')}</div>
+      ${figs}
+    </div>
+    ${why}
+    <div class="ent-actions">
+      <button class="btn btn-ghost btn-sm" data-toggle="${r.id}">Show workings</button>
+      <button class="btn btn-ghost btn-sm" data-override="${r.id}">Set by hand</button>
+    </div>
+    <div class="ent-work" id="work-${r.id}">${steps || '<div style="color:var(--c-muted);font-size:.8rem">No workings recorded.</div>'}</div>
+  </div>`;
+}
+
+// ── Manual override ─────────────────────────────────────────────────────────
+function openOverride(staffId) {
+  const r = ROWS.find(x => x.id === staffId);
+  OV_STAFF = staffId;
+  document.getElementById('ov-title').textContent = 'Set entitlement by hand — ' + (r ? r.name : '#' + staffId);
+  document.getElementById('ov-days').value = r && !r.not_set ? r.entitlement_days : '';
+  document.getElementById('ov-carried').value = r ? (r.carried_over_days || '') : '';
+  document.getElementById('ov-reason').value = '';
+  document.getElementById('ov-modal').style.display = 'block';
+}
+function closeOverride() { document.getElementById('ov-modal').style.display = 'none'; OV_STAFF = null; }
+
+document.addEventListener('wren:ready', () => {
+  document.getElementById('ov-cancel').addEventListener('click', closeOverride);
+  document.getElementById('only-problems').addEventListener('change', render);
+
+  document.getElementById('ov-save').addEventListener('click', async () => {
+    const days = document.getElementById('ov-days').value;
+    const reason = document.getElementById('ov-reason').value.trim();
+    if (reason.length < 3) return Wren.toast('A reason is required — it is what the workings will show.', 'warning');
+    try {
+      await Wren.api('/api/absence/entitlement/' + OV_STAFF, {
+        method: 'PUT',
+        body: {
+          entitlement_days: days === '' ? null : Number(days),
+          carried_in_days: document.getElementById('ov-carried').value === '' ? null : Number(document.getElementById('ov-carried').value),
+          reason,
+        },
+      });
+      Wren.toast('Saved.', 'success');
+      closeOverride();
+      load();
+    } catch (e) { Wren.toast(errText(e), 'error'); }
+  });
+
+  document.getElementById('ov-clear').addEventListener('click', async () => {
+    try {
+      await Wren.api('/api/absence/entitlement/' + OV_STAFF, { method: 'PUT', body: { clear: true } });
+      Wren.toast('Override removed — back to the calculation.', 'success');
+      closeOverride();
+      load();
+    } catch (e) { Wren.toast(errText(e), 'error'); }
+  });
+
+  document.getElementById('btn-recompute').addEventListener('click', async (ev) => {
+    ev.target.disabled = true;
+    try {
+      const r = await Wren.api('/api/absence/entitlement/recompute', { method: 'POST', body: {} });
+      Wren.toast(`${r.with_entitlement} of ${r.staff} calculated, ${r.not_set} not set, ${r.disagrees_with_brighthr} disagree with BrightHR.`, 'success', 6000);
+      load();
+    } catch (e) { Wren.toast(errText(e), 'error'); }
+    finally { ev.target.disabled = false; }
+  });
+
+  document.getElementById('btn-expand').addEventListener('click', () => {
+    const anyClosed = [...document.querySelectorAll('.ent-work')].some(el => !el.classList.contains('open'));
+    document.querySelectorAll('.ent-work').forEach(el => el.classList.toggle('open', anyClosed));
+  });
+
+  document.getElementById('btn-roll').addEventListener('click', async () => {
+    try {
+      const r = await Wren.api('/api/absence/entitlement/roll', { method: 'POST', body: { apply: false } });
+      const carrying = r.plan.filter(p => p.carried > 0).length;
+      const capped   = r.plan.filter(p => p.unused != null && p.unused > r.cap).length;
+      alert(
+        `Holiday-year roll — PREVIEW ONLY, nothing has been written.\n\n` +
+        `From ${r.from.label} to ${r.to.label}\n` +
+        `${r.staff} active staff\n` +
+        `${carrying} would carry days forward\n` +
+        `${capped} would be capped at the ${r.cap}-day limit\n\n` +
+        `To apply it, a manager runs it again with "apply". It never overwrites a manual override.`);
+    } catch (e) { Wren.toast(errText(e), 'error'); }
+  });
+});
+</script>
+</body>
+</html>

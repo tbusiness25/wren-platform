@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Signals — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b311 — tokens only, no bare hex. Checked in light and dark. */
+.sg-intro{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:13px 15px;
+  font-size:.83rem;color:var(--c-muted);line-height:1.6;margin-bottom:14px;max-width:960px}
+.sg-intro b{color:var(--c-text)}
+
+.sg-status{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px}
+.sg-stat{background:var(--c-surface);border:1px solid var(--c-border);border-radius:11px;
+  padding:10px 14px;min-width:130px;flex:0 1 auto}
+.sg-stat .k{font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--c-muted)}
+.sg-stat .v{font-size:1.05rem;font-weight:700;color:var(--c-text);margin-top:3px;line-height:1.3}
+.sg-stat .s{font-size:.74rem;color:var(--c-muted);margin-top:2px;line-height:1.4}
+.sg-stat.warn{border-color:var(--c-amber)}
+.sg-stat.off{opacity:.72}
+
+.sg-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;
+  padding:13px 15px;margin-bottom:11px;border-left:4px solid var(--c-border)}
+.sg-card.o-fired{border-left-color:var(--c-blue)}
+.sg-card.o-silent{border-left-color:var(--c-green,var(--c-blue))}
+.sg-card.o-dormant{border-left-color:var(--c-amber)}
+.sg-card.o-cooling,.sg-card.o-capped{border-left-color:var(--c-purple,var(--c-blue))}
+.sg-card.o-muted,.sg-card.o-closed{border-left-color:var(--c-muted);opacity:.72}
+.sg-card.o-error{border-left-color:var(--c-red)}
+
+.sg-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.sg-name{font-weight:700;color:var(--c-text);font-size:.96rem;line-height:1.35;flex:1 1 240px}
+.sg-badge{font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  border-radius:999px;padding:3px 9px;border:1px solid currentColor;white-space:nowrap}
+.b-fired{color:var(--c-blue)}.b-silent{color:var(--c-green,var(--c-blue))}
+.b-dormant{color:var(--c-amber)}.b-cooling,.b-capped{color:var(--c-purple,var(--c-blue))}
+.b-muted,.b-closed{color:var(--c-muted)}.b-error{color:var(--c-red)}
+
+.sg-q{font-size:.8rem;color:var(--c-muted);margin-top:6px;line-height:1.55;font-style:italic}
+.sg-said{font-size:.87rem;color:var(--c-text);line-height:1.6;margin-top:9px;
+  border-left:2px solid var(--c-border);padding-left:11px}
+.sg-facts{font-size:.73rem;color:var(--c-muted);margin-top:7px;line-height:1.6;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}
+.sg-meta{font-size:.73rem;color:var(--c-muted);margin-top:8px;display:flex;gap:14px;flex-wrap:wrap}
+.sg-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.sg-btn{background:transparent;border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;
+  padding:6px 12px;font-size:.77rem;cursor:pointer;font-family:inherit;min-height:36px}
+.sg-btn:hover{border-color:var(--c-blue)}
+.sg-btn.primary{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-navy)}
+.sg-btn[disabled]{opacity:.5;cursor:default}
+.sg-cfg{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--c-border)}
+.sg-cfg.open{display:block}
+.sg-cfg-row{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end}
+.sg-cfg-row label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--c-muted);display:block;margin-bottom:3px}
+.sg-cfg-row input{width:110px;background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-text);
+  border-radius:8px;padding:7px 10px;font-size:.83rem;font-family:inherit;min-height:38px;box-sizing:border-box}
+.sg-hist{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--c-border)}
+.sg-hist.open{display:block}
+.sg-hrow{font-size:.76rem;color:var(--c-muted);line-height:1.6;padding:7px 0;border-bottom:1px solid var(--c-border)}
+.sg-hrow:last-child{border-bottom:none}
+.sg-hrow b{color:var(--c-text);font-weight:600}
+
+.sg-panel{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;
+  padding:14px 16px;margin-top:22px}
+.sg-panel h2{font-size:.98rem;margin:0 0 8px;color:var(--c-text)}
+.muted{color:var(--c-muted);font-size:.85rem}
+table.sg-tbl{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:9px}
+table.sg-tbl th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--c-muted);padding:6px 8px;border-bottom:1px solid var(--c-border);font-weight:800}
+table.sg-tbl td{padding:7px 8px;border-bottom:1px solid var(--c-border);color:var(--c-text);vertical-align:top}
+.sg-scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="v2-page">
+  <h1 class="page-title">🧭 Signals</h1>
+
+  <div class="sg-intro">
+    Wren watching the nursery and speaking first — <b>invoices going out in three days that nobody has
+    started</b>, a September with half the roll leaving, an open safeguarding concern with nothing written
+    against it. Each one is a question asked in SQL. <b>Silence is the normal answer</b>, and a signal that
+    finds nothing sends nothing.
+    <br><br>
+    Nothing here is a scheduled reminder: a signal fires <b>because of what the data says</b>, and stops the
+    moment the thing is done. Every notice says what it counted, so you can check it against the screen it
+    links to. If one of them turns out to be noise, mute it — and if you dismiss the same one three times
+    running without the finding changing, Wren mutes it for you and tells you it has.
+    <br><br>
+    <b>Banners</b> (added 28 Oct): switch "Show as a banner" on and that signal also appears as a strip at the
+    top of every Roost page whenever it has something to say — even while signals are off, and it keeps
+    showing after the due date until the job is done. Invoices are on by default.
+  </div>
+
+  <div class="sg-status" id="sg-status"></div>
+
+  <div class="sg-acts" style="margin-bottom:14px">
+    <button class="sg-btn primary" id="sg-preview">See what they would say right now</button>
+    <button class="sg-btn" id="sg-refresh">Refresh</button>
+    <span class="muted" id="sg-runnote"></span>
+  </div>
+
+  <div id="sg-list"><p class="muted">Loading…</p></div>
+
+  <!-- ── The confused-clicks offer ─────────────────────────────────────── -->
+  <div class="sg-panel">
+    <h2>“What were you trying to find?”</h2>
+    <p class="muted" style="margin:0">
+      When somebody opens several sections in a row without changing anything, Wren offers help in the
+      corner of their screen — dismissible, never a modal, at most twice a day. What people type goes here,
+      because a list of the things staff cannot find is worth more than the offers themselves.
+    </p>
+    <div class="sg-scroll"><div id="sg-nudges"><p class="muted">Loading…</p></div></div>
+  </div>
+</div>
+
+<script>
+const api = (u, o) => Wren.api(u, o);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const errText = (e, fb) => (e && (e.error || e.message)) || fb || 'Something went wrong';
+
+let DATA = null;
+let PREVIEW = {};      // key -> the dry-run result, when the manager has asked
+let BANNERS = {};      // key -> true when shown as a Roost banner (28 Oct 2026)
+
+function when(ts) {
+  if (!ts) return 'never';
+  const d = new Date(ts), now = new Date();
+  const mins = Math.round((now - d) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  if (mins < 60 * 24) return Math.round(mins / 60) + 'h ago';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+const OUTCOME_WORDS = {
+  fired: 'Sent', silent: 'Nothing to say', dormant: 'Cannot answer',
+  cooling: 'Waiting out its cooldown', capped: 'Held back by the daily cap',
+  muted: 'Muted', closed: 'Muted itself', error: 'Errored', disabled: 'Off',
+};
+
+function statusBand(d) {
+  const bits = [];
+  bits.push({ k: 'Signals', v: d.enabled ? 'On' : 'Off', s: d.signals.length + ' questions', cls: d.enabled ? '' : 'off' });
+  bits.push({ k: 'Today', v: d.sent_today + ' of ' + d.cap,
+              s: d.remaining_today > 0 ? d.remaining_today + ' left before the cap' : 'cap reached — the rest wait for tomorrow',
+              cls: d.remaining_today > 0 ? '' : 'warn' });
+  bits.push({ k: 'Speaking hours', v: d.window.start + '–' + d.window.end,
+              s: d.window.open_now ? 'open now' : (d.window.why || 'closed now'),
+              cls: d.window.open_now ? '' : 'off' });
+  bits.push({ k: 'Asked every', v: d.interval_minutes + ' min', s: 'the questions, not the notices' });
+  bits.push({ k: 'Wording', v: d.phrasing.enabled ? 'Local model' : 'Query only',
+              s: d.phrasing.enabled ? esc(d.phrasing.model) : 'phrasing switched off',
+              cls: d.phrasing.enabled ? '' : 'off' });
+  bits.push({ k: 'Corner offer', v: d.nudge.enabled ? 'On' : 'Off',
+              s: d.nudge.sections + ' sections in ' + d.nudge.window_seconds + 's, max ' + d.nudge.max_per_day + '/day',
+              cls: d.nudge.enabled ? '' : 'off' });
+  document.getElementById('sg-status').innerHTML = bits.map(b =>
+    `<div class="sg-stat ${b.cls || ''}"><div class="k">${esc(b.k)}</div>
+       <div class="v">${esc(b.v)}</div><div class="s">${b.s}</div></div>`).join('');
+}
+
+function factLine(facts) {
+  if (!facts || typeof facts !== 'object') return '';
+  return Object.entries(facts)
+    .filter(([, v]) => v !== null && v !== undefined && typeof v !== 'object')
+    .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(' · ');
+}
+
+function cardFor(s) {
+  const p = PREVIEW[s.key];
+  const outcome = s.muted ? (s.auto_muted ? 'closed' : 'muted') : (s.last_run_outcome || 'silent');
+  const said = s.last_event;
+  const cfgKeys = Object.keys(s.defaults).filter(k => typeof s.defaults[k] === 'number');
+
+  return `<div class="sg-card o-${esc(outcome)}" data-key="${esc(s.key)}">
+    <div class="sg-head">
+      <div class="sg-name">${esc(s.label)}</div>
+      <span class="sg-badge b-${esc(outcome)}">${esc(OUTCOME_WORDS[outcome] || outcome)}</span>
+    </div>
+    <div class="sg-q">${esc(s.question)}</div>
+    ${s.muted ? `<div class="sg-said">${esc(s.mute_reason || 'Muted by a manager.')}</div>` : ''}
+    ${said ? `<div class="sg-said"><b>Last said:</b> ${esc(said.sent_text)}
+        ${said.cleared_at ? '<br><span class="muted">The finding has since gone away.</span>' : ''}
+        <div class="sg-facts">${esc(factLine(said.facts))}</div>
+        ${said.phrasing_source === 'local_model'
+          ? '<div class="sg-facts">worded by the local model from the query’s own sentence</div>'
+          : `<div class="sg-facts">worded by the query itself${said.phrasing_note ? ' — ' + esc(said.phrasing_note) : ''}</div>`}
+      </div>` : ''}
+    ${p ? `<div class="sg-said"><b>Right now it would say:</b> ${
+        p.outcome === 'fired' ? esc(p.sent_text) : '<span class="muted">nothing — ' + esc(p.detail || p.outcome) + '</span>'
+      }${p.outcome === 'fired' ? `<div class="sg-facts">${esc(factLine(p.facts))}</div>` : ''}</div>` : ''}
+    <div class="sg-meta">
+      <span>Last asked ${esc(when(s.last_run_at))}</span>
+      <span>Last sent ${esc(when(s.last_fired_at))}</span>
+      <span>${s.fires} sent, ${s.acted_on} acted on</span>
+      <span>Goes to ${s.recipients === 'dsl' ? 'the DSL' : 'managers'}</span>
+    </div>
+    ${s.last_run_detail && !s.muted ? `<div class="sg-facts">${esc(s.last_run_detail)}</div>` : ''}
+    <div class="sg-acts">
+      <button class="sg-btn" data-act="preview">What would it say?</button>
+      <button class="sg-btn" data-act="mute">${s.muted ? 'Turn it back on' : 'Mute it'}</button>
+      <button class="sg-btn${BANNERS[s.key] ? ' primary' : ''}" data-act="banner" aria-pressed="${BANNERS[s.key] ? 'true' : 'false'}">${BANNERS[s.key] ? '✓ Shown as a banner' : 'Show as a banner'}</button>
+      ${cfgKeys.length ? '<button class="sg-btn" data-act="cfg">Thresholds</button>' : ''}
+      <button class="sg-btn" data-act="hist">History</button>
+      ${s.link ? `<a class="sg-btn" href="${esc(s.link)}" style="text-decoration:none;display:inline-flex;align-items:center">Open the screen →</a>` : ''}
+    </div>
+    <div class="sg-cfg"><div class="sg-cfg-row">
+      ${cfgKeys.map(k => `<div><label for="c-${esc(s.key)}-${esc(k)}">${esc(k.replace(/_/g, ' '))}</label>
+        <input id="c-${esc(s.key)}-${esc(k)}" data-cfg="${esc(k)}" type="number" value="${esc(s.effective[k])}"></div>`).join('')}
+      <button class="sg-btn primary" data-act="savecfg">Save</button>
+      <button class="sg-btn" data-act="resetcfg">Back to the defaults</button>
+    </div></div>
+    <div class="sg-hist"></div>
+  </div>`;
+}
+
+function render() {
+  if (!DATA) return;
+  statusBand(DATA);
+  document.getElementById('sg-list').innerHTML = DATA.signals.map(cardFor).join('');
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const card = btn.closest('.sg-card');
+  const key = card && card.dataset.key;
+  if (!key) return;
+  const sig = DATA.signals.find(s => s.key === key);
+  const act = btn.dataset.act;
+
+  try {
+    if (act === 'preview') {
+      btn.disabled = true; btn.textContent = 'Asking…';
+      const out = await api('/api/signals/run', { method: 'POST', body: { only: key, dry_run: true } });
+      PREVIEW[key] = (out.results || [])[0] || null;
+      render();
+    } else if (act === 'mute') {
+      await api('/api/signals/' + encodeURIComponent(key) + '/mute',
+        { method: 'POST', body: { muted: !sig.muted, reason: sig.muted ? null : 'Muted from the Signals screen.' } });
+      await load();
+      Wren.toast(sig.muted ? 'Turned back on' : 'Muted', 'success');
+    } else if (act === 'banner') {
+      const on = !BANNERS[key];
+      await api('/api/signals/banners/' + encodeURIComponent(key), { method: 'PUT', body: { on } });
+      await load();
+      Wren.toast(on ? 'Will show as a banner at the top of Roost' : 'Banner off', 'success');
+    } else if (act === 'cfg') {
+      card.querySelector('.sg-cfg').classList.toggle('open');
+    } else if (act === 'savecfg') {
+      const body = {};
+      card.querySelectorAll('[data-cfg]').forEach(i => { body[i.dataset.cfg] = Number(i.value); });
+      await api('/api/signals/' + encodeURIComponent(key) + '/config', { method: 'PUT', body });
+      await load();
+      Wren.toast('Thresholds saved', 'success');
+    } else if (act === 'resetcfg') {
+      await api('/api/signals/' + encodeURIComponent(key) + '/config', { method: 'PUT', body: {} });
+      await load();
+      Wren.toast('Back to the defaults', 'success');
+    } else if (act === 'hist') {
+      const box = card.querySelector('.sg-hist');
+      if (box.classList.contains('open')) { box.classList.remove('open'); return; }
+      box.classList.add('open');
+      box.innerHTML = '<p class="muted">Loading…</p>';
+      const h = await api('/api/signals/' + encodeURIComponent(key) + '/history?limit=15');
+      box.innerHTML = (h.events || []).length ? h.events.map(ev => `
+        <div class="sg-hrow"><b>${esc(when(ev.fired_at))}</b> — ${esc(ev.sent_text)}
+          <br>${esc(factLine(ev.facts))}
+          <br>sent to ${(ev.recipient_ids || []).length} ${(ev.recipient_ids || []).length === 1 ? 'person' : 'people'};
+          ${ev.dismissed || 0} of ${ev.notifications || 0} dismissed;
+          ${ev.cleared_at ? 'the finding went away ' + esc(when(ev.cleared_at)) : 'still standing'}
+        </div>`).join('') : '<p class="muted">It has never had anything to say.</p>';
+    }
+  } catch (err) {
+    Wren.toast(errText(err, 'Could not do that'), 'warning');
+  } finally {
+    if (act === 'preview') { btn.disabled = false; btn.textContent = 'What would it say?'; }
+  }
+});
+
+document.getElementById('sg-preview').addEventListener('click', async (e) => {
+  const b = e.currentTarget;
+  b.disabled = true; b.textContent = 'Asking every question…';
+  document.getElementById('sg-runnote').textContent = '';
+  try {
+    const out = await api('/api/signals/run', { method: 'POST', body: { dry_run: true } });
+    PREVIEW = {};
+    (out.results || []).forEach(r => { PREVIEW[r.key] = r; });
+    const would = (out.results || []).filter(r => r.outcome === 'fired').length;
+    document.getElementById('sg-runnote').textContent =
+      would ? `${would} of ${out.results.length} would have something to say. Nothing was sent — this is a preview.`
+            : 'Nothing to say. That is the normal answer.';
+    render();
+  } catch (err) {
+    Wren.toast(errText(err, 'Could not ask them'), 'warning');
+  } finally {
+    b.disabled = false; b.textContent = 'See what they would say right now';
+  }
+});
+
+document.getElementById('sg-refresh').addEventListener('click', () => load());
+
+async function loadNudges() {
+  const box = document.getElementById('sg-nudges');
+  try {
+    const d = await api('/api/signals/nudges/log?days=30');
+    if (!d.nudges || !d.nudges.length) {
+      box.innerHTML = '<p class="muted">Nobody has been offered help in the last 30 days.</p>';
+      return;
+    }
+    box.innerHTML = `<table class="sg-tbl">
+      <thead><tr><th>When</th><th>Who</th><th>Sections</th><th>What they said they were looking for</th></tr></thead>
+      <tbody>${d.nudges.map(n => `<tr>
+        <td>${esc(when(n.shown_at))}</td>
+        <td>${esc(n.staff)}</td>
+        <td>${esc(n.section_count || 0)} in ${esc(n.window_secs || 0)}s</td>
+        <td>${n.answer ? esc(n.answer) : '<span class="muted">' + (n.dismissed_at ? 'dismissed' : 'no answer') + '</span>'}</td>
+      </tr>`).join('')}</tbody></table>`;
+  } catch (e) {
+    box.innerHTML = `<p class="muted">Could not load the log: ${esc(errText(e))}</p>`;
+  }
+}
+
+async function load() {
+  try {
+    DATA = await api('/api/signals');
+    try { BANNERS = (await api('/api/signals/banners')).prefs || {}; } catch (_) { BANNERS = {}; }
+    render();
+    await loadNudges();
+  } catch (e) {
+    document.getElementById('sg-list').innerHTML =
+      `<p class="muted">Could not load the signals: ${esc(errText(e))}</p>`;
+  }
+}
+
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Duties Tracker — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b334 (2026-09-15) — the duties tracker. Same shape as the framework tracker
+   (framework-tracker.html): subjects down the left, one column per duty across
+   the top, cells are colour blocks. Far fewer columns here (4-11 per scope vs
+   96), so no aggressive density tricks are needed — but the sticky-name-column
+   and colour-mix tint approach is reused because it already reads well and is
+   proven on this exact class of screen. Tokens only, checked light + dark. */
+:root {
+  --dt-col: 96px;
+  --dt-name: 168px;
+  --dt-meta: 96px;
+  --dt-row: 30px;
+  --dt-h: 74px;
+  --dt-green: var(--c-green-light);
+  --dt-amber: var(--c-amber-light);
+  --dt-red:   var(--c-red-light);
+  --dt-grey:  var(--c-navy-light);
+}
+@supports (color: color-mix(in srgb, red 50%, white)) {
+  :root {
+    --dt-green: color-mix(in srgb, var(--c-green) 55%, transparent);
+    --dt-amber: color-mix(in srgb, var(--c-amber) 55%, transparent);
+    --dt-red:   color-mix(in srgb, var(--c-red) 55%, transparent);
+    --dt-grey:  color-mix(in srgb, var(--c-muted) 22%, transparent);
+  }
+}
+
+.dt-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.dt-bar select { max-width: 100%; min-width: 0; }
+.dt-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.dt-tab { border: 1px solid var(--c-border); background: transparent; color: var(--c-muted);
+          border-radius: 999px; padding: 6px 14px; font-size: .82rem; font-weight: 600; cursor: pointer;
+          font-family: inherit; min-height: 32px; }
+.dt-tab[aria-selected="true"] { background: var(--c-blue); border-color: var(--c-blue); color: #fff; }
+
+.dt-legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+             font-size: .72rem; color: var(--c-muted); margin: 0 0 8px; }
+.dt-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.dt-legend i { width: 13px; height: 13px; border-radius: 4px; display: inline-block; border: 1px solid var(--c-border); }
+.dt-legend i.green { background: var(--dt-green); }
+.dt-legend i.amber { background: var(--dt-amber); }
+.dt-legend i.red   { background: var(--dt-red); }
+.dt-legend i.grey  { background: var(--dt-grey); }
+
+.dt-counts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.dt-count { border: 1px solid var(--c-border); border-radius: 10px; padding: 6px 12px; text-align: center;
+            cursor: pointer; background: var(--c-surface); min-width: 72px; }
+.dt-count[aria-pressed="true"] { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+.dt-count b { display: block; font-size: 1.05rem; color: var(--c-text); }
+.dt-count span { font-size: .68rem; color: var(--c-muted); }
+
+.dt-scroll { overflow: auto; max-height: calc(100vh - 260px); border: 1px solid var(--c-border);
+             border-radius: 12px; background: var(--c-surface); overscroll-behavior: contain; }
+.dt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.dt-table th, .dt-table td { border-right: 1px solid var(--c-border); border-bottom: 1px solid var(--c-border);
+                              padding: 0; margin: 0; }
+.dt-table thead th { position: sticky; top: 0; z-index: 3; background: var(--c-navy-mid, var(--c-surface));
+                     color: var(--c-text); font-size: .64rem; font-weight: 700; line-height: 1.2;
+                     padding: 4px; text-align: center; vertical-align: bottom; height: var(--dt-h); }
+.dt-th-inner { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+               overflow: hidden; white-space: normal; overflow-wrap: break-word; }
+.dt-th-star { color: var(--c-amber-dark, var(--c-amber)); }
+.dt-table tbody td { height: var(--dt-row); vertical-align: middle; }
+.dt-c-name, .dt-c-meta { position: sticky; left: 0; z-index: 2; background: var(--c-navy-mid, var(--c-surface));
+                          text-align: left !important; padding: 0 8px !important; font-size: .78rem;
+                          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.dt-c-name { width: var(--dt-name); min-width: var(--dt-name); max-width: var(--dt-name); font-weight: 600;
+             color: var(--c-blue); text-decoration: none; border-right: 2px solid var(--c-border) !important; }
+.dt-c-meta { left: var(--dt-name); width: var(--dt-meta); min-width: var(--dt-meta); max-width: var(--dt-meta);
+             color: var(--c-muted); font-size: .7rem; cursor: default;
+             border-right: 2px solid var(--c-border) !important; }
+.dt-table thead .dt-c-name, .dt-table thead .dt-c-meta { z-index: 5; }
+.dt-cell { width: var(--dt-col); min-width: var(--dt-col); cursor: pointer; background: transparent;
+           font-size: .66rem; text-align: center; color: var(--c-text); }
+.dt-cell[data-s="done"]           { background: var(--dt-green); }
+.dt-cell[data-s="due_soon"]       { background: var(--dt-amber); }
+.dt-cell[data-s="overdue"]        { background: var(--dt-red); }
+.dt-cell[data-s="not_applicable"] { background: repeating-linear-gradient(135deg, transparent, transparent 5px,
+                                     var(--c-border) 5px, var(--c-border) 6px); cursor: default; color: var(--c-muted); }
+.dt-cell:not([data-s="not_applicable"]):hover { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+.dt-empty { padding: 40px; text-align: center; color: var(--c-muted); }
+
+#dt-drawer { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 9000;
+             display: none; align-items: center; justify-content: center; padding: 16px; }
+#dt-drawer.open { display: flex; }
+#dt-sheet { background: var(--c-navy-mid, var(--c-surface)); border: 1px solid var(--c-border); border-radius: 14px;
+            width: 100%; max-width: 640px; max-height: 84vh; overflow-y: auto; padding: 16px 18px; }
+#dt-sheet h3 { margin: 0 0 2px; font-size: 1rem; color: var(--c-text); }
+.dt-sheet-sub { font-size: .78rem; color: var(--c-muted); margin-bottom: 12px; }
+.dt-duty-row { border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.dt-duty-row b { font-size: .86rem; color: var(--c-text); }
+.dt-duty-row .dt-pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: .68rem;
+                         font-weight: 700; margin-left: 6px; }
+.dt-pill.done { background: var(--dt-green); color: var(--c-green-dark, var(--c-text)); }
+.dt-pill.due_soon { background: var(--dt-amber); color: var(--c-amber-dark, var(--c-text)); }
+.dt-pill.overdue { background: var(--dt-red); color: var(--c-red-dark, var(--c-text)); }
+.dt-pill.not_applicable { background: transparent; border: 1px solid var(--c-border); color: var(--c-muted); }
+.dt-duty-meta { font-size: .74rem; color: var(--c-muted); margin-top: 4px; line-height: 1.5; }
+.dt-close { float: right; }
+
+.dt-form { border: 1px solid var(--c-border); border-radius: 12px; padding: 12px; margin-bottom: 12px;
+           background: var(--c-surface); display: none; }
+.dt-form.open { display: block; }
+.dt-form label { display: block; font-size: .78rem; color: var(--c-muted); margin: 8px 0 3px; }
+.dt-form input, .dt-form select, .dt-form textarea { width: 100%; box-sizing: border-box; }
+.dt-form textarea { min-height: 60px; resize: vertical; }
+
+@media (max-width: 780px) {
+  :root { --dt-name: 128px; --dt-meta: 0px; --dt-row: 36px; }
+  .dt-c-meta { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+    <div>
+      <div class="page-title" style="font-size:1.05rem">🗂️ Duties Tracker</div>
+      <div style="font-size:.78rem;color:var(--c-muted);margin-top:2px">
+        When the last report was done, forms signed, checks made — one screen, not a stream of notifications.
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-ghost" id="dt-refresh-btn" type="button">↻ Refresh now</button>
+      <span id="dt-computed-at" style="font-size:.7rem;color:var(--c-muted);align-self:center"></span>
+    </div>
+  </div>
+
+  <div class="dt-tabs" role="tablist" aria-label="Duty scope">
+    <button class="dt-tab" role="tab" data-scope="child"   aria-selected="true">Children</button>
+    <button class="dt-tab" role="tab" data-scope="room"    aria-selected="false">Rooms</button>
+    <button class="dt-tab" role="tab" data-scope="staff"   aria-selected="false">Staff</button>
+    <button class="dt-tab" role="tab" data-scope="setting" aria-selected="false">Setting</button>
+  </div>
+
+  <div class="dt-bar">
+    <select class="v2-sort-select" id="dt-room" aria-label="Room"><option value="">All rooms</option></select>
+    <button class="btn btn-sm btn-ghost" id="dt-legend-btn" type="button" aria-expanded="false">Key</button>
+    <span id="dt-count-label" style="font-size:.74rem;color:var(--c-muted)"></span>
+  </div>
+
+  <div class="dt-legend" id="dt-legend" hidden>
+    <span><i class="green"></i> done</span>
+    <span><i class="amber"></i> due soon</span>
+    <span><i class="red"></i> overdue</span>
+    <span><i class="grey"></i> not applicable</span>
+    <span>⭐ statutory duty</span>
+  </div>
+
+  <div class="dt-counts" id="dt-counts" role="group" aria-label="Filter by state">
+    <button class="dt-count" data-state="" aria-pressed="true"><b id="dt-n-all">0</b><span>all</span></button>
+    <button class="dt-count" data-state="overdue"><b id="dt-n-overdue">0</b><span>overdue</span></button>
+    <button class="dt-count" data-state="due_soon"><b id="dt-n-due_soon">0</b><span>due soon</span></button>
+    <button class="dt-count" data-state="done"><b id="dt-n-done">0</b><span>done</span></button>
+  </div>
+
+  <!-- Setting scope only: the two "record it" forms b334 §3 added because
+       nothing existing captured a parent sit-down or a whole-setting meeting. -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px" id="dt-setting-actions" hidden>
+    <button class="btn btn-sm" id="dt-open-chat-form" type="button">+ Record a parent chat</button>
+    <!-- b530 (2026-10-26): this used to open a minutes box that wrote to
+         ladn.duty_staff_meetings — manager-only, with no read route, so nothing
+         recorded through it could ever be read back, and in fourteen months
+         nobody used it (0 rows). Toby: "staff meetings … need to be organised
+         and led by room leaders." The meeting record is the ROOM meeting now;
+         this points at it rather than disappearing. -->
+    <a class="btn btn-sm btn-ghost" id="dt-open-room-meetings" href="/admin/cpd/deep-dive" title="Roost → CPD → Deep Dive → Room meetings">Room meetings &rarr;</a>
+  </div>
+  <div class="dt-form" id="dt-chat-form">
+    <label for="dt-chat-child">Child</label>
+    <select class="v2-sort-select" id="dt-chat-child"></select>
+    <label for="dt-chat-date">Date</label>
+    <input type="date" id="dt-chat-date">
+    <label for="dt-chat-topic">Topic</label>
+    <input type="text" id="dt-chat-topic" placeholder="e.g. settling in, next steps at home">
+    <label for="dt-chat-notes">Notes</label>
+    <textarea id="dt-chat-notes"></textarea>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="btn btn-sm" id="dt-chat-save" type="button">Save</button>
+      <button class="btn btn-sm btn-ghost" id="dt-chat-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+  <!-- b530: the staff-meeting form is retired. Kept as a signpost rather than
+       deleted, so somebody who knew where it was is told where it went. -->
+  <div class="dt-form" id="dt-meeting-form">
+    <p style="margin:0 0 8px;line-height:1.5">Meetings are recorded as <strong>room meetings</strong> now, by the room
+      leader — with an agenda, who was there and why anybody was not, the minutes, actions with an owner and a due
+      date, and a tick from everyone who has read them.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn btn-sm" href="/admin/cpd/deep-dive">Open the room meetings panel</a>
+      <button class="btn btn-sm btn-ghost" id="dt-meeting-cancel" type="button">Close</button>
+    </div>
+  </div>
+
+  <div class="dt-scroll" id="dt-scroll">
+    <div class="dt-empty">Loading…</div>
+  </div>
+
+  <div id="dt-drawer">
+    <div id="dt-sheet">
+      <button class="btn btn-sm btn-ghost dt-close" id="dt-sheet-close" type="button">✕</button>
+      <h3 id="dt-sheet-title"></h3>
+      <div class="dt-sheet-sub" id="dt-sheet-sub"></div>
+      <div id="dt-sheet-body"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function d(v) { if (!v) return '—'; return String(v).slice(0, 10); }
+  function show(el, on) { if (el) el.hidden = !on; }
+
+  var STATE = { scope: 'child', roomId: '', stateFilter: '', duties: [], subjects: [], cells: {}, computedAt: null };
+  var STATE_LABEL = { done: 'Done', due_soon: 'Due soon', overdue: 'Overdue', not_applicable: 'N/A' };
+
+  function cellKey(dutyKey, subjectId) { return dutyKey + ':' + subjectId; }
+
+  function load() {
+    $('dt-scroll').innerHTML = '<div class="dt-empty">Loading…</div>';
+    var q = '/api/duties/matrix?scope=' + encodeURIComponent(STATE.scope)
+      + (STATE.roomId ? '&room_id=' + encodeURIComponent(STATE.roomId) : '');
+    return Wren.api(q).then(function (r) {
+      STATE.duties = r.duties || [];
+      STATE.subjects = r.subjects || [];
+      STATE.cells = {};
+      (r.cells || []).forEach(function (c) { STATE.cells[cellKey(c.duty_key, c.subject_id)] = c; });
+      STATE.computedAt = r.computed_at || null;
+      $('dt-computed-at').textContent = STATE.computedAt ? 'as of ' + new Date(STATE.computedAt).toLocaleString('en-GB') : '';
+      renderCounts();
+      renderTable();
+    }).catch(function (e) {
+      $('dt-scroll').innerHTML = '<div class="dt-empty">Could not load the duties tracker. ' + esc((e && (e.error || e.message)) || '') + '</div>';
+    });
+  }
+
+  function renderCounts() {
+    var counts = { overdue: 0, due_soon: 0, done: 0, not_applicable: 0 };
+    Object.keys(STATE.cells).forEach(function (k) { var c = STATE.cells[k]; counts[c.state] = (counts[c.state] || 0) + 1; });
+    $('dt-n-all').textContent = Object.keys(STATE.cells).length;
+    $('dt-n-overdue').textContent = counts.overdue;
+    $('dt-n-due_soon').textContent = counts.due_soon;
+    $('dt-n-done').textContent = counts.done;
+  }
+
+  function subjectMeta(s) {
+    if (STATE.scope === 'child') return s.room_name || '—';
+    if (STATE.scope === 'staff') return (s.role || '') + (s.room_name ? ' · ' + s.room_name : '');
+    return '';
+  }
+
+  function renderTable() {
+    var duties = STATE.duties, subjects = STATE.subjects;
+    if (!duties.length) { $('dt-scroll').innerHTML = '<div class="dt-empty">No duties defined for this scope.</div>'; return; }
+
+    // "Just what's overdue" — hide a subject row with nothing matching the filter.
+    var visible = subjects.filter(function (s) {
+      if (!STATE.stateFilter) return true;
+      return duties.some(function (dfn) {
+        var c = STATE.cells[cellKey(dfn.key, s.id)];
+        return c && c.state === STATE.stateFilter;
+      });
+    });
+
+    var thead = '<thead><tr><th class="dt-c-name">Name</th>'
+      + (STATE.scope !== 'setting' ? '<th class="dt-c-meta">' + (STATE.scope === 'child' ? 'Room' : STATE.scope === 'staff' ? 'Role / room' : '') + '</th>' : '')
+      + duties.map(function (dfn) {
+          return '<th title="' + esc(dfn.label) + (dfn.notes ? ' — ' + esc(dfn.notes) : '') + '">'
+            + '<div class="dt-th-inner">' + (dfn.is_statutory ? '<span class="dt-th-star">⭐</span> ' : '') + esc(dfn.label) + '</div></th>';
+        }).join('')
+      + '</tr></thead>';
+
+    var rows = visible.map(function (s) {
+      var cells = duties.map(function (dfn) {
+        var c = STATE.cells[cellKey(dfn.key, s.id)];
+        var state = c ? c.state : 'not_applicable';
+        if (STATE.stateFilter && state !== STATE.stateFilter) {
+          return '<td class="dt-cell" data-s="not_applicable" data-duty="' + esc(dfn.key) + '"></td>';
+        }
+        var label = STATE_LABEL[state] || '';
+        return '<td class="dt-cell" data-s="' + state + '" data-duty="' + esc(dfn.key) + '" title="' + esc(dfn.label) + ' — ' + label + '"></td>';
+      }).join('');
+      return '<tr data-subject="' + s.id + '">'
+        + '<td class="dt-c-name" data-subject="' + s.id + '">' + esc(s.name) + '</td>'
+        + (STATE.scope !== 'setting' ? '<td class="dt-c-meta">' + esc(subjectMeta(s)) + '</td>' : '')
+        + cells + '</tr>';
+    }).join('');
+
+    $('dt-count-label').textContent = visible.length + ' of ' + subjects.length + (STATE.scope === 'setting' ? '' : ' shown');
+    $('dt-scroll').innerHTML = '<table class="dt-table">' + thead + '<tbody>' + (rows || '<tr><td class="dt-empty">Nothing matches this filter.</td></tr>') + '</tbody></table>';
+  }
+
+  function openSubjectDrawer(subjectId) {
+    var subject = STATE.subjects.filter(function (s) { return String(s.id) === String(subjectId); })[0];
+    Wren.api('/api/duties/subject/' + STATE.scope + '/' + subjectId).then(function (r) {
+      $('dt-sheet-title').textContent = (subject && subject.name) || 'Duties';
+      $('dt-sheet-sub').textContent = (subject && subjectMeta(subject)) || '';
+      $('dt-sheet-body').innerHTML = (r.duties || []).map(function (dd) {
+        var state = dd.state || 'not_applicable';
+        return '<div class="dt-duty-row">'
+          + '<b>' + esc(dd.label) + '</b>'
+          + (dd.is_statutory ? ' <span title="Statutory">⭐</span>' : '')
+          + '<span class="dt-pill ' + state + '">' + esc(STATE_LABEL[state] || state) + '</span>'
+          + '<div class="dt-duty-meta">'
+          + 'Last done: ' + d(dd.last_done_date) + (dd.last_done_by_name ? ' by ' + esc(dd.last_done_by_name) : '')
+          + (dd.next_due_date ? ' · Next due: ' + d(dd.next_due_date) : '')
+          + (dd.citation ? '<br>' + esc(dd.citation) : '')
+          + (dd.notes ? '<br>' + esc(dd.notes) : '')
+          + (dd.detail ? '<br>' + esc(JSON.stringify(dd.detail)) : '')
+          + '</div></div>';
+      }).join('') || '<div class="dt-empty">No duties tracked for this scope yet.</div>';
+      $('dt-drawer').classList.add('open');
+    }).catch(function (e) { Wren.toast && Wren.toast((e && (e.error || e.message)) || 'Could not load', 'error'); });
+  }
+
+  function loadRooms() {
+    return Wren.api('/api/staff/rooms').then(function (rooms) {
+      var list = Array.isArray(rooms) ? rooms : [];
+      $('dt-room').innerHTML = '<option value="">All rooms</option>'
+        + list.map(function (r) { return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
+    }).catch(function () { /* room filter simply stays empty */ });
+  }
+
+  function loadChildOptions() {
+    return Wren.api('/api/duties/matrix?scope=child').then(function (r) {
+      $('dt-chat-child').innerHTML = (r.subjects || []).map(function (c) {
+        return '<option value="' + c.id + '">' + esc(c.name) + (c.room_name ? ' (' + esc(c.room_name) + ')' : '') + '</option>';
+      }).join('');
+    }).catch(function () {});
+  }
+
+  function selectScope(scope) {
+    STATE.scope = scope; STATE.stateFilter = '';
+    document.querySelectorAll('.dt-tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.scope === scope)); });
+    document.querySelectorAll('.dt-count').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.state === ''))});
+    $('dt-room').style.display = scope === 'setting' ? 'none' : '';
+    show($('dt-setting-actions'), scope === 'setting');
+    $('dt-chat-form').classList.remove('open');
+    $('dt-meeting-form').classList.remove('open');
+    load();
+  }
+
+  function boot() {
+    document.querySelectorAll('.dt-tab').forEach(function (t) {
+      t.addEventListener('click', function () { selectScope(t.dataset.scope); });
+    });
+    $('dt-room').addEventListener('change', function () { STATE.roomId = $('dt-room').value; load(); });
+    $('dt-legend-btn').addEventListener('click', function () {
+      var open = !$('dt-legend').hidden;
+      $('dt-legend').hidden = open;
+      $('dt-legend-btn').setAttribute('aria-expanded', String(!open));
+    });
+    $('dt-counts').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.dt-count') : null;
+      if (!b) return;
+      STATE.stateFilter = b.dataset.state || '';
+      document.querySelectorAll('.dt-count').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      renderTable();
+    });
+    $('dt-scroll').addEventListener('click', function (e) {
+      var nameCell = e.target.closest ? e.target.closest('.dt-c-name[data-subject]') : null;
+      if (nameCell) { openSubjectDrawer(nameCell.getAttribute('data-subject')); return; }
+      var cell = e.target.closest ? e.target.closest('.dt-cell') : null;
+      if (cell && cell.getAttribute('data-s') !== 'not_applicable') {
+        var tr = cell.closest('tr');
+        openSubjectDrawer(tr.getAttribute('data-subject'));
+      }
+    });
+    $('dt-sheet-close').addEventListener('click', function () { $('dt-drawer').classList.remove('open'); });
+    $('dt-drawer').addEventListener('click', function (e) { if (e.target.id === 'dt-drawer') $('dt-drawer').classList.remove('open'); });
+
+    $('dt-refresh-btn').addEventListener('click', function () {
+      $('dt-refresh-btn').disabled = true;
+      Wren.api('/api/duties/refresh', { method: 'POST' }).then(function () {
+        Wren.toast && Wren.toast('Duties recomputed', 'success');
+        load();
+      }).catch(function (e) {
+        Wren.toast && Wren.toast((e && (e.error || e.message)) || 'Manager only', 'error');
+      }).finally(function () { $('dt-refresh-btn').disabled = false; });
+    });
+
+    $('dt-open-chat-form').addEventListener('click', function () {
+      $('dt-chat-form').classList.add('open'); $('dt-meeting-form').classList.remove('open');
+      if (!$('dt-chat-date').value) $('dt-chat-date').value = new Date().toISOString().slice(0, 10);
+      loadChildOptions();
+    });
+    $('dt-chat-cancel').addEventListener('click', function () { $('dt-chat-form').classList.remove('open'); });
+    $('dt-chat-save').addEventListener('click', function () {
+      var childId = $('dt-chat-child').value;
+      if (!childId) { Wren.toast && Wren.toast('Choose a child', 'error'); return; }
+      Wren.api('/api/duties/parent-chat', { method: 'POST', body: {
+        child_id: Number(childId), chat_date: $('dt-chat-date').value || null,
+        topic: $('dt-chat-topic').value || null, notes: $('dt-chat-notes').value || null,
+      } }).then(function () {
+        Wren.toast && Wren.toast('Chat recorded', 'success');
+        $('dt-chat-form').classList.remove('open'); $('dt-chat-topic').value = ''; $('dt-chat-notes').value = '';
+      }).catch(function (e) { Wren.toast && Wren.toast((e && (e.error || e.message)) || 'Could not save', 'error'); });
+    });
+
+    // b530: nothing POSTs to /api/duties/staff-meeting any more — that route now
+    // answers 410 naming where the record moved to. The Close button is all this
+    // panel still needs; the link beside it is an <a>, so it needs no handler.
+    var mcancel = $('dt-meeting-cancel');
+    if (mcancel) mcancel.addEventListener('click', function () { $('dt-meeting-form').classList.remove('open'); });
+
+    loadRooms();
+    load();
+  }
+
+  if (window.Wren && Wren.user) boot(); else document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

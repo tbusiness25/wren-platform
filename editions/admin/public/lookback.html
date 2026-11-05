@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Look back — Roost</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+  /* b523 — Look back. Tokens only: every colour here is a var(--c-*), so the
+     page follows whichever of Wren's five appearance presets is chosen. The
+     categorical series colours live in the shared renderer
+     (/js/wren-lookback-charts.js), not here, so the page and the exported
+     slide pack cannot drift apart. */
+  #lb-wrap{max-width:1120px;margin:0 auto;padding:18px 16px 60px}
+  .lb-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .lb-head h1{font-size:1.35rem;margin:0;flex:1 1 16ch}
+  .lb-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 20px;
+          padding:10px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px}
+  .lb-bar label{font-size:.82rem;color:var(--c-muted)}
+  .lb-seg{display:inline-flex;border:1px solid var(--c-border);border-radius:9px;overflow:hidden}
+  .lb-seg button{padding:7px 13px;border:0;border-right:1px solid var(--c-border);background:var(--c-surface);
+                 color:var(--c-text);cursor:pointer;font-family:inherit;font-size:.85rem}
+  .lb-seg button:last-child{border-right:0}
+  .lb-seg button[aria-pressed="true"]{background:var(--c-cat-1);color:var(--c-on-fill);font-weight:700}
+  .lb-btn{padding:7px 13px;border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text);
+          border-radius:9px;cursor:pointer;font-family:inherit;font-size:.85rem}
+  .lb-btn:hover{border-color:var(--c-border-strong)}
+  .lb-btn.primary{background:var(--c-cat-1);color:var(--c-on-fill);border-color:var(--c-cat-1);font-weight:700}
+  .lb-grow{flex:1}
+  input.lb-input{padding:7px 10px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-surface);
+                 color:var(--c-text);font-family:inherit;font-size:.85rem;min-width:16ch}
+
+  .lb-section{margin:0 0 34px}
+  .lb-section>header{border-top:2px solid var(--c-border-strong);padding-top:14px;margin-bottom:14px}
+  .lb-section h2{font-size:1.15rem;margin:0 0 4px}
+  .lb-q{color:var(--c-muted);font-size:.92rem;margin:0 0 10px;max-width:72ch}
+  .lb-conf{display:inline-flex;align-items:baseline;gap:.5em;font-size:.8rem;padding:4px 11px;border-radius:999px;
+           border:1px solid var(--c-border-strong);color:var(--c-text)}
+  .lb-conf b{font-weight:700}
+  .lb-conf[data-c="strong"]{border-color:var(--c-cat-2)} .lb-conf[data-c="fair"]{border-color:var(--c-cat-1)}
+  .lb-conf[data-c="weak"]{border-color:var(--c-cat-3)}   .lb-conf[data-c="thin"]{border-color:var(--c-cat-3)}
+  .lb-conf[data-c="missing"]{border-color:var(--c-muted)}
+  .lb-facts{display:flex;flex-wrap:wrap;gap:14px 26px;margin:12px 0 4px}
+  .lb-fact b{display:block;font-size:1.5rem;line-height:1;font-variant-numeric:tabular-nums}
+  .lb-fact span{display:block;font-size:.78rem;color:var(--c-muted);margin-top:4px;max-width:22ch}
+  details.lb-limits{margin:10px 0 0;font-size:.85rem}
+  details.lb-limits summary{cursor:pointer;color:var(--c-muted);font-weight:600}
+  details.lb-limits ul{margin:8px 0 0;padding-left:1.2em;line-height:1.55}
+  details.lb-limits li{margin-bottom:7px;max-width:95ch}
+  .lb-src{font-size:.78rem;color:var(--c-muted);margin:8px 0 0}
+
+  .lb-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:16px 18px;margin:0 0 16px}
+  .lb-card h3{font-size:1rem;margin:0 0 3px}
+  .lb-card .lb-sub{font-size:.82rem;color:var(--c-muted);margin:0 0 12px;max-width:80ch}
+  .lb-figure{position:relative}
+  .lb-svg{width:100%;height:auto;display:block;overflow:visible}
+  .lb-legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;font-size:.8rem;color:var(--c-text)}
+  .lb-legend-note{color:var(--c-muted)}
+  .lb-key{display:inline-flex;align-items:center;gap:6px}
+  .lb-key i{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+  .lb-key i.lb-med{height:4px;border-radius:2px;background:var(--c-cat-1)}
+  .lb-key i.lb-band{background:var(--c-cat-1);opacity:.22}
+  .lb-tablewrap{overflow-x:auto;margin-top:12px}
+  .lb-table{border-collapse:collapse;width:100%;font-size:.8rem}
+  .lb-table th,.lb-table td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--c-border)}
+  .lb-table thead th{color:var(--c-muted);font-weight:600}
+  .lb-table td.n,.lb-table th.n{text-align:right;font-variant-numeric:tabular-nums}
+  .lb-sup{color:var(--c-muted);font-style:italic}
+  .lb-note{color:var(--c-muted);font-size:.88rem;margin:20px 0}
+  .lb-cardbar{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+  .lb-cardbar button{font-size:.78rem;padding:5px 10px;border:1px solid var(--c-border);border-radius:8px;
+                     background:transparent;color:var(--c-muted);cursor:pointer;font-family:inherit}
+
+  /* the two prompts that feed the self-reflection workbook */
+  .lb-prompt{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+  .lb-prompt>div{border-left:4px solid var(--c-cat-1);padding:6px 0 6px 12px}
+  .lb-prompt h4{margin:0 0 5px;font-size:.85rem;color:var(--c-cat-1)}
+  .lb-prompt p{margin:0 0 8px;font-size:.84rem;line-height:1.45;color:var(--c-text)}
+  .lb-prompt textarea{width:100%;min-height:62px;resize:vertical;padding:7px 9px;border:1px solid var(--c-border);
+                      border-radius:8px;background:var(--c-bg);color:var(--c-text);font-family:inherit;font-size:.84rem;line-height:1.45}
+  .lb-saved{font-size:.75rem;color:var(--c-muted);margin-top:4px;min-height:1em}
+  @media (max-width:760px){ .lb-prompt{grid-template-columns:1fr} #lb-wrap{padding:14px 16px 50px} }
+
+  /* ── presenter mode ───────────────────────────────────────────────────────
+     One chart per screen, big type, nothing but the chart and its two
+     questions. Driven by a class on <body>, so the page stays ONE page: the
+     report Toby reviews and the report on the projector are the same markup. */
+  body.lb-present{overflow:hidden}
+  /* The Roost chrome, by the ids wren-shell-v2.js actually gives it. An earlier
+     draft guessed at .wren-shell / .wren-topbar — classes that exist nowhere —
+     so the sidebar and top bar stayed on screen through the whole deck while a
+     probe written from the same guess reported them hidden. Measured in a real
+     browser: HEADER#wren-topbar, NAV#wren-sidebar, MAIN#wren-main, plus the
+     chat launcher. */
+  body.lb-present #wren-topbar,body.lb-present #wren-sidebar,
+  body.lb-present #wren-chat-btn,body.lb-present #wren-chat-restore,
+  body.lb-present #wren-chat-panel,body.lb-present #wren-session-warning{display:none !important}
+  /* #wren-main carries the gutter that makes room for the fixed sidebar. */
+  body.lb-present #wren-main{margin:0 !important;padding:0 !important;max-width:none !important;width:100% !important}
+  body.lb-present #lb-wrap{max-width:none;padding:0;margin:0}
+  body.lb-present .lb-bar,body.lb-present .lb-head,body.lb-present #lb-intro,
+  body.lb-present details.lb-limits,body.lb-present .lb-cardbar,body.lb-present .lb-src{display:none}
+  body.lb-present .lb-section{display:none;margin:0}
+  /* A slide ENDS ABOVE THE CONTROL BAR rather than running under it. Padding
+     inside a 100vh box was not enough: the flex children overran it and, with
+     the body unable to scroll in presenter mode, the prompts sat beneath the
+     bar. Measured, not guessed — the prompt's bottom was 869px against a bar
+     top of 848px. Sizing the slide to calc(100vh - var(--lb-bar)) makes the
+     geometry impossible rather than merely unlikely. */
+  body.lb-present{--lb-bar:60px}
+  body.lb-present .lb-card{display:none;border:0;border-radius:0;background:var(--c-bg);margin:0;
+    height:calc(100vh - var(--lb-bar));max-height:calc(100vh - var(--lb-bar));
+    box-sizing:border-box;overflow-y:auto;padding:3vh 5vw 14px;flex-direction:column}
+  body.lb-present .lb-slide-on{display:flex}
+  /* A SECTION slide: the section itself is the slide. */
+  body.lb-present .lb-section.lb-slide-on{display:block;height:calc(100vh - var(--lb-bar));
+    max-height:calc(100vh - var(--lb-bar));box-sizing:border-box;
+    padding:4vh 5vw 14px;background:var(--c-bg);overflow-y:auto}
+  /* A CHART slide: the section is only the element the card happens to live in,
+     so it must contribute NO box of its own. Giving it .lb-slide-on as well
+     (the first version) inset every chart slide by the section's own 4vh/5vw
+     padding, which pushed the bottom of the slide 36px under the control bar.
+     A separate class keeps the two jobs apart. */
+  body.lb-present .lb-section.lb-wrap-on{display:block;height:auto;max-height:none;
+    padding:0;margin:0;background:transparent;overflow:visible}
+  body.lb-present .lb-section.lb-slide-on>header{border-top:0}
+  body.lb-present .lb-section.lb-slide-on details.lb-limits{display:block;font-size:1.05rem}
+  body.lb-present .lb-section.lb-slide-on details.lb-limits ul{line-height:1.6}
+  body.lb-present .lb-section h2{font-size:clamp(1.8rem,4vw,3rem)}
+  body.lb-present .lb-q{font-size:clamp(1rem,1.6vw,1.4rem);max-width:60ch}
+  body.lb-present .lb-fact b{font-size:clamp(1.9rem,3.6vw,3rem)}
+  body.lb-present .lb-fact span{font-size:clamp(.85rem,1.1vw,1.05rem)}
+  body.lb-present .lb-conf{font-size:clamp(.9rem,1.2vw,1.1rem);padding:7px 16px}
+  body.lb-present .lb-card h3{font-size:clamp(1.5rem,3.2vw,2.5rem);margin-bottom:6px}
+  body.lb-present .lb-card .lb-sub{font-size:clamp(1rem,1.5vw,1.3rem);max-width:65ch;margin-bottom:2vh}
+  body.lb-present .lb-figure{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0;margin-top:1.4vh}
+  body.lb-present .lb-svg{max-height:56vh}
+  body.lb-present .lb-legend{font-size:clamp(.9rem,1.2vw,1.15rem);gap:10px 28px;margin-bottom:1.2vh}
+  body.lb-present .lb-legend i{width:1em;height:1em}
+  body.lb-present .lb-tablewrap{display:none}
+  body.lb-present .lb-prompt{margin-top:2.4vh;gap:20px}
+  body.lb-present .lb-prompt h4{font-size:clamp(.95rem,1.25vw,1.2rem)}
+  body.lb-present .lb-prompt p{font-size:clamp(.9rem,1.15vw,1.1rem)}
+  body.lb-present .lb-prompt textarea{font-size:clamp(.9rem,1.1vw,1.05rem);min-height:52px}
+  #lb-present-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:40;height:60px;
+    box-sizing:border-box;padding:8px 14px;background:var(--c-surface);border-top:1px solid var(--c-border);
+    align-items:center;gap:10px;font-size:.85rem;color:var(--c-muted)}
+  body.lb-present #lb-present-bar{display:flex}
+  #lb-present-bar .lb-prog{flex:1;height:4px;background:var(--c-border);border-radius:2px;overflow:hidden}
+  #lb-present-bar .lb-prog i{display:block;height:100%;background:var(--c-cat-1)}
+  /* the hover tooltip */
+  #lb-tip{position:fixed;z-index:60;max-width:38ch;padding:7px 10px;border-radius:8px;pointer-events:none;
+    background:var(--c-surface-solid,var(--c-surface));border:1px solid var(--c-border-strong);
+    color:var(--c-text);font-size:.8rem;line-height:1.4;display:none;box-shadow:0 6px 24px var(--c-shadow)}
+  body.lb-present #lb-tip{font-size:1rem;max-width:46ch}
+
+  /* ── inset-20261026 — "Staff feedback on the INSET agenda" tab ─────────────
+     ADDED. The report above is untouched: this pane is shown INSTEAD of the
+     report's bar and body while its tab is chosen, and never in presenter mode.
+     Tokens only. Bars: --c-cat-1 for a score, --c-warn under 2 of 4 (the gaps). */
+  .lb-tabs{margin:8px 0 14px}
+  .lb-tabs button{min-height:40px}
+  .lb-tabs .lbi-badge{display:inline-block;min-width:1.4em;padding:0 6px;margin-left:6px;border-radius:999px;
+    background:var(--c-orange);color:var(--c-on-orange);font-size:.72rem;font-weight:700;line-height:1.5}
+  #lb-inset{display:none}
+  body.lb-tab-inset #lb-inset{display:block}
+  body.lb-tab-inset #lb-intro,body.lb-tab-inset .lb-bar,body.lb-tab-inset #lb-body,
+  body.lb-tab-inset #lb-conf-top{display:none}
+  body.lb-present .lb-tabs,body.lb-present #lb-inset{display:none !important}
+  .lbi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+  .lbi-prog{height:10px;background:var(--c-border);border-radius:5px;overflow:hidden;margin:8px 0 10px}
+  .lbi-prog i{display:block;height:100%;background:var(--c-ok)}
+  .lbi-names{display:flex;flex-wrap:wrap;gap:6px}
+  .lbi-name{font-size:.8rem;padding:3px 10px;border-radius:999px;border:1px solid var(--c-border-strong);color:var(--c-text)}
+  .lbi-bar{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:4px 12px;align-items:center;margin:0 0 12px}
+  .lbi-bar .lbi-lab{font-size:.85rem;color:var(--c-text);line-height:1.3}
+  .lbi-bar .lbi-val{font-size:.8rem;color:var(--c-muted);text-align:right;font-variant-numeric:tabular-nums}
+  .lbi-track{grid-column:1 / -1;height:12px;background:color-mix(in srgb, var(--c-muted) 16%, transparent);border-radius:6px;overflow:hidden}
+  .lbi-track i{display:block;height:100%;background:var(--c-cat-1);border-radius:6px}
+  .lbi-track i[data-low="1"]{background:var(--c-warn)}
+  .lbi-dist{grid-column:1 / -1;font-size:.74rem;color:var(--c-muted)}
+  .lbi-free{list-style:none;margin:0;padding:0}
+  .lbi-free li{border-left:3px solid var(--c-border-strong);padding:6px 0 6px 10px;margin:0 0 8px;font-size:.86rem;white-space:pre-wrap;word-break:break-word}
+  .lbi-meta{font-size:.75rem;color:var(--c-muted);margin-bottom:2px;white-space:normal}
+  .lbi-sec{margin:0 0 14px}
+  .lbi-sec h4{margin:0 0 2px;font-size:.95rem}
+  .lbi-ask{font-size:.8rem;color:var(--c-muted);margin:0 0 8px}
+  .lbi-c{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--c-border);border-radius:10px;padding:8px 10px;margin:0 0 8px;background:var(--c-surface-2,var(--c-surface))}
+  .lbi-c[data-private="1"]{border-color:var(--c-orange)}
+  .lbi-c[data-handled="1"]{opacity:.6}
+  .lbi-c .lbi-cbody{flex:1;min-width:0;font-size:.88rem;white-space:pre-wrap;word-break:break-word;color:var(--c-text)}
+  .lbi-priv{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.7rem;font-weight:700;margin-left:4px;
+    color:var(--c-orange);background:color-mix(in srgb, var(--c-orange) 16%, transparent)}
+  .lbi-red{font-style:italic;color:var(--c-muted)}
+  .lbi-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+  @media print{
+    body.lb-present .lb-card,body.lb-present .lb-section.lb-slide-on{min-height:0}
+    #lb-present-bar,#lb-tip{display:none !important}
+  }
+
+  /* ── b529 — "Setting trends" tab ───────────────────────────────────────────
+     ADDED. Nothing above this comment changed. The pane is shown INSTEAD of
+     the report's bar and body while its tab is chosen, exactly as the INSET
+     feedback pane is, and never in presenter mode.
+
+     THE HEAT GRID'S COLOUR. Coverage is a MAGNITUDE, so it takes a SEQUENTIAL
+     ramp: one hue, light to dark, more coverage darker. The ramp is six steps
+     of --c-cat-1 mixed into the page's own surface, so it re-steps itself in
+     every one of Wren's appearance presets instead of carrying a second
+     palette. A categorical palette here would spend the identity channel
+     re-encoding what the number already says, and a red-to-green one would be
+     unreadable to a deuteranope and would also call a thin area "bad" when it
+     may be the right call for a room of babies.
+
+     EVERY CELL PRINTS ITS NUMBER, and a flagged cell additionally carries a
+     ⚑ and a 2px --c-warn outline. So the grid is legible with no colour
+     perception at all, in greyscale on paper, and under forced colours: the
+     fill is the fourth encoding, not the only one. */
+  #lb-trends{display:none}
+  body.lb-tab-trends #lb-trends{display:block}
+  body.lb-tab-trends #lb-intro,body.lb-tab-trends .lb-bar,body.lb-tab-trends #lb-body,
+  body.lb-tab-trends #lb-conf-top,body.lb-tab-trends #lb-inset{display:none}
+  body.lb-present #lb-trends{display:none !important}
+
+  .lbt-head{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
+  .lbt-sum{font-size:.95rem;color:var(--c-text);margin:0 0 16px;max-width:90ch;line-height:1.5}
+  .lbt-sum b{font-variant-numeric:tabular-nums}
+
+  /* flags */
+  .lbt-flags{list-style:none;margin:0;padding:0}
+  .lbt-flag{border:1px solid var(--c-border);border-left-width:5px;border-radius:10px;padding:10px 14px;margin:0 0 10px;
+            background:var(--c-surface)}
+  .lbt-flag[data-sev="high"]{border-left-color:var(--c-danger)}
+  .lbt-flag[data-sev="medium"]{border-left-color:var(--c-warn)}
+  .lbt-flag[data-sev="low"]{border-left-color:var(--c-muted)}
+  .lbt-flag h4{margin:0 0 4px;font-size:.95rem;display:flex;gap:.5em;align-items:baseline;flex-wrap:wrap}
+  /* A worded severity, not a coloured dot: the chip carries the same meaning to
+     somebody who sees no colour at all. Sentence case rather than uppercase —
+     a red SHOUT on every high flag reads as panic when seven of them land in
+     one term. */
+  .lbt-sev{font-size:.72rem;font-weight:700;letter-spacing:.01em;padding:2px 9px;border-radius:999px;
+           border:1px solid currentColor;white-space:nowrap}
+  .lbt-flag[data-sev="high"] .lbt-sev{color:var(--c-danger)}
+  .lbt-flag[data-sev="medium"] .lbt-sev{color:var(--c-warn)}
+  .lbt-flag[data-sev="low"] .lbt-sev{color:var(--c-muted)}
+  .lbt-flag p{margin:0;font-size:.88rem;line-height:1.5;color:var(--c-text);max-width:95ch}
+  .lbt-flag a{color:var(--c-cat-1);font-size:.84rem;display:inline-block;margin-top:6px}
+
+  /* the heat grid */
+  .lbt-gridwrap{overflow-x:auto;margin:6px 0 4px;padding-bottom:4px}
+  table.lbt-grid{border-collapse:separate;border-spacing:2px;font-size:.8rem;min-width:100%}
+  table.lbt-grid th{font-weight:600;color:var(--c-muted);text-align:center;padding:4px 6px;font-size:.74rem;line-height:1.25;
+                    vertical-align:bottom}
+  table.lbt-grid th.lbt-dim{border-bottom:2px solid var(--c-border-strong);color:var(--c-text);font-size:.78rem;padding-bottom:3px}
+  table.lbt-grid th.lbt-rowhead,table.lbt-grid td.lbt-rowhead{text-align:left;color:var(--c-text);font-weight:600;
+    padding:4px 10px 4px 2px;white-space:nowrap;position:sticky;left:0;background:var(--c-bg);z-index:2}
+  table.lbt-grid th small{display:block;font-weight:400;color:var(--c-muted);font-variant-numeric:tabular-nums}
+  /* nowrap: a flagged cell carries '42% ⚑', which wrapped to two lines and made
+     that one row twice the height of its neighbours — a grid whose rows are
+     different heights reads as though the tall row means something. */
+  table.lbt-grid td{text-align:center;padding:7px 8px;border-radius:6px;font-variant-numeric:tabular-nums;
+                    min-width:56px;white-space:nowrap;color:var(--c-text);background:var(--c-surface)}
+  /* The six sequential steps: ONE hue, mixed into the page's own opaque surface,
+     so the ramp re-steps itself in every appearance preset instead of carrying
+     a second palette. More coverage = more colour, which reads darker in a
+     light preset and lighter in a dark one — the anchor flips with the theme,
+     which is what a sequential ramp is supposed to do.
+
+     THE CAP IS 56%, NOT 100%, AND THE TEXT IS ALWAYS --c-text. An earlier
+     draft ran to a solid --c-cat-1 and switched the top two steps to
+     --c-on-fill. Measured in a real browser across the four presets, the
+     mid-tone steps then sat in the luminance trap where neither ink clears
+     4.5:1 for 12.8px text: Wren's light --c-cat-1 at 78% gives white text
+     3.4:1. Capping the ramp keeps every step comfortably on the right side of
+     --c-text, which is itself contrast-gated against the surface — so the grid
+     cannot fail AA in a preset nobody tested. Worst measured case across all
+     four presets is now 5.8:1. The cost is a paler top step; the number is
+     printed in the cell, so nothing is lost but drama. */
+  table.lbt-grid td[data-step="0"]{background:color-mix(in srgb, var(--c-cat-1)  5%, var(--c-surface-solid,var(--c-surface)))}
+  table.lbt-grid td[data-step="1"]{background:color-mix(in srgb, var(--c-cat-1) 14%, var(--c-surface-solid,var(--c-surface)))}
+  table.lbt-grid td[data-step="2"]{background:color-mix(in srgb, var(--c-cat-1) 25%, var(--c-surface-solid,var(--c-surface)))}
+  table.lbt-grid td[data-step="3"]{background:color-mix(in srgb, var(--c-cat-1) 36%, var(--c-surface-solid,var(--c-surface)))}
+  table.lbt-grid td[data-step="4"]{background:color-mix(in srgb, var(--c-cat-1) 46%, var(--c-surface-solid,var(--c-surface)))}
+  table.lbt-grid td[data-step="5"]{background:color-mix(in srgb, var(--c-cat-1) 56%, var(--c-surface-solid,var(--c-surface)))}
+  table.lbt-grid td[data-sup="1"]{background:repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-muted) 14%, transparent) 0 4px, transparent 4px 8px);color:var(--c-muted);font-style:italic}
+  table.lbt-grid td[data-flagged="1"]{outline:2px solid var(--c-warn);outline-offset:-2px;font-weight:700}
+  .lbt-cellflag{font-size:.8em}
+  .lbt-key{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0 0;font-size:.76rem;color:var(--c-muted)}
+  .lbt-key .lbt-ramp{display:inline-flex;gap:2px;align-items:center}
+  .lbt-key .lbt-ramp i{width:22px;height:12px;border-radius:3px;display:inline-block;border:1px solid var(--c-border)}
+  .lbt-key .lbt-ramp i[data-k="0"]{background:color-mix(in srgb, var(--c-cat-1)  5%, var(--c-surface-solid,var(--c-surface)))}
+  .lbt-key .lbt-ramp i[data-k="1"]{background:color-mix(in srgb, var(--c-cat-1) 14%, var(--c-surface-solid,var(--c-surface)))}
+  .lbt-key .lbt-ramp i[data-k="2"]{background:color-mix(in srgb, var(--c-cat-1) 25%, var(--c-surface-solid,var(--c-surface)))}
+  .lbt-key .lbt-ramp i[data-k="3"]{background:color-mix(in srgb, var(--c-cat-1) 36%, var(--c-surface-solid,var(--c-surface)))}
+  .lbt-key .lbt-ramp i[data-k="4"]{background:color-mix(in srgb, var(--c-cat-1) 46%, var(--c-surface-solid,var(--c-surface)))}
+  .lbt-key .lbt-ramp i[data-k="5"]{background:color-mix(in srgb, var(--c-cat-1) 56%, var(--c-surface-solid,var(--c-surface)))}
+  .lbt-key .lbt-hatch{width:22px;height:12px;border-radius:3px;display:inline-block;
+    background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--c-muted) 14%, transparent) 0 4px, transparent 4px 8px);
+    border:1px solid var(--c-border)}
+
+  .lbt-statrow{display:flex;flex-wrap:wrap;gap:14px 26px;margin:4px 0 12px}
+  .lbt-stat b{display:block;font-size:1.4rem;line-height:1;font-variant-numeric:tabular-nums}
+  .lbt-stat span{display:block;font-size:.76rem;color:var(--c-muted);margin-top:4px;max-width:24ch}
+  .lbt-bars{margin:8px 0 0}
+  .lbt-bar{display:grid;grid-template-columns:minmax(0,1fr) 86px;gap:3px 12px;align-items:center;margin:0 0 9px}
+  .lbt-bar .lbt-lab{font-size:.84rem}
+  .lbt-bar .lbt-val{font-size:.8rem;color:var(--c-muted);text-align:right;font-variant-numeric:tabular-nums}
+  .lbt-track{grid-column:1 / -1;height:11px;border-radius:6px;overflow:hidden;
+             background:color-mix(in srgb, var(--c-muted) 16%, transparent)}
+  .lbt-track i{display:block;height:100%;background:var(--c-cat-1);border-radius:6px}
+  .lbt-track i[data-low="1"]{background:var(--c-cat-3)}
+  .lbt-move{font-variant-numeric:tabular-nums}
+  .lbt-raised{font-size:.82rem;color:var(--c-muted);margin:8px 0 0;min-height:1em}
+  @media (max-width:760px){
+    .lbt-statrow{gap:12px 18px}
+    table.lbt-grid th.lbt-rowhead,table.lbt-grid td.lbt-rowhead{white-space:normal;max-width:14ch}
+  }
+  /* PRINT: the trends pane only, on its own pages, with the fills kept. */
+  @media print{
+    body.lb-tab-trends #wren-topbar,body.lb-tab-trends #wren-sidebar,body.lb-tab-trends .lb-tabs,
+    body.lb-tab-trends .lb-head,body.lb-tab-trends #lbt-tools,body.lb-tab-trends #wren-chat-btn,
+    body.lb-tab-trends #wren-chat-panel{display:none !important}
+    body.lb-tab-trends #wren-main{margin:0 !important;padding:0 !important;max-width:none !important}
+    body.lb-tab-trends #lb-wrap{max-width:none;padding:0}
+    body.lb-tab-trends table.lbt-grid td,body.lb-tab-trends .lbt-key i,body.lb-tab-trends .lbt-track i{
+      -webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body.lb-tab-trends .lb-card{break-inside:avoid;page-break-inside:avoid}
+  }
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-lookback-charts.js?v=b523" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="lb-wrap">
+  <div class="lb-head">
+    <h1>🔭 Look back</h1>
+    <span id="lb-conf-top"></span>
+  </div>
+  <!-- inset-20261026 — two tabs: the report (everything below, unchanged) and the
+       staff feedback on the INSET agenda (#lb-inset). -->
+  <div class="lb-seg lb-tabs" id="lb-tabs" role="group" aria-label="What to show">
+    <button type="button" data-tab="report" aria-pressed="true">Look back report</button>
+    <button type="button" data-tab="inset" aria-pressed="false">Staff feedback on the INSET agenda<span class="lbi-badge" id="lbi-badge" hidden style="display:none"></span></button>
+    <button type="button" data-tab="trends" aria-pressed="false">Setting trends</button>
+  </div>
+  <p class="lb-q" id="lb-intro">Loading…</p>
+
+  <div class="lb-bar">
+    <label for="lb-years">Look back</label>
+    <span class="lb-seg" id="lb-years" role="group" aria-label="How many academic years">
+      <button type="button" data-y="1">1 year</button>
+      <button type="button" data-y="2">2 years</button>
+      <button type="button" data-y="3">3 years</button>
+      <button type="button" data-y="5">5 years</button>
+    </span>
+    <label for="lb-review">Inset day</label>
+    <input id="lb-review" class="lb-input" type="text" autocomplete="off"
+           title="The notes on this page are saved against this label, so an earlier inset day can be reopened.">
+    <span class="lb-grow"></span>
+    <button type="button" class="lb-btn" id="lb-numbers" aria-pressed="false">Show the numbers</button>
+    <button type="button" class="lb-btn" id="lb-csv">CSV</button>
+    <button type="button" class="lb-btn" id="lb-pack">Slide pack</button>
+    <button type="button" class="lb-btn primary" id="lb-present">Presenter mode</button>
+  </div>
+
+  <div id="lb-body"><p class="lb-note">Loading the report…</p></div>
+
+  <!-- inset-20261026 — what staff sent back about the INSET agenda (HR app /inset.html). -->
+  <div id="lb-inset" aria-live="polite">
+    <div class="lb-tools lbi-tools">
+      <label for="lbi-agenda" class="lb-src" style="margin:0">Agenda</label>
+      <select id="lbi-agenda" class="lb-input"></select>
+      <label class="lb-src" style="margin:0;display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="lbi-hide-handled"> Hide handled</label>
+      <span class="lb-grow"></span>
+      <button type="button" class="lb-btn" id="lbi-refresh">Refresh</button>
+    </div>
+    <div id="lbi-body"><p class="lb-note">Loading staff feedback…</p></div>
+  </div>
+
+  <!-- b529 — the trends and the gaps across the setting, for one term. -->
+  <div id="lb-trends" aria-live="polite">
+    <div class="lb-tools lbi-tools" id="lbt-tools">
+      <label for="lbt-term" class="lb-src" style="margin:0">Term</label>
+      <select id="lbt-term" class="lb-input"></select>
+      <span class="lb-grow"></span>
+      <button type="button" class="lb-btn" id="lbt-refresh">Refresh</button>
+      <button type="button" class="lb-btn" id="lbt-csv">CSV</button>
+      <button type="button" class="lb-btn" id="lbt-print">Print</button>
+      <button type="button" class="lb-btn primary" id="lbt-cards">Put the flags on my board</button>
+    </div>
+    <div id="lbt-body"><p class="lb-note">Loading the setting trends…</p></div>
+  </div>
+</div>
+
+<div id="lb-present-bar">
+  <button type="button" class="lb-btn" id="lb-prev" title="Previous (←)">←</button>
+  <button type="button" class="lb-btn" id="lb-next" title="Next (→)">→</button>
+  <span id="lb-pos">1 / 1</span>
+  <span class="lb-prog"><i id="lb-prog" style="width:0"></i></span>
+  <span>no child names · groups under 5 suppressed</span>
+  <button type="button" class="lb-btn" id="lb-exit" title="Exit (Esc)">Exit</button>
+</div>
+<div id="lb-tip" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var API = '/api/lookback';
+  var REPORT = null, YEARS = null, NUMBERS = false, SLIDES = [], AT = 0;
+  var C = null;                              // window.WrenLookbackCharts, once it has loaded
+
+  function el(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function reviewLabel() {
+    var v = (el('lb-review').value || '').trim();
+    return v || ('Inset ' + (REPORT && REPORT.today ? REPORT.today : ''));
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────
+  function confPill(c, big) {
+    if (!c) return '';
+    return '<span class="lb-conf" data-c="' + esc(c.key) + '" title="' + esc(c.note) + '"><b>'
+      + esc(c.label) + '</b>' + (big ? ' — ' + esc(c.note) : '') + '</span>';
+  }
+
+  function promptBlock(sectionKey, chart) {
+    if (!chart.prompt) return '';
+    var note = (REPORT.notes || {})[chart.key] || {};
+    var id = 'n-' + chart.key;
+    return '<div class="lb-prompt" data-chart="' + esc(chart.key) + '" data-section="' + esc(sectionKey) + '">'
+      + '<div><h4>What might explain this?</h4><p>' + esc(chart.prompt.explain) + '</p>'
+      + '<textarea id="' + id + '-e" data-field="explain" placeholder="What we think is behind it…">'
+      + esc(note.explain || '') + '</textarea></div>'
+      + '<div><h4>What will we try?</h4><p>' + esc(chart.prompt.try) + '</p>'
+      + '<textarea id="' + id + '-t" data-field="will_try" placeholder="What we will do, and who owns it…">'
+      + esc(note.will_try || '') + '</textarea>'
+      + '<div class="lb-saved" data-saved="' + esc(chart.key) + '">'
+      + (note.updated_at ? 'Saved' : '') + '</div></div>'
+      + '</div>';
+  }
+
+  function chartCard(sectionKey, chart) {
+    return '<article class="lb-card" data-chart="' + esc(chart.key) + '">'
+      + '<h3>' + esc(chart.title) + '</h3>'
+      + (chart.subtitle ? '<p class="lb-sub">' + esc(chart.subtitle) + '</p>' : '')
+      + '<div class="lb-figure" data-fig="' + esc(chart.key) + '"></div>'
+      + '<div class="lb-nums" data-nums="' + esc(chart.key) + '"></div>'
+      + '<div class="lb-cardbar"><button type="button" data-copy="' + esc(chart.key) + '"'
+      + ' title="Copy this chart’s question and our answers, to paste into a self-reflection workbook">Copy for the workbook</button></div>'
+      + promptBlock(sectionKey, chart)
+      + '</article>';
+  }
+
+  function sectionBlock(s) {
+    return '<section class="lb-section" data-section="' + esc(s.key) + '">'
+      + '<header><h2>' + esc(s.title) + '</h2>'
+      + '<p class="lb-q">' + esc(s.question) + '</p>'
+      + confPill(s.confidence, true)
+      + (s.facts && s.facts.length ? '<div class="lb-facts">' + s.facts.map(function (f) {
+          return '<div class="lb-fact"><b>' + esc(f.value) + '</b><span>' + esc(f.label)
+            + (f.note ? ' (' + esc(f.note) + ')' : '') + '</span></div>';
+        }).join('') + '</div>' : '')
+      + (s.limits && s.limits.length ? '<details class="lb-limits"><summary>What these numbers are worth ('
+          + s.limits.length + ')</summary><ul>' + s.limits.map(function (l) {
+            return '<li>' + esc(l) + '</li>'; }).join('') + '</ul></details>' : '')
+      + (s.source ? '<p class="lb-src">Source: ' + esc(s.source) + '</p>' : '')
+      + '</header>'
+      + (s.charts || []).map(function (c) { return chartCard(s.key, c); }).join('')
+      + '</section>';
+  }
+
+  /** Draw (or redraw) every chart's SVG. Separate from the markup so presenter
+   *  mode can re-render at projector scale without rebuilding the page and
+   *  losing what somebody has typed into a prompt. */
+  function drawFigures() {
+    if (!C || !REPORT) return;
+    var present = document.body.classList.contains('lb-present');
+    var opts = present ? { scale: 1.9, width: 1100, height: 520 } : { scale: 1, width: 980, height: 300 };
+    (REPORT.sections || []).forEach(function (s) {
+      (s.charts || []).forEach(function (ch) {
+        var fig = document.querySelector('[data-fig="' + ch.key + '"]');
+        if (fig) fig.innerHTML = C.render(ch, opts);
+        var nums = document.querySelector('[data-nums="' + ch.key + '"]');
+        if (nums) nums.innerHTML = NUMBERS ? C.renderNumbers(ch) : '';
+      });
+    });
+  }
+
+  function render() {
+    if (!REPORT) return;
+    var w = REPORT.window || {};
+    el('lb-intro').innerHTML = 'How the children have been progressing across <b>' + esc(w.years)
+      + '</b> academic ' + (w.years === 1 ? 'year' : 'years') + ' (' + esc((w.academic_years || []).join(', '))
+      + '), ' + esc(w.from) + ' to ' + esc(w.to) + '. '
+      + esc(REPORT.suppression ? REPORT.suppression.rule : '') + ' ' + esc(REPORT.term_basis || '');
+    el('lb-body').innerHTML = (REPORT.sections || []).map(sectionBlock).join('')
+      || '<p class="lb-note">Nothing to report for this window.</p>';
+    drawFigures();
+    buildSlides();
+    Array.prototype.forEach.call(el('lb-years').querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(Number(b.dataset.y) === Number(w.years)));
+    });
+  }
+
+  function load() {
+    el('lb-body').innerHTML = '<p class="lb-note">Loading the report… the five-year window reads a few years of observations, so give it a moment.</p>';
+    var q = '?';
+    if (YEARS) q += 'years=' + YEARS + '&';
+    q += 'review=' + encodeURIComponent(reviewLabel());
+    Wren.api(API + '/report' + q).then(function (d) {
+      REPORT = d;
+      if (!el('lb-review').value && d.review_label) el('lb-review').value = d.review_label;
+      YEARS = (d.window && d.window.years) || YEARS;
+      render();
+    }).catch(function (e) {
+      el('lb-body').innerHTML = '<p class="lb-note">Could not load the report: '
+        + esc((e && (e.message || e.error)) || 'error') + '</p>';
+    });
+  }
+
+  // ── the notes that feed the workbook ──────────────────────────────────────
+  var saveTimers = {};
+  function saveNote(chartKey, sectionKey) {
+    var box = document.querySelector('.lb-prompt[data-chart="' + chartKey + '"]');
+    if (!box) return;
+    var body = { chart_key: chartKey, section_key: sectionKey, review_label: reviewLabel() };
+    Array.prototype.forEach.call(box.querySelectorAll('textarea'), function (t) { body[t.dataset.field] = t.value; });
+    var flag = document.querySelector('[data-saved="' + chartKey + '"]');
+    if (flag) flag.textContent = 'Saving…';
+    Wren.api(API + '/notes', { method: 'POST', body: body }).then(function (r) {
+      if (flag) flag.textContent = 'Saved';
+      REPORT.notes = REPORT.notes || {};
+      REPORT.notes[chartKey] = r.note;
+    }).catch(function (e) {
+      if (flag) flag.textContent = 'Not saved — ' + ((e && (e.message || e.error)) || 'error');
+    });
+  }
+
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'TEXTAREA') return;
+    var box = t.closest('.lb-prompt'); if (!box) return;
+    var k = box.dataset.chart, sec = box.dataset.section;
+    var flag = document.querySelector('[data-saved="' + k + '"]');
+    if (flag) flag.textContent = 'Unsaved…';
+    clearTimeout(saveTimers[k]);
+    saveTimers[k] = setTimeout(function () { saveNote(k, sec); }, 1200);
+  });
+
+  // "Copy for the workbook" — the chart's question, what the chart says, and
+  // what we decided, as plain text ready to paste into a reflection.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-copy]');
+    if (!b) return;
+    var key = b.dataset.copy, chart = null, section = null;
+    (REPORT.sections || []).forEach(function (s) {
+      (s.charts || []).forEach(function (c) { if (c.key === key) { chart = c; section = s; } });
+    });
+    if (!chart) return;
+    var note = (REPORT.notes || {})[key] || {};
+    var box = document.querySelector('.lb-prompt[data-chart="' + key + '"]');
+    var typed = {};
+    if (box) Array.prototype.forEach.call(box.querySelectorAll('textarea'), function (t) { typed[t.dataset.field] = t.value; });
+    var lines = [
+      'Look back — ' + reviewLabel(),
+      section.title + ' · ' + chart.title,
+      chart.subtitle || '',
+      'How much this number is worth: ' + section.confidence.label + ' — ' + section.confidence.note,
+      '',
+      'What might explain this? ' + chart.prompt.explain,
+      (typed.explain || note.explain || '(not yet answered)'),
+      '',
+      'What will we try? ' + chart.prompt.try,
+      (typed.will_try || note.will_try || '(not yet agreed)'),
+      '',
+      'Limits of the data behind this:',
+    ].concat((section.limits || []).map(function (l) { return '· ' + l; }));
+    var text = lines.join('\n');
+    var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy for the workbook'; }, 1800); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (_) { Wren.toast && Wren.toast('Could not copy'); }
+      ta.remove();
+    }
+  });
+
+  // ── presenter mode ────────────────────────────────────────────────────────
+  // One slide = one section header, or one chart. The slides are the real
+  // elements, shown one at a time, so nothing is duplicated and a prompt typed
+  // in presenter mode is the same textarea as on the page.
+  function buildSlides() {
+    SLIDES = [];
+    Array.prototype.forEach.call(document.querySelectorAll('.lb-section'), function (sec) {
+      SLIDES.push({ kind: 'section', el: sec });
+      Array.prototype.forEach.call(sec.querySelectorAll('.lb-card'), function (card) {
+        SLIDES.push({ kind: 'chart', el: card, section: sec });
+      });
+    });
+    AT = Math.min(AT, Math.max(0, SLIDES.length - 1));
+  }
+
+  function showSlide(i) {
+    if (!SLIDES.length) return;
+    AT = Math.max(0, Math.min(SLIDES.length - 1, i));
+    Array.prototype.forEach.call(document.querySelectorAll('.lb-slide-on'), function (n) { n.classList.remove('lb-slide-on'); });
+    Array.prototype.forEach.call(document.querySelectorAll('.lb-wrap-on'), function (n) { n.classList.remove('lb-wrap-on'); });
+    var s = SLIDES[AT];
+    if (s.kind === 'chart') { s.section.classList.add('lb-wrap-on'); s.el.classList.add('lb-slide-on'); }
+    else { s.el.classList.add('lb-slide-on'); }
+    // A section slide must not also show its charts, and a chart slide must not
+    // show the section's own header block.
+    Array.prototype.forEach.call(document.querySelectorAll('.lb-section'), function (sec) {
+      var hdr = sec.querySelector('header');
+      if (!hdr) return;
+      hdr.style.display = (s.kind === 'section' && sec === s.el) ? '' : 'none';
+    });
+    el('lb-pos').textContent = (AT + 1) + ' / ' + SLIDES.length;
+    el('lb-prog').style.width = Math.round(((AT + 1) / SLIDES.length) * 100) + '%';
+    window.scrollTo(0, 0);
+  }
+
+  function enterPresent() {
+    document.body.classList.add('lb-present');
+    buildSlides(); drawFigures(); showSlide(AT);
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(function () { /* a blocked request is fine */ });
+    }
+  }
+  function exitPresent() {
+    document.body.classList.remove('lb-present');
+    Array.prototype.forEach.call(document.querySelectorAll('.lb-slide-on, .lb-wrap-on'), function (n) {
+      n.classList.remove('lb-slide-on'); n.classList.remove('lb-wrap-on');
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.lb-section'), function (sec) {
+      sec.style.display = '';
+      var hdr = sec.querySelector('header'); if (hdr) hdr.style.display = '';
+    });
+    drawFigures();
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (!document.body.classList.contains('lb-present')) return;
+    // Never steal a key from somebody typing an answer into a prompt.
+    var t = e.target;
+    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) { if (e.key === 'Escape') t.blur(); return; }
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); showSlide(AT + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); showSlide(AT - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); showSlide(0); }
+    else if (e.key === 'End') { e.preventDefault(); showSlide(SLIDES.length - 1); }
+    else if (e.key === 'Escape') { exitPresent(); }
+  });
+
+  // ── the hover tooltip ─────────────────────────────────────────────────────
+  // The bands carry a native <title> too, so the exported pack (which has no
+  // JavaScript) still shows the same text on the projector.
+  var tip = el('lb-tip');
+  document.addEventListener('mousemove', function (e) {
+    var hit = e.target.closest && e.target.closest('.lb-hit');
+    if (!hit) { tip.style.display = 'none'; return; }
+    tip.textContent = hit.getAttribute('data-tip') || '';
+    tip.style.display = 'block';
+    var pad = 14, r = tip.getBoundingClientRect();
+    var x = Math.min(e.clientX + pad, window.innerWidth - r.width - 8);
+    var y = Math.max(8, Math.min(e.clientY + pad, window.innerHeight - r.height - 8));
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  });
+  document.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+
+  // ── downloads: a bearer token cannot ride on an <a href>, so both exports
+  //    are fetched with Wren.authHeaders() and handed over as a blob ─────────
+  function download(path, filename, open) {
+    var url = API + path + (path.indexOf('?') < 0 ? '?' : '&')
+      + 'years=' + (YEARS || 3) + '&review=' + encodeURIComponent(reviewLabel());
+    return fetch(url, { headers: Wren.authHeaders() }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error(t.slice(0, 200) || ('HTTP ' + r.status)); });
+      return r.blob();
+    }).then(function (b) {
+      var u = URL.createObjectURL(b);
+      if (open) {
+        var w = window.open(u, '_blank');
+        if (!w) { var a0 = document.createElement('a'); a0.href = u; a0.download = filename; document.body.appendChild(a0); a0.click(); a0.remove(); }
+      } else {
+        var a = document.createElement('a');
+        a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      }
+      setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }).catch(function (e) { Wren.toast ? Wren.toast('Export failed: ' + e.message) : alert('Export failed: ' + e.message); });
+  }
+
+  // ── wiring ────────────────────────────────────────────────────────────────
+  el('lb-years').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    YEARS = Number(b.dataset.y) || 3; load();
+  });
+  el('lb-review').addEventListener('change', function () { load(); });
+  el('lb-numbers').addEventListener('click', function () {
+    NUMBERS = !NUMBERS;
+    this.setAttribute('aria-pressed', String(NUMBERS));
+    this.textContent = NUMBERS ? 'Hide the numbers' : 'Show the numbers';
+    drawFigures();
+  });
+  el('lb-csv').addEventListener('click', function () {
+    download('/csv', 'look-back-' + (REPORT && REPORT.today ? REPORT.today : 'report') + '.csv', false);
+  });
+  el('lb-pack').addEventListener('click', function () {
+    var dark = document.documentElement.getAttribute('data-wren-theme');
+    download('/pack&theme=' + (/dark/.test(dark || '') ? 'dark' : 'light'),
+      'look-back-' + (REPORT && REPORT.today ? REPORT.today : 'report') + '.html', true);
+  });
+  el('lb-present').addEventListener('click', enterPresent);
+  el('lb-exit').addEventListener('click', exitPresent);
+  el('lb-prev').addEventListener('click', function () { showSlide(AT - 1); });
+  el('lb-next').addEventListener('click', function () { showSlide(AT + 1); });
+
+  function start() {
+    C = window.WrenLookbackCharts || null;
+    if (!C) {
+      // The renderer is a deferred <script>; on a cold cache wren:ready can win
+      // the race. Wait for it rather than drawing nothing.
+      return setTimeout(start, 60);
+    }
+    var pre = new URLSearchParams(location.search);
+    var y = Number(pre.get('years')); if (y) YEARS = y;
+    var rv = pre.get('review'); if (rv) el('lb-review').value = rv;
+    load();
+    if (pre.get('present') === '1') setTimeout(enterPresent, 900);
+  }
+
+  // Rule 7: never call the loader from a script tag — always wait for wren:ready.
+  document.addEventListener('wren:ready', start);
+})();
+</script>
+<script>
+/* inset-20261026 — "Staff feedback on the INSET agenda". Its own script block
+   and its own wren:ready listener, so nothing in the Look back report above
+   depends on it. Server: GET /api/inset/agendas, GET /api/inset/agenda/:key/
+   responses, PATCH /api/inset/feedback/:id/handled — all manager + Roost
+   portal + Roost allow-list. A private comment's text is only ever sent to
+   staff id 1; anybody else sees that one exists. */
+(function () {
+  'use strict';
+  var KEY = null, DATA = null, LOADED = false;
+  function el(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function when(ts) {
+    try { return new Date(ts).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
+    catch (_) { return ''; }
+  }
+  function errText(e) { return (e && (e.message || e.error)) || 'error'; }
+
+  function setTab(tab) {
+    var inset = tab === 'inset';
+    // b529 — a third tab, Setting trends, whose own block is at the end of the
+    // page. The body class is what hides the report, so adding a tab is one
+    // class and one line here; the aria-pressed loop below already handles any
+    // number of buttons and is untouched.
+    var trends = tab === 'trends';
+    document.body.classList.toggle('lb-tab-inset', inset);
+    document.body.classList.toggle('lb-tab-trends', trends);
+    Array.prototype.forEach.call(el('lb-tabs').querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.tab === tab));
+    });
+    if (inset && !LOADED) loadAgendas();
+    if (trends && window.WrenSettingTrends) window.WrenSettingTrends.show();
+    try {
+      var u = new URL(location.href);
+      if (tab && tab !== 'report') u.searchParams.set('tab', tab); else u.searchParams.delete('tab');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    } catch (_) {}
+  }
+
+  function loadAgendas() {
+    LOADED = true;
+    Wren.api('/api/inset/agendas').then(function (r) {
+      var list = (r && r.agendas) || [];
+      var want = new URLSearchParams(location.search).get('inset') || (r && r.active) || (list[0] && list[0].key) || null;
+      el('lbi-agenda').innerHTML = list.map(function (a) {
+        return '<option value="' + esc(a.key) + '"' + (a.key === want ? ' selected' : '') + '>'
+          + esc(a.title) + (r.active === a.key ? ' (on HR Home now)' : '') + '</option>';
+      }).join('');
+      KEY = want;
+      if (!KEY) { el('lbi-body').innerHTML = '<p class="lb-note">No INSET agenda has been written yet.</p>'; return; }
+      load();
+    }).catch(function (e) {
+      el('lbi-body').innerHTML = '<p class="lb-note">Could not load staff feedback: ' + esc(errText(e)) + '</p>';
+    });
+  }
+
+  function load() {
+    if (!KEY) return;
+    Wren.api('/api/inset/agenda/' + encodeURIComponent(KEY) + '/responses').then(function (d) {
+      DATA = d; render();
+    }).catch(function (e) {
+      el('lbi-body').innerHTML = '<p class="lb-note">Could not load staff feedback: ' + esc(errText(e)) + '</p>';
+    });
+  }
+
+  function badge(n) {
+    var b = el('lbi-badge');
+    if (!b) return;
+    b.textContent = n ? String(n) : '';
+    b.hidden = !n; b.style.display = n ? '' : 'none';
+    b.title = n ? n + ' comment' + (n === 1 ? '' : 's') + ' not yet handled' : '';
+  }
+
+  function readCard(r) {
+    var pct = r.expected ? Math.round((r.read / r.expected) * 100) : 0;
+    return '<div class="lb-card" id="lbi-read"><h3>Who has read it</h3>'
+      + '<p class="lb-sub"><b>' + esc(r.read) + ' of ' + esc(r.expected) + '</b> staff have tapped “I’ve read it” (active staff, not counting you).</p>'
+      + '<div class="lbi-prog" role="img" aria-label="' + esc(pct) + '% have read it"><i style="width:' + pct + '%"></i></div>'
+      + (r.not_read.length
+          ? '<p class="lb-sub" style="margin-bottom:6px">Not read yet (' + r.not_read.length + '):</p><div class="lbi-names">'
+            + r.not_read.map(function (p) { return '<span class="lbi-name">' + esc(p.name) + '</span>'; }).join('') + '</div>'
+          : '<p class="lb-sub">Everyone has read it.</p>')
+      + '</div>';
+  }
+
+  function surveyCard(sv) {
+    var byId = {}; sv.items.forEach(function (it) { byId[it.id] = it; });
+    var scale = sv.scale || [];
+    var max = sv.scale_max || 4;
+    var bars = sv.weakest_first.map(function (id) {
+      var it = byId[id];
+      var w = it.avg == null ? 0 : Math.round((it.avg / max) * 100);
+      var low = it.avg != null && it.avg < 2 ? '1' : '0';
+      return '<div class="lbi-bar" data-item="' + esc(it.id) + '">'
+        + '<span class="lbi-lab">' + esc(it.label) + '</span>'
+        + '<span class="lbi-val">' + (it.avg == null ? 'no answers' : esc(it.avg.toFixed(1)) + ' / ' + max + ' · n=' + esc(it.n)) + '</span>'
+        + '<span class="lbi-track" role="img" aria-label="' + esc(it.label) + ': average ' + esc(it.avg == null ? 'none' : it.avg.toFixed(1)) + ' out of ' + max + '"><i data-low="' + low + '" style="width:' + w + '%"></i></span>'
+        + (it.n ? '<span class="lbi-dist">' + it.dist.map(function (c, i) { return esc(scale[i] || i) + ' ' + c; }).join(' · ') + '</span>' : '')
+        + '</div>';
+    }).join('');
+    var topMax = sv.topics.reduce(function (m, t) { return Math.max(m, t.votes); }, 0) || 1;
+    var topics = sv.topics.map(function (t, i) {
+      return '<div class="lbi-bar" data-topic="' + esc(t.topic) + '">'
+        + '<span class="lbi-lab">' + (i + 1) + '. ' + esc(t.topic) + '</span>'
+        + '<span class="lbi-val">' + esc(t.votes) + ' vote' + (t.votes === 1 ? '' : 's') + '</span>'
+        + '<span class="lbi-track"><i style="width:' + Math.round((t.votes / topMax) * 100) + '%"></i></span></div>';
+    }).join('');
+    var free = sv.free.map(function (f) {
+      return '<div class="lb-card"><h3>' + esc(f.label) + '</h3>'
+        + (f.answers.length
+            ? '<ul class="lbi-free">' + f.answers.map(function (a) {
+                return '<li><div class="lbi-meta">' + esc(a.staff_name) + ' · ' + esc(when(a.created_at)) + '</div>' + esc(a.text) + '</li>';
+              }).join('') + '</ul>'
+            : '<p class="lb-sub">No answers yet.</p>')
+        + '</div>';
+    }).join('');
+    return '<div class="lbi-grid">'
+      + '<div class="lb-card" id="lbi-confidence"><h3>Confidence — weakest first</h3>'
+      + '<p class="lb-sub">From the pre-INSET check-in: ' + esc(sv.n) + ' ' + (sv.n === 1 ? 'person has' : 'people have') + ' answered. '
+      + 'Average on a 0–' + max + ' scale (' + esc(scale[0] || '') + ' = 0, ' + esc(scale[max] || '') + ' = ' + max + '). '
+      + 'The top of this list is where the knowledge gaps are; under 2 is shown in amber.</p>'
+      + (sv.n ? bars : '<p class="lb-note">Nobody has answered the check-in yet.</p>') + '</div>'
+      + '<div class="lb-card" id="lbi-topics"><h3>Training topics, by votes</h3>'
+      + '<p class="lb-sub">Each person could pick up to ' + esc(sv.pick_max) + '.</p>'
+      + (sv.n ? topics : '<p class="lb-note">No votes yet.</p>') + '</div>'
+      + '</div>' + free;
+  }
+
+  function commentsCard(sections, isOwner) {
+    var hide = el('lbi-hide-handled').checked;
+    var any = false;
+    var html = sections.map(function (s) {
+      var cs = s.comments.filter(function (c) { return !(hide && c.handled_at); });
+      if (!cs.length) return '';
+      any = true;
+      return '<div class="lbi-sec" data-section="' + esc(s.id) + '"><h4>' + esc(s.title) + '</h4>'
+        + '<p class="lbi-ask">Asked: ' + esc(s.ask) + '</p>'
+        + cs.map(function (c) {
+            return '<div class="lbi-c" data-id="' + esc(c.id) + '" data-private="' + (c.private ? '1' : '0') + '" data-handled="' + (c.handled_at ? '1' : '0') + '">'
+              + '<div class="lbi-cbody"><div class="lbi-meta">' + esc(c.staff_name) + ' · ' + esc(when(c.created_at))
+              + (c.private ? '<span class="lbi-priv">Private — only Toby</span>' : '')
+              + (c.handled_at ? ' · handled ' + esc(when(c.handled_at)) : '') + '</div>'
+              + (c.redacted ? '<span class="lbi-red">Private comment — only Toby can read it.</span>' : esc(c.body))
+              + '</div>'
+              + '<button type="button" class="lb-btn lbi-handle" data-id="' + esc(c.id) + '" data-on="' + (c.handled_at ? '0' : '1') + '">'
+              + (c.handled_at ? 'Reopen' : 'Mark handled') + '</button></div>';
+          }).join('') + '</div>';
+    }).join('');
+    return '<div class="lb-card" id="lbi-comments"><h3>Comments on each section</h3>'
+      + '<p class="lb-sub">What staff sent from the box under each section. Orange-edged ones were sent privately'
+      + (isOwner ? ' — only you can read those.' : ' — only Toby can read those; you can see who sent one.') + '</p>'
+      + (any ? html : '<p class="lb-note">' + (hide ? 'Nothing left to handle.' : 'No comments yet.') + '</p>')
+      + '</div>';
+  }
+
+  function render() {
+    var d = DATA;
+    if (!d) return;
+    badge(d.unhandled_count || 0);
+    el('lbi-body').innerHTML = '<p class="lb-q">' + esc(d.title) + ' — ' + esc(d.comment_count) + ' comment'
+      + (d.comment_count === 1 ? '' : 's') + ', ' + esc(d.survey.n) + ' check-in' + (d.survey.n === 1 ? '' : 's') + '.</p>'
+      + readCard(d.read)
+      + surveyCard(d.survey)
+      + commentsCard(d.sections, d.viewer_is_owner);
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target; if (!t || !t.closest) return;
+    var tab = t.closest('#lb-tabs button');
+    if (tab) return setTab(tab.dataset.tab);
+    var h = t.closest('.lbi-handle');
+    if (h) {
+      h.disabled = true;
+      Wren.api('/api/inset/feedback/' + encodeURIComponent(h.dataset.id) + '/handled', {
+        method: 'PATCH', body: { handled: h.dataset.on === '1' },
+      }).then(load).catch(function (err) {
+        h.disabled = false;
+        if (Wren.toast) Wren.toast('Could not update: ' + errText(err)); else alert('Could not update: ' + errText(err));
+      });
+    }
+    if (t.closest('#lbi-refresh')) load();
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'lbi-agenda') { KEY = e.target.value; load(); }
+    if (e.target && e.target.id === 'lbi-hide-handled') render();
+  });
+
+  // Rule 7: wait for wren:ready. The count badge loads straight away so the tab
+  // shows there is something new even while the report is on screen.
+  document.addEventListener('wren:ready', function () {
+    var want = new URLSearchParams(location.search).get('tab');
+    if (want === 'inset') { setTab('inset'); return; }
+    // b529 — ?tab=trends opens the trends pane, and the badge still loads so
+    // the INSET tab shows there is something new behind it either way.
+    if (want === 'trends') setTab('trends');
+    loadAgendas();
+  });
+})();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * b529 — Look back → "Setting trends".
+ *
+ * A separate block from the report and the INSET pane so that nothing above it
+ * had to be rewritten: it adds one listener, one global (window.WrenSettingTrends,
+ * which setTab calls) and nothing else.
+ *
+ * Every number drawn here comes from /api/lookback/trends. The browser does no
+ * arithmetic on children: the suppression, the percentages and the flags are
+ * all computed server-side in src/lib/setting-trends.js, so this file cannot
+ * show a figure the engine would have blanked.
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+  var API = '/api/lookback';
+  var D = null, TERM = null, SHOWN = false;
+
+  function el(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function errText(e) { return (e && (e.message || e.error)) || 'error'; }
+
+  /* The step a percentage sits in on the six-step sequential ramp. Bands, not a
+     continuous scale: a reader can tell six fills apart and cannot tell 61%
+     from 64% by colour, which is why the number is printed in every cell. */
+  function step(pct) {
+    if (pct == null) return null;
+    if (pct < 10) return 0;
+    if (pct < 30) return 1;
+    if (pct < 50) return 2;
+    if (pct < 70) return 3;
+    if (pct < 90) return 4;
+    return 5;
+  }
+
+  /* Which (group, area) pairs the engine flagged, so the grid can outline them.
+     Keyed off the engine's own gap list — the grid never decides for itself
+     what counts as a gap. */
+  function flaggedSet(d) {
+    var set = {};
+    (d.gaps || []).forEach(function (g) { set[g.group_key + '|' + g.area_key] = g.gap_pp; });
+    return set;
+  }
+
+  function cellHtml(c, flagged) {
+    if (!c || c.suppressed) return '<td data-sup="1" title="Fewer than five children — no percentage is shown">&lt;5</td>';
+    if (c.value == null) return '<td data-sup="1">–</td>';
+    return '<td data-step="' + step(c.value) + '"'
+      + (flagged ? ' data-flagged="1"' : '')
+      + ' title="' + esc(c.children_evidenced + ' of ' + c.of + ' children') + '">'
+      + c.value + '%' + (flagged ? ' <span class="lbt-cellflag" aria-label="flagged">&#9873;</span>' : '')
+      + '</td>';
+  }
+
+  function gridHtml(d) {
+    var flags = flaggedSet(d);
+    var dims = (d.grid.dimensions || []);
+    var head1 = '<tr><th rowspan="2" class="lbt-rowhead">Area of learning</th>'
+      + '<th rowspan="2">All<small>' + esc(d.cohort.children) + '</small></th>';
+    var head2 = '<tr>';
+    dims.forEach(function (dim) {
+      head1 += '<th class="lbt-dim" colspan="' + dim.buckets.length + '">' + esc(dim.label) + '</th>';
+      dim.buckets.forEach(function (b) {
+        head2 += '<th scope="col">' + esc(b.label)
+          + '<small>' + (b.suppressed ? '&lt;5' : esc(b.n)) + '</small></th>';
+      });
+    });
+    head1 += '</tr>'; head2 += '</tr>';
+
+    var body = (d.grid.areas || []).map(function (a, i) {
+      var all = (d.coverage.areas || []).find(function (x) { return x.area_key === a.key; }) || {};
+      var row = '<tr><th scope="row" class="lbt-rowhead">' + esc(a.label) + '</th>' + cellHtml(all, false);
+      dims.forEach(function (dim) {
+        dim.buckets.forEach(function (b) {
+          var cells = ((dim.cells || []).find(function (c) { return c.key === b.key; }) || {}).cells || [];
+          row += cellHtml(cells[i], !!flags[b.key + '|' + a.key]);
+        });
+      });
+      return row + '</tr>';
+    }).join('');
+
+    return '<div class="lbt-gridwrap"><table class="lbt-grid">'
+      + '<caption class="lb-sub" style="text-align:left;caption-side:top">'
+      + 'The share of each group with at least one observation tagged to that area in ' + esc(d.term.label) + '.'
+      + ' The number under a group is how many children are in it.</caption>'
+      + '<thead>' + head1 + head2 + '</thead><tbody>' + body + '</tbody></table></div>'
+      + '<div class="lbt-key">'
+      + '<span class="lbt-ramp">Less evidenced <i data-k="0"></i><i data-k="1"></i><i data-k="2"></i>'
+      + '<i data-k="3"></i><i data-k="4"></i><i data-k="5"></i> more</span>'
+      + '<span><i class="lbt-hatch"></i> fewer than five children — blanked</span>'
+      + '<span>&#9873; flagged below — the number is always printed, so the colour is never the only reading</span>'
+      + '</div>';
+  }
+
+  function flagsHtml(d) {
+    if (!d.flags || !d.flags.length) {
+      return '<p class="lb-note">Nothing crossed a threshold this term. That is a finding too — the thresholds are '
+        + 'an area evidenced for under half the children, a group more than 20 points behind the rest, '
+        + 'a child past the setting’s observation gap, five or more unreviewed next steps, and a blank attribute.</p>';
+    }
+    return '<ul class="lbt-flags">' + d.flags.map(function (f) {
+      return '<li class="lbt-flag" data-sev="' + esc(f.severity) + '" data-kind="' + esc(f.kind) + '">'
+        + '<h4><span class="lbt-sev">' + esc(f.severity === 'high' ? 'Look at this' : f.severity === 'medium' ? 'Worth a look' : 'For the record')
+        + '</span> <span>' + esc(f.title) + '</span></h4>'
+        + '<p>' + esc(f.detail) + '</p>'
+        + (f.link ? '<a href="' + esc(f.link) + '">' + esc(f.link_label || 'Open') + ' &rarr;</a>' : '')
+        + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function barsHtml(areas, unit) {
+    return '<div class="lbt-bars">' + areas.map(function (a) {
+      var v = a.suppressed ? null : a.value;
+      return '<div class="lbt-bar"><span class="lbt-lab">' + esc(a.area) + '</span>'
+        + '<span class="lbt-val">' + (v == null ? '&lt;5' : esc(v) + (unit || '%'))
+        + (a.suppressed ? '' : ' <span class="lb-sup" style="font-style:normal">(' + esc(a.children_evidenced) + '/' + esc(a.of) + ')</span>')
+        + '</span>'
+        + '<span class="lbt-track"><i style="width:' + (v == null ? 0 : Math.max(0, Math.min(100, v))) + '%"'
+        + (v != null && v < 50 ? ' data-low="1"' : '') + '></i></span></div>';
+    }).join('') + '</div>';
+  }
+
+  function attainmentHtml(d) {
+    var a = d.attainment;
+    var h = '<article class="lb-card"><h3>Attainment</h3>'
+      + '<p class="lb-sub">Only from tracker cells somebody actually assessed — an assessor, a date, and a status they chose.</p>'
+      + '<p class="lbt-sum">' + esc(a.why) + '</p>';
+    if (a.available && a.status_mix.length) {
+      h += '<div class="lbt-bars">' + a.status_mix.map(function (s) {
+        var total = a.real_cells || 1;
+        var pc = s.suppressed ? null : Math.round((s.cells / total) * 1000) / 10;
+        return '<div class="lbt-bar"><span class="lbt-lab">' + esc(s.label) + '</span>'
+          + '<span class="lbt-val">' + (s.suppressed ? '&lt;5 children' : esc(s.cells) + ' cells, ' + esc(s.n) + ' children') + '</span>'
+          + '<span class="lbt-track"><i style="width:' + (pc == null ? 0 : pc) + '%"></i></span></div>';
+      }).join('') + '</div>';
+    }
+    h += '<div class="lbt-statrow">'
+      + '<div class="lbt-stat"><b>' + esc(a.real_cells) + '</b><span>cells genuinely assessed this term</span></div>'
+      + '<div class="lbt-stat"><b>' + esc(a.default_cells) + '</b><span>cells carrying the import default (evidence, not attainment)</span></div>'
+      + '<div class="lbt-stat"><b>' + esc(a.assessed_children) + '</b><span>of ' + esc(a.cohort) + ' children with any real assessment</span></div>'
+      + '</div></article>';
+    return h;
+  }
+
+  function comparisonHtml(d) {
+    var c = d.comparison;
+    if (!c) return '';
+    if (!c.available) {
+      return '<article class="lb-card"><h3>Against ' + esc(c.term.label) + '</h3>'
+        + '<p class="lbt-sum">' + esc(c.why) + '</p></article>';
+    }
+    var rows = c.areas.map(function (a) {
+      var mv = a.move_pp;
+      return '<tr><td class="lbt-rowhead">' + esc(a.area) + '</td>'
+        + '<td class="n">' + (a.suppressed ? '&lt;5' : esc(a.value) + '%') + '</td>'
+        + '<td class="n">' + (function () {
+            var now = (d.coverage.areas.find(function (x) { return x.area_key === a.area_key; }) || {});
+            return now.suppressed ? '&lt;5' : esc(now.value) + '%';
+          })() + '</td>'
+        + '<td class="n lbt-move">' + (mv == null ? '—' : (mv > 0 ? '+' : '') + esc(mv) + ' pts') + '</td></tr>';
+    }).join('');
+    return '<article class="lb-card"><h3>Against ' + esc(c.term.label) + '</h3>'
+      + '<p class="lb-sub">' + esc(c.note) + '</p>'
+      + '<div class="lb-tablewrap"><table class="lb-table"><thead><tr><th>Area of learning</th>'
+      + '<th class="n">' + esc(c.term.label) + '</th><th class="n">' + esc(d.term.label) + '</th>'
+      + '<th class="n">Movement</th></tr></thead><tbody>' + rows + '</tbody></table></div></article>';
+  }
+
+  function render() {
+    if (!D) return;
+    var d = D;
+    var sp = d.coverage.source_split;
+    var html = '<p class="lbt-sum"><b>' + esc(d.cohort.children) + '</b> children were on roll in <b>'
+      + esc(d.term.label) + '</b> (' + esc(d.term.start) + ' to ' + esc(d.term.as_of)
+      + (d.term.in_progress ? ', still running' : '') + '), with <b>' + esc(d.cohort.observations)
+      + '</b> observations between them. ' + esc(d.suppression.rule)
+      + ' No child is named anywhere on this page.</p>';
+
+    html += '<article class="lb-card"><h3>What this term is asking us to look at</h3>'
+      + '<p class="lb-sub">Each one states the numbers behind it. Thresholds: an area under '
+      + esc(d.flags.length ? '50%' : '50%') + ' of the children, a group more than 20 points behind the rest '
+      + '(both groups at least five children), and the setting’s own observation gap.</p>'
+      + flagsHtml(d)
+      + '<p class="lbt-raised" id="lbt-raised"></p></article>';
+
+    html += '<article class="lb-card"><h3>Evidence coverage by area of learning</h3>'
+      + '<p class="lb-sub">The share of the children with at least one observation tagged to each area this term. '
+      + 'This is coverage, not attainment: it says we looked, not how the child is doing.</p>'
+      + barsHtml(d.coverage.areas)
+      + '<p class="lb-src">Tagged from all three places Wren stores it: statement links ('
+      + esc(sp.statement_links) + ' child-area pairs), the observation’s own statement ids ('
+      + esc(sp.observation_linked_ids) + ') and the EY form’s area tags (' + esc(sp.area_tags) + ')'
+      + (sp.outside_seven_areas ? '. ' + esc(sp.outside_seven_areas) + ' pairs were tagged to something that is not one of the seven areas'
+         + (sp.outside_names.length ? ' (' + esc(sp.outside_names.join(', ')) + ')' : '') + ' and are counted here, not drawn' : '')
+      + '.</p></article>';
+
+    html += '<article class="lb-card"><h3>The same coverage, by group</h3>'
+      + gridHtml(d) + '</article>';
+
+    html += attainmentHtml(d);
+    html += comparisonHtml(d);
+
+    html += '<article class="lb-card"><h3>What these numbers are worth</h3>'
+      + '<details class="lb-limits" open><summary>' + esc(d.limits.length) + ' things to hold in mind</summary><ul>'
+      + d.limits.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('')
+      + '</ul></details></article>';
+
+    el('lbt-body').innerHTML = html;
+  }
+
+  function fillTerms(d) {
+    var sel = el('lbt-term');
+    if (sel.options.length && TERM) return;
+    var list = d.terms_available || [{ key: d.term.key, label: d.term.label }];
+    sel.innerHTML = list.map(function (t) {
+      return '<option value="' + esc(t.key) + '"' + (t.key === d.term.key ? ' selected' : '') + '>'
+        + esc(t.label) + '</option>';
+    }).join('');
+  }
+
+  function load() {
+    el('lbt-body').innerHTML = '<p class="lb-note">Working out this term’s trends…</p>';
+    Wren.api(API + '/trends?term=' + encodeURIComponent(TERM || 'current')).then(function (d) {
+      D = d; TERM = d.term.key;
+      fillTerms(d);
+      render();
+    }).catch(function (e) {
+      el('lbt-body').innerHTML = '<p class="lb-note">Could not load the setting trends: ' + esc(errText(e)) + '</p>';
+    });
+  }
+
+  function raiseCards() {
+    var b = el('lbt-cards'); b.disabled = true;
+    var flag = el('lbt-raised');
+    if (flag) flag.textContent = 'Putting them on the board…';
+    Wren.api(API + '/trends/cards?term=' + encodeURIComponent(TERM || 'current'), { method: 'POST', body: {} })
+      .then(function (r) {
+        b.disabled = false;
+        if (!flag) return;
+        flag.textContent = r.raised.length
+          ? r.raised.length + ' card' + (r.raised.length === 1 ? '' : 's') + ' added to What needs me.'
+            + (r.skipped.length ? ' ' + r.skipped.length + ' already there or below the bar.' : '')
+          : 'Nothing new — every flag for this term is already on the board.';
+      }).catch(function (e) {
+        b.disabled = false;
+        if (flag) flag.textContent = 'Could not add the cards: ' + errText(e);
+      });
+  }
+
+  function download() {
+    var url = API + '/trends.csv?term=' + encodeURIComponent(TERM || 'current');
+    fetch(url, { headers: Wren.authHeaders() }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error(t.slice(0, 200) || ('HTTP ' + r.status)); });
+      return r.blob();
+    }).then(function (bl) {
+      var u = URL.createObjectURL(bl);
+      var a = document.createElement('a');
+      a.href = u; a.download = 'setting-trends-' + (TERM || 'current') + '.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }).catch(function (e) {
+      if (Wren.toast) Wren.toast('Export failed: ' + errText(e)); else alert('Export failed: ' + errText(e));
+    });
+  }
+
+  // setTab() calls this the first time the tab is opened.
+  window.WrenSettingTrends = {
+    show: function () { if (!SHOWN) { SHOWN = true; load(); } },
+    reload: load,
+    data: function () { return D; },     // ground truth for a browser probe
+  };
+
+  document.addEventListener('click', function (e) {
+    var t = e.target; if (!t || !t.closest) return;
+    if (t.closest('#lbt-refresh')) return load();
+    if (t.closest('#lbt-csv')) return download();
+    if (t.closest('#lbt-print')) return window.print();
+    if (t.closest('#lbt-cards')) return raiseCards();
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'lbt-term') { TERM = e.target.value; load(); }
+  });
+
+  // Rule 7 — and the other half of the same trap. wren:ready fires
+  // SYNCHRONOUSLY inside the shell's deferred execution, so a listener added
+  // after the shell has run never fires at all. This block is inline in the
+  // body, so it is in time; the second line makes that true even if the block
+  // is ever moved below the shell. The chrome existing IS the shell being
+  // ready, which is what Rule 7 is about.
+  var booted = false;
+  function bootOnce() {
+    if (booted) return; booted = true;
+    if (document.body.classList.contains('lb-tab-trends')) window.WrenSettingTrends.show();
+  }
+  document.addEventListener('wren:ready', bootOnce);
+  if (document.getElementById('wren-topbar') || document.getElementById('wren-app-bottom')) bootOnce();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Fee Modeller — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b270" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b270 — fee modeller. Tokens only (var(--c-*)); tints via color-mix so nothing
+   here hard-codes a colour that would drift from the design system.
+   2026-11-03 — every child priced through the invoice engine, grouped in Toby's
+   order, each group opening onto its children and families. */
+.fm{padding:18px;max-width:1600px;margin:0 auto;color:var(--c-text)}
+.fm h1{font-size:1.3rem;margin:0 0 2px}
+.fm .sub{color:var(--c-text-muted);font-size:.85rem;margin-bottom:14px}
+.fm-note{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--radius-sm);
+  padding:11px 13px;font-size:.8rem;color:var(--c-text-muted);line-height:1.55;margin-bottom:14px}
+.fm-note b{color:var(--c-text)}
+
+.fm-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--c-card);
+  border:1px solid var(--c-border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px}
+.fm-bar label{font-size:.76rem;color:var(--c-text-muted)}
+select,input[type=text],input[type=date]{background:var(--c-bg);border:1px solid var(--c-border);
+  color:var(--c-text);border-radius:6px;padding:6px 9px;font-size:.82rem;font-family:inherit;max-width:100%}
+select:focus,input:focus{outline:none;border-color:var(--c-blue)}
+.btn{background:var(--c-blue);border:1px solid var(--c-blue);color:var(--c-navy);border-radius:6px;
+  padding:7px 13px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
+.btn:hover{background:var(--c-blue-dark);border-color:var(--c-blue-dark)}
+.btn.ghost{background:transparent;border:1px solid var(--c-border);color:var(--c-text);font-weight:600}
+.btn.ghost:hover{border-color:var(--c-blue);color:var(--c-blue)}
+.btn.danger{background:transparent;border:1px solid var(--c-red);color:var(--c-red);font-weight:600}
+.btn.small{padding:4px 9px;font-size:.74rem}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.pulse{box-shadow:0 0 0 3px color-mix(in srgb, var(--c-amber) 45%, transparent)}
+
+.fm-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--c-border)}
+.fm-tab{padding:8px 15px;border-radius:var(--radius-sm) var(--radius-sm) 0 0;font-size:.85rem;
+  background:transparent;border:none;color:var(--c-text-muted);cursor:pointer;font-family:inherit}
+.fm-tab.active{background:var(--c-surface);color:var(--c-text);font-weight:600;box-shadow:inset 0 -2px 0 var(--c-blue)}
+.fm-panel{display:none}.fm-panel.active{display:block}
+
+/* the headline numbers */
+.fm-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+@media(max-width:900px){.fm-tiles{grid-template-columns:1fr}}
+.tile{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--radius);padding:14px 16px}
+.tile .tl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--c-text-muted);font-weight:700}
+.tile .tv{font-size:1.5rem;font-weight:800;margin:5px 0 2px;font-variant-numeric:tabular-nums;line-height:1.15}
+.tile .tm{font-size:.75rem;color:var(--c-text-muted);line-height:1.45}
+.up{color:var(--c-red)}.down{color:var(--c-green)}.flat{color:var(--c-text-muted)}
+
+.check{border-radius:var(--radius-sm);padding:9px 13px;font-size:.8rem;margin-bottom:14px;line-height:1.5;
+  border:1px solid var(--c-border);background:var(--c-card)}
+.check.ok{border-color:color-mix(in srgb, var(--c-green) 55%, var(--c-border));
+  background:color-mix(in srgb, var(--c-green) 10%, var(--c-card))}
+.check.bad{border-color:color-mix(in srgb, var(--c-amber) 60%, var(--c-border));
+  background:color-mix(in srgb, var(--c-amber) 12%, var(--c-card))}
+
+/* cards */
+.gridwrap{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--radius);
+  padding:12px;margin-bottom:16px;overflow-x:auto}
+.gridwrap h3{margin:0 0 3px;font-size:.95rem}
+.gridwrap .hint{color:var(--c-text-muted);font-size:.75rem;margin-bottom:10px;line-height:1.5}
+.cardhead{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:6px}
+.cardhead .grow{flex:1;min-width:240px}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:.76rem;color:var(--c-text-muted)}
+.seg{display:inline-flex;border:1px solid var(--c-border);border-radius:6px;overflow:hidden}
+.seg button{background:transparent;border:none;color:var(--c-text-muted);padding:5px 10px;font-size:.76rem;
+  cursor:pointer;font-family:inherit}
+.seg button.on{background:color-mix(in srgb, var(--c-blue) 22%, transparent);color:var(--c-text);font-weight:700}
+
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{text-align:left;color:var(--c-text-muted);font-weight:600;font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.04em;padding:7px 9px;border-bottom:1px solid var(--c-border);white-space:nowrap}
+td{padding:6px 9px;border-bottom:1px solid var(--c-border);vertical-align:middle}
+th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.c,th.c{text-align:center}
+
+/* the rate grid */
+#rateGrid td{vertical-align:top}
+.bandcell{font-weight:700;white-space:nowrap}
+.stepper{display:inline-flex;align-items:center;gap:3px;justify-content:center}
+.step{width:26px;height:30px;border-radius:6px;border:1px solid var(--c-border);background:var(--c-bg);
+  color:var(--c-text);font-size:.95rem;font-weight:700;cursor:pointer;line-height:1;font-family:inherit;padding:0}
+.step:hover{border-color:var(--c-blue);color:var(--c-blue)}
+.rate{background:var(--c-bg);border:1px solid var(--c-border);border-radius:5px;padding:6px 7px;
+  color:var(--c-text);font-size:.85rem;width:74px;text-align:right;font-variant-numeric:tabular-nums;font-family:inherit}
+.rate:focus{outline:none;border-color:var(--c-blue);box-shadow:0 0 0 2px color-mix(in srgb, var(--c-blue) 30%, transparent)}
+.rate.changed{border-color:var(--c-amber)}
+.cellnote{font-size:.68rem;color:var(--c-text-muted);text-align:center;margin-top:3px;white-space:nowrap}
+.cellnote b{color:var(--c-text)}
+.na{color:var(--c-text-muted);font-size:.75rem;text-align:center;padding-top:10px}
+
+/* children, grouped */
+tr.bandhead td{background:color-mix(in srgb, var(--c-blue) 10%, transparent);font-weight:800;font-size:.85rem;
+  padding-top:9px;padding-bottom:9px}
+#groups,#cmpGroups{min-width:1080px}
+#groups td.fam,#cmpGroups td.fam{min-width:150px}
+tr.grp{cursor:pointer}
+tr.grp td:first-child{white-space:nowrap}
+tr.grp td{font-weight:600}
+tr.grp:hover td{background:color-mix(in srgb, var(--c-blue) 7%, transparent)}
+tr.grp .tw{display:inline-block;width:14px;color:var(--c-blue)}
+tr.kid td{background:color-mix(in srgb, var(--c-text) 3%, transparent);font-size:.8rem}
+tr.kid td:first-child{padding-left:30px}
+tr.kid{cursor:pointer}
+tr.kid:hover td{background:color-mix(in srgb, var(--c-blue) 6%, transparent)}
+tr.kidx td{background:var(--c-bg);font-size:.76rem;color:var(--c-text-muted);padding:8px 12px 10px 30px}
+tr.hide{display:none}
+.who b{color:var(--c-text)}
+.fam{color:var(--c-text-muted);font-size:.74rem}
+.pill{display:inline-block;font-size:.62rem;font-weight:700;padding:1px 7px;border-radius:999px;margin-left:4px;
+  background:color-mix(in srgb, var(--c-purple) 18%, transparent);color:var(--c-purple);white-space:nowrap}
+.pill.amber{background:color-mix(in srgb, var(--c-amber) 18%, transparent);color:var(--c-amber)}
+.pill.green{background:color-mix(in srgb, var(--c-green) 16%, transparent);color:var(--c-green)}
+.chk{white-space:nowrap;font-size:.74rem}
+.chk.ok{color:var(--c-green)}.chk.bad{color:var(--c-amber)}.chk.none{color:var(--c-text-muted)}
+.bk{display:grid;grid-template-columns:auto repeat(3,auto);gap:3px 18px;justify-content:start;font-variant-numeric:tabular-nums}
+.bk .h{font-weight:700;color:var(--c-text);text-transform:uppercase;font-size:.66rem;letter-spacing:.04em}
+.bk .r{text-align:right}
+.bk .t{color:var(--c-text);font-weight:700}
+
+.badge{display:inline-block;font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:999px}
+.b-up{background:color-mix(in srgb, var(--c-red) 16%, transparent);color:var(--c-red)}
+.b-down{background:color-mix(in srgb, var(--c-green) 16%, transparent);color:var(--c-green)}
+.b-flat{background:color-mix(in srgb, var(--c-text-muted) 16%, transparent);color:var(--c-text-muted)}
+tr.pays-more td{background:color-mix(in srgb, var(--c-red) 7%, transparent)}
+
+.msg{font-size:.8rem;margin-left:auto}
+.msg.ok{color:var(--c-green)}.msg.bad{color:var(--c-red)}.msg.busy{color:var(--c-amber)}
+.gdpr{font-size:.72rem;color:var(--c-text-muted);margin-top:14px;padding-top:10px;border-top:1px solid var(--c-border)}
+
+/* board paper */
+.paper{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--radius);padding:22px}
+.paper h2{font-size:1.1rem;margin:0 0 4px}
+.paper .meta{color:var(--c-text-muted);font-size:.78rem;margin-bottom:16px}
+.paper section{margin-bottom:20px}
+.paper h4{font-size:.85rem;margin:0 0 7px;text-transform:uppercase;letter-spacing:.05em;color:var(--c-text-muted)}
+@media print{
+  .fm-bar,.fm-tabs,.gdpr,.no-print{display:none!important}
+  .fm{padding:0;max-width:none}
+  .paper{border:none;padding:0;background:transparent}
+}
+@media(max-width:700px){
+  .step{width:30px;height:36px}
+  .rate{width:66px}
+}
+</style>
+</head>
+<body>
+<div class="wren-page">
+<div class="fm">
+
+  <h1>Fee Modeller</h1>
+  <div class="sub">A sandbox for next year's fee structure — change the rates, see every family's bill move.</div>
+
+  <div class="fm-note">
+    Nothing here changes a live fee. This screen writes only to its own scenario tables; applying a
+    structure to the real fee schedule is a separate, deliberate step.
+    Every child on the roll is priced through <b>the same engine that writes your invoices</b> —
+    their booked days, their room, their band (age on the 1st of the month, Pre-school never below the
+    2-year rate), this term's funding, consumables and standing discounts.
+    <b>Now</b> is the live fee schedule, checked against each child's <span id="cMonth">current</span> invoice.
+    <b>New</b> is the scenario, with nothing changed but the rates.
+    A month is <span id="cWeeks">52</span> weeks ÷ 12, a day is <span id="cDayHours">10</span> hours, funded hours are £0.
+  </div>
+
+  <div class="fm-bar">
+    <label for="scenarioSel">Scenario</label>
+    <select id="scenarioSel"></select>
+    <button class="btn ghost" id="btnNew">New…</button>
+    <button class="btn ghost" id="btnDup">Duplicate</button>
+    <button class="btn ghost" id="btnRename">Rename</button>
+    <button class="btn danger" id="btnDelete">Delete</button>
+    <button class="btn" id="btnSave">Save rates</button>
+    <button class="btn ghost" id="btnCsv">Export CSV</button>
+    <span class="msg" id="msg"></span>
+  </div>
+
+  <div class="fm-tabs">
+    <button class="fm-tab active" data-panel="grid">Rate grid</button>
+    <button class="fm-tab" data-panel="compare">Compare</button>
+    <button class="fm-tab" data-panel="paper">Board paper</button>
+  </div>
+
+  <!-- ── GRID ─────────────────────────────────────────────────────────── -->
+  <div class="fm-panel active" id="panel-grid">
+    <div class="fm-tiles">
+      <div class="tile">
+        <div class="tl">Income a month — now → new</div>
+        <div class="tv" id="tRevenue">—</div>
+        <div class="tm" id="tRevenueSub">&nbsp;</div>
+      </div>
+      <div class="tile">
+        <div class="tl">Change</div>
+        <div class="tv" id="tChange">—</div>
+        <div class="tm" id="tChangeSub">&nbsp;</div>
+      </div>
+      <div class="tile">
+        <div class="tl">Families</div>
+        <div class="tv" id="tFamily">—</div>
+        <div class="tm" id="tFamilySub">&nbsp;</div>
+      </div>
+    </div>
+    <div class="check" id="gCheck" style="display:none"></div>
+
+    <div class="gridwrap">
+      <div class="cardhead">
+        <div class="grow">
+          <h3>Day rates</h3>
+          <div class="hint">
+            One row per fee band, days a week across. <b>−</b> / <b>+</b> move a rate by £1; the row buttons move the
+            whole band; <b>All rates</b> moves every day rate at once. Under each rate: today's rate and how many
+            children pay it. Everything below recalculates as you go.
+          </div>
+        </div>
+        <div class="ctl">
+          All rates
+          <button class="btn ghost small" id="allMinus" title="Take £1 off every day rate">−£1</button>
+          <button class="btn ghost small" id="allPlus" title="Add £1 to every day rate">+£1</button>
+          <button class="btn ghost small" id="btnReset" title="Back to the last saved rates">Undo changes</button>
+        </div>
+      </div>
+      <table id="rateGrid"><thead></thead><tbody></tbody></table>
+    </div>
+
+    <div class="gridwrap">
+      <h3>How the month is made up</h3>
+      <div class="hint">The whole roll's bills added up, line by line, now and under this scenario.</div>
+      <table id="makeup"><thead></thead><tbody></tbody></table>
+    </div>
+
+    <div class="gridwrap">
+      <div class="cardhead">
+        <div class="grow">
+          <h3>Every child, grouped</h3>
+          <div class="hint">
+            Baby Room first, then 2 year olds, then 3–4 year olds — funded before unfunded, then by days a week.
+            Click a group to see each child and family; click a child to see their bill line by line.
+          </div>
+        </div>
+        <div class="ctl">
+          <span class="seg" id="perSeg">
+            <button data-per="week">Week</button><button data-per="month" class="on">Month</button><button data-per="year">Year</button>
+          </span>
+          <label><input type="checkbox" id="showNames" checked> Names</label>
+          <button class="btn ghost small" id="openAll">Open all</button>
+          <button class="btn ghost small" id="closeAll">Close all</button>
+        </div>
+      </div>
+      <table id="groups"><thead></thead><tbody></tbody></table>
+      <div id="unpriced"></div>
+    </div>
+
+    <div class="gdpr">
+      Names and families are shown to managers on this screen only. The board paper and the CSV export
+      carry groups and totals — never a name.
+    </div>
+  </div>
+
+  <!-- ── COMPARE ──────────────────────────────────────────────────────── -->
+  <div class="fm-panel" id="panel-compare">
+    <div class="fm-bar">
+      <label for="cmpA">Compare</label>
+      <select id="cmpA"></select>
+      <label for="cmpB">against</label>
+      <select id="cmpB"></select>
+      <button class="btn" id="btnCompare">Compare</button>
+    </div>
+    <div class="fm-tiles" id="cmpTiles" style="display:none">
+      <div class="tile">
+        <div class="tl">Income change a month</div>
+        <div class="tv" id="cRev">—</div>
+        <div class="tm" id="cRevSub">&nbsp;</div>
+      </div>
+      <div class="tile">
+        <div class="tl">Families paying more</div>
+        <div class="tv" id="cUp">—</div>
+        <div class="tm" id="cUpSub">&nbsp;</div>
+      </div>
+      <div class="tile">
+        <div class="tl">Biggest increase</div>
+        <div class="tv" id="cWorst">—</div>
+        <div class="tm" id="cWorstSub">&nbsp;</div>
+      </div>
+    </div>
+    <div class="gridwrap" id="cmpRatesWrap" style="display:none">
+      <h3>Rate by rate</h3>
+      <div class="hint">Every day rate, by fee band and days a week, with how many children are on it.</div>
+      <table id="cmpRates"><thead></thead><tbody></tbody></table>
+    </div>
+    <div class="gridwrap" id="cmpCellsWrap" style="display:none">
+      <div class="cardhead">
+        <div class="grow">
+          <h3>Every child, grouped</h3>
+          <div class="hint">Same order as the rate grid. Click a group for its children and families.</div>
+        </div>
+        <div class="ctl">
+          <span class="seg" id="perSegC">
+            <button data-per="week">Week</button><button data-per="month" class="on">Month</button><button data-per="year">Year</button>
+          </span>
+          <button class="btn ghost small" id="openAllC">Open all</button>
+          <button class="btn ghost small" id="closeAllC">Close all</button>
+        </div>
+      </div>
+      <table id="cmpGroups"><thead></thead><tbody></tbody></table>
+      <div id="cmpUnpriced"></div>
+    </div>
+  </div>
+
+  <!-- ── BOARD PAPER ──────────────────────────────────────────────────── -->
+  <div class="fm-panel" id="panel-paper">
+    <div class="fm-bar no-print">
+      <button class="btn" id="btnPrint">Print / save as PDF</button>
+      <span class="msg">A printable summary for a board paper: the rate table, the change column, and the totals. No names.</span>
+    </div>
+    <div class="paper" id="paper">Select a scenario.</div>
+  </div>
+
+</div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var API = '/api/fee-sandbox';
+  var TOKEN = function(){ return sessionStorage.getItem('wrenToken') || ''; };
+  var BANDS = ['under_2','2yo','3_4yo'];
+  var DAYS = [1,2,3,4,5];
+
+  var META = null, SCENARIOS = [], CURRENT = null, RATES = [], SAVED = {}, LIVE = {}, SIM = null, CMP = null;
+  var simTimer = null, simSeq = 0;
+  var PER = 'month', PER_C = 'month';
+  var OPEN = {}, OPEN_KID = {}, OPEN_C = {}, OPEN_KID_C = {};
+  var SHOW_NAMES = true;
+  try { SHOW_NAMES = localStorage.getItem('feeModellerNames') !== 'off'; } catch (_) {}
+
+  function api(path, opts){
+    opts = opts || {};
+    return fetch(API + path, {
+      method: opts.method || 'GET',
+      headers: { 'Authorization':'Bearer ' + TOKEN(), 'Content-Type':'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    });
+  }
+  function el(id){ return document.getElementById(id); }
+  function msg(t, cls){ var m = el('msg'); m.textContent = t || ''; m.className = 'msg ' + (cls||''); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+  function gbp(p){
+    var v = (Number(p)||0)/100;
+    return (v < 0 ? '−' : '') + '£' + Math.abs(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+  function gbp0(p){
+    var v = (Number(p)||0)/100;
+    return (v < 0 ? '−' : '') + '£' + Math.abs(v).toLocaleString('en-GB', {maximumFractionDigits:0});
+  }
+  function signed(p){ return ((Number(p)||0) > 0 ? '+' : '') + gbp(p); }
+  function pct(n){ return n == null ? '—' : (n > 0 ? '+' : '') + n + '%'; }
+  function cls(n){ return n > 0 ? 'up' : n < 0 ? 'down' : 'flat'; }
+  function bandLabel(b){
+    return ({under_2:'Baby Room (under 2s)','2yo':'2 year olds','3_4yo':'3–4 year olds'})[b] || b || '(no band)';
+  }
+  function bandShort(b){ return ({under_2:'under 2','2yo':'2yo','3_4yo':'3–4'})[b] || b; }
+  // Monthly pence → the period on screen. A month is 52 weeks ÷ 12.
+  function per(p, which){
+    var n = Number(p) || 0;
+    if (which === 'week') return Math.round(n * 12 / 52);
+    if (which === 'year') return n * 12;
+    return n;
+  }
+  function perWord(which){ return ({week:'a week', month:'a month', year:'a year'})[which]; }
+  function fmtDate(iso){
+    if (!iso) return '';
+    var d = new Date(String(iso).slice(0,10) + 'T00:00:00Z');
+    return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', timeZone:'UTC' });
+  }
+  function rk(band, days){ return band + '|' + days; }
+
+  // ── boot ──────────────────────────────────────────────────────────────
+  function boot(){
+    el('showNames').checked = SHOW_NAMES;
+    api('/meta').then(function(m){
+      META = m;
+      el('cWeeks').textContent = m.constants.weeks_per_year;
+      el('cDayHours').textContent = m.constants.day_hours;
+      el('cMonth').textContent = m.reference_month ? m.reference_month.label : 'current';
+      return loadScenarios();
+    }).catch(function(e){
+      msg(e.message === 'capability_forbidden'
+        ? 'You do not have the finance permission for this screen.' : e.message, 'bad');
+    });
+  }
+
+  function loadScenarios(){
+    return api('/scenarios').then(function(list){
+      SCENARIOS = list;
+      var opts = list.map(function(s){
+        return '<option value="'+s.id+'">'+esc(s.name)+(s.is_baseline?' (live fees)':'')+'</option>';
+      }).join('');
+      el('scenarioSel').innerHTML = opts;
+      el('cmpA').innerHTML = opts;
+      el('cmpB').innerHTML = opts;
+      var base = list.filter(function(s){ return s.is_baseline; })[0];
+      var other = list.filter(function(s){ return !s.is_baseline; })[0];
+      if (base) el('cmpA').value = base.id;
+      if (other) el('cmpB').value = other.id;
+      // Today's rates, for the "now £x" under every cell.
+      var liveP = base ? api('/scenarios/' + base.id).then(function(s){
+        LIVE = {};
+        BANDS.forEach(function(b){ DAYS.forEach(function(d){
+          var r = lookup(s.rates, b, d); if (r) LIVE[rk(b,d)] = Number(r.day_rate_pence);
+        }); });
+        BANDS.forEach(function(b){ LIVE['meal|'+b] = mealOf(s.rates, b); });
+      }) : Promise.resolve();
+      var pick = other || base || list[0];
+      return liveP.then(function(){
+        if (pick) { el('scenarioSel').value = pick.id; return selectScenario(pick.id); }
+      });
+    });
+  }
+
+  // Same lookup as the server: a band-wide rate, else one an older grid saved against a room.
+  function lookup(rates, band, days){
+    var i, r, fallback = null;
+    for (i = 0; i < rates.length; i++){
+      r = rates[i];
+      if (r.age_band !== band) continue;
+      if (r.room_id == null && Number(r.days_per_week) === days) return r;
+    }
+    for (i = 0; i < rates.length; i++){
+      r = rates[i];
+      if (r.age_band === band && r.room_id == null && r.days_per_week == null) return r;
+    }
+    for (i = 0; i < rates.length; i++){
+      r = rates[i];
+      if (r.age_band === band && r.room_id != null && (Number(r.days_per_week) === days || r.days_per_week == null)){
+        if (!fallback || (fallback.days_per_week == null && r.days_per_week != null)) fallback = r;
+      }
+    }
+    return fallback;
+  }
+  function mealOf(rates, band){
+    for (var i = 0; i < rates.length; i++){
+      if (rates[i].age_band === band && rates[i].meal_charge_weekly_pence != null) return Number(rates[i].meal_charge_weekly_pence);
+    }
+    return null;
+  }
+
+  function selectScenario(id){
+    return api('/scenarios/' + id).then(function(s){
+      CURRENT = s;
+      // Normalise to one rate per band and day — what the grid edits and what Save writes.
+      RATES = [];
+      BANDS.forEach(function(b){
+        var meal = mealOf(s.rates, b);
+        DAYS.forEach(function(d){
+          var r = lookup(s.rates, b, d);
+          if (r) RATES.push({ room_id:null, age_band:b, days_per_week:d,
+                              day_rate_pence:Number(r.day_rate_pence), meal_charge_weekly_pence: meal });
+        });
+      });
+      SAVED = {};
+      RATES.forEach(function(r){ SAVED[rk(r.age_band, r.days_per_week)] = r.day_rate_pence; });
+      BANDS.forEach(function(b){ SAVED['meal|'+b] = mealOf(RATES, b); });
+      el('btnDelete').disabled = !!s.is_baseline;
+      el('btnSave').disabled = !!s.is_baseline;
+      el('btnSave').title = s.is_baseline ? 'This is the live fee schedule — Duplicate it to keep changes' : '';
+      renderGrid();
+      simulate();
+      renderPaper();
+    });
+  }
+
+  // ── the grid ──────────────────────────────────────────────────────────
+  function findRate(band, days){
+    for (var i=0;i<RATES.length;i++){
+      var r = RATES[i];
+      if (r.age_band === band && r.days_per_week === days) return r;
+    }
+    return null;
+  }
+  function countIn(band, days){
+    if (!SIM) return null;
+    var n = 0;
+    SIM.children.forEach(function(c){ if (c.band === band && c.days_per_week === days) n++; });
+    return n;
+  }
+
+  function renderGrid(){
+    el('rateGrid').querySelector('thead').innerHTML = '<tr><th>Fee band</th>' +
+      DAYS.map(function(d){ return '<th class="c">'+d+' day'+(d>1?'s':'')+'</th>'; }).join('') +
+      '<th class="c" title="The weekly consumables rate a funded child pays, for '+(META ? META.constants.meal_hours_basis : 21.92)+' funded hours">Consumables / wk</th>' +
+      '<th class="c">Whole band</th></tr>';
+    var rows = BANDS.map(function(b){
+      var tds = DAYS.map(function(d){ return cellHtml(b, d); }).join('');
+      var meal = mealOf(RATES, b);
+      var mealTd = b === 'under_2'
+        ? '<td><div class="na" title="The invoice engine charges no consumables for under 2s">none</div></td>'
+        : '<td class="c"><div class="stepper">' +
+            '<input class="rate meal'+(SAVED['meal|'+b] !== meal ? ' changed' : '')+'" data-band="'+b+'" value="'+(meal == null ? '' : (meal/100).toFixed(2))+'"' +
+            ' inputmode="decimal" aria-label="Consumables per week, '+esc(bandLabel(b))+'"></div>' +
+            '<div class="cellnote">now <b>'+(LIVE['meal|'+b] == null ? '£0.00' : gbp(LIVE['meal|'+b]))+'</b></div></td>';
+      return '<tr><td class="bandcell">'+esc(bandLabel(b))+'</td>' + tds + mealTd +
+        '<td class="c"><div class="stepper">' +
+          '<button class="step" data-rowstep="-100" data-band="'+b+'" title="Take £1 off every '+esc(bandLabel(b))+' rate">−</button>' +
+          '<button class="step" data-rowstep="100" data-band="'+b+'" title="Add £1 to every '+esc(bandLabel(b))+' rate">+</button>' +
+        '</div><div class="cellnote">£1</div></td></tr>';
+    });
+    el('rateGrid').querySelector('tbody').innerHTML = rows.join('');
+    wireGrid();
+  }
+
+  function cellHtml(band, days){
+    var r = findRate(band, days);
+    var val = r ? (r.day_rate_pence/100).toFixed(2) : '';
+    var k = rk(band, days);
+    var changed = r && SAVED[k] != null && SAVED[k] !== r.day_rate_pence;
+    var n = countIn(band, days);
+    var live = LIVE[k];
+    return '<td class="c"><div class="stepper">' +
+      '<button class="step" data-step="-100" data-band="'+band+'" data-days="'+days+'" aria-label="£1 less">−</button>' +
+      '<input class="rate day'+(changed?' changed':'')+'" data-band="'+band+'" data-days="'+days+'"' +
+      ' value="'+val+'" inputmode="decimal" aria-label="Day rate, '+esc(bandLabel(band))+' '+days+' days">' +
+      '<button class="step" data-step="100" data-band="'+band+'" data-days="'+days+'" aria-label="£1 more">+</button>' +
+      '</div><div class="cellnote" data-note="'+k+'">' + noteText(band, days, live, n) + '</div></td>';
+  }
+  function noteText(band, days, live, n){
+    return 'now <b>' + (live == null ? '—' : gbp0(live)) + '</b>' +
+      (n == null ? '' : ' · ' + (n ? '<b>' + n + '</b> child' + (n === 1 ? '' : 'ren') : 'nobody'));
+  }
+  function refreshNotes(){
+    BANDS.forEach(function(b){ DAYS.forEach(function(d){
+      var node = el('rateGrid').querySelector('[data-note="'+rk(b,d)+'"]');
+      if (node) node.innerHTML = noteText(b, d, LIVE[rk(b,d)], countIn(b, d));
+    }); });
+  }
+
+  function wireGrid(){
+    var grid = el('rateGrid');
+    var inputs = Array.prototype.slice.call(grid.querySelectorAll('input.rate'));
+    inputs.forEach(function(inp){
+      inp.addEventListener('input', function(){ onEdit(inp); });
+      inp.addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter'){
+          ev.preventDefault();
+          // Enter moves DOWN: same column, next row.
+          var td = inp.closest('td'), tr = td.parentNode, col = Array.prototype.indexOf.call(tr.children, td);
+          var next = tr.nextElementSibling && tr.nextElementSibling.children[col];
+          var ni = next && next.querySelector('input.rate');
+          if (ni) { ni.focus(); ni.select(); }
+        }
+      });
+    });
+    Array.prototype.slice.call(grid.querySelectorAll('button[data-step]')).forEach(function(b){
+      b.addEventListener('click', function(){
+        bump(b.getAttribute('data-band'), Number(b.getAttribute('data-days')), Number(b.getAttribute('data-step')));
+        changed();
+      });
+    });
+    Array.prototype.slice.call(grid.querySelectorAll('button[data-rowstep]')).forEach(function(b){
+      b.addEventListener('click', function(){
+        var band = b.getAttribute('data-band'), step = Number(b.getAttribute('data-rowstep'));
+        DAYS.forEach(function(d){ bump(band, d, step); });
+        changed();
+      });
+    });
+  }
+  // Move one cell by `step` pence and show it — no re-render, so focus stays put.
+  function bump(band, days, step){
+    var r = findRate(band, days);
+    if (!r) return;
+    r.day_rate_pence = Math.max(0, r.day_rate_pence + step);
+    var inp = el('rateGrid').querySelector('input.day[data-band="'+band+'"][data-days="'+days+'"]');
+    if (inp){
+      inp.value = (r.day_rate_pence/100).toFixed(2);
+      var k = rk(band, days);
+      inp.classList.toggle('changed', SAVED[k] != null && SAVED[k] !== r.day_rate_pence);
+    }
+  }
+  function changed(){
+    var dirty = isDirty();
+    el('btnSave').classList.toggle('pulse', dirty && CURRENT && !CURRENT.is_baseline);
+    if (dirty) msg(CURRENT && CURRENT.is_baseline ? 'Trying changes on the live fees — Duplicate to keep them' : 'Unsaved changes', 'busy');
+    clearTimeout(simTimer);
+    simTimer = setTimeout(simulate, 320);
+  }
+  function isDirty(){
+    for (var i = 0; i < RATES.length; i++){
+      var r = RATES[i];
+      if (SAVED[rk(r.age_band, r.days_per_week)] !== r.day_rate_pence) return true;
+    }
+    return BANDS.some(function(b){ return SAVED['meal|'+b] !== mealOf(RATES, b); });
+  }
+
+  function onEdit(inp){
+    var pounds = parseFloat(inp.value);
+    var pence = isNaN(pounds) ? null : Math.round(pounds * 100);
+    var band = inp.getAttribute('data-band');
+    if (inp.classList.contains('meal')){
+      RATES.forEach(function(r){ if (r.age_band === band) r.meal_charge_weekly_pence = pence; });
+      inp.classList.toggle('changed', SAVED['meal|'+band] !== pence);
+    } else {
+      var days = Number(inp.getAttribute('data-days'));
+      var r = findRate(band, days);
+      if (pence == null){
+        if (r) RATES.splice(RATES.indexOf(r), 1);
+      } else if (r){
+        r.day_rate_pence = pence;
+      } else {
+        RATES.push({ room_id:null, age_band:band, days_per_week:days, day_rate_pence:pence,
+                     meal_charge_weekly_pence: mealOf(RATES, band) });
+      }
+      var k = rk(band, days);
+      inp.classList.toggle('changed', SAVED[k] != null && SAVED[k] !== pence);
+    }
+    changed();
+  }
+
+  // ── simulate ──────────────────────────────────────────────────────────
+  function simulate(){
+    if (!RATES.length){ el('tRevenue').textContent = '—'; return; }
+    var seq = ++simSeq;
+    if (!isDirty()) msg('Recalculating…', 'busy');
+    api('/simulate', { method:'POST', body:{ rates: RATES } }).then(function(r){
+      if (seq !== simSeq) return;            // a newer edit is already on its way
+      if (!isDirty()) msg('');
+      else msg(CURRENT && CURRENT.is_baseline ? 'Trying changes on the live fees — Duplicate to keep them' : 'Unsaved changes', 'busy');
+      SIM = r;
+      renderTiles(r);
+      renderCheck(r, el('gCheck'));
+      renderMakeup(r);
+      refreshNotes();
+      renderGroups(r, 'groups', 'unpriced', PER, OPEN, OPEN_KID, 'Now', 'New');
+    }).catch(function(e){ msg(e.message, 'bad'); });
+  }
+
+  function renderTiles(r){
+    var t = r.totals;
+    el('tRevenue').innerHTML = gbp0(t.a_monthly_pence) + ' <span class="flat">→</span> ' + gbp0(t.b_monthly_pence);
+    el('tRevenueSub').textContent = t.children_priced + ' children · a year ' +
+      gbp0(t.a_annual_pence) + ' → ' + gbp0(t.b_annual_pence) +
+      (t.children_unpriced ? ' · ' + t.children_unpriced + ' not priced (see the bottom of the list)' : '');
+    var c = el('tChange');
+    c.textContent = signed(t.change_monthly_pence) + ' a month';
+    c.className = 'tv ' + cls(t.change_monthly_pence);
+    el('tChangeSub').textContent = pct(t.change_pct) + ' · ' + signed(t.change_annual_pence) + ' a year';
+    var f = el('tFamily');
+    f.innerHTML = '<span class="up">' + t.paying_more + ' pay more</span> · <span class="down">' + t.paying_less + ' less</span>';
+    f.className = 'tv';
+    var worst = (r.children || []).filter(function(x){ return x.child_id === t.worst_child_id; })[0];
+    el('tFamilySub').textContent = (t.unchanged ? t.unchanged + ' unchanged · ' : '') +
+      'average ' + signed(t.avg_change_monthly_pence) + ' a month' +
+      (t.worst_change_monthly_pence > 0
+        ? ' · biggest rise ' + signed(t.worst_change_monthly_pence) + (worst ? ' (' + who(worst) + ')' : '')
+        : '');
+  }
+
+  function renderCheck(r, node){
+    var k = r.totals.invoice_check;
+    if (!k){ node.style.display = 'none'; return; }
+    node.style.display = '';
+    if (k.children_with_invoice && !k.differ){
+      node.className = 'check ok';
+      node.innerHTML = '✓ <b>"Now" matches the ' + esc(k.month_label) + ' invoices to the penny</b> for all ' +
+        k.children_with_invoice + ' children who have one — ' + gbp(k.invoiced_pence) + ' invoiced, ' +
+        gbp(k.engine_pence) + ' recalculated.' +
+        (k.no_invoice ? ' ' + k.no_invoice + ' child' + (k.no_invoice === 1 ? ' has' : 'ren have') + ' no ' + esc(k.month_label) + ' invoice yet.' : '');
+    } else {
+      node.className = 'check bad';
+      node.innerHTML = '⚠ <b>' + k.differ + ' of ' + k.children_with_invoice + ' children</b> differ from their ' +
+        esc(k.month_label) + ' invoice — marked ⚠ in the list below. Invoiced ' + gbp(k.invoiced_pence) +
+        ', recalculated today ' + gbp(k.engine_pence) + '. A difference means something changed since the invoice ' +
+        '(days, funding, a discount) or the invoice was edited by hand.' +
+        (k.no_invoice ? ' ' + k.no_invoice + ' with no invoice.' : '');
+    }
+  }
+
+  function renderMakeup(r){
+    var a = r.totals.a_breakdown, b = r.totals.b_breakdown;
+    el('makeup').querySelector('thead').innerHTML =
+      '<tr><th></th><th class="num">Now a month</th><th class="num">New a month</th><th class="num">Change</th>' +
+      '<th class="num">Now a year</th><th class="num">New a year</th></tr>';
+    function line(label, x, y, bold){
+      var o = bold ? '<b>' : '', c = bold ? '</b>' : '';
+      return '<tr><td>'+o+label+c+'</td><td class="num">'+o+gbp(x)+c+'</td><td class="num">'+o+gbp(y)+c+'</td>' +
+        '<td class="num '+cls(y - x)+'">'+o+signed(y - x)+c+'</td>' +
+        '<td class="num">'+o+gbp(x*12)+c+'</td><td class="num">'+o+gbp(y*12)+c+'</td></tr>';
+    }
+    el('makeup').querySelector('tbody').innerHTML =
+      line('Childcare (booked days × day rate)', a.childcare_pence, b.childcare_pence) +
+      line('Funded hours (taken off at £0)', a.funding_pence, b.funding_pence) +
+      line('Consumables', a.consumables_pence, b.consumables_pence) +
+      line('Standing discounts', a.discount_pence, b.discount_pence) +
+      line('Total billed', r.totals.a_monthly_pence, r.totals.b_monthly_pence, true);
+  }
+
+  // ── the grouped list (shared by the grid and Compare) ─────────────────
+  function who(c){
+    if (!SHOW_NAMES || !c.name) return 'child #' + c.child_id;
+    return c.name;
+  }
+  function familyText(c){
+    if (!SHOW_NAMES) return '';
+    return (c.family || 'no parent name on file') + (c.family_ref ? ' · ' + c.family_ref : '');
+  }
+  function groupLabel(g){
+    return (g.funded ? 'Funded' : 'Unfunded') + ' · ' + g.days_per_week + ' day' + (g.days_per_week > 1 ? 's' : '') + ' a week';
+  }
+  function rateList(list){
+    return list.map(function(p){ return gbp0(p); }).join(' / ');
+  }
+
+  function renderGroups(r, tableId, unpricedId, period, open, openKid, aLabel, bLabel){
+    var tbl = el(tableId);
+    tbl.querySelector('thead').innerHTML =
+      '<tr><th>Group / child</th><th>Family</th><th>Room · days</th><th class="num">Funded h/wk</th>' +
+      '<th class="num">Day rate</th>' +
+      '<th class="num">'+esc(aLabel)+' '+perWord(period)+'</th><th class="num">'+esc(bLabel)+' '+perWord(period)+'</th>' +
+      '<th class="num">Change</th><th class="num">%</th><th>Invoice check</th></tr>';
+    var kids = {};
+    (r.children || []).forEach(function(c){ kids[c.child_id] = c; });
+    var html = [], lastBand = null;
+    (r.groups || []).forEach(function(g){
+      if (g.band !== lastBand){
+        lastBand = g.band;
+        var bandKids = (r.children || []).filter(function(c){ return c.band === g.band; });
+        var bA = 0, bB = 0;
+        bandKids.forEach(function(c){ bA += c.a.total_pence; bB += c.b.total_pence; });
+        html.push('<tr class="bandhead"><td colspan="5">' + esc(bandLabel(g.band)) + ' — ' + bandKids.length + ' children</td>' +
+          '<td class="num">' + gbp(per(bA, period)) + '</td><td class="num">' + gbp(per(bB, period)) + '</td>' +
+          '<td class="num ' + cls(bB - bA) + '">' + signed(per(bB - bA, period)) + '</td>' +
+          '<td class="num ' + cls(bB - bA) + '">' + (bA ? pct(Math.round((bB - bA) / bA * 10000) / 100) : '—') + '</td><td></td></tr>');
+      }
+      var isOpen = !!open[g.key];
+      var perA = per(g.a_per_child_pence, period), perB = per(g.b_per_child_pence, period);
+      html.push('<tr class="grp' + (g.change_pence > 0 ? ' pays-more' : '') + '" data-gkey="' + esc(g.key) + '">' +
+        '<td><span class="tw">' + (isOpen ? '▾' : '▸') + '</span>' + esc(groupLabel(g)) + '</td>' +
+        '<td>' + g.children + ' child' + (g.children === 1 ? '' : 'ren') + '</td>' +
+        '<td></td><td></td>' +
+        '<td class="num">' + rateList(g.a_rates) + ' → ' + rateList(g.b_rates) + '</td>' +
+        '<td class="num">' + gbp(perA) + '<div class="fam">each</div></td>' +
+        '<td class="num">' + gbp(perB) + '<div class="fam">each</div></td>' +
+        '<td class="num ' + cls(perB - perA) + '">' + signed(perB - perA) + '<div class="fam">each</div></td>' +
+        '<td class="num ' + cls(g.change_pence) + '">' + pct(g.change_pct) + '</td>' +
+        '<td class="fam">' + gbp(per(g.a_total_pence, period)) + ' → ' + gbp(per(g.b_total_pence, period)) + ' in all</td></tr>');
+      g.child_ids.forEach(function(id){
+        var c = kids[id]; if (!c) return;
+        html.push(kidRow(c, period, isOpen, !!openKid[c.child_id], aLabel, bLabel));
+      });
+    });
+    tbl.querySelector('tbody').innerHTML = html.join('') ||
+      '<tr><td colspan="10">No children could be priced with these rates.</td></tr>';
+
+    Array.prototype.slice.call(tbl.querySelectorAll('tr.grp')).forEach(function(tr){
+      tr.addEventListener('click', function(){
+        var k = tr.getAttribute('data-gkey');
+        open[k] = !open[k];
+        renderGroups(r, tableId, unpricedId, period, open, openKid, aLabel, bLabel);
+      });
+    });
+    Array.prototype.slice.call(tbl.querySelectorAll('tr.kid')).forEach(function(tr){
+      tr.addEventListener('click', function(){
+        var id = Number(tr.getAttribute('data-kid'));
+        openKid[id] = !openKid[id];
+        var x = tbl.querySelector('tr.kidx[data-kid="' + id + '"]');
+        if (x) x.classList.toggle('hide', !openKid[id]);
+      });
+    });
+    renderUnpriced(r, el(unpricedId));
+  }
+
+  function kidRow(c, period, visible, expanded, aLabel, bLabel){
+    var a = per(c.a.total_pence, period), b = per(c.b.total_pence, period);
+    var tags = '';
+    if (SHOW_NAMES && c.children_in_family > 1) tags += '<span class="pill" title="Children on the roll billed to the same family">' + c.children_in_family + ' in family</span>';
+    if (c.discounts && c.discounts.length) tags += '<span class="pill green" title="Standing discount, applied now and in the new structure">' + esc(c.discounts.join(', ')) + '</span>';
+    if (c.a.price_overridden) tags += '<span class="pill amber" title="A manager-set price for this month; the new structure prices them at the scenario rate">price override</span>';
+    if (c.floor_applied) tags += '<span class="pill amber" title="Under 2 but in Pre-school, so billed at the 2 year old rate">' + esc(bandShort(c.age_band)) + ' → ' + esc(bandShort(c.band)) + ' rate</span>';
+    if (c.leaves_on) tags += '<span class="pill" title="Leaving date on file">leaves ' + esc(fmtDate(c.leaves_on)) + '</span>';
+    if (c.consumables_opted_out) tags += '<span class="pill">no consumables</span>';
+    var funded = c.funded
+      ? c.funded_hours_week + '<div class="fam">' + esc(c.funding_label || '') + (c.entitlement_hours ? ' · ' + c.entitlement_hours + 'h term-time' : '') + '</div>'
+      : '<span class="flat">—</span>';
+    var inv = c.invoice;
+    var chk = !inv ? '<span class="chk none">no invoice</span>'
+      : inv.matches
+        ? '<span class="chk ok" title="' + esc(inv.invoice_number || '') + ' — the engine reproduces it to the penny">✓ ' + gbp(inv.amount_pence) + (inv.part_month ? ' (part month)' : '') + '</span>'
+        : '<span class="chk bad" title="' + esc(inv.invoice_number || '') + '">⚠ invoiced ' + gbp(inv.amount_pence) + ', recalculated ' + gbp(inv.engine_pence) + '</span>';
+    var main = '<tr class="kid' + (visible ? '' : ' hide') + (c.change_pence > 0 ? ' pays-more' : '') + '" data-kid="' + c.child_id + '" data-gk="' + esc(c.band + '|' + (c.funded ? 'funded' : 'unfunded') + '|' + c.days_per_week) + '">' +
+      '<td class="who"><b>' + esc(who(c)) + '</b>' + tags + '</td>' +
+      '<td class="fam">' + esc(familyText(c)) + '</td>' +
+      '<td>' + esc(c.room || '—') + '<div class="fam">' + esc(c.pattern || (c.days_per_week + ' days')) + '</div></td>' +
+      '<td class="num">' + funded + '</td>' +
+      '<td class="num">' + gbp0(c.a.day_rate_pence) + ' → ' + gbp0(c.b.day_rate_pence) + '</td>' +
+      '<td class="num">' + gbp(a) + '</td>' +
+      '<td class="num">' + gbp(b) + '</td>' +
+      '<td class="num ' + cls(c.change_pence) + '">' + signed(b - a) + '</td>' +
+      '<td class="num ' + cls(c.change_pence) + '">' + pct(c.change_pct) + '</td>' +
+      '<td>' + chk + '</td></tr>';
+    return main + breakdownRow(c, period, visible && expanded, aLabel, bLabel);
+  }
+
+  function breakdownRow(c, period, show, aLabel, bLabel){
+    function l(label, x, y){
+      return '<div>' + label + '</div><div class="r">' + gbp(per(x, period)) + '</div><div class="r">' + gbp(per(y, period)) +
+        '</div><div class="r ' + cls(y - x) + '">' + signed(per(y - x, period)) + '</div>';
+    }
+    var A = c.a, B = c.b;
+    return '<tr class="kidx' + (show ? '' : ' hide') + '" data-kid="' + c.child_id + '"><td colspan="10"><div class="bk">' +
+      '<div class="h">' + esc(who(c)) + ', ' + perWord(period) + '</div><div class="h r">' + esc(aLabel) + '</div><div class="h r">' + esc(bLabel) + '</div><div class="h r">Change</div>' +
+      l(c.days_per_week + ' day' + (c.days_per_week > 1 ? 's' : '') + ' × ' + gbp0(A.day_rate_pence) + ' → ' + gbp0(B.day_rate_pence), A.childcare_pence, B.childcare_pence) +
+      l('Funded hours' + (c.funded ? ' (' + c.funded_hours_week + ' h/wk at £0)' : ''), A.funding_pence, B.funding_pence) +
+      l('Consumables', A.consumables_pence, B.consumables_pence) +
+      l('Discount', A.discount_pence, B.discount_pence) +
+      (A.other_pence || B.other_pence ? l('Other', A.other_pence, B.other_pence) : '') +
+      '<div class="t">Total</div><div class="r t">' + gbp(per(A.total_pence, period)) + '</div><div class="r t">' + gbp(per(B.total_pence, period)) +
+      '</div><div class="r t ' + cls(c.change_pence) + '">' + signed(per(B.total_pence - A.total_pence, period)) + '</div>' +
+      '</div></td></tr>';
+  }
+
+  function renderUnpriced(r, node){
+    var u = r.unpriced || [];
+    if (!u.length){ node.innerHTML = ''; return; }
+    node.innerHTML = '<h3 style="margin:16px 0 4px;font-size:.9rem">Not priced (' + u.length + ')</h3>' +
+      '<div class="hint">On the roll, but with nothing to price yet — usually a starter with no booking pattern.</div>' +
+      '<table><thead><tr><th>Child</th><th>Family</th><th>Band</th><th>Why</th></tr></thead><tbody>' +
+      u.map(function(c){
+        return '<tr><td><b>' + esc(who(c)) + '</b>' + (c.starts_on ? '<span class="pill">starts ' + esc(fmtDate(c.starts_on)) + '</span>' : '') + '</td>' +
+          '<td class="fam">' + esc(familyText(c)) + '</td>' +
+          '<td>' + esc(bandLabel(c.band)) + '</td><td>' + esc(c.reason) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function setAll(open, r, val){
+    (r && r.groups || []).forEach(function(g){ open[g.key] = val; });
+  }
+
+  // ── compare ───────────────────────────────────────────────────────────
+  function runCompare(){
+    var a = Number(el('cmpA').value), b = Number(el('cmpB').value);
+    if (!a || !b) return;
+    msg('Comparing…', 'busy');
+    api('/compare', { method:'POST', body:{ a_id:a, b_id:b } }).then(function(r){
+      msg('');
+      CMP = r;
+      el('cmpTiles').style.display = '';
+      el('cmpRatesWrap').style.display = '';
+      el('cmpCellsWrap').style.display = '';
+      var t = r.totals;
+      var rv = el('cRev');
+      rv.textContent = signed(t.change_monthly_pence);
+      rv.className = 'tv ' + cls(t.change_monthly_pence);
+      el('cRevSub').textContent = pct(t.change_pct) + ' · ' + gbp0(t.a_monthly_pence) + ' → ' + gbp0(t.b_monthly_pence) +
+        ' a month · ' + signed(t.change_annual_pence) + ' a year';
+      el('cUp').textContent = t.paying_more + ' of ' + t.children_priced;
+      el('cUp').className = 'tv ' + (t.paying_more ? 'up' : 'flat');
+      el('cUpSub').textContent = t.paying_less + ' pay less · ' + t.unchanged + ' unchanged · average ' +
+        signed(t.avg_change_monthly_pence) + ' a month';
+      var worst = r.children.filter(function(x){ return x.child_id === t.worst_child_id; })[0];
+      el('cWorst').textContent = t.worst_change_monthly_pence > 0 ? signed(t.worst_change_monthly_pence) + ' a month' : 'Nobody pays more';
+      el('cWorst').className = 'tv ' + cls(t.worst_change_monthly_pence);
+      el('cWorstSub').textContent = worst && t.worst_change_monthly_pence > 0
+        ? who(worst) + ' · ' + bandLabel(worst.band) + ' · ' + worst.days_per_week + ' days · ' +
+          (worst.funded ? 'funded' : 'unfunded') + ' — ' + gbp(worst.a.total_pence) + ' → ' + gbp(worst.b.total_pence)
+        : '';
+
+      el('cmpRates').querySelector('thead').innerHTML =
+        '<tr><th>Fee band</th><th class="num">Days</th><th class="num">Children</th>' +
+        '<th class="num" title="'+esc(r.a.name)+'">'+esc(shortName(r.a))+'</th><th class="num" title="'+esc(r.b.name)+'">'+esc(shortName(r.b))+'</th>' +
+        '<th class="num">Change</th><th class="num">%</th></tr>';
+      el('cmpRates').querySelector('tbody').innerHTML = r.rates.map(function(x){
+        return '<tr'+(x.change_pence > 0 ? ' class="pays-more"' : '')+'>' +
+          '<td>'+esc(bandLabel(x.age_band))+'</td>' +
+          '<td class="num">'+x.days_per_week+'</td>' +
+          '<td class="num">'+(x.children || '<span class="flat">0</span>')+'</td>' +
+          '<td class="num">'+(x.a_pence == null ? '—' : gbp(x.a_pence))+'</td>' +
+          '<td class="num">'+(x.b_pence == null ? '—' : gbp(x.b_pence))+'</td>' +
+          '<td class="num '+cls(x.change_pence)+'">'+(x.change_pence == null ? '—' : signed(x.change_pence))+'</td>' +
+          '<td class="num '+cls(x.change_pence)+'">'+pct(x.change_pct)+'</td>' +
+        '</tr>';
+      }).join('');
+      renderCompareGroups();
+    }).catch(function(e){ msg(e.message, 'bad'); });
+  }
+  // Column headings: "Now" for the live fees, else the scenario's name, kept short.
+  function shortName(s){
+    if (s.is_baseline) return 'Now';
+    return s.name.length > 22 ? s.name.slice(0, 20) + '…' : s.name;
+  }
+  function renderCompareGroups(){
+    if (!CMP) return;
+    renderGroups(CMP, 'cmpGroups', 'cmpUnpriced', PER_C, OPEN_C, OPEN_KID_C, shortName(CMP.a), shortName(CMP.b));
+  }
+
+  // ── board paper (anonymous) ───────────────────────────────────────────
+  function renderPaper(){
+    if (!CURRENT) return;
+    api('/scenarios/' + CURRENT.id + '/board-paper').then(function(p){
+      var t = p.totals;
+      var h = '<h2>Fee structure: ' + esc(p.scenario.name) + '</h2>' +
+        '<div class="meta">' +
+          (p.scenario.effective_from ? 'Effective from ' + esc(fmtDate(p.scenario.effective_from)) + ' · ' : '') +
+          'Compared against the live fee schedule · children, bookings and funding as at ' + esc(p.reference_month.label) + ' · ' +
+          'a month is ' + p.basis.weeks_per_year + ' weeks ÷ 12, a ' + p.basis.day_hours + '-hour day' +
+        '</div>';
+
+      if (p.scenario.notes) h += '<section><p>' + esc(p.scenario.notes) + '</p></section>';
+
+      h += '<section><h4>Rate table</h4><table><thead><tr>' +
+        '<th>Fee band</th><th class="num">Days</th>' +
+        '<th class="num">Proposed</th><th class="num">Current</th><th class="num">Change</th><th class="num">%</th>' +
+        '</tr></thead><tbody>' +
+        p.rates.map(function(x){
+          return '<tr><td>'+esc(bandLabel(x.age_band))+'</td>' +
+            '<td class="num">'+x.days_per_week+'</td>' +
+            '<td class="num">'+gbp(x.day_rate_pence)+'</td>' +
+            '<td class="num">'+(x.baseline_pence == null ? '—' : gbp(x.baseline_pence))+'</td>' +
+            '<td class="num '+cls(x.change_pence)+'">'+(x.change_pence == null ? '—' : signed(x.change_pence))+'</td>' +
+            '<td class="num '+cls(x.change_pence)+'">'+pct(x.change_pct)+'</td></tr>';
+        }).join('') + '</tbody></table></section>';
+
+      h += '<section><h4>Totals</h4><table><thead><tr><th></th><th class="num">A month</th><th class="num">A year</th></tr></thead><tbody>' +
+        prow('Current structure', gbp(t.a_monthly_pence), gbp(t.a_annual_pence)) +
+        prow('This structure', gbp(t.b_monthly_pence), gbp(t.b_annual_pence)) +
+        prow('<b>Change</b>', '<b class="'+cls(t.change_monthly_pence)+'">' + signed(t.change_monthly_pence) + '</b>',
+             '<b class="'+cls(t.change_monthly_pence)+'">' + signed(t.change_annual_pence) + ' (' + pct(t.change_pct) + ')</b>') +
+        prow('Children priced', t.children_priced, '') +
+        '</tbody></table></section>';
+
+      h += '<section><h4>Effect on families</h4><table><tbody>' +
+        prow('Paying more', t.paying_more, '') +
+        prow('Paying less', t.paying_less, '') +
+        prow('Unchanged', t.unchanged, '') +
+        prow('Average change a month', signed(t.avg_change_monthly_pence), '') +
+        prow('Largest single increase a month', signed(t.worst_change_monthly_pence), '') +
+        '</tbody></table></section>';
+
+      h += '<section><h4>By band, funding and days</h4><table><thead><tr>' +
+        '<th>Fee band</th><th>Funding</th><th class="num">Days</th><th class="num">Children</th>' +
+        '<th class="num">Now / month each</th><th class="num">New / month each</th><th class="num">Change</th></tr></thead><tbody>' +
+        p.groups.map(function(g){
+          var d = g.b_per_child_pence - g.a_per_child_pence;
+          return '<tr><td>'+esc(bandLabel(g.band))+'</td><td>'+(g.funded ? 'Funded' : 'Unfunded')+'</td>' +
+            '<td class="num">'+g.days_per_week+'</td><td class="num">'+g.children+'</td>' +
+            '<td class="num">'+gbp(g.a_per_child_pence)+'</td><td class="num">'+gbp(g.b_per_child_pence)+'</td>' +
+            '<td class="num '+cls(d)+'">'+signed(d)+' ('+pct(g.change_pct)+')</td></tr>';
+        }).join('') + '</tbody></table></section>';
+
+      h += '<section><h4>Note</h4><p style="font-size:.8rem;color:var(--c-text-muted)">' +
+        'Every child on the roll is priced through the same engine that produces the nursery\'s invoices: booked days at ' +
+        'the day rate for their band, spread evenly as ' + p.basis.weeks_per_year + ' weeks ÷ 12; funded hours taken off at £0; ' +
+        'consumables and standing discounts as invoiced. "Current" reproduces the ' + esc(p.reference_month.label) +
+        ' invoices. No individual child is identified in this paper.</p></section>';
+      el('paper').innerHTML = h;
+    }).catch(function(e){ el('paper').textContent = e.message; });
+  }
+  function prow(k, v, v2){ return '<tr><td>'+k+'</td><td class="num">'+v+'</td><td class="num">'+(v2 == null ? '' : v2)+'</td></tr>'; }
+
+  // ── actions ───────────────────────────────────────────────────────────
+  function save(){
+    if (!CURRENT || CURRENT.is_baseline) return;
+    msg('Saving…', 'busy');
+    api('/scenarios/' + CURRENT.id, { method:'PUT', body:{ rates: RATES } }).then(function(){
+      el('btnSave').classList.remove('pulse');
+      return selectScenario(CURRENT.id);
+    }).then(function(){ msg('Saved', 'ok'); }).catch(function(e){ msg(e.message, 'bad'); });
+  }
+
+  document.addEventListener('wren:ready', boot);
+
+  el('scenarioSel').addEventListener('change', function(){
+    if (isDirty() && !confirm('You have unsaved rate changes. Switch scenario and lose them?')) {
+      el('scenarioSel').value = CURRENT.id; return;
+    }
+    selectScenario(Number(this.value));
+  });
+  el('btnSave').addEventListener('click', save);
+  el('btnReset').addEventListener('click', function(){ if (CURRENT) selectScenario(CURRENT.id).then(function(){ msg(''); }); });
+  el('allPlus').addEventListener('click', function(){
+    BANDS.forEach(function(b){ DAYS.forEach(function(d){ bump(b, d, 100); }); }); changed();
+  });
+  el('allMinus').addEventListener('click', function(){
+    BANDS.forEach(function(b){ DAYS.forEach(function(d){ bump(b, d, -100); }); }); changed();
+  });
+  el('btnCompare').addEventListener('click', runCompare);
+  el('btnPrint').addEventListener('click', function(){ window.print(); });
+
+  function wireSeg(id, set){
+    Array.prototype.slice.call(el(id).querySelectorAll('button')).forEach(function(b){
+      b.addEventListener('click', function(){
+        el(id).querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+        b.classList.add('on');
+        set(b.getAttribute('data-per'));
+      });
+    });
+  }
+  wireSeg('perSeg', function(p){ PER = p; if (SIM) renderGroups(SIM, 'groups', 'unpriced', PER, OPEN, OPEN_KID, 'Now', 'New'); });
+  wireSeg('perSegC', function(p){ PER_C = p; renderCompareGroups(); });
+  el('showNames').addEventListener('change', function(){
+    SHOW_NAMES = this.checked;
+    try { localStorage.setItem('feeModellerNames', SHOW_NAMES ? 'on' : 'off'); } catch (_) {}
+    if (SIM) { renderTiles(SIM); renderGroups(SIM, 'groups', 'unpriced', PER, OPEN, OPEN_KID, 'Now', 'New'); }
+    renderCompareGroups();
+  });
+  el('openAll').addEventListener('click', function(){ setAll(OPEN, SIM, true); if (SIM) renderGroups(SIM, 'groups', 'unpriced', PER, OPEN, OPEN_KID, 'Now', 'New'); });
+  el('closeAll').addEventListener('click', function(){ setAll(OPEN, SIM, false); if (SIM) renderGroups(SIM, 'groups', 'unpriced', PER, OPEN, OPEN_KID, 'Now', 'New'); });
+  el('openAllC').addEventListener('click', function(){ setAll(OPEN_C, CMP, true); renderCompareGroups(); });
+  el('closeAllC').addEventListener('click', function(){ setAll(OPEN_C, CMP, false); renderCompareGroups(); });
+
+  el('btnNew').addEventListener('click', function(){
+    var name = prompt('Name for the new scenario', 'April 2027 structure');
+    if (!name) return;
+    api('/scenarios', { method:'POST', body:{ name:name, copy_from: CURRENT ? CURRENT.id : null } })
+      .then(function(s){ return loadScenarios().then(function(){
+        el('scenarioSel').value = s.id; return selectScenario(s.id); }); })
+      .then(function(){ msg('Created', 'ok'); })
+      .catch(function(e){ msg(e.message, 'bad'); });
+  });
+
+  el('btnDup').addEventListener('click', function(){
+    if (!CURRENT) return;
+    var name = prompt('Name for the copy', CURRENT.name + ' (copy)');
+    if (!name) return;
+    // The copy takes the rates as they are on screen, unsaved changes included.
+    api('/scenarios', { method:'POST', body:{ name:name, rates: RATES, copy_from: CURRENT.id } })
+      .then(function(s){ return loadScenarios().then(function(){
+        el('scenarioSel').value = s.id; return selectScenario(s.id); }); })
+      .then(function(){ msg('Duplicated', 'ok'); })
+      .catch(function(e){ msg(e.message, 'bad'); });
+  });
+
+  el('btnRename').addEventListener('click', function(){
+    if (!CURRENT) return;
+    var name = prompt('Rename scenario', CURRENT.name);
+    if (!name) return;
+    api('/scenarios/' + CURRENT.id, { method:'PUT', body:{ name:name } })
+      .then(function(){ return loadScenarios(); })
+      .then(function(){ msg('Renamed', 'ok'); })
+      .catch(function(e){ msg(e.message, 'bad'); });
+  });
+
+  el('btnDelete').addEventListener('click', function(){
+    if (!CURRENT || CURRENT.is_baseline) return;
+    if (!confirm('Delete "' + CURRENT.name + '"? This removes the scenario only — no live fee is touched.')) return;
+    api('/scenarios/' + CURRENT.id, { method:'DELETE' })
+      .then(function(){ CURRENT = null; return loadScenarios(); })
+      .then(function(){ msg('Deleted', 'ok'); })
+      .catch(function(e){ msg(e.message, 'bad'); });
+  });
+
+  el('btnCsv').addEventListener('click', function(){
+    if (!CURRENT) return;
+    fetch(API + '/scenarios/' + CURRENT.id + '/export.csv', {
+      headers: { 'Authorization': 'Bearer ' + TOKEN() }
+    }).then(function(r){ return r.blob(); }).then(function(b){
+      var u = URL.createObjectURL(b), a = document.createElement('a');
+      a.href = u; a.download = 'fee-scenario-' + CURRENT.id + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
+    }).catch(function(e){ msg(e.message, 'bad'); });
+  });
+
+  Array.prototype.slice.call(document.querySelectorAll('.fm-tab')).forEach(function(t){
+    t.addEventListener('click', function(){
+      document.querySelectorAll('.fm-tab').forEach(function(x){ x.classList.remove('active'); });
+      document.querySelectorAll('.fm-panel').forEach(function(x){ x.classList.remove('active'); });
+      t.classList.add('active');
+      el('panel-' + t.getAttribute('data-panel')).classList.add('active');
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,420 @@
+<div class="v2-section" data-section="action-plans">
+
+  <nav class="wren-tab-bar" role="tablist" aria-label="Action Plans tabs">
+    <div class="tab-bar-track">
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="management"          id="tab-ap-mgmt"    aria-controls="panel-ap-mgmt">Management</button>
+      <button class="wren-tab v2-eyfs-only" role="tab" aria-selected="false" tabindex="-1" data-tab="baby-room"            id="tab-ap-baby"    aria-controls="panel-ap-baby">Baby Room</button>
+      <button class="wren-tab v2-eyfs-only" role="tab" aria-selected="false" tabindex="-1" data-tab="pre-school"           id="tab-ap-ps"      aria-controls="panel-ap-ps">Pre-school</button>
+      <button class="wren-tab v2-school-only" role="tab" aria-selected="false" tabindex="-1" data-tab="class-plans"        id="tab-ap-class"   aria-controls="panel-ap-class">Class Plans</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="shared-with-parents"  id="tab-ap-parents" aria-controls="panel-ap-parents">Shared with Parents</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+  <div class="wren-tab-panels">
+
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ap-mgmt" data-tab="management" aria-labelledby="tab-ap-mgmt">
+      <div class="v2-page-header">
+        <h2 class="page-title" style="font-size:1.1rem;margin:0">Management Action Plans</h2>
+        <div style="display:flex;gap:8px">
+          <select class="v2-sort-select" id="ap-mgmt-filter" aria-label="Filter by status">
+            <option value="">All</option>
+            <option value="open">Open</option>
+            <option value="completed">Completed</option>
+            <option value="overdue">Overdue</option>
+          </select>
+          <button class="btn btn-sm btn-primary" id="ap-new-btn">+ New plan</button>
+        </div>
+      </div>
+      <div id="ap-mgmt-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-bottom:16px"></div>
+      <div id="ap-mgmt-list">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ap-baby" data-tab="baby-room" aria-labelledby="tab-ap-baby" hidden>
+      <div class="v2-page-header">
+        <h2 class="page-title" style="font-size:1.1rem;margin:0">Baby Room Action Plans</h2>
+        <button class="btn btn-sm btn-primary" onclick="window._apCreateNew('baby-room')">+ New plan</button>
+      </div>
+      <div id="ap-baby-list">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ap-ps" data-tab="pre-school" aria-labelledby="tab-ap-ps" hidden>
+      <div class="v2-page-header">
+        <h2 class="page-title" style="font-size:1.1rem;margin:0">Pre-school Action Plans</h2>
+        <button class="btn btn-sm btn-primary" onclick="window._apCreateNew('pre-school')">+ New plan</button>
+      </div>
+      <div id="ap-ps-list">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ap-class" data-tab="class-plans" aria-labelledby="tab-ap-class" hidden>
+      <div class="v2-page-header">
+        <h2 class="page-title" style="font-size:1.1rem;margin:0">Class Action Plans</h2>
+        <button class="btn btn-sm btn-primary" id="ap-class-new-btn">+ New plan</button>
+      </div>
+      <div id="ap-class-list">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+    <div class="wren-tab-panel" role="tabpanel" id="panel-ap-parents" data-tab="shared-with-parents" aria-labelledby="tab-ap-parents" hidden>
+      <div class="v2-page-header">
+        <h2 class="page-title" style="font-size:1.1rem;margin:0">Shared with Parents</h2>
+        <span style="font-size:.8rem;color:var(--c-muted)">Plans flagged for parent portal visibility</span>
+      </div>
+      <div id="ap-parents-list">
+        <div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Create/edit plan modal (hidden) -->
+  <div id="ap-modal" style="display:none"></div>
+</div>
+
+<script>
+// Edition-aware tab visibility
+(function() {
+  const ed = window.WREN_EDITION || 'eyfs';
+  const isSchool = ed === 'primary' || ed === 'secondary';
+  document.querySelectorAll('.v2-eyfs-only').forEach(el => { if (isSchool) el.style.display = 'none'; });
+  document.querySelectorAll('.v2-school-only').forEach(el => { if (!isSchool) el.style.display = 'none'; });
+})();
+
+(function() {
+  'use strict';
+
+  let _allPlans = [];
+  let _plansLoaded = false;
+
+  const PRIORITY_BADGE = {
+    urgent: 'badge-red', high: 'badge-yellow', medium: 'badge-blue', low: 'badge-green'
+  };
+  const STATUS_BADGE = {
+    open: 'badge-blue', in_progress: 'badge-yellow', completed: 'badge-green',
+    cancelled: 'badge-red', overdue: 'badge-red'
+  };
+
+  function _effectiveStatus(p) {
+    if (p.status === 'completed' || p.status === 'cancelled') return p.status;
+    if (p.target_date && new Date(p.target_date) < new Date() && p.status !== 'completed') return 'overdue';
+    return p.status || 'open';
+  }
+
+  function _planCard(p, showScope) {
+    const status = _effectiveStatus(p);
+    const isOverdue = status === 'overdue';
+    const items = Array.isArray(p.actions) ? p.actions : (typeof p.actions === 'string' ? [] : []);
+    const done = items.filter(i => i.completed || i.done).length;
+    const progress = items.length > 0 ? Math.round((done / items.length) * 100) : (p.status === 'completed' ? 100 : 0);
+
+    return `<div class="v2-card ap-card${isOverdue?' ap-card-overdue':''}" style="cursor:pointer;margin-bottom:12px" onclick="window._apOpenDrawer(${p.id})">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;margin-bottom:4px;color:var(--c-text)">${p.title}</div>
+          ${p.owner_name ? `<div style="font-size:.8rem;color:var(--c-muted)">Owner: ${p.owner_name}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0">
+          <span class="badge ${PRIORITY_BADGE[p.priority]||'badge-blue'}" style="font-size:.7rem">${p.priority||'medium'}</span>
+          <span class="badge ${STATUS_BADGE[status]||'badge-blue'}" style="font-size:.7rem">${status}</span>
+        </div>
+      </div>
+      ${p.description ? `<div style="font-size:.85rem;color:var(--c-muted);margin-bottom:8px;line-height:1.4">${p.description}</div>` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="flex:1;margin-right:12px">
+          <div style="height:4px;background:var(--c-border);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${progress}%;background:${isOverdue?'#ef4444':'#22c55e'};border-radius:2px;transition:width .4s ease"></div>
+          </div>
+          ${items.length ? `<div style="font-size:.7rem;color:var(--c-muted);margin-top:3px">${done}/${items.length} steps</div>` : ''}
+        </div>
+        ${p.target_date ? `<div style="font-size:.75rem;color:${isOverdue?'#ef4444':'var(--c-muted)'}">${isOverdue?'⚠ ':''}${new Date(p.target_date).toLocaleDateString('en-GB')}</div>` : ''}
+      </div>
+      ${showScope && (p.area || p.linked_to) ? `<div style="margin-top:8px"><span class="badge badge-purple" style="font-size:.7rem">${p.area||p.linked_to}</span></div>` : ''}
+      ${p.visible_to_parents ? `<span class="badge badge-green" style="font-size:.7rem;margin-top:6px">Shared with parents</span>` : ''}
+    </div>`;
+  }
+
+  function _emptyState(scope) {
+    const icons = { management: '⭐', 'baby-room': '👶', 'pre-school': '🎨', shared: '👨‍👩‍👧' };
+    return `<div class="tab-coming-soon" style="padding:32px 0">
+      <div class="coming-icon">${icons[scope]||'📋'}</div>
+      <h3>No action plans</h3>
+      <p>Create your first action plan to track improvement targets and share progress with the team.</p>
+    </div>`;
+  }
+
+  function _renderPlanList(el, plans, showScope) {
+    if (!plans.length) { el.innerHTML = _emptyState(''); return; }
+    el.innerHTML = plans.map(p => _planCard(p, showScope)).join('');
+  }
+
+  async function _ensurePlans() {
+    if (_plansLoaded) return;
+    const data = await Wren.api('/api/action-plans');
+    _allPlans = Array.isArray(data) ? data : [];
+    _plansLoaded = true;
+  }
+
+  // ── Management tab ────────────────────────────────────────────────────────────
+
+  window['wrenLoadTab_action-plans_management'] = function() {
+    const statsEl = document.getElementById('ap-mgmt-stats');
+    const listEl  = document.getElementById('ap-mgmt-list');
+
+    _ensurePlans().then(() => {
+      // Stats
+      const open      = _allPlans.filter(p => !['completed','cancelled'].includes(p.status)).length;
+      const overdue   = _allPlans.filter(p => _effectiveStatus(p) === 'overdue').length;
+      const completed = _allPlans.filter(p => p.status === 'completed').length;
+
+      if (statsEl) statsEl.innerHTML = `
+        <div class="v2-stat-card"><div class="stat-num">${_allPlans.length}</div><div class="stat-label">Total</div></div>
+        <div class="v2-stat-card"><div class="stat-num" style="color:var(--c-blue)">${open}</div><div class="stat-label">Open</div></div>
+        <div class="v2-stat-card"><div class="stat-num" style="color:#ef4444">${overdue}</div><div class="stat-label">Overdue</div></div>
+        <div class="v2-stat-card"><div class="stat-num" style="color:#22c55e">${completed}</div><div class="stat-label">Completed</div></div>`;
+
+      let filtered = _allPlans;
+      const filterFn = (f) => {
+        if (f === 'open')      return _allPlans.filter(p => !['completed','cancelled'].includes(p.status) && _effectiveStatus(p) !== 'overdue');
+        if (f === 'completed') return _allPlans.filter(p => p.status === 'completed');
+        if (f === 'overdue')   return _allPlans.filter(p => _effectiveStatus(p) === 'overdue');
+        return _allPlans;
+      };
+      _renderPlanList(listEl, filtered, true);
+
+      document.getElementById('ap-mgmt-filter')?.addEventListener('change', e => {
+        _renderPlanList(listEl, filterFn(e.target.value), true);
+      });
+
+      document.getElementById('ap-new-btn')?.addEventListener('click', () => window._apCreateNew('management'));
+
+    }).catch(() => {
+      if (listEl) listEl.innerHTML = `<div class="tab-coming-soon"><div class="coming-icon">📋</div><h3>Could not load action plans</h3></div>`;
+    });
+  };
+
+  // ── Baby Room tab ─────────────────────────────────────────────────────────────
+
+  window['wrenLoadTab_action-plans_baby-room'] = function() {
+    const el = document.getElementById('ap-baby-list');
+    if (!el) return;
+    _ensurePlans().then(() => {
+      const plans = _allPlans.filter(p =>
+        (p.area||'').toLowerCase().includes('baby') ||
+        (p.linked_to||'').toLowerCase().includes('baby') ||
+        (p.title||'').toLowerCase().includes('baby room')
+      );
+      _renderPlanList(el, plans, false);
+    }).catch(() => { el.innerHTML = _emptyState('baby-room'); });
+  };
+
+  // ── Pre-school tab ────────────────────────────────────────────────────────────
+
+  window['wrenLoadTab_action-plans_pre-school'] = function() {
+    const el = document.getElementById('ap-ps-list');
+    if (!el) return;
+    _ensurePlans().then(() => {
+      const plans = _allPlans.filter(p =>
+        (p.area||'').toLowerCase().includes('pre') ||
+        (p.linked_to||'').toLowerCase().includes('pre') ||
+        (p.title||'').toLowerCase().includes('pre-school') ||
+        (p.title||'').toLowerCase().includes('preschool')
+      );
+      _renderPlanList(el, plans, false);
+    }).catch(() => { el.innerHTML = _emptyState('pre-school'); });
+  };
+
+  // ── Shared with Parents tab ───────────────────────────────────────────────────
+
+  window['wrenLoadTab_action-plans_shared-with-parents'] = function() {
+    const el = document.getElementById('ap-parents-list');
+    if (!el) return;
+    _ensurePlans().then(() => {
+      const plans = _allPlans.filter(p => p.visible_to_parents || p.shared_with_parents);
+      if (!plans.length) {
+        el.innerHTML = `<div class="tab-coming-soon" style="padding:32px 0">
+          <div class="coming-icon">👨‍👩‍👧</div>
+          <h3>No plans shared with parents</h3>
+          <p>When you create or edit an action plan and tick "Visible to parents", it appears here and in the relevant child's parent portal.</p>
+        </div>`;
+        return;
+      }
+      el.innerHTML = plans.map(p => `
+        <div class="v2-card" style="margin-bottom:12px;cursor:pointer" onclick="window._apOpenDrawer(${p.id})">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span style="font-weight:600">${p.title}</span>
+            <span class="badge badge-green" style="font-size:.7rem">Shared</span>
+          </div>
+          ${p.description ? `<div style="font-size:.85rem;color:var(--c-muted)">${p.description}</div>` : ''}
+          ${p.target_date ? `<div style="font-size:.75rem;color:var(--c-muted);margin-top:6px">Due: ${new Date(p.target_date).toLocaleDateString('en-GB')}</div>` : ''}
+        </div>`).join('');
+    }).catch(() => { el.innerHTML = _emptyState('shared'); });
+  };
+
+  // ── Plan drawer ───────────────────────────────────────────────────────────────
+
+  window._apOpenDrawer = function(id) {
+    const plan = _allPlans.find(p => p.id === id);
+    if (!plan) return;
+
+    const items = Array.isArray(plan.actions) ? plan.actions :
+      (typeof plan.actions === 'string' ? _tryParse(plan.actions) : []);
+    const notes = Array.isArray(plan.progress_notes) ? plan.progress_notes :
+      (typeof plan.progress_notes === 'string' ? _tryParse(plan.progress_notes) : []);
+
+    const progressHtml = notes.length ? `
+      <h4 style="color:var(--c-muted);font-size:.8rem;text-transform:uppercase;margin:16px 0 8px">Progress notes</h4>
+      <div class="obs-timeline">` + notes.map(n => `
+        <div class="obs-item">
+          <div class="obs-meta">${n.date ? new Date(n.date).toLocaleDateString('en-GB') : ''} ${n.author ? '· '+n.author : ''}</div>
+          <div class="obs-text">${n.note||n.text||''}</div>
+        </div>`).join('') + `</div>` : '';
+
+    const itemsHtml = items.length ? `
+      <h4 style="color:var(--c-muted);font-size:.8rem;text-transform:uppercase;margin:16px 0 8px">Steps</h4>
+      <div style="display:flex;flex-direction:column;gap:6px">` + items.map((item, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--c-bg);border-radius:6px;border:1px solid var(--c-border)">
+          <input type="checkbox" ${item.completed||item.done?'checked':''} onchange="window._apToggleItem(${id},${i},this.checked)" style="flex-shrink:0">
+          <span style="${item.completed||item.done?'text-decoration:line-through;color:var(--c-muted)':'color:var(--c-text)'}">${item.text||item.action||item.description||''}</span>
+          ${item.assignee_name ? `<span style="margin-left:auto;font-size:.75rem;color:var(--c-muted)">${item.assignee_name}</span>` : ''}
+        </div>`).join('') + `</div>` : '';
+
+    const status = _effectiveStatus(plan);
+    Wren.openDrawer(`
+      <div style="padding:4px 0 16px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <span class="badge ${PRIORITY_BADGE[plan.priority]||'badge-blue'}">${plan.priority||'medium'} priority</span>
+          <span class="badge ${STATUS_BADGE[status]||'badge-blue'}">${status}</span>
+          ${plan.target_date ? `<span style="font-size:.8rem;color:var(--c-muted)">Due ${new Date(plan.target_date).toLocaleDateString('en-GB')}</span>` : ''}
+        </div>
+        ${plan.description ? `<p style="color:var(--c-muted);font-size:.9rem;line-height:1.5;margin-bottom:12px">${plan.description}</p>` : ''}
+        ${plan.success_criteria ? `<div class="drawer-info-row" style="margin-bottom:12px"><span style="font-size:.8rem;color:var(--c-muted)">Success:</span><span style="font-size:.85rem">${plan.success_criteria}</span></div>` : ''}
+        ${plan.owner_name ? `<div class="drawer-info-row" style="margin-bottom:8px"><span>Owner</span><span>${plan.owner_name}</span></div>` : ''}
+        ${plan.visible_to_parents ? `<div class="drawer-info-row" style="margin-bottom:8px"><span>Parent visibility</span><span class="badge badge-green">Shared</span></div>` : ''}
+        ${itemsHtml}
+        ${progressHtml}
+        <div style="margin-top:16px;display:flex;gap:8px">
+          <button class="btn btn-sm btn-ghost" onclick="window._apAddNote(${id})">Add progress note</button>
+          <button class="btn btn-sm btn-ghost" onclick="window._apMarkDone(${id})">Mark complete</button>
+        </div>
+      </div>`, plan.title);
+  };
+
+  window._apToggleItem = function(planId, itemIdx, checked) {
+    const plan = _allPlans.find(p => p.id === planId);
+    if (!plan || !Array.isArray(plan.actions)) return;
+    plan.actions[itemIdx].completed = checked;
+    const actions = plan.actions;
+    Wren.api(`/api/action-plans/${planId}`, { method: 'PUT', body: { actions } })
+      .then(() => Wren.toast('Step updated', 'success'))
+      .catch(() => Wren.toast('Could not update step', 'error'));
+  };
+
+  window._apMarkDone = function(planId) {
+    Wren.api(`/api/action-plans/${planId}`, { method: 'PUT', body: { status: 'completed', completed_date: new Date().toISOString() }})
+      .then(() => {
+        const p = _allPlans.find(x => x.id === planId);
+        if (p) p.status = 'completed';
+        Wren.toast('Plan marked complete', 'success');
+        Wren.closeDrawer();
+      })
+      .catch(() => Wren.toast('Could not update plan', 'error'));
+  };
+
+  window._apAddNote = function(planId) {
+    const overlay = Wren.modal('Add progress note',
+      `<textarea class="wren-textarea" id="ap-note-input" placeholder="Describe progress made…" style="width:100%;min-height:100px;margin-top:8px"></textarea>`,
+      [
+        { label: 'Save note', class: 'btn-primary', close: false, action: () => {
+          const note = document.getElementById('ap-note-input')?.value?.trim();
+          if (!note) return;
+          const plan = _allPlans.find(p => p.id === planId);
+          const notes = Array.isArray(plan?.progress_notes) ? plan.progress_notes : [];
+          const userName = Wren.user ? (Wren.user.name || Wren.user.first_name) : 'Manager';
+          notes.push({ date: new Date().toISOString(), author: userName, note });
+          Wren.api(`/api/action-plans/${planId}/progress-note`, { method: 'POST', body: { note, author: userName }})
+            .then(() => {
+              if (plan) plan.progress_notes = notes;
+              Wren.toast('Note saved', 'success');
+              overlay.querySelector('.modal-close').click();
+              window._apOpenDrawer(planId);
+            })
+            .catch(() => Wren.toast('Could not save note', 'error'));
+        }},
+        { label: 'Cancel', class: 'btn-ghost' },
+      ]
+    );
+  };
+
+  // ── Create plan ───────────────────────────────────────────────────────────────
+
+  window._apCreateNew = function(scope) {
+    const overlay = Wren.modal('New Action Plan', `
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
+        <input class="wren-input" id="ap-new-title" placeholder="Plan title *" required>
+        <select class="wren-select" id="ap-new-priority">
+          <option value="medium">Medium priority</option>
+          <option value="high">High priority</option>
+          <option value="urgent">Urgent</option>
+          <option value="low">Low priority</option>
+        </select>
+        <textarea class="wren-textarea" id="ap-new-desc" placeholder="Description" style="min-height:80px"></textarea>
+        <input class="wren-input" id="ap-new-success" placeholder="Success criteria">
+        <input class="wren-input" id="ap-new-due" type="date" title="Target date">
+        <label style="display:flex;align-items:center;gap:8px;font-size:.9rem">
+          <input type="checkbox" id="ap-new-parents"> Share with parents
+        </label>
+      </div>`, [
+      { label: 'Create', class: 'btn-primary', close: false, action: () => {
+        const title = document.getElementById('ap-new-title')?.value?.trim();
+        if (!title) { Wren.toast('Title is required', 'warning'); return; }
+        const body = {
+          title,
+          priority: document.getElementById('ap-new-priority')?.value || 'medium',
+          description: document.getElementById('ap-new-desc')?.value || '',
+          success_criteria: document.getElementById('ap-new-success')?.value || '',
+          target_date: document.getElementById('ap-new-due')?.value || null,
+          area: scope,
+          linked_to: scope !== 'management' ? 'room' : null,
+          visible_to_parents: document.getElementById('ap-new-parents')?.checked || false,
+        };
+        Wren.api('/api/action-plans', { method: 'POST', body })
+          .then(created => {
+            _allPlans.unshift(created);
+            Wren.toast('Action plan created', 'success');
+            overlay.querySelector('.modal-close').click();
+            // Refresh active tab
+            const activePanel = document.querySelector('.wren-tab-panel:not([hidden])');
+            if (activePanel) {
+              const listEl = activePanel.querySelector('[id$="-list"]');
+              if (listEl) _renderPlanList(listEl, _allPlans, true);
+            }
+          })
+          .catch(() => Wren.toast('Could not create plan', 'error'));
+      }},
+      { label: 'Cancel', class: 'btn-ghost' },
+    ]);
+  };
+
+  function _tryParse(str) {
+    try { return JSON.parse(str) || []; } catch { return []; }
+  }
+
+  window['wrenLoadTab_action-plans_classplans'] = async function() {
+    const el = document.getElementById('ap-class-list');
+    if (!el) return;
+    el.innerHTML = '<div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>';
+    await _ensurePlans();
+    const plans = _allPlans.filter(p => p.area === 'class' || p.scope === 'class' || p.linked_to?.startsWith('class'));
+    _renderPlanList(el, plans.length ? plans : _allPlans.filter(p => !['management'].includes(p.area)), false);
+  };
+
+})();
+</script>

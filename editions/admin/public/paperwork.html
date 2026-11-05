@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Paperwork — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b269 — tokens only, no bare hex. */
+.pw-intro{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:12px 14px;
+          font-size:.82rem;color:var(--c-muted);line-height:1.55;margin-bottom:14px}
+.pw-intro b{color:var(--c-text)}
+
+.pw-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid var(--c-border);padding-bottom:8px}
+.pw-tab{padding:8px 14px;border-radius:8px 8px 0 0;font-size:.85rem;background:transparent;border:none;
+        color:var(--c-muted);cursor:pointer;font-family:inherit}
+.pw-tab.active{background:var(--c-surface);color:var(--c-text);font-weight:600;box-shadow:inset 0 -2px 0 var(--c-blue)}
+.pw-panel{display:none}.pw-panel.active{display:block}
+
+/* Health strip — "nothing is being OCR'd" should never need a shrug for an answer */
+.pw-health{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:.75rem}
+.pw-dot{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--c-border);border-radius:999px;
+        padding:4px 11px;color:var(--c-muted);font-weight:700}
+.pw-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--c-muted)}
+.pw-dot.ok::before{background:var(--c-green)}
+.pw-dot.bad::before{background:var(--c-red)}
+.pw-dot.ok{color:var(--c-text)}
+.pw-dot.bad{border-color:var(--c-red);color:var(--c-red)}
+
+/* Drop zone */
+.pw-drop{border:2px dashed var(--c-border);border-radius:16px;padding:34px 20px;text-align:center;
+         background:var(--c-bg);transition:.15s ease;cursor:pointer}
+.pw-drop:hover,.pw-drop.over{border-color:var(--c-blue);background:var(--c-surface)}
+.pw-drop h3{margin:0 0 6px;font-size:1.05rem;color:var(--c-text);font-family:var(--font-heading,inherit)}
+.pw-drop p{margin:0;color:var(--c-muted);font-size:.83rem;line-height:1.55}
+.pw-drop .pw-or{margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+
+.pw-prog{margin-top:12px;border:1px solid var(--c-border);border-radius:12px;padding:12px 14px;background:var(--c-surface)}
+.pw-bar{height:7px;border-radius:999px;background:var(--c-bg);overflow:hidden;margin-top:8px}
+.pw-bar>i{display:block;height:100%;background:var(--c-blue);width:0;transition:width .2s ease}
+
+/* Cards */
+.pw-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:13px 16px;margin-bottom:10px}
+.pw-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.pw-title{font-weight:700;color:var(--c-text);font-size:.95rem;line-height:1.35}
+.pw-sub{color:var(--c-muted);font-size:.82rem;margin-top:3px;line-height:1.5}
+.pw-meta{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pw-pill{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:999px;
+         border:1px solid var(--c-border);color:var(--c-muted);white-space:nowrap}
+.pw-pill.cat{border-color:var(--c-blue);color:var(--c-blue)}
+.pw-pill.ocr{border-color:var(--c-purple);color:var(--c-purple)}
+.pw-pill.warn{border-color:var(--c-amber);color:var(--c-amber)}
+.pw-pill.bad{border-color:var(--c-red);color:var(--c-red)}
+.pw-pill.good{border-color:var(--c-green);color:var(--c-green)}
+.pw-actions{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.pw-btn{border:1px solid var(--c-border);background:var(--c-bg);color:var(--c-text);border-radius:8px;
+        padding:6px 12px;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit}
+.pw-btn:hover{border-color:var(--c-blue)}
+.pw-btn.primary{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-navy)}
+.pw-btn.danger:hover{border-color:var(--c-red);color:var(--c-red)}
+.muted{color:var(--c-muted);font-size:.83rem}
+
+/* Review row editor */
+.pw-edit{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:10px}
+.pw-edit label{display:block;font-size:.7rem;color:var(--c-muted);margin-bottom:3px;text-transform:uppercase;
+        letter-spacing:.04em;font-weight:700}
+.pw-edit input,.pw-edit select{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;
+        border:1px solid var(--c-border);background:var(--c-bg);color:var(--c-text);font-size:.85rem;font-family:inherit}
+.pw-edit .wide{grid-column:1/-1}
+.pw-why{border-left:3px solid var(--c-amber);background:var(--c-bg);border-radius:0 8px 8px 0;
+        padding:8px 11px;font-size:.76rem;color:var(--c-muted);line-height:1.5;margin-top:8px}
+.pw-why b{color:var(--c-text)}
+
+.pw-counts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.pw-count{flex:1 1 150px;border:1px solid var(--c-border);border-radius:12px;padding:12px 14px;background:var(--c-surface);
+          text-align:left;cursor:pointer;font-family:inherit;color:inherit}
+.pw-count:hover{border-color:var(--c-blue)}
+.pw-count b{display:block;font-size:1.45rem;color:var(--c-text);line-height:1.1}
+.pw-count span{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);font-weight:700}
+
+.pw-bar-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.pw-bar-row input,.pw-bar-row select{padding:8px 11px;border-radius:9px;border:1px solid var(--c-border);
+        background:var(--c-bg);color:var(--c-text);font-size:.85rem;font-family:inherit}
+.pw-bar-row input[type=search]{min-width:260px;flex:1 1 260px}
+
+mark{background:var(--c-orange);color:var(--c-navy);border-radius:3px;padding:0 2px}
+.pw-snip{font-size:.8rem;color:var(--c-muted);line-height:1.6;margin-top:6px}
+
+table.pw-tbl{width:100%;border-collapse:collapse;font-size:.84rem}
+table.pw-tbl th{text-align:left;color:var(--c-muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;
+        padding:8px 10px;border-bottom:1px solid var(--c-border);font-weight:700}
+table.pw-tbl td{padding:9px 10px;border-bottom:1px solid var(--c-border);color:var(--c-text);vertical-align:top}
+table.pw-tbl td.n{text-align:right;font-variant-numeric:tabular-nums}
+
+.pw-textview{white-space:pre-wrap;font-size:.8rem;line-height:1.6;color:var(--c-text);background:var(--c-bg);
+        border:1px solid var(--c-border);border-radius:10px;padding:12px;max-height:52vh;overflow:auto}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🗄️ Paperwork</div>
+      <div class="page-subtitle">Drop the scans in — Wren reads them, proposes where they go, you say yes</div>
+    </div>
+  </div>
+
+  <div class="pw-intro">
+    Everything the setting holds on paper, readable on a tablet. Drag a folder of PDFs or photos onto the drop
+    zone: each file is queued and processed in the background, so the browser does not block and closing this
+    tab loses nothing. Wren extracts the text (OCR only when there is no text layer), then the
+    <b>local model on the Ascent</b> proposes a heading, a date and a title.
+    <b>Nothing is filed until you accept it</b> — a policy under the wrong heading is worse than one that was
+    never filed. Scanned nursery paperwork carries child and staff personal data, so it never reaches a cloud
+    model; if the Ascent is unreachable the file is still stored and searchable, just flagged for you to file
+    by hand.
+  </div>
+
+  <div class="pw-health" id="pw-health"></div>
+
+  <div class="pw-tabs">
+    <button class="pw-tab active" data-t="add">Add paperwork</button>
+    <button class="pw-tab" data-t="review">Review <span id="pw-review-n"></span></button>
+    <button class="pw-tab" data-t="browse">Browse &amp; search</button>
+    <button class="pw-tab" data-t="receipts">Receipts</button>
+  </div>
+
+  <!-- ── Add ────────────────────────────────────────────────────────────── -->
+  <div class="pw-panel active" data-p="add">
+    <div class="pw-drop" id="pw-drop" tabindex="0" role="button"
+         aria-label="Drop files here, or click to choose files">
+      <h3>Drop a folder of scans here</h3>
+      <p>PDFs, photos of paper, Word documents. Many at once — a whole SD card folder is fine.<br>
+         Scans get OCR'd; PDFs that already have text skip straight past it.</p>
+      <div class="pw-or">
+        <button class="pw-btn" id="pw-pick-files" type="button">Choose files…</button>
+        <button class="pw-btn" id="pw-pick-folder" type="button">Choose a folder…</button>
+      </div>
+    </div>
+    <input type="file" id="pw-input-files" multiple hidden
+           accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.heic,.heif,.docx,.txt,.md,.csv">
+    <input type="file" id="pw-input-folder" multiple webkitdirectory directory hidden>
+
+    <div id="pw-upload-state"></div>
+
+    <h3 style="margin:20px 0 8px;font-size:.95rem;color:var(--c-text)">Recent drops</h3>
+    <div id="pw-batches"><p class="muted">Loading…</p></div>
+  </div>
+
+  <!-- ── Review ─────────────────────────────────────────────────────────── -->
+  <div class="pw-panel" data-p="review">
+    <div class="pw-bar-row">
+      <button class="pw-btn primary" id="pw-accept-all">✓ Looks right — file everything below</button>
+      <button class="pw-btn" id="pw-review-refresh">Refresh</button>
+      <span class="muted" id="pw-review-hint"></span>
+    </div>
+    <div id="pw-review"><p class="muted">Loading…</p></div>
+  </div>
+
+  <!-- ── Browse & search ────────────────────────────────────────────────── -->
+  <div class="pw-panel" data-p="browse">
+    <div class="pw-bar-row">
+      <input type="search" id="pw-q" placeholder="Search everything — words inside the scans too…">
+      <select id="pw-cat"><option value="">All headings I can see</option></select>
+      <input type="date" id="pw-from" title="Documents dated on or after">
+      <input type="date" id="pw-to" title="Documents dated on or before">
+    </div>
+    <div class="pw-counts" id="pw-cat-counts"></div>
+    <div id="pw-results"><p class="muted">Search, or pick a heading above.</p></div>
+  </div>
+
+  <!-- ── Receipts ───────────────────────────────────────────────────────── -->
+  <div class="pw-panel" data-p="receipts">
+    <p class="muted" style="margin-bottom:12px">
+      What the model read off each receipt, next to whether a person has confirmed it. The raw text and the
+      original scan are both kept, so a wrong number can always be checked against the paper.
+    </p>
+    <div id="pw-receipts"><p class="muted">Loading…</p></div>
+  </div>
+</div>
+
+<script>
+const api = (u, o) => Wren.api(u, o);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+let CATS = [], PINNED = {}, REVIEW = [], CAN_UPLOAD = false;
+
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+document.querySelectorAll('.pw-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pw-tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.pw-panel').forEach(p => p.classList.toggle('active', p.dataset.p === btn.dataset.t));
+    if (btn.dataset.t === 'review')   loadReview();
+    if (btn.dataset.t === 'receipts') loadReceipts();
+    if (btn.dataset.t === 'add')      loadBatches();
+  });
+});
+function goTab(t) { document.querySelector(`.pw-tab[data-t="${t}"]`).click(); }
+
+/* ── Health ────────────────────────────────────────────────────────────── */
+async function loadHealth() {
+  const el = document.getElementById('pw-health');
+  try {
+    const h = await api('/api/paperwork/health');
+    const q = h.queue || {};
+    const waiting = (q.pending || 0) + (q.running || 0);
+    el.innerHTML = [
+      `<span class="pw-dot ${h.ocr ? 'ok' : 'bad'}">OCR ${h.ocr ? 'ready' : 'NOT INSTALLED'}</span>`,
+      `<span class="pw-dot ${h.ai ? 'ok' : 'bad'}">Ascent ${h.ai ? 'reachable' : 'unreachable'}</span>`,
+      h.ai && h.model_present === false
+        ? `<span class="pw-dot bad">${esc(h.model)} not pulled</span>`
+        : `<span class="pw-dot">${esc(h.model)}</span>`,
+      waiting ? `<span class="pw-dot">${waiting} in the queue</span>` : '',
+      (q.failed ? `<span class="pw-dot bad">${q.failed} failed</span>` : ''),
+    ].filter(Boolean).join('');
+  } catch (e) { el.innerHTML = `<span class="pw-dot bad">Could not read pipeline health</span>`; }
+}
+
+/* ── Categories ────────────────────────────────────────────────────────── */
+async function loadCategories() {
+  const d = await api('/api/paperwork/categories');
+  CATS = d.categories || [];
+  CAN_UPLOAD = !!d.can_upload;
+  PINNED = {};
+  CATS.forEach(c => { PINNED[c.key] = c.pinned_folders || []; });
+
+  document.getElementById('pw-cat').innerHTML =
+    '<option value="">All headings I can see</option>' +
+    CATS.map(c => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join('');
+
+  document.getElementById('pw-cat-counts').innerHTML = CATS.map(c => `
+    <button class="pw-count" data-cat="${esc(c.key)}">
+      <b>${c.document_count}</b><span>${esc(c.label)}</span>
+    </button>`).join('');
+  document.querySelectorAll('#pw-cat-counts .pw-count').forEach(b =>
+    b.addEventListener('click', () => {
+      document.getElementById('pw-cat').value = b.dataset.cat;
+      runSearch();
+    }));
+
+  if (!CAN_UPLOAD) {
+    document.getElementById('pw-drop').innerHTML =
+      '<h3>Read-only</h3><p class="muted">You can search and read the paperwork store, ' +
+      'but filing new documents needs an edit-level permission on at least one heading.</p>';
+  }
+}
+
+function catLabel(key) { const c = CATS.find(x => x.key === key); return c ? c.label : (key || '—'); }
+function catOptions(sel) {
+  return '<option value="">— choose a heading —</option>' + CATS.filter(c => c.can_write)
+    .map(c => `<option value="${esc(c.key)}"${c.key === sel ? ' selected' : ''}>${esc(c.label)}</option>`).join('');
+}
+function folderOptions(cat, sel) {
+  const pin = PINNED[cat] || [];
+  const opts = ['<option value="">— no sub-folder —</option>'];
+  pin.forEach(p => opts.push(
+    `<option value="${esc(p.subfolder)}"${p.subfolder === sel ? ' selected' : ''}>${esc(p.subfolder)}${p.statutory ? ' ★' : ''}</option>`));
+  if (sel && !pin.some(p => p.subfolder === sel)) opts.push(`<option value="${esc(sel)}" selected>${esc(sel)}</option>`);
+  opts.push('<option value="__new">+ New sub-folder…</option>');
+  return opts.join('');
+}
+/** The statutory reason a pinned folder exists — shown so it is obvious why it is there. */
+function pinnedWhy(cat, sub) {
+  const p = (PINNED[cat] || []).find(x => x.subfolder === sub && x.why);
+  return p ? `<div class="pw-why"><b>★ ${esc(p.subfolder)}</b> — ${esc(p.why)}</div>` : '';
+}
+
+/* ── Upload ────────────────────────────────────────────────────────────── */
+function bytes(n) {
+  if (!n && n !== 0) return '';
+  const u = ['B','KB','MB','GB']; let i = 0; let v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v < 10 && i ? 1 : 0)} ${u[i]}`;
+}
+
+const OK_EXT = /\.(pdf|png|jpe?g|tiff?|bmp|webp|heic|heif|docx|txt|md|csv)$/i;
+
+function sendFiles(fileList) {
+  const files = Array.from(fileList).filter(f => OK_EXT.test(f.name));
+  const skipped = fileList.length - files.length;
+  if (!files.length) {
+    Wren.toast('Nothing there Wren can read (PDFs, photos, .docx, .txt)', 'warning');
+    return;
+  }
+  // 100 per request matches the server's MAX_FILES; a bigger folder goes in
+  // several requests rather than being silently truncated.
+  const CHUNK = 100;
+  const chunks = [];
+  for (let i = 0; i < files.length; i += CHUNK) chunks.push(files.slice(i, i + CHUNK));
+
+  const box = document.getElementById('pw-upload-state');
+  box.innerHTML = `<div class="pw-prog">
+      <div><b id="pw-up-title">Uploading ${files.length} file${files.length === 1 ? '' : 's'}…</b></div>
+      <div class="muted" id="pw-up-sub">${skipped ? skipped + ' skipped (unsupported type)' : ''}</div>
+      <div class="pw-bar"><i id="pw-up-bar"></i></div>
+    </div>`;
+
+  let done = 0, queued = 0, dupes = 0, failed = 0;
+  const next = () => {
+    if (!chunks.length) {
+      document.getElementById('pw-up-title').textContent =
+        `Queued ${queued} file${queued === 1 ? '' : 's'} for processing`;
+      document.getElementById('pw-up-sub').innerHTML =
+        [dupes ? `${dupes} already in the store (deduplicated on content)` : '',
+         failed ? `${failed} could not be read` : '',
+         skipped ? `${skipped} skipped (unsupported type)` : '',
+         'Processing runs in the background — you can close this tab.'].filter(Boolean).join(' · ');
+      document.getElementById('pw-up-bar').style.width = '100%';
+      loadBatches(); loadHealth();
+      if (queued) setTimeout(() => { loadReview(); }, 4000);
+      return;
+    }
+    const chunk = chunks.shift();
+    const fd = new FormData();
+    chunk.forEach(f => fd.append('files', f, f.webkitRelativePath || f.name));
+    // Folder name makes a better batch label than a timestamp.
+    const rel = chunk[0].webkitRelativePath || '';
+    if (rel.includes('/')) fd.append('label', rel.split('/')[0]);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/paperwork/upload');
+    const tok = Wren.getToken();
+    if (tok) xhr.setRequestHeader('Authorization', 'Bearer ' + tok);
+    xhr.upload.onprogress = e => {
+      if (!e.lengthComputable) return;
+      const pct = ((done + e.loaded / e.total) / (done + chunks.length + 1)) * 100;
+      document.getElementById('pw-up-bar').style.width = Math.min(99, pct) + '%';
+    };
+    xhr.onload = () => {
+      done++;
+      try {
+        const r = JSON.parse(xhr.responseText);
+        if (xhr.status === 202) { queued += r.queued || 0; dupes += r.duplicates || 0; failed += r.failed || 0; }
+        else { failed += chunk.length; Wren.toast(r.error || 'Upload refused', 'error'); }
+      } catch (e) { failed += chunk.length; }
+      next();
+    };
+    xhr.onerror = () => { done++; failed += chunk.length; next(); };
+    xhr.send(fd);
+  };
+  next();
+}
+
+function wireDrop() {
+  const dz = document.getElementById('pw-drop');
+  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation(); dz.classList.add('over');
+  }));
+  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation(); dz.classList.remove('over');
+  }));
+  dz.addEventListener('drop', async e => {
+    if (!CAN_UPLOAD) return;
+    const items = e.dataTransfer.items;
+    // A dragged FOLDER arrives as a directory entry, not as files — walk it, or
+    // dropping the folder Toby just scanned into silently does nothing.
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      const entries = [];
+      for (const it of items) { const en = it.webkitGetAsEntry(); if (en) entries.push(en); }
+      const files = [];
+      await Promise.all(entries.map(en => walkEntry(en, files)));
+      if (files.length) return sendFiles(files);
+    }
+    sendFiles(e.dataTransfer.files);
+  });
+  dz.addEventListener('click', e => {
+    if (e.target.closest('button')) return;
+    if (CAN_UPLOAD) document.getElementById('pw-input-files').click();
+  });
+  document.getElementById('pw-pick-files').addEventListener('click', () => document.getElementById('pw-input-files').click());
+  document.getElementById('pw-pick-folder').addEventListener('click', () => document.getElementById('pw-input-folder').click());
+  ['pw-input-files','pw-input-folder'].forEach(id =>
+    document.getElementById(id).addEventListener('change', e => { sendFiles(e.target.files); e.target.value = ''; }));
+}
+
+function walkEntry(entry, out, depth = 0) {
+  return new Promise(resolve => {
+    if (depth > 6) return resolve();
+    if (entry.isFile) return entry.file(f => { out.push(f); resolve(); }, resolve);
+    const reader = entry.createReader();
+    const readBatch = () => reader.readEntries(async ents => {
+      if (!ents.length) return resolve();
+      await Promise.all(ents.map(en => walkEntry(en, out, depth + 1)));
+      readBatch();
+    }, resolve);
+    readBatch();
+  });
+}
+
+/* ── Batches ───────────────────────────────────────────────────────────── */
+async function loadBatches() {
+  const el = document.getElementById('pw-batches');
+  try {
+    const d = await api('/api/paperwork/batches');
+    if (!d.batches.length) { el.innerHTML = '<p class="muted">Nothing dropped in yet.</p>'; return; }
+    el.innerHTML = `<table class="pw-tbl"><thead><tr>
+        <th>Dropped</th><th>What</th><th>By</th>
+        <th class="n">Still working</th><th class="n">To review</th><th class="n">Filed</th></tr></thead><tbody>` +
+      d.batches.map(b => `<tr>
+        <td>${new Date(b.created_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</td>
+        <td>${esc(b.label || (b.total + ' file' + (b.total === 1 ? '' : 's')))}</td>
+        <td>${esc(b.uploaded_by_name || '—')}</td>
+        <td class="n">${b.pending || 0}</td>
+        <td class="n">${b.in_review ? `<a href="#" data-batch="${b.id}">${b.in_review}</a>` : 0}</td>
+        <td class="n">${b.filed || 0}</td></tr>`).join('') + '</tbody></table>';
+    el.querySelectorAll('[data-batch]').forEach(a => a.addEventListener('click', e => {
+      e.preventDefault(); goTab('review');
+    }));
+  } catch (e) { el.innerHTML = `<p class="muted">Could not load: ${esc(e && e.error || e && e.message)}</p>`; }
+}
+
+/* ── Review ────────────────────────────────────────────────────────────── */
+async function loadReview() {
+  const el = document.getElementById('pw-review');
+  try {
+    const d = await api('/api/paperwork/review');
+    REVIEW = d.documents || [];
+    const ready = REVIEW.filter(r => r.status === 'review');
+    const busy  = REVIEW.filter(r => r.status === 'queued' || r.status === 'processing');
+    document.getElementById('pw-review-n').textContent = ready.length ? `(${ready.length})` : '';
+    document.getElementById('pw-review-hint').textContent = busy.length
+      ? `${busy.length} still being read — this page refreshes as they land.`
+      : '';
+    if (busy.length) setTimeout(() => { if (document.querySelector('.pw-panel[data-p=review]').classList.contains('active')) loadReview(); }, 8000);
+
+    if (!REVIEW.length) { el.innerHTML = '<p class="muted">Nothing waiting. Everything dropped in has been filed.</p>'; return; }
+    el.innerHTML = REVIEW.map(reviewCard).join('');
+    wireReviewCards();
+  } catch (e) {
+    el.innerHTML = `<p class="muted">Could not load: ${esc(e && e.error || e && e.message)}</p>`;
+  }
+}
+
+function reviewCard(r) {
+  const s = r.ai_suggested || {};
+  const cat = r.category || s.category || '';
+  const busy = r.status === 'queued' || r.status === 'processing';
+  const pills = [
+    `<span class="pw-pill">${esc(r.filename)}</span>`,
+    r.extract_method === 'ocr' ? '<span class="pw-pill ocr">OCR\'d scan</span>' : '',
+    r.extract_method === 'text-layer' ? '<span class="pw-pill">text layer</span>' : '',
+    r.page_count ? `<span class="pw-pill">${r.page_count} pp</span>` : '',
+    r.extract_chars ? `<span class="pw-pill">${r.extract_chars.toLocaleString()} chars read</span>` : '',
+    r.needs_ai ? '<span class="pw-pill warn">Ascent unavailable — file this by hand</span>' : '',
+    r.extract_error ? `<span class="pw-pill bad">${esc(r.extract_error)}</span>` : '',
+    (r.total_amount != null) ? `<span class="pw-pill good">£${Number(r.total_amount).toFixed(2)}${r.supplier ? ' · ' + esc(r.supplier) : ''}</span>` : '',
+  ].filter(Boolean).join('');
+
+  if (busy) {
+    return `<div class="pw-card" data-id="${r.id}">
+      <div class="pw-card-head"><div style="flex:1 1 320px;min-width:0">
+        <div class="pw-title">${esc(r.filename)}</div>
+        <div class="pw-sub">${r.status === 'queued' ? 'Waiting in the queue…' : 'Being read…'}</div>
+      </div></div><div class="pw-meta">${pills}</div></div>`;
+  }
+
+  return `<div class="pw-card" data-id="${r.id}">
+    <div class="pw-card-head">
+      <div style="flex:1 1 320px;min-width:0">
+        <div class="pw-title">${esc(r.title || s.title || r.filename)}</div>
+        <div class="pw-sub">${esc(r.summary || s.summary || 'No summary — the text could not be read.')}</div>
+      </div>
+      <div class="pw-actions">
+        <button class="pw-btn" data-act="view" data-id="${r.id}">View scan</button>
+        <button class="pw-btn" data-act="text" data-id="${r.id}">Read text</button>
+        <button class="pw-btn primary" data-act="accept" data-id="${r.id}">File it</button>
+      </div>
+    </div>
+    <div class="pw-meta">${pills}</div>
+    <div class="pw-edit">
+      <div class="wide"><label>Title</label>
+        <input data-f="title" data-id="${r.id}" value="${esc(r.title || s.title || r.filename)}"></div>
+      <div><label>Heading${s.category ? ' (Wren suggests ' + esc(catLabel(s.category)) + ')' : ''}</label>
+        <select data-f="category" data-id="${r.id}">${catOptions(cat)}</select></div>
+      <div><label>Sub-folder</label>
+        <select data-f="subfolder" data-id="${r.id}">${folderOptions(cat, r.subfolder || s.subfolder || '')}</select></div>
+      <div><label>Document date</label>
+        <input type="date" data-f="document_date" data-id="${r.id}"
+               value="${esc((r.document_date || s.document_date || '').toString().slice(0, 10))}"></div>
+    </div>
+    <div data-why="${r.id}">${pinnedWhy(cat, r.subfolder || s.subfolder || '')}</div>
+  </div>`;
+}
+
+function wireReviewCards() {
+  document.querySelectorAll('#pw-review [data-act]').forEach(b =>
+    b.addEventListener('click', () => {
+      const id = b.dataset.id;
+      if (b.dataset.act === 'accept') acceptOne(id);
+      if (b.dataset.act === 'view')   viewFile(id);
+      if (b.dataset.act === 'text')   viewText(id);
+    }));
+
+  // Changing the heading re-populates the sub-folders for that heading, and
+  // surfaces the statutory reason a pinned folder exists.
+  document.querySelectorAll('#pw-review select[data-f="category"]').forEach(sel =>
+    sel.addEventListener('change', () => {
+      const id = sel.dataset.id;
+      const fold = document.querySelector(`#pw-review select[data-f="subfolder"][data-id="${id}"]`);
+      fold.innerHTML = folderOptions(sel.value, '');
+      document.querySelector(`[data-why="${id}"]`).innerHTML = '';
+    }));
+
+  document.querySelectorAll('#pw-review select[data-f="subfolder"]').forEach(sel =>
+    sel.addEventListener('change', () => {
+      const id = sel.dataset.id;
+      if (sel.value === '__new') {
+        const name = prompt('New sub-folder name');
+        if (name && name.trim()) {
+          const opt = document.createElement('option');
+          opt.value = opt.textContent = name.trim();
+          sel.insertBefore(opt, sel.lastElementChild);
+          sel.value = name.trim();
+        } else { sel.value = ''; }
+      }
+      const cat = document.querySelector(`#pw-review select[data-f="category"][data-id="${id}"]`).value;
+      document.querySelector(`[data-why="${id}"]`).innerHTML = pinnedWhy(cat, sel.value);
+    }));
+}
+
+function readRow(id) {
+  const get = f => {
+    const el = document.querySelector(`#pw-review [data-f="${f}"][data-id="${id}"]`);
+    return el ? el.value : undefined;
+  };
+  return {
+    id: Number(id),
+    title: get('title'),
+    category: get('category') || undefined,
+    subfolder: get('subfolder') === '__new' ? '' : get('subfolder'),
+    document_date: get('document_date') || null,
+  };
+}
+
+async function acceptOne(id) {
+  const body = readRow(id);
+  if (!body.category) { Wren.toast('Pick a heading first', 'warning'); return; }
+  try {
+    await api(`/api/paperwork/${id}/accept`, { method: 'POST', body });
+    Wren.toast('Filed', 'success');
+    loadReview(); loadCategories();
+  } catch (e) { Wren.toast((e && e.error) || 'Could not file that', 'error'); }
+}
+
+document.getElementById('pw-accept-all').addEventListener('click', async () => {
+  const ready = REVIEW.filter(r => r.status === 'review').map(r => readRow(r.id)).filter(r => r.category);
+  if (!ready.length) { Wren.toast('Nothing here has a heading yet', 'warning'); return; }
+  Wren.modal('File everything below?',
+    `<p>${ready.length} document${ready.length === 1 ? '' : 's'} will be filed exactly as shown. ` +
+    `Anything without a heading is left alone.</p>`,
+    [{ label: 'Cancel', class: 'btn-ghost' },
+     { label: 'Yes, file them', class: 'btn-primary', action: async () => {
+        try {
+          const r = await api('/api/paperwork/accept-bulk', { method: 'POST', body: { ids: ready } });
+          Wren.toast(`Filed ${r.accepted}${r.failed ? `, ${r.failed} refused` : ''}`, r.failed ? 'warning' : 'success');
+          loadReview(); loadCategories();
+        } catch (e) { Wren.toast((e && e.error) || 'Bulk accept failed', 'error'); }
+     } }]);
+});
+document.getElementById('pw-review-refresh').addEventListener('click', loadReview);
+
+/* ── View helpers ──────────────────────────────────────────────────────── */
+async function viewFile(id) {
+  // The token lives in sessionStorage, so a bare <a href> cannot fetch the file —
+  // pull it as a blob and open that.
+  try {
+    const r = await fetch(`/api/paperwork/${id}/file`, { headers: { Authorization: 'Bearer ' + Wren.getToken() } });
+    if (!r.ok) throw new Error('Could not open the file');
+    const url = URL.createObjectURL(await r.blob());
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { Wren.toast(e.message, 'error'); }
+}
+
+async function viewText(id) {
+  try {
+    const d = await api(`/api/paperwork/${id}/text`);
+    Wren.modal(`What Wren read (${esc(d.method || 'nothing')})`,
+      d.text ? `<div class="pw-textview">${esc(d.text)}</div>`
+             : `<p class="muted">No text could be extracted.${d.error ? ' ' + esc(d.error) : ''}</p>`,
+      [{ label: 'Close', class: 'btn-ghost' }]);
+  } catch (e) { Wren.toast((e && e.error) || 'Could not read that', 'error'); }
+}
+
+/* ── Search ────────────────────────────────────────────────────────────── */
+async function runSearch() {
+  const el = document.getElementById('pw-results');
+  const p = new URLSearchParams();
+  const q = document.getElementById('pw-q').value.trim();
+  if (q) p.set('q', q);
+  ['cat:category', 'from:from', 'to:to'].forEach(pair => {
+    const [id, key] = pair.split(':');
+    const v = document.getElementById('pw-' + id).value;
+    if (v) p.set(key, v);
+  });
+  el.innerHTML = '<p class="muted">Searching…</p>';
+  try {
+    const d = await api('/api/paperwork/search?' + p.toString());
+    if (!d.results.length) {
+      el.innerHTML = `<p class="muted">Nothing matches${q ? ' “' + esc(q) + '”' : ''} in the headings you can see.</p>`;
+      return;
+    }
+    el.innerHTML = d.results.map(r => `
+      <div class="pw-card">
+        <div class="pw-card-head">
+          <div style="flex:1 1 320px;min-width:0">
+            <div class="pw-title">${esc(r.title || r.filename)}</div>
+            <div class="pw-snip">${r.snippet || ''}</div>
+          </div>
+          <div class="pw-actions">
+            <button class="pw-btn" data-act="view" data-id="${r.id}">View scan</button>
+            <button class="pw-btn" data-act="text" data-id="${r.id}">Read text</button>
+            <button class="pw-btn" data-act="refile" data-id="${r.id}">Re-file</button>
+          </div>
+        </div>
+        <div class="pw-meta">
+          <span class="pw-pill cat">${esc(catLabel(r.category))}</span>
+          ${r.subfolder ? `<span class="pw-pill">${esc(r.subfolder)}</span>` : ''}
+          ${r.document_date ? `<span class="pw-pill">${esc(String(r.document_date).slice(0, 10))}</span>` : ''}
+          ${r.extract_method === 'ocr' ? '<span class="pw-pill ocr">OCR\'d scan</span>' : ''}
+          ${(r.tags || []).map(t => `<span class="pw-pill">${esc(t)}</span>`).join('')}
+        </div>
+      </div>`).join('');
+    el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.act === 'view')   viewFile(b.dataset.id);
+      if (b.dataset.act === 'text')   viewText(b.dataset.id);
+      if (b.dataset.act === 'refile') openRefile(b.dataset.id);
+    }));
+  } catch (e) {
+    el.innerHTML = `<p class="muted">Search failed: ${esc(e && e.error || e && e.message)}</p>`;
+  }
+}
+
+async function openRefile(id) {
+  const d = await api('/api/paperwork/' + id);
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="pw-edit">
+      <div class="wide"><label>Title</label><input id="rf-title" value="${esc(d.title || '')}"></div>
+      <div><label>Heading</label><select id="rf-cat">${catOptions(d.category)}</select></div>
+      <div><label>Sub-folder</label><select id="rf-sub">${folderOptions(d.category, d.subfolder || '')}</select></div>
+      <div><label>Document date</label><input type="date" id="rf-date" value="${esc((d.document_date || '').toString().slice(0, 10))}"></div>
+    </div>
+    <p class="muted" style="margin-top:10px">Re-filing is recorded: who moved it, out of which heading and into which.</p>`;
+  wrap.querySelector('#rf-cat').addEventListener('change', e => {
+    wrap.querySelector('#rf-sub').innerHTML = folderOptions(e.target.value, '');
+  });
+  Wren.modal('Re-file ' + esc(d.filename), wrap, [
+    { label: 'Delete', class: 'btn-ghost', action: () => confirmDelete(id) },
+    { label: 'Cancel', class: 'btn-ghost' },
+    { label: 'Save', class: 'btn-primary', action: async () => {
+        try {
+          await api('/api/paperwork/' + id, { method: 'PATCH', body: {
+            title: wrap.querySelector('#rf-title').value,
+            category: wrap.querySelector('#rf-cat').value,
+            subfolder: wrap.querySelector('#rf-sub').value === '__new' ? '' : wrap.querySelector('#rf-sub').value,
+            document_date: wrap.querySelector('#rf-date').value || null,
+          }});
+          Wren.toast('Re-filed', 'success'); runSearch(); loadCategories();
+        } catch (e) { Wren.toast((e && e.error) || 'Could not re-file', 'error'); }
+    } },
+  ]);
+}
+
+function confirmDelete(id) {
+  setTimeout(() => Wren.modal('Remove this document?',
+    '<p>It stops appearing in search. The file stays on disk and its fingerprint stays registered, ' +
+    'so re-scanning the same page will surface this record rather than quietly making a second copy.</p>',
+    [{ label: 'Cancel', class: 'btn-ghost' },
+     { label: 'Remove', class: 'btn-primary', action: async () => {
+        try { await api('/api/paperwork/' + id, { method: 'DELETE' }); Wren.toast('Removed', 'success'); runSearch(); loadCategories(); }
+        catch (e) { Wren.toast((e && e.error) || 'Could not remove', 'error'); }
+     } }]), 220);
+}
+
+/* ── Receipts ──────────────────────────────────────────────────────────── */
+async function loadReceipts() {
+  const el = document.getElementById('pw-receipts');
+  try {
+    const d = await api('/api/paperwork/receipts');
+    if (!d.receipts.length) { el.innerHTML = '<p class="muted">No receipts read yet.</p>'; return; }
+    el.innerHTML = `<table class="pw-tbl"><thead><tr>
+        <th>Supplier</th><th>Date</th><th class="n">Total</th><th class="n">VAT</th>
+        <th>Document</th><th>Confirmed</th><th></th></tr></thead><tbody>` +
+      d.receipts.map(r => `<tr>
+        <td>${esc(r.supplier || '—')}</td>
+        <td>${esc((r.receipt_date || '').toString().slice(0, 10) || '—')}</td>
+        <td class="n">${r.total_amount != null ? esc(r.currency || 'GBP') + ' ' + Number(r.total_amount).toFixed(2) : '—'}</td>
+        <td class="n">${r.vat_amount != null ? Number(r.vat_amount).toFixed(2) : '—'}</td>
+        <td>${esc(r.title || r.filename)}</td>
+        <td>${r.confirmed ? '<span class="pw-pill good">confirmed</span>' : '<span class="pw-pill warn">as read</span>'}</td>
+        <td><button class="pw-btn" data-rec="${r.document_id}">Check</button></td>
+      </tr>`).join('') + '</tbody></table>';
+    el.querySelectorAll('[data-rec]').forEach(b => b.addEventListener('click', () => openReceipt(b.dataset.rec)));
+  } catch (e) { el.innerHTML = `<p class="muted">Could not load: ${esc(e && e.error || e && e.message)}</p>`; }
+}
+
+async function openReceipt(id) {
+  const d = await api('/api/paperwork/' + id);
+  const r = d.receipt || {};
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <p class="muted">Check these against the scan before confirming. What the model read is kept either way —
+    the original is one click away.</p>
+    <div class="pw-edit">
+      <div class="wide"><label>Supplier</label><input id="rc-sup" value="${esc(r.supplier || '')}"></div>
+      <div><label>Receipt date</label><input type="date" id="rc-date" value="${esc((r.receipt_date || '').toString().slice(0, 10))}"></div>
+      <div><label>Total</label><input id="rc-tot" inputmode="decimal" value="${r.total_amount != null ? r.total_amount : ''}"></div>
+      <div><label>VAT</label><input id="rc-vat" inputmode="decimal" value="${r.vat_amount != null ? r.vat_amount : ''}"></div>
+    </div>`;
+  Wren.modal('Receipt — ' + esc(d.filename), wrap, [
+    { label: 'View scan', class: 'btn-ghost', close: false, action: () => viewFile(id) },
+    { label: 'Cancel', class: 'btn-ghost' },
+    { label: 'Confirm', class: 'btn-primary', action: async () => {
+        try {
+          await api(`/api/paperwork/${id}/receipt`, { method: 'PUT', body: {
+            supplier: wrap.querySelector('#rc-sup').value || null,
+            receipt_date: wrap.querySelector('#rc-date').value || null,
+            total_amount: wrap.querySelector('#rc-tot').value || null,
+            vat_amount: wrap.querySelector('#rc-vat').value || null,
+          }});
+          Wren.toast('Receipt confirmed', 'success'); loadReceipts();
+        } catch (e) { Wren.toast((e && e.error) || 'Could not save', 'error'); }
+    } },
+  ]);
+}
+
+/* ── Boot ──────────────────────────────────────────────────────────────── */
+document.addEventListener('wren:ready', async () => {
+  wireDrop();
+  let t = null;
+  document.getElementById('pw-q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(runSearch, 300); });
+  ['pw-cat','pw-from','pw-to'].forEach(id => document.getElementById(id).addEventListener('change', runSearch));
+  try { await loadCategories(); } catch (e) { /* the tabs still work */ }
+  loadHealth();
+  loadBatches();
+  loadReview();
+});
+</script>
+</body>
+</html>

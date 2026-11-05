@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Phonics tracker">
+  <meta name="wren-app-chat"  content="off">
+  <title>Phonics tracker · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260727">
+  <style>
+    /* b247 — the VERY BASIC tracker. Read the brief before adding anything here:
+       "No sub-levels, no percentages, no charts, no progress bars. If it needs a
+       legend, it is too complicated." So every chip carries its own state in
+       words and there is no key anywhere on this page.
+
+       Tokens only — no bare hex. The four state colours are anchored to the fixed
+       --c-red/--c-amber/--c-green tokens (wren-theme.js repaints the accent set but
+       deliberately leaves these three alone), and the tint/ink pair is mixed off
+       them so the same rule holds in a light theme and a dark one. The plain
+       -light/-solid tokens are declared FIRST as the fallback for anything without
+       color-mix. */
+    :root {
+      --pt-green-bg:  color-mix(in srgb, var(--c-green) 20%, white);
+      --pt-green-ink: color-mix(in srgb, var(--c-green) 58%, black);
+      --pt-amber-bg:  color-mix(in srgb, var(--c-amber) 24%, white);
+      --pt-amber-ink: color-mix(in srgb, var(--c-amber) 62%, black);
+      --pt-red-bg:    color-mix(in srgb, var(--c-red)   20%, white);
+      --pt-red-ink:   color-mix(in srgb, var(--c-red)   62%, black);
+    }
+    #pt-page { padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 90px);
+               max-width: 720px; margin: 0 auto; }
+
+    .pt-card { background: var(--c-surface); border: 1px solid var(--c-border);
+               border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    .pt-h { font-size: 1rem; margin: 0 0 4px; color: var(--c-text); }
+    .pt-muted { color: var(--c-muted); font-size: .84rem; line-height: 1.5; }
+    .pt-btn { border: 1px solid var(--c-border); background: transparent; color: var(--c-text);
+              border-radius: 12px; padding: 10px 14px; font-size: .88rem; font-weight: 600;
+              cursor: pointer; min-height: 44px; font-family: inherit; }
+    .pt-btn.primary { background: var(--c-blue); color: #fff; border-color: var(--c-blue); }
+    .pt-btn:disabled { opacity: .5; cursor: default; }
+    .pt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* ── Who ─────────────────────────────────────────────────────────────── */
+    #pt-who { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    #pt-who .pt-name { font-size: 1.05rem; font-weight: 700; color: var(--c-text); flex: 1; min-width: 140px; }
+
+    /* ── The grid ────────────────────────────────────────────────────────── */
+    .pt-block-title { font-size: .72rem; font-weight: 700; text-transform: uppercase;
+                      letter-spacing: .6px; color: var(--c-muted); margin: 16px 2px 8px; }
+    .pt-grid { display: grid; gap: 8px;
+               grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+    /* 78px minimum, 64px tall: comfortably past the 44px target on a 390px phone
+       held in one hand, which is how this is actually used — standing up, mid-session. */
+    .pt-chip {
+      min-height: 64px; border-radius: 14px; border: 2px solid var(--c-border);
+      background: var(--c-bg, transparent); color: var(--c-text);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1px; padding: 6px 4px; cursor: pointer; font-family: inherit;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      transition: transform .08s ease, background .12s ease, border-color .12s ease;
+    }
+    .pt-chip:active { transform: scale(.94); }
+    .pt-chip .pt-sound { font-size: 1.35rem; font-weight: 800; line-height: 1.1; }
+    .pt-chip .pt-eg    { font-size: .62rem; color: var(--c-muted); line-height: 1.1; }
+    /* The state, in words, on every chip. THIS is why there is no legend. */
+    .pt-chip .pt-state { font-size: .6rem; font-weight: 700; letter-spacing: .2px;
+                         text-transform: lowercase; line-height: 1.1; margin-top: 2px; }
+    .pt-chip[data-state="not_yet"] .pt-state { color: var(--c-muted); }
+
+    .pt-chip[data-state="green"] { background: var(--c-green-light); background: var(--pt-green-bg);
+                                   border-color: var(--c-green); }
+    .pt-chip[data-state="green"] .pt-sound,
+    .pt-chip[data-state="green"] .pt-state,
+    .pt-chip[data-state="green"] .pt-eg { color: var(--c-green); color: var(--pt-green-ink); }
+
+    .pt-chip[data-state="amber"] { background: var(--c-amber-light); background: var(--pt-amber-bg);
+                                   border-color: var(--c-amber); }
+    .pt-chip[data-state="amber"] .pt-sound,
+    .pt-chip[data-state="amber"] .pt-state,
+    .pt-chip[data-state="amber"] .pt-eg { color: var(--c-amber); color: var(--pt-amber-ink); }
+
+    .pt-chip[data-state="red"] { background: var(--c-red-light); background: var(--pt-red-bg);
+                                 border-color: var(--c-red); }
+    .pt-chip[data-state="red"] .pt-sound,
+    .pt-chip[data-state="red"] .pt-state,
+    .pt-chip[data-state="red"] .pt-eg { color: var(--c-red); color: var(--pt-red-ink); }
+
+    .pt-chip.pt-saving { opacity: .55; }
+
+    /* ── The one extra row the oldest children get ───────────────────────── */
+    #pt-cvc-block .pt-chip { min-height: 76px; width: 100%; flex-direction: row; gap: 12px;
+                             justify-content: flex-start; padding: 10px 14px; text-align: left; }
+    #pt-cvc-block .pt-chip .pt-sound { font-size: 1.05rem; }
+    #pt-cvc-block .pt-chip .pt-cvc-text { flex: 1; }
+    #pt-cvc-block .pt-chip .pt-state { margin-top: 0; font-size: .72rem; }
+
+    /* ── Child picker (no ?child= in the URL) ────────────────────────────── */
+    .pt-kid { display: flex; align-items: center; gap: 10px; width: 100%;
+              min-height: 56px; padding: 10px 12px; margin-bottom: 8px;
+              border: 1px solid var(--c-border); border-radius: 12px;
+              background: var(--c-bg, transparent); color: var(--c-text);
+              font-family: inherit; font-size: .95rem; font-weight: 600;
+              cursor: pointer; text-align: left; }
+    .pt-kid small { display: block; font-weight: 400; font-size: .74rem; color: var(--c-muted); }
+    .pt-kid .pt-kid-chev { margin-left: auto; color: var(--c-muted); }
+
+    /* ── Send-home picker ────────────────────────────────────────────────── */
+    #pt-send { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 9000;
+               display: none; align-items: flex-end; justify-content: center; }
+    #pt-send.open { display: flex; }
+    #pt-send-sheet { background: var(--c-navy-mid, var(--c-surface)); width: 100%; max-width: 720px;
+                     max-height: 86vh; overflow-y: auto; border-radius: 18px 18px 0 0;
+                     padding: 14px 14px calc(env(safe-area-inset-bottom, 0px) + 18px);
+                     border: 1px solid var(--c-border); }
+    #pt-send-tabs { display: flex; gap: 8px; margin: 10px 0; }
+    #pt-send-tabs button { flex: 1; min-height: 44px; border-radius: 12px; font-family: inherit;
+                           font-size: .86rem; font-weight: 700; cursor: pointer;
+                           border: 1px solid var(--c-border); background: transparent; color: var(--c-muted); }
+    #pt-send-tabs button.on { background: var(--c-blue); border-color: var(--c-blue); color: #fff; }
+    #pt-send-q { width: 100%; min-height: 44px; border-radius: 12px; padding: 10px 12px;
+                 border: 1px solid var(--c-border); background: var(--c-bg, transparent);
+                 color: var(--c-text); font-family: inherit; font-size: .95rem; }
+    .pt-sendcard { width: 100%; text-align: left; border: 1px solid var(--c-border);
+                   border-radius: 12px; padding: 10px 12px; margin-top: 8px; min-height: 56px;
+                   background: var(--c-bg, transparent); color: var(--c-text);
+                   font-family: inherit; cursor: pointer; }
+    .pt-sendcard b { display: block; font-size: .92rem; }
+    .pt-sendcard small { display: block; color: var(--c-muted); font-size: .76rem; margin-top: 2px;
+                         line-height: 1.4; }
+    .pt-sent { border-left: 3px solid var(--c-green); padding: 8px 10px; margin-top: 8px;
+               border-radius: 0 8px 8px 0; font-size: .84rem; color: var(--c-text); }
+    .pt-sent small { display: block; color: var(--c-muted); font-size: .74rem; }
+    .pt-hidden { display: none !important; }
+
+    /* wren-app-shell.css caps EVERY button in the EY shell at 40px
+       (`body.wren-app-shell button { min-height: 40px }`, specificity 0,1,2).
+       That is the shared chrome's floor and is not this page's to edit — so the
+       tracker's own controls are raised back to the 44px the brief asks for with
+       an id-scoped selector that outranks it. Measured, not assumed:
+       scripts/b247-tablet-audit.js fails the build if any of them drops below. */
+    #pt-page .pt-btn, #pt-page .pt-chip, #pt-page .pt-kid,
+    #pt-send .pt-btn, #pt-send #pt-send-tabs button,
+    #pt-send #pt-send-q, #pt-send .pt-sendcard { min-height: 44px; }
+    #pt-cvc-block .pt-chip { min-height: 76px; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="pt-page">
+
+  <!-- Whose tracker this is -->
+  <div class="pt-card" id="pt-who-card">
+    <div id="pt-who">
+      <span class="pt-name" id="pt-name">Loading…</span>
+      <button class="pt-btn" id="pt-change" type="button">Change child</button>
+    </div>
+    <div class="pt-muted" id="pt-started" style="margin-top:6px"></div>
+  </div>
+
+  <!-- No child chosen yet: the children whose phonics switch is ON -->
+  <div class="pt-card pt-hidden" id="pt-picker-card">
+    <h2 class="pt-h">Who are you tracking?</h2>
+    <p class="pt-muted" id="pt-picker-note">Only children whose phonics switch is on appear here.
+      Turn it on from a child's profile to start them.</p>
+    <div id="pt-picker-list" style="margin-top:10px"></div>
+  </div>
+
+  <!-- The grid -->
+  <div id="pt-grid-wrap" class="pt-hidden">
+    <div id="pt-blocks"></div>
+
+    <div id="pt-cvc-block" class="pt-hidden">
+      <div class="pt-block-title">Reading whole words</div>
+      <div id="pt-cvc"></div>
+    </div>
+
+    <div class="pt-card" style="margin-top:16px">
+      <h2 class="pt-h">📮 Send a book or game home</h2>
+      <p class="pt-muted">Goes to the family as a next step. They can print it or work through it
+        on a tablet in the parents app.</p>
+      <div class="pt-actions" style="margin-top:10px">
+        <button class="pt-btn primary" id="pt-send-open" type="button">Choose a book or game</button>
+      </div>
+      <div id="pt-sent-list" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- Phonics is off for this child -->
+  <div class="pt-card pt-hidden" id="pt-off-card">
+    <h2 class="pt-h">Not in phonics yet</h2>
+    <p class="pt-muted" id="pt-off-msg">This child has not started phonics.</p>
+    <div class="pt-actions" style="margin-top:10px">
+      <button class="pt-btn primary" id="pt-off-profile" type="button">Open their profile</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Book / game picker -->
+<div id="pt-send" role="dialog" aria-modal="true" aria-label="Choose a book or game to send home">
+  <div id="pt-send-sheet">
+    <div style="display:flex;align-items:center;gap:10px">
+      <strong style="flex:1;color:var(--c-text)">Send home</strong>
+      <button class="pt-btn" id="pt-send-close" type="button">Close</button>
+    </div>
+    <div id="pt-send-tabs">
+      <button type="button" data-kind="book" class="on">📖 Books</button>
+      <button type="button" data-kind="game">🎲 Games</button>
+    </div>
+    <input id="pt-send-q" type="search" placeholder="Search by name…" autocomplete="off">
+    <div id="pt-send-list"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  function niceDate(v) {
+    if (!v) return '';
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+    var d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v);
+    return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function toast(msg, kind) {
+    if (window.Wren && Wren.toast) Wren.toast(msg, kind || 'info', 2600);
+  }
+
+  // The tap cycle. Green is FIRST after "not yet" so marking a sound confident —
+  // which is what a practitioner is nearly always doing — costs exactly one tap.
+  // Red and amber are the exception and pay the extra taps. (b247 brief: "Count
+  // the taps needed to mark one sound green. If it is more than one, simplify.")
+  var CYCLE = ['not_yet', 'green', 'amber', 'red'];
+  // What each state MEANS, said on the chip itself so the page needs no key.
+  var WORD = { not_yet: 'not yet', green: 'confident', amber: 'getting there', red: 'just met' };
+  function nextState(s) { return CYCLE[(CYCLE.indexOf(s) + 1) % CYCLE.length] || 'green'; }
+
+  var STATE = { childId: null, data: null, cards: null, kind: 'book', sending: false };
+
+  // ── Rendering ────────────────────────────────────────────────────────────
+  function chipHTML(item, isCvc) {
+    var st = item.state || 'not_yet';
+    if (isCvc) {
+      return '<button class="pt-chip" type="button" data-sound="' + esc(item.sound) + '" data-state="' + esc(st) + '"' +
+             ' aria-label="Decoding CVC words — ' + esc(WORD[st]) + '. Tap to change.">' +
+             '<span class="pt-cvc-text">' +
+               '<span class="pt-sound" style="display:block">Decoding CVC words</span>' +
+               '<span class="pt-eg">' + esc(item.example || '') + '</span>' +
+             '</span>' +
+             '<span class="pt-state">' + esc(WORD[st]) + '</span>' +
+             '</button>';
+    }
+    return '<button class="pt-chip" type="button" data-sound="' + esc(item.sound) + '" data-state="' + esc(st) + '"' +
+           ' aria-label="' + esc(item.sound) + ' — ' + esc(WORD[st]) + '. Tap to change.">' +
+           '<span class="pt-sound">' + esc(item.sound) + '</span>' +
+           (item.example ? '<span class="pt-eg">' + esc(item.example) + '</span>' : '') +
+           '<span class="pt-state">' + esc(WORD[st]) + '</span>' +
+           '</button>';
+  }
+
+  function renderGrid(d) {
+    var blocks = document.getElementById('pt-blocks');
+    var byPhase = {};
+    d.sounds.forEach(function (s) { (byPhase[s.phase] || (byPhase[s.phase] = [])).push(s); });
+    // Phase 2 then Phase 3. Not a level or a score — just where the sound is
+    // introduced, which is the order a practitioner already teaches them in.
+    var html = '';
+    Object.keys(byPhase).sort().forEach(function (p) {
+      html += '<div class="pt-block-title">' + (p === '2' ? 'First sounds' : 'Next sounds') + '</div>';
+      html += '<div class="pt-grid">' + byPhase[p].map(function (s) { return chipHTML(s, false); }).join('') + '</div>';
+    });
+    blocks.innerHTML = html;
+
+    var cvcBlock = document.getElementById('pt-cvc-block');
+    if (d.cvc) {
+      document.getElementById('pt-cvc').innerHTML = chipHTML(d.cvc, true);
+      cvcBlock.classList.remove('pt-hidden');
+    } else {
+      cvcBlock.classList.add('pt-hidden');
+    }
+  }
+
+  function renderWho(d) {
+    document.getElementById('pt-name').textContent = d.child_name || ('Child ' + d.child_id);
+    document.getElementById('pt-started').textContent = d.started_on
+      ? 'Phonics since ' + niceDate(d.started_on) + (d.enabled_by_name ? ' · started by ' + d.enabled_by_name : '')
+      : '';
+  }
+
+  // ── One tap = one call ───────────────────────────────────────────────────
+  function onChipTap(btn) {
+    if (btn.classList.contains('pt-saving')) return;
+    var sound = btn.getAttribute('data-sound');
+    var was = btn.getAttribute('data-state') || 'not_yet';
+    var now = nextState(was);
+    // Optimistic: the chip changes under the finger, then the write confirms it.
+    btn.setAttribute('data-state', now);
+    btn.querySelector('.pt-state').textContent = WORD[now];
+    btn.classList.add('pt-saving');
+    Wren.api('/api/phonics/child/' + STATE.childId + '/tracker',
+      { method: 'PUT', body: { sound: sound, state: now } })
+      .then(function () { btn.classList.remove('pt-saving'); })
+      .catch(function (e) {
+        btn.setAttribute('data-state', was);
+        btn.querySelector('.pt-state').textContent = WORD[was];
+        btn.classList.remove('pt-saving');
+        toast((e && (e.error === 'phonics_off' ? 'Phonics is off for this child' : e.message)) || 'Could not save', 'error');
+      });
+  }
+
+  // ── Send home ────────────────────────────────────────────────────────────
+  function renderSendList() {
+    var host = document.getElementById('pt-send-list');
+    var q = (document.getElementById('pt-send-q').value || '').trim().toLowerCase();
+    var list = (STATE.cards || []).filter(function (c) { return c.kind === STATE.kind; });
+    if (q) list = list.filter(function (c) { return (c.name + ' ' + (c.description || '')).toLowerCase().indexOf(q) !== -1; });
+    if (!list.length) { host.innerHTML = '<p class="pt-muted" style="margin-top:12px">Nothing matches.</p>'; return; }
+    host.innerHTML = list.map(function (c) {
+      return '<button class="pt-sendcard" type="button" data-act="' + c.activity_id + '">' +
+             '<b>' + esc(c.name) + '</b>' +
+             '<small>' + esc(String(c.description || '').slice(0, 130)) + '</small>' +
+             '</button>';
+    }).join('');
+  }
+
+  function openSend() {
+    document.getElementById('pt-send').classList.add('open');
+    if (STATE.cards) { renderSendList(); return; }
+    document.getElementById('pt-send-list').innerHTML = '<p class="pt-muted" style="margin-top:12px">Loading…</p>';
+    Wren.api('/api/phonics/home-cards').then(function (r) {
+      STATE.cards = (r && r.cards) || [];
+      renderSendList();
+    }).catch(function () {
+      document.getElementById('pt-send-list').innerHTML =
+        '<p class="pt-muted" style="margin-top:12px">Could not load the books and games.</p>';
+    });
+  }
+
+  function sendCard(activityId) {
+    if (STATE.sending) return;
+    STATE.sending = true;
+    Wren.api('/api/phonics/child/' + STATE.childId + '/home-step',
+      { method: 'POST', body: { activity_id: Number(activityId) } })
+      .then(function (r) {
+        STATE.sending = false;
+        document.getElementById('pt-send').classList.remove('open');
+        toast(r && r.duplicate ? 'Already sent home' : 'Sent home', 'success');
+        loadSent();
+      })
+      .catch(function (e) {
+        STATE.sending = false;
+        toast((e && (e.error || e.message)) || 'Could not send', 'error');
+      });
+  }
+
+  function loadSent() {
+    var host = document.getElementById('pt-sent-list');
+    Wren.api('/api/phonics/child/' + STATE.childId + '/home-steps').then(function (rows) {
+      if (!rows || !rows.length) { host.innerHTML = ''; return; }
+      host.innerHTML = rows.map(function (r) {
+        return '<div class="pt-sent">' + (r.kind === 'book' ? '📖 ' : '🎲 ') + esc(r.name) +
+               '<small>' + esc(r.status === 'pending' ? 'with the family' : r.status) +
+               ' · ' + esc(niceDate(r.created_at)) + '</small></div>';
+      }).join('');
+    }).catch(function () { host.innerHTML = ''; });
+  }
+
+  // ── Loading ──────────────────────────────────────────────────────────────
+  function showPicker() {
+    document.getElementById('pt-who-card').classList.add('pt-hidden');
+    document.getElementById('pt-grid-wrap').classList.add('pt-hidden');
+    document.getElementById('pt-off-card').classList.add('pt-hidden');
+    document.getElementById('pt-picker-card').classList.remove('pt-hidden');
+    var host = document.getElementById('pt-picker-list');
+    host.innerHTML = '<p class="pt-muted">Loading…</p>';
+    Wren.api('/api/phonics/enrolled').then(function (kids) {
+      if (!kids || !kids.length) {
+        host.innerHTML = '<p class="pt-muted">No child has phonics switched on yet.</p>';
+        return;
+      }
+      host.innerHTML = kids.map(function (k) {
+        return '<button class="pt-kid" type="button" data-child="' + k.id + '">' +
+               '<span>' + esc(k.first_name + ' ' + (k.last_name || '')) +
+               '<small>' + esc(k.room_name || '') +
+               (k.started_on ? ' · since ' + esc(niceDate(k.started_on)) : '') + '</small></span>' +
+               '<span class="pt-kid-chev">›</span></button>';
+      }).join('');
+    }).catch(function () { host.innerHTML = '<p class="pt-muted">Could not load the list.</p>'; });
+  }
+
+  function load(childId) {
+    STATE.childId = childId;
+    document.getElementById('pt-picker-card').classList.add('pt-hidden');
+    document.getElementById('pt-who-card').classList.remove('pt-hidden');
+    Wren.api('/api/phonics/child/' + childId + '/tracker').then(function (d) {
+      // The name is not on the tracker payload (it is about sounds, not children),
+      // so it comes from the children route the rest of the portal already uses.
+      Wren.api('/api/children/' + childId).then(function (c) {
+        d.child_name = c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : null;
+        renderWho(d);
+      }).catch(function () { renderWho(d); });
+      STATE.data = d;
+      document.getElementById('pt-off-card').classList.add('pt-hidden');
+      document.getElementById('pt-grid-wrap').classList.remove('pt-hidden');
+      renderGrid(d);
+      loadSent();
+    }).catch(function (e) {
+      document.getElementById('pt-grid-wrap').classList.add('pt-hidden');
+      document.getElementById('pt-off-card').classList.remove('pt-hidden');
+      document.getElementById('pt-off-msg').textContent =
+        (e && e.message) || 'This child has not started phonics.';
+      document.getElementById('pt-name').textContent = 'Phonics';
+      document.getElementById('pt-started').textContent = '';
+    });
+  }
+
+  function boot() {
+    var params = new URLSearchParams(window.location.search);
+    var child = params.get('child') || params.get('child_id');
+
+    document.getElementById('pt-blocks').addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.pt-chip') : null;
+      if (btn) onChipTap(btn);
+    });
+    document.getElementById('pt-cvc').addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.pt-chip') : null;
+      if (btn) onChipTap(btn);
+    });
+    document.getElementById('pt-picker-list').addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.pt-kid') : null;
+      if (btn) load(btn.getAttribute('data-child'));
+    });
+    document.getElementById('pt-change').addEventListener('click', showPicker);
+    document.getElementById('pt-off-profile').addEventListener('click', function () {
+      if (STATE.childId) Wren.navigate('/ey/child/' + STATE.childId);
+    });
+    document.getElementById('pt-send-open').addEventListener('click', openSend);
+    document.getElementById('pt-send-close').addEventListener('click', function () {
+      document.getElementById('pt-send').classList.remove('open');
+    });
+    document.getElementById('pt-send').addEventListener('click', function (e) {
+      if (e.target.id === 'pt-send') document.getElementById('pt-send').classList.remove('open');
+    });
+    document.getElementById('pt-send-tabs').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button[data-kind]') : null;
+      if (!b) return;
+      STATE.kind = b.getAttribute('data-kind');
+      Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) {
+        x.classList.toggle('on', x === b);
+      });
+      renderSendList();
+    });
+    document.getElementById('pt-send-q').addEventListener('input', renderSendList);
+    document.getElementById('pt-send-list').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.pt-sendcard') : null;
+      if (b) sendCard(b.getAttribute('data-act'));
+    });
+
+    if (child) load(child); else showPicker();
+  }
+
+  document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

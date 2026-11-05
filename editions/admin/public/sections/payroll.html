@@ -1,0 +1,826 @@
+<div class="v2-section" data-section="payroll">
+
+  <nav class="wren-tab-bar" role="tablist" aria-label="Payroll tabs">
+    <div class="tab-bar-track">
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="generate"  id="tab-pr-gen"  aria-controls="panel-pr-gen">Generate</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="runs"      id="tab-pr-runs" aria-controls="panel-pr-runs">Payroll runs</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="templates" id="tab-pr-tpl"  aria-controls="panel-pr-tpl">Templates</button>
+      <!-- b363 (2026-09-29) — the BrightHR CSV importer. Pay-gated: hidden for
+           anyone without view_staff_salaries (boot() below), because the whole
+           tab is tax codes, NI numbers, addresses and pay rates. -->
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="import"    id="tab-pr-imp"  aria-controls="panel-pr-imp">Import details (CSV)</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+  <div class="wren-tab-panels">
+
+    <!-- ── GENERATE ───────────────────────────────────────────────────────── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-pr-gen" data-tab="generate" aria-labelledby="tab-pr-gen">
+
+      <div id="pr-paywall" hidden></div>
+
+      <div class="pr-bar">
+        <label class="pr-field"><span>Period</span>
+          <select id="pr-preset" class="pr-in">
+            <option value="last_month" selected>Last calendar month</option>
+            <option value="this_month">This calendar month</option>
+            <option value="last_4w">Last 4 weeks</option>
+            <option value="custom">Choose dates…</option>
+          </select>
+        </label>
+        <label class="pr-field"><span>From</span><input type="date" id="pr-from" class="pr-in"></label>
+        <label class="pr-field"><span>To</span><input type="date" id="pr-to" class="pr-in"></label>
+        <label class="pr-field"><span>Template</span>
+          <select id="pr-template" class="pr-in"><option value="">No template — all active staff</option></select>
+        </label>
+        <span class="pr-spacer"></span>
+        <!-- b363 — the same tab, reachable from where the gaps are noticed.
+             Hidden alongside Generate for anyone who cannot see pay. -->
+        <button class="btn btn-ghost" id="pr-btn-import" type="button">Import payroll details (CSV)</button>
+        <button class="pr-generate" id="pr-btn-generate">Generate payroll</button>
+      </div>
+      <div class="pr-periodline" id="pr-periodline"></div>
+
+      <div id="pr-coverage"></div>
+      <div id="pr-preview"><div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div></div>
+
+      <div class="pr-card" id="pr-recent-card" hidden>
+        <h3>Previous runs</h3>
+        <div class="pr-sub">Open one to check the per-staff lines, export it, or finalise it.</div>
+        <div class="pr-scroll" id="pr-recent"></div>
+      </div>
+    </div>
+
+    <!-- ── RUNS ───────────────────────────────────────────────────────────── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-pr-runs" data-tab="runs" aria-labelledby="tab-pr-runs" hidden>
+      <div id="pr-runs-list">
+        <div class="pr-card">
+          <h3>Payroll runs</h3>
+          <div class="pr-sub">Newest first. A finalised run is locked — its figures cannot be edited afterwards.</div>
+          <div class="pr-scroll" id="pr-runs-body"><div class="tab-skeleton"><div class="tab-sk-card"></div></div></div>
+        </div>
+      </div>
+      <div id="pr-run-detail" hidden></div>
+    </div>
+
+    <!-- ── TEMPLATES ──────────────────────────────────────────────────────── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-pr-tpl" data-tab="templates" aria-labelledby="tab-pr-tpl" hidden>
+      <div class="pr-note">
+        <b>A template is a saved payroll run configuration.</b> It remembers the pay-period shape,
+        who is included, and which pay elements count — so Generate starts from your usual setup
+        instead of you re-picking it every month. It does not store any figures.
+      </div>
+      <div class="pr-card">
+        <h3>Saved templates</h3>
+        <div class="pr-scroll" id="pr-tpl-body"><div class="tab-skeleton"><div class="tab-sk-card"></div></div></div>
+      </div>
+      <div class="pr-card" id="pr-tpl-new-card">
+        <h3>New template</h3>
+        <div class="pr-bar">
+          <label class="pr-field pr-grow"><span>Name</span><input type="text" id="pr-tpl-name" class="pr-in" placeholder="e.g. Monthly — term-time staff"></label>
+          <label class="pr-field"><span>Pay period</span>
+            <select id="pr-tpl-shape" class="pr-in">
+              <option value="monthly" selected>Monthly</option>
+              <option value="four_weekly">4-weekly</option>
+              <option value="weekly">Weekly</option>
+              <option value="custom">Custom dates</option>
+            </select>
+          </label>
+          <label class="pr-field"><span>Only these roles</span>
+            <select id="pr-tpl-roles" class="pr-in" multiple size="4"></select>
+          </label>
+        </div>
+        <div class="pr-bar">
+          <label class="pr-check"><input type="checkbox" id="pr-tpl-absence" checked> Deduct approved absence</label>
+          <label class="pr-check"><input type="checkbox" id="pr-tpl-toil"> Pay accrued TOIL</label>
+          <label class="pr-check"><input type="checkbox" id="pr-tpl-inactive"> Include inactive staff</label>
+          <label class="pr-check"><input type="checkbox" id="pr-tpl-default"> Make this the default</label>
+          <span class="pr-spacer"></span>
+          <button class="btn btn-primary" id="pr-tpl-save">Save template</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── IMPORT DETAILS (CSV) — b363 ─────────────────────────────────────── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-pr-imp" data-tab="import" aria-labelledby="tab-pr-imp" hidden>
+      <!-- The whole screen lives in public/js/wren-payroll-import.js, loaded on
+           first use. It is a shared module rather than inline script so the HR
+           and school editions can mount the same panel later without a second
+           copy of the mapping UI. -->
+      <div id="pr-import-root"><div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div></div>
+    </div>
+
+  </div><!-- /.wren-tab-panels -->
+</div><!-- /.v2-section -->
+
+<style>
+/* b228 — Staff → Payroll. Tokens only, no bare hex. */
+.pr-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:10px}
+.pr-spacer{flex:1 1 auto}
+.pr-field{display:flex;flex-direction:column;gap:4px}
+.pr-field.pr-grow{flex:1 1 240px}
+.pr-field>span{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--c-muted)}
+.pr-in{background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;padding:8px 10px;
+  color:var(--c-text);font-family:inherit;font-size:.88rem;width:100%}
+.pr-check{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--c-muted);padding-bottom:9px}
+.pr-generate{background:var(--c-orange);color:var(--c-navy);border:none;border-radius:10px;
+  padding:13px 26px;font-size:.98rem;font-weight:700;cursor:pointer;font-family:inherit;
+  box-shadow:0 2px 10px rgba(240,195,74,.18)}
+.pr-generate:hover{background:var(--c-orange-dark)}
+.pr-generate:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+.pr-periodline{font-size:.78rem;color:var(--c-muted);margin:-2px 0 16px}
+.pr-periodline b{color:var(--c-text)}
+.pr-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.pr-tile{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px 16px}
+.pr-tile .k{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);margin-bottom:6px}
+.pr-tile .v{font-size:1.35rem;font-weight:700;color:var(--c-text);font-variant-numeric:tabular-nums}
+.pr-tile .s{font-size:.73rem;color:var(--c-muted);margin-top:4px;line-height:1.35}
+.pr-tile.good .v{color:var(--c-green)} .pr-tile.warn .v{color:var(--c-amber)} .pr-tile.bad .v{color:var(--c-red)}
+.pr-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:16px;margin-bottom:16px}
+.pr-card h3{font-size:1rem;margin:0 0 4px;color:var(--c-text)}
+.pr-card .pr-sub{font-size:.78rem;color:var(--c-muted);margin-bottom:12px;line-height:1.5}
+.pr-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.pr-table{width:100%;border-collapse:collapse;font-size:.84rem;min-width:680px}
+.pr-table th{text-align:left;font-size:.67rem;text-transform:uppercase;letter-spacing:.04em;color:var(--c-muted);
+  padding:8px 9px;border-bottom:1px solid var(--c-border);white-space:nowrap;position:sticky;top:0;background:var(--c-bg)}
+.pr-table td{padding:8px 9px;border-bottom:1px solid var(--c-border);color:var(--c-text);vertical-align:top}
+.pr-table td.n,.pr-table th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pr-table tbody tr:hover{background:rgba(255,255,255,.03)}
+.pr-table tfoot td{font-weight:700;border-top:2px solid var(--c-border);border-bottom:none}
+.pr-table tr.pr-flag td{background:rgba(251,191,36,.05)}
+.pr-table tr.pr-blocked td{background:rgba(248,113,113,.07)}
+.pr-row-click{cursor:pointer}
+.pr-note{background:rgba(91,143,255,.07);border:1px solid var(--c-border);border-left:3px solid var(--c-blue);
+  border-radius:8px;padding:11px 14px;font-size:.79rem;color:var(--c-muted);line-height:1.55;margin-bottom:14px}
+.pr-note.warn{background:rgba(251,191,36,.08);border-left-color:var(--c-amber)}
+.pr-note.bad{background:rgba(248,113,113,.09);border-left-color:var(--c-red)}
+.pr-note b{color:var(--c-text)}
+.pr-pill{display:inline-block;font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:20px;
+  background:var(--c-navy-light);color:var(--c-muted);white-space:nowrap}
+.pr-pill.amber{background:rgba(251,191,36,.16);color:var(--c-amber)}
+.pr-pill.red{background:rgba(248,113,113,.16);color:var(--c-red)}
+.pr-pill.green{background:rgba(52,211,153,.16);color:var(--c-green)}
+.pr-pill.blue{background:rgba(91,143,255,.16);color:var(--c-blue)}
+.pr-missing{color:var(--c-red);font-weight:700;font-size:.76rem;letter-spacing:.02em}
+.pr-warnlist{margin:4px 0 0;padding:0;list-style:none}
+.pr-warnlist li{font-size:.72rem;color:var(--c-amber);line-height:1.45;margin-top:2px}
+.pr-warnlist li.bad{color:var(--c-red)}
+.pr-empty{color:var(--c-muted);padding:22px;text-align:center;font-size:.86rem}
+.pr-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.pr-back{background:none;border:none;color:var(--c-blue);cursor:pointer;font-family:inherit;font-size:.85rem;padding:0 4px 0 0}
+.pr-edit{background:var(--c-bg);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);
+  font-family:inherit;font-size:.82rem;padding:4px 6px;width:74px;text-align:right;font-variant-numeric:tabular-nums}
+.pr-edit:disabled{opacity:.55;cursor:not-allowed}
+.pr-lock{display:flex;align-items:center;gap:8px;font-size:.82rem;padding:10px 12px;border-radius:8px;
+  border:1px solid var(--c-border);border-left:3px solid var(--c-green);background:rgba(52,211,153,.07);margin-bottom:14px}
+@media (max-width:640px){ .pr-bar{gap:8px} .pr-tile .v{font-size:1.15rem} .pr-generate{width:100%} }
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  // ══ b228 — Staff → Payroll ════════════════════════════════════════════════
+  // Toby: "I should just click - staff - payroll - generate. I choose dates."
+  //
+  // The screen's one non-negotiable job beyond that: never let an INFERRED hours
+  // figure look like a measured one. ladn.staff_shifts is empty, so almost every
+  // number here is calculated from the rota or the work pattern. Each line says
+  // where its hours came from, and a staff member with no source at all shows a
+  // red warning rather than a quiet £0.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  var API = '/api/payroll';
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  };
+  var money = function (p) {
+    if (p == null) return '—';
+    var neg = p < 0;
+    var s = '£' + (Math.abs(p) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return neg ? '−' + s : s;
+  };
+  var hrs = function (h) { return (Number(h) || 0).toFixed(2) + 'h'; };
+  var day = function (d) {
+    if (!d) return '—';
+    return new Date(String(d).slice(0, 10) + 'T12:00:00Z')
+      .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  };
+  var tok = function () { return sessionStorage.getItem('wrenToken') || ''; };
+  var $ = function (id) { return document.getElementById(id); };
+  var on = function (id, ev, fn) { var el = $(id); if (el) el.addEventListener(ev, fn); };
+
+  var CTX = { can_see_pay: true, templates: [], roles: [], coverage: {} };
+
+  /* Always scope panel lookups with `.v2-section`. The shell's SIDEBAR BUTTONS
+     also carry data-section="payroll" and come first in the document, so a bare
+     [data-section="payroll"] selector silently resolves to the sidebar button —
+     which is how the delegated click handler ended up attached to nothing. */
+  var panel = function () { return document.querySelector('.v2-section[data-section="payroll"]'); };
+  var tabBtn = function (name) {
+    var p = panel();
+    return p && p.querySelector('[data-tab="' + name + '"][role="tab"]');
+  };
+
+  function get(path, params) {
+    var qs = new URLSearchParams(params || {}).toString();
+    return Wren.api(API + path + (qs ? '?' + qs : ''));
+  }
+  function post(path, body) { return Wren.api(API + path, { method: 'POST', body: body || {} }); }
+
+  /* Downloads go through a raw authenticated fetch — the shell's Wren.api parses
+     JSON, which would mangle a CSV or a PDF. */
+  function download(path, filename, mime) {
+    return fetch(API + path, { headers: { Authorization: 'Bearer ' + tok() }, credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t.slice(0, 160) || ('HTTP ' + r.status)); });
+        return r.blob();
+      }).then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+        a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+        Wren.toast((mime || 'File') + ' downloaded', 'success');
+      }).catch(function (e) { Wren.toast('Export failed: ' + e.message, 'error'); });
+  }
+
+  function tiles(list) {
+    return '<div class="pr-tiles">' + list.map(function (t) {
+      return '<div class="pr-tile' + (t.tone ? ' ' + t.tone : '') + '"><div class="k">' + esc(t.k) + '</div>'
+        + '<div class="v">' + t.v + '</div>' + (t.s ? '<div class="s">' + esc(t.s) + '</div>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
+  function notes(list) {
+    return (list || []).map(function (q) {
+      var cls = q.level === 'bad' ? ' bad' : (q.level === 'warn' ? ' warn' : '');
+      return '<div class="pr-note' + cls + '"><b>' + esc(q.issue) + '</b> — ' + esc(q.detail) + '</div>';
+    }).join('');
+  }
+  function table(cols, rows, foot) {
+    return '<table class="pr-table"><thead><tr>'
+      + cols.map(function (c) { return '<th' + (c.n ? ' class="n"' : '') + '>' + esc(c.label) + '</th>'; }).join('')
+      + '</tr></thead><tbody>'
+      + (rows.length ? rows.map(function (r) {
+        return '<tr' + (r._cls ? ' class="' + r._cls + '"' : '') + (r._attrs || '') + '>'
+          + cols.map(function (c) { return '<td' + (c.n ? ' class="n"' : '') + '>' + (r[c.key] == null ? '—' : r[c.key]) + '</td>'; }).join('')
+          + '</tr>';
+      }).join('') : '<tr><td colspan="' + cols.length + '" class="pr-empty">Nothing to show</td></tr>')
+      + '</tbody>'
+      + (foot ? '<tfoot><tr>' + cols.map(function (c) {
+        return '<td' + (c.n ? ' class="n"' : '') + '>' + (foot[c.key] == null ? '' : foot[c.key]) + '</td>';
+      }).join('') + '</tr></tfoot>' : '') + '</table>';
+  }
+
+  /* Where a line's hours came from, said plainly. A "~" prefix and the amber pill
+     are the visual tell that a figure was calculated rather than measured. */
+  var SOURCE_LABEL = {
+    clocked: 'Clocked in', rostered: 'Rota', work_pattern: 'Work pattern',
+    contracted_hours: 'Contract hours', none: 'No source',
+  };
+  function sourcePill(l) {
+    if (l.hours_source === 'none') return '<span class="pr-pill red">No hours source</span>';
+    var label = SOURCE_LABEL[l.hours_source] || l.hours_source;
+    return l.hours_inferred
+      ? '<span class="pr-pill amber" title="Calculated, not measured">~ ' + esc(label) + '</span>'
+      : '<span class="pr-pill green">' + esc(label) + '</span>';
+  }
+  function warnList(ws) {
+    if (!ws || !ws.length) return '';
+    return '<ul class="pr-warnlist">' + ws.map(function (w) {
+      var bad = w.code === 'no_pay_rate' || w.code === 'no_hours_source';
+      return '<li' + (bad ? ' class="bad"' : '') + '>' + esc(w.message) + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  // ── period picker ──────────────────────────────────────────────────────────
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function iso(d) { return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
+  function applyPreset(which) {
+    var now = new Date();
+    var y = now.getUTCFullYear(), m = now.getUTCMonth() + 1, from, to;
+    if (which === 'this_month') {
+      from = y + '-' + pad(m) + '-01';
+      to = iso(new Date(Date.UTC(y, m, 0)));
+    } else if (which === 'last_4w') {
+      var end = new Date(Date.UTC(y, m - 1, now.getUTCDate()));
+      var start = new Date(end.getTime()); start.setUTCDate(start.getUTCDate() - 27);
+      from = iso(start); to = iso(end);
+    } else if (which === 'custom') {
+      return; // leave whatever is in the boxes
+    } else {
+      var pm = m === 1 ? 12 : m - 1, py = m === 1 ? y - 1 : y;
+      from = py + '-' + pad(pm) + '-01';
+      to = iso(new Date(Date.UTC(py, pm, 0)));
+    }
+    $('pr-from').value = from; $('pr-to').value = to;
+  }
+  function periodParams() {
+    var p = { from: $('pr-from').value, to: $('pr-to').value };
+    var t = $('pr-template').value;
+    if (t) p.template_id = t;
+    return p;
+  }
+
+  // ── boot ───────────────────────────────────────────────────────────────────
+  function boot() {
+    get('/context').then(function (d) {
+      CTX = d;
+      applyPreset('last_month');
+      if (d.default_period) { $('pr-from').value = d.default_period.from; $('pr-to').value = d.default_period.to; }
+
+      var sel = $('pr-template');
+      (d.templates || []).forEach(function (t) {
+        var o = document.createElement('option');
+        o.value = t.id; o.textContent = t.name + (t.is_default ? ' (default)' : '');
+        if (t.is_default) o.selected = true;
+        sel.appendChild(o);
+      });
+      var rsel = $('pr-tpl-roles');
+      (d.roles || []).forEach(function (r) {
+        var o = document.createElement('option'); o.value = r; o.textContent = r; rsel.appendChild(o);
+      });
+
+      renderCoverage(d.coverage);
+      if (!d.can_see_pay) {
+        $('pr-paywall').hidden = false;
+        $('pr-paywall').innerHTML = '<div class="pr-note"><b>You can see hours, not pay.</b> '
+          + 'Salary and pay figures are restricted to managers, so the money columns are hidden on this screen '
+          + 'and Generate, Finalise and Export are unavailable. Everything about hours, work patterns and absence is shown in full.</div>';
+        $('pr-btn-generate').disabled = true;
+        $('pr-tpl-new-card').hidden = true;
+        // b363 — the importer is every pay field there is. The API refuses a
+        // deputy manager outright (requireSalaryView on /api/payroll/import);
+        // this takes the tab away rather than leaving a button that 403s.
+        var impTab = tabBtn('import');
+        if (impTab) impTab.hidden = true;
+        if ($('pr-btn-import')) $('pr-btn-import').hidden = true;
+      }
+      loadPreview();
+      loadRecent();
+    }).catch(function (e) {
+      $('pr-preview').innerHTML = '<div class="pr-empty">'
+        + ((e && e.error === 'forbidden_role') ? esc(e.message)
+           : 'Could not open Payroll — ' + esc((e && (e.message || e.error)) || 'unknown error')) + '</div>';
+    });
+  }
+
+  function renderCoverage(c) {
+    if (!c) return;
+    $('pr-coverage').innerHTML = tiles([
+      { k: 'Active staff', v: c.active_staff },
+      { k: 'With a work pattern', v: c.with_work_pattern + ' / ' + c.active_staff,
+        tone: c.without_work_pattern ? 'warn' : 'good',
+        s: c.without_work_pattern ? c.without_work_pattern + ' have none on file' : 'all covered' },
+      { k: 'Missing a pay rate', v: c.without_pay_rate,
+        tone: c.without_pay_rate ? 'bad' : 'good',
+        s: c.without_pay_rate ? 'no hourly rate and no salary' : 'every active staff member has one' },
+      { k: 'Clock-in records', v: c.clock_records,
+        tone: c.clock_records ? 'good' : 'warn',
+        s: c.clock_records ? 'measured hours available' : 'none — all hours are inferred' },
+    ]);
+  }
+
+  // ── preview ────────────────────────────────────────────────────────────────
+  var previewTimer = null;
+  function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(loadPreview, 250); }
+
+  function loadPreview() {
+    var el = $('pr-preview');
+    var p = periodParams();
+    if (!p.from || !p.to) { el.innerHTML = '<div class="pr-empty">Pick a from and a to date.</div>'; return; }
+    el.innerHTML = '<div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>';
+    get('/preview', p).then(function (d) {
+      $('pr-periodline').innerHTML = '<b>' + esc(d.period.label) + '</b> · ' + esc(d.period.from) + ' to '
+        + esc(d.period.to) + ' · ' + d.period.working_days + ' working days'
+        + (d.period.whole_month ? '' : ' · <span class="pr-pill amber">not a whole month — PAYE thresholds pro-rated</span>');
+      el.innerHTML = previewHtml(d);
+    }).catch(function (e) {
+      el.innerHTML = '<div class="pr-empty">Could not preview this period — '
+        + esc((e && (e.message || e.error)) || 'unknown error') + '</div>';
+    });
+  }
+
+  function previewHtml(d) {
+    var t = d.totals;
+    var tl = [
+      { k: 'Staff on this run', v: t.staff_count },
+      { k: 'Contracted hours', v: hrs(t.contracted_hours) },
+      { k: 'Hours to pay', v: hrs(t.paid_hours), s: t.absence_hours ? hrs(t.absence_hours) + ' absence in period' : '' },
+    ];
+    if (CTX.can_see_pay) {
+      tl.push({ k: 'Gross (est.)', v: money(t.gross_pence), tone: 'good' });
+      tl.push({ k: 'Net (est.)', v: money(t.net_pence) });
+    }
+    tl.push({ k: 'Lines needing a look', v: t.blocking_lines,
+      tone: t.blocking_lines ? 'bad' : 'good',
+      s: t.blocking_lines ? 'no rate or no hours source' : 'none blocking' });
+
+    return tiles(tl) + notes(d.data_quality)
+      + '<div class="pr-card"><h3>Preview — nothing has been saved yet</h3>'
+      + '<div class="pr-sub">This is exactly what Generate will create. Check the flagged lines first.</div>'
+      + '<div class="pr-scroll">' + linesTable(d.lines, false, null) + '</div></div>';
+  }
+
+  // ── the lines table (shared by preview and run detail) ─────────────────────
+  function lineCols(editable) {
+    var cols = [
+      { key: 'name', label: 'Staff' },
+      { key: 'source', label: 'Hours from' },
+      { key: 'contracted', label: 'Contracted', n: true },
+      { key: 'actual', label: editable ? 'Paid hours' : 'Actual', n: true },
+      { key: 'absence', label: 'Absence', n: true },
+      { key: 'toil', label: 'TOIL', n: true },
+    ];
+    if (CTX.can_see_pay) {
+      cols = cols.concat([
+        { key: 'rate', label: 'Rate', n: true },
+        { key: 'gross', label: 'Gross', n: true },
+        { key: 'tax', label: 'Tax', n: true },
+        { key: 'ni', label: 'NI', n: true },
+        { key: 'pension', label: 'Pension', n: true },
+        { key: 'net', label: 'Net', n: true },
+      ]);
+    }
+    return cols;
+  }
+
+  function linesTable(lines, editable, locked) {
+    var cols = lineCols(editable);
+    var rows = lines.map(function (l) {
+      var blocked = l.blocking || (l.warnings || []).some(function (w) {
+        return w.code === 'no_pay_rate' || w.code === 'no_hours_source';
+      });
+      var noRate = l.pay_basis === 'unknown';
+      var paid = l.paid_hours != null ? l.paid_hours : l.hours_worked;
+      var r = {
+        _cls: blocked ? 'pr-blocked' : ((l.warnings || []).length ? 'pr-flag' : ''),
+        name: '<div>' + esc(l.staff_name) + '</div>'
+            + '<div style="font-size:.7rem;color:var(--c-muted)">' + esc(l.role || '—')
+            + (l.edited ? ' · <span class="pr-pill blue">edited</span>' : '') + '</div>'
+            + warnList(l.warnings),
+        source: sourcePill(l),
+        contracted: hrs(l.contracted_hours),
+        absence: (Number(l.absence_hours) || Number(l.absence_deducted_hours)) ? hrs(l.absence_hours || l.absence_deducted_hours) : '—',
+        toil: Number(l.toil_hours) ? hrs(l.toil_hours) : '—',
+      };
+      r.actual = (editable && !locked)
+        ? '<input class="pr-edit" type="number" step="0.25" min="0" value="' + (Number(paid) || 0).toFixed(2)
+          + '" data-line="' + l.id + '" data-field="hours_worked">'
+        : hrs(paid);
+      if (CTX.can_see_pay) {
+        r.rate = noRate ? '<span class="pr-missing">MISSING</span>'
+          : ((editable && !locked)
+            ? '<input class="pr-edit" type="number" step="0.01" min="0" value="'
+              + ((Number(l.hourly_rate_pence) || 0) / 100).toFixed(2)
+              + '" data-line="' + l.id + '" data-field="hourly_rate_gbp">'
+            : money(l.hourly_rate_pence));
+        /* If there is no rate there is no gross, and every deduction is derived
+           from gross — so tax/NI/pension are MISSING too. Printing £0.00 in
+           those cells would read as "nothing was deducted" rather than "we
+           could not work this out". */
+        var miss = '<span class="pr-missing">MISSING</span>';
+        r.gross   = noRate ? miss : money(l.gross_pence);
+        r.tax     = noRate ? miss : money(l.tax_pence);
+        r.ni      = noRate ? miss : money(l.ni_pence);
+        r.pension = noRate ? miss : money(l.pension_pence);
+        r.net     = noRate ? miss : money(l.net_pence);
+      }
+      return r;
+    });
+    var sum = function (k) { return lines.reduce(function (a, l) { return a + (Number(l[k]) || 0); }, 0); };
+    var foot = {
+      name: 'TOTAL (' + lines.length + ')',
+      contracted: hrs(sum('contracted_hours')),
+      actual: hrs(lines.reduce(function (a, l) { return a + (Number(l.paid_hours != null ? l.paid_hours : l.hours_worked) || 0); }, 0)),
+      absence: hrs(sum('absence_hours') || sum('absence_deducted_hours')),
+      toil: hrs(sum('toil_hours')),
+    };
+    if (CTX.can_see_pay) {
+      foot.gross = money(sum('gross_pence')); foot.tax = money(sum('tax_pence'));
+      foot.ni = money(sum('ni_pence')); foot.pension = money(sum('pension_pence'));
+      foot.net = money(sum('net_pence'));
+    }
+    return table(cols, rows, foot);
+  }
+
+  // ── generate ───────────────────────────────────────────────────────────────
+  function doGenerate() {
+    var p = periodParams();
+    if (!p.from || !p.to) { Wren.toast('Pick a from and a to date first', 'error'); return; }
+    var btn = $('pr-btn-generate');
+    btn.disabled = true; btn.textContent = 'Generating…';
+    post('/generate', p).then(function (r) {
+      Wren.toast('Payroll run created — ' + r.staff_count + ' staff'
+        + (r.blocking_lines ? ', ' + r.blocking_lines + ' need a look' : ''), 'success');
+      loadRuns();
+      openRun(r.run_id);
+      var tab = tabBtn('runs');
+      if (tab) tab.click();
+    }).catch(function (e) {
+      if (e && e.error === 'run_exists') {
+        Wren.toast(e.message, 'error');
+        if (e.existing_run_id) {
+          openRun(e.existing_run_id);
+          var t = tabBtn('runs');
+          if (t) t.click();
+        }
+      } else {
+        Wren.toast('Generate failed: ' + esc((e && (e.message || e.error)) || 'unknown error'), 'error');
+      }
+    }).finally(function () { btn.disabled = !CTX.can_see_pay; btn.textContent = 'Generate payroll'; });
+  }
+
+  // ── runs list ──────────────────────────────────────────────────────────────
+  var RUN_COLS = [
+    { key: 'period', label: 'Period' },
+    { key: 'dates', label: 'Dates' },
+    { key: 'status', label: 'Status' },
+    { key: 'staff', label: 'Staff', n: true },
+    { key: 'hours', label: 'Hours', n: true },
+    { key: 'gross', label: 'Gross', n: true },
+    { key: 'net', label: 'Net', n: true },
+    { key: 'flags', label: 'Flags' },
+  ];
+  function runRows(runs) {
+    return runs.map(function (r) {
+      var row = {
+        _cls: 'pr-row-click', _attrs: ' data-run="' + r.id + '"',
+        period: '<b>' + esc(r.period_label) + '</b>',
+        dates: day(r.period_from) + ' – ' + day(r.period_to),
+        status: r.status === 'finalised'
+          ? '<span class="pr-pill green">Finalised</span>'
+          : '<span class="pr-pill amber">Draft</span>',
+        staff: r.staff_count,
+        hours: hrs(r.total_hours),
+        flags: r.warning_lines ? '<span class="pr-pill amber">' + r.warning_lines + ' flagged</span>' : '—',
+      };
+      if (CTX.can_see_pay) { row.gross = money(r.total_gross_pence); row.net = money(r.total_net_pence); }
+      else { row.gross = '<span class="pr-pill">hidden</span>'; row.net = '<span class="pr-pill">hidden</span>'; }
+      return row;
+    });
+  }
+
+  function loadRuns() {
+    get('/runs').then(function (d) {
+      $('pr-runs-body').innerHTML = d.runs.length
+        ? table(RUN_COLS, runRows(d.runs))
+        : '<div class="pr-empty">No payroll runs yet. Go to the Generate tab, pick your dates and press Generate.</div>';
+    }).catch(function (e) {
+      $('pr-runs-body').innerHTML = '<div class="pr-empty">' + esc((e && (e.message || e.error)) || 'Failed to load') + '</div>';
+    });
+  }
+
+  function loadRecent() {
+    get('/runs').then(function (d) {
+      if (!d.runs.length) { $('pr-recent-card').hidden = true; return; }
+      $('pr-recent-card').hidden = false;
+      $('pr-recent').innerHTML = table(RUN_COLS, runRows(d.runs.slice(0, 6)));
+    }).catch(function () { /* the runs tab reports its own errors */ });
+  }
+
+  // ── run detail ─────────────────────────────────────────────────────────────
+  var CURRENT = null;
+  function openRun(id) {
+    $('pr-runs-list').hidden = true;
+    var el = $('pr-run-detail');
+    el.hidden = false;
+    el.innerHTML = '<div class="tab-skeleton"><div class="tab-sk-card"></div><div class="tab-sk-card"></div></div>';
+    get('/runs/' + id).then(function (d) {
+      CURRENT = d;
+      el.innerHTML = runDetailHtml(d);
+    }).catch(function (e) {
+      el.innerHTML = '<div class="pr-empty">' + esc((e && (e.message || e.error)) || 'Failed to load run') + '</div>';
+    });
+  }
+  function closeRun() {
+    CURRENT = null;
+    $('pr-run-detail').hidden = true;
+    $('pr-run-detail').innerHTML = '';
+    $('pr-runs-list').hidden = false;
+  }
+
+  function runDetailHtml(d) {
+    var r = d.run, locked = d.locked;
+    var h = '<button class="pr-back" id="pr-btn-back">← All payroll runs</button>';
+    h += '<div class="pr-card"><h3>' + esc(r.period_label) + '</h3>'
+      + '<div class="pr-sub">' + day(r.period_from) + ' – ' + day(r.period_to)
+      + ' · generated ' + new Date(r.created_at).toLocaleString('en-GB')
+      + (r.hours_note ? ' · hours ' + esc(r.hours_note) : '') + '</div>';
+
+    if (locked) {
+      h += '<div class="pr-lock">🔒 <div><b>Finalised</b>'
+        + (r.finalised_at ? ' on ' + new Date(r.finalised_at).toLocaleString('en-GB') : '')
+        + (r.finalised_by_name ? ' by ' + esc(r.finalised_by_name) : '')
+        + '. The figures are locked and can no longer be edited.</div></div>';
+    }
+
+    var tl = [
+      { k: 'Staff', v: r.staff_count },
+      { k: 'Hours paid', v: hrs(d.lines.reduce(function (a, l) { return a + (Number(l.hours_worked) || 0); }, 0)) },
+    ];
+    if (CTX.can_see_pay) {
+      tl.push({ k: 'Gross (est.)', v: money(r.total_gross_pence), tone: 'good' });
+      tl.push({ k: 'Deductions (est.)', v: money((Number(r.total_tax_pence) || 0) + (Number(r.total_ni_pence) || 0) + (Number(r.total_pension_pence) || 0)) });
+      tl.push({ k: 'Net (est.)', v: money(r.total_net_pence) });
+    }
+    h += tiles(tl);
+
+    h += '<div class="pr-actions">';
+    var noRate = d.lines.filter(function (l) { return l.pay_basis === 'unknown'; });
+    if (CTX.can_see_pay) {
+      h += '<button class="btn btn-secondary" data-dl="csv" data-fmt="wren">Export CSV</button>'
+        + '<button class="btn btn-secondary" data-dl="pdf">Print / PDF</button>'
+        + '<select class="pr-in" id="pr-dl-fmt" style="width:auto">'
+        + '<option value="wren">Wren (full detail)</option><option value="sage">Sage</option>'
+        + '<option value="xero">Xero</option><option value="brightpay">BrightPay</option></select>';
+      if (!locked) h += '<span class="pr-spacer"></span><button class="btn btn-primary" id="pr-btn-finalise">Finalise &amp; lock</button>';
+    } else {
+      h += '<span class="pr-pill">Export and finalise are manager-only</span>';
+    }
+    h += '</div>';
+
+    /* The Sage/Xero/BrightPay files have fixed numeric columns, so a staff member
+       with no rate on file is LEFT OUT of them rather than exported as £0.00.
+       Say so right next to the button, not only in the caveats further down. */
+    if (CTX.can_see_pay && noRate.length) {
+      h += '<div class="pr-note bad"><b>' + noRate.length + ' staff are left out of the Sage, Xero and BrightPay files</b> — '
+        + esc(noRate.map(function (l) { return l.staff_name; }).join(', '))
+        + '. They have no hourly rate and no annual salary on file, and Wren will not write a £0.00 line for someone it cannot price. '
+        + 'The full Wren CSV still lists them, marked MISSING.</div>';
+    }
+
+    h += notes(d.data_quality);
+    h += '<div class="pr-sub">' + (locked
+      ? 'This run is locked. To change a figure, generate a new run for a different period.'
+      : (CTX.can_see_pay ? 'Hours and rates are editable — change a box and press Enter or click away. The pay recalculates from what you typed.'
+                         : 'Hours are shown as generated. Editing is manager-only.')) + '</div>';
+    h += '<div class="pr-scroll" id="pr-lines">' + linesTable(d.lines, CTX.can_see_pay, locked) + '</div>';
+    h += '</div>';
+    return h;
+  }
+
+  function saveLine(input) {
+    if (!CURRENT) return;
+    var lineId = input.dataset.line, field = input.dataset.field;
+    var body = {};
+    if (field === 'hourly_rate_gbp') body.hourly_rate_pence = Math.round(parseFloat(input.value || 0) * 100);
+    else body[field] = parseFloat(input.value || 0);
+    input.disabled = true;
+    Wren.api(API + '/runs/' + CURRENT.run.id + '/lines/' + lineId, { method: 'PATCH', body: body })
+      .then(function () { Wren.toast('Line updated', 'success'); openRun(CURRENT.run.id); })
+      .catch(function (e) {
+        input.disabled = false;
+        Wren.toast('Could not save: ' + esc((e && (e.message || e.error)) || 'unknown error'), 'error');
+      });
+  }
+
+  function finalise(force) {
+    if (!CURRENT) return;
+    if (!force && !confirm('Finalise ' + CURRENT.run.period_label + '? This locks the figures — they cannot be edited afterwards.')) return;
+    post('/runs/' + CURRENT.run.id + '/finalise', { force: !!force }).then(function () {
+      Wren.toast('Payroll run finalised and locked', 'success');
+      openRun(CURRENT.run.id); loadRuns(); loadRecent();
+    }).catch(function (e) {
+      if (e && e.error === 'unresolved_warnings') {
+        if (confirm(e.message + '\n\nFinalise anyway?')) finalise(true);
+        return;
+      }
+      Wren.toast('Could not finalise: ' + esc((e && (e.message || e.error)) || 'unknown error'), 'error');
+    });
+  }
+
+  // ── templates ──────────────────────────────────────────────────────────────
+  var TPL_COLS = [
+    { key: 'name', label: 'Template' },
+    { key: 'shape', label: 'Pay period' },
+    { key: 'who', label: 'Who' },
+    { key: 'elements', label: 'Pay elements' },
+    { key: 'def', label: 'Default' },
+  ];
+  var SHAPE_LABEL = { monthly: 'Monthly', four_weekly: '4-weekly', weekly: 'Weekly', custom: 'Custom dates' };
+  function loadTemplates() {
+    get('/templates').then(function (d) {
+      $('pr-tpl-body').innerHTML = table(TPL_COLS, (d.templates || []).map(function (t) {
+        var roles = (t.include_roles || []).length ? (t.include_roles || []).join(', ') : 'all active staff';
+        var excl = (t.exclude_staff_ids || []).length ? ' · ' + t.exclude_staff_ids.length + ' excluded' : '';
+        return {
+          name: '<b>' + esc(t.name) + '</b>' + (t.notes ? '<div style="font-size:.72rem;color:var(--c-muted)">' + esc(t.notes) + '</div>' : ''),
+          shape: SHAPE_LABEL[t.period_shape] || esc(t.period_shape),
+          who: esc(roles) + esc(excl) + (t.include_inactive ? ' · incl. inactive' : ''),
+          elements: (t.deduct_absence ? 'absence deducted' : 'absence NOT deducted')
+            + (t.pay_toil ? ' · TOIL paid' : ''),
+          def: t.is_default ? '<span class="pr-pill green">default</span>' : '—',
+        };
+      }));
+    }).catch(function (e) {
+      $('pr-tpl-body').innerHTML = '<div class="pr-empty">' + esc((e && (e.message || e.error)) || 'Failed to load') + '</div>';
+    });
+  }
+
+  function saveTemplate() {
+    var roles = [].slice.call($('pr-tpl-roles').selectedOptions).map(function (o) { return o.value; });
+    post('/templates', {
+      name: $('pr-tpl-name').value,
+      period_shape: $('pr-tpl-shape').value,
+      include_roles: roles,
+      deduct_absence: $('pr-tpl-absence').checked,
+      pay_toil: $('pr-tpl-toil').checked,
+      include_inactive: $('pr-tpl-inactive').checked,
+      is_default: $('pr-tpl-default').checked,
+    }).then(function (r) {
+      Wren.toast('Template saved', 'success');
+      $('pr-tpl-name').value = '';
+      loadTemplates();
+      var sel = $('pr-template');
+      var o = document.createElement('option');
+      o.value = r.template.id; o.textContent = r.template.name; sel.appendChild(o);
+    }).catch(function (e) {
+      Wren.toast('Could not save: ' + esc((e && (e.message || e.error)) || 'unknown error'), 'error');
+    });
+  }
+
+  // ── wiring ─────────────────────────────────────────────────────────────────
+  on('pr-preset', 'change', function () { applyPreset(this.value); schedulePreview(); });
+  on('pr-from', 'change', function () { $('pr-preset').value = 'custom'; schedulePreview(); });
+  on('pr-to', 'change', function () { $('pr-preset').value = 'custom'; schedulePreview(); });
+  on('pr-template', 'change', schedulePreview);
+  on('pr-btn-generate', 'click', doGenerate);
+  on('pr-tpl-save', 'click', saveTemplate);
+
+  // Delegated — the runs list and the run detail are both re-rendered wholesale.
+  var section = panel();
+  if (section) {
+    section.addEventListener('click', function (e) {
+      var row = e.target.closest('tr[data-run]');
+      if (row) { openRun(parseInt(row.dataset.run, 10));
+        var t = tabBtn('runs');
+        if (t && !t.classList.contains('wren-tab-active')) t.click();
+        return; }
+      if (e.target.id === 'pr-btn-back') { closeRun(); return; }
+      if (e.target.id === 'pr-btn-finalise') { finalise(false); return; }
+      var dl = e.target.closest('[data-dl]');
+      if (dl && CURRENT) {
+        var id = CURRENT.run.id;
+        var stamp = String(CURRENT.run.period_from).slice(0, 10) + '-to-' + String(CURRENT.run.period_to).slice(0, 10);
+        if (dl.dataset.dl === 'pdf') download('/runs/' + id + '/export.pdf', 'payroll-' + stamp + '.pdf', 'PDF');
+        else {
+          var fmt = ($('pr-dl-fmt') && $('pr-dl-fmt').value) || 'wren';
+          download('/runs/' + id + '/export.csv?format=' + fmt, 'payroll-' + stamp + (fmt === 'wren' ? '' : '-' + fmt) + '.csv', 'CSV');
+        }
+      }
+    });
+    section.addEventListener('change', function (e) {
+      if (e.target.classList && e.target.classList.contains('pr-edit')) saveLine(e.target);
+    });
+  }
+
+  // ── b363 — the CSV importer panel, loaded on first use ─────────────────────
+  // One shared module (public/js/wren-payroll-import.js) rather than inline
+  // script: the mapping step, the preview and the gap list are ~600 lines and
+  // this section fragment is already 800.
+  function ensureImport() {
+    return new Promise(function (resolve, reject) {
+      if (window.WrenPayrollImport) return resolve(window.WrenPayrollImport);
+      var s = document.querySelector('script[data-wren-payroll-import]');
+      if (!s) {
+        s = document.createElement('script');
+        s.src = '/js/wren-payroll-import.js?v=b363';
+        s.setAttribute('data-wren-payroll-import', '1');
+        document.head.appendChild(s);
+      }
+      s.addEventListener('load', function () { resolve(window.WrenPayrollImport); });
+      s.addEventListener('error', function () { reject(new Error('could not load the import panel')); });
+    });
+  }
+
+  function loadImport() {
+    var root = $('pr-import-root');
+    if (!root) return;
+    if (root.dataset.mounted === '1') return;          // the module owns its own refreshes
+    ensureImport().then(function (M) {
+      root.dataset.mounted = '1';
+      M.mount(root);
+    }).catch(function (e) {
+      root.innerHTML = '<div class="pr-empty">' + esc(e.message) + '</div>';
+    });
+  }
+
+  // The tab button is the shell's; this only asks it to be the active one. The
+  // shell's own _activateTab then calls wrenLoadTab_payroll_import for us.
+  on('pr-btn-import', 'click', function () {
+    var t = tabBtn('import');
+    if (t) t.click(); else loadImport();
+  });
+
+  window['wrenLoadTab_payroll_runs'] = loadRuns;
+  window['wrenLoadTab_payroll_templates'] = loadTemplates;
+  window['wrenLoadTab_payroll_import'] = loadImport;
+  window['wrenLoadTab_payroll_generate'] = function () { /* boot() already loaded it */ };
+
+  boot();
+})();
+</script>

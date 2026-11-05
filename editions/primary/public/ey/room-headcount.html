@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="ladn">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Room Headcount">
+  <meta name="wren-app-chat"  content="on">
+  <title>Room Headcount · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260727">
+  <style>
+    #hc-page { padding: 12px 12px env(safe-area-inset-bottom, 16px); }
+    #hc-back {
+      width: 44px; height: 44px; background: transparent; border: none;
+      color: var(--c-text); cursor: pointer; border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; transition: background .15s;
+    }
+    #hc-back:hover { background: rgba(255,255,255,0.06); }
+
+    .hc-next-card {
+      background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+      padding: 16px; margin-bottom: 14px;
+    }
+    .hc-next-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--c-muted); }
+    .hc-next-time { font-size: 1.5rem; font-weight: 700; color: var(--c-text); margin: 2px 0 8px; }
+    .hc-next-sub { font-size: .82rem; color: var(--c-muted); margin-bottom: 12px; }
+    .hc-btn-go {
+      width: 100%; min-height: 50px; border-radius: 12px; border: none;
+      background: var(--c-blue); color: #04121b; font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    .hc-btn-go:disabled { opacity: .5; cursor: default; }
+
+    .hc-slots { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .hc-slot-row {
+      display: flex; align-items: center; gap: 10px; background: var(--c-surface);
+      border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 12px;
+    }
+    .hc-slot-time { font-weight: 700; font-size: .9rem; min-width: 56px; }
+    .hc-slot-meta { flex: 1; font-size: .78rem; color: var(--c-muted); }
+    .hc-slot-badge {
+      font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+      padding: 3px 9px; border-radius: 10px;
+    }
+    .hc-slot-badge.scheduled { background: rgba(148,163,184,0.15); color: var(--c-muted); }
+    .hc-slot-badge.completed.ok  { background: rgba(34,197,94,0.15); color: var(--c-green, #22c55e); }
+    .hc-slot-badge.completed.bad { background: rgba(239,68,68,0.15); color: var(--c-red, #ef4444); }
+    .hc-slot-badge.missed { background: rgba(239,68,68,0.15); color: var(--c-red, #ef4444); }
+
+    .hc-section-label {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+      color: var(--c-muted); margin: 14px 4px 8px;
+    }
+    .hc-check-list { display: flex; flex-direction: column; gap: 6px; }
+    .hc-check-row {
+      display: flex; align-items: center; gap: 10px; background: var(--c-surface);
+      border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 12px; cursor: pointer;
+      min-height: 44px;
+    }
+    .hc-check-row input { width: 20px; height: 20px; accent-color: var(--c-blue); flex-shrink: 0; }
+    .hc-check-row .nm { font-size: .9rem; font-weight: 600; }
+    .hc-check-row .rl { font-size: .74rem; color: var(--c-muted); }
+
+    .hc-verdict {
+      display: none; border-radius: 14px; padding: 20px 16px; text-align: center; margin: 16px 0;
+    }
+    .hc-verdict.ok  { background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.4); }
+    .hc-verdict.bad { background: rgba(239,68,68,0.14); border: 1px solid rgba(239,68,68,0.4); }
+    .hc-verdict-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 4px; }
+    .hc-verdict.ok  .hc-verdict-title { color: var(--c-green, #22c55e); }
+    .hc-verdict.bad .hc-verdict-title { color: var(--c-red, #ef4444); }
+    .hc-verdict-sub { font-size: .85rem; color: var(--c-text); }
+
+    .hc-empty { text-align: center; padding: 30px 16px; color: var(--c-muted); font-size: .9rem; }
+    .hc-submit-row { display: flex; gap: 8px; margin-top: 14px; }
+    .hc-submit-row button {
+      flex: 1; min-height: 48px; border-radius: 12px; font-size: .95rem; font-weight: 700; cursor: pointer;
+    }
+    #hc-cancel { background: transparent; border: 1px solid var(--c-border); color: var(--c-text); }
+    #hc-submit { background: var(--c-orange, #e07820); border: 1px solid var(--c-orange, #e07820); color: #1a0d02; }
+    #hc-submit:disabled { opacity: .5; cursor: default; }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="hc-page">
+
+  <div class="hc-next-card" id="hc-next-card">
+    <div class="hc-next-label">Next headcount</div>
+    <div class="hc-next-time" id="hc-next-time">–</div>
+    <div class="hc-next-sub" id="hc-next-sub">Loading…</div>
+    <button type="button" class="hc-btn-go" id="hc-btn-go" disabled>Complete Headcount</button>
+  </div>
+
+  <div class="hc-section-label">Today's headcounts</div>
+  <div class="hc-slots" id="hc-slots">
+    <div class="app-skeleton" style="height:52px;border-radius:10px"></div>
+  </div>
+
+  <div id="hc-form" style="display:none">
+    <div class="hc-verdict" id="hc-verdict">
+      <div class="hc-verdict-title" id="hc-verdict-title"></div>
+      <div class="hc-verdict-sub" id="hc-verdict-sub"></div>
+    </div>
+
+    <div class="hc-section-label">Children present <span id="hc-child-count"></span></div>
+    <div class="hc-check-list" id="hc-children"></div>
+
+    <div class="hc-section-label">Staff present <span id="hc-staff-count"></span></div>
+    <div class="hc-check-list" id="hc-staff"></div>
+
+    <div class="hc-submit-row">
+      <button type="button" id="hc-cancel">Cancel</button>
+      <button type="button" id="hc-submit">Submit Headcount</button>
+    </div>
+  </div>
+
+</div><!-- #hc-page -->
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var STATE = { slot: null, children: [], staff: [], ratios: null };
+
+  function _esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function _time(iso) {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; }
+  }
+
+  function _slotBadge(s) {
+    if (s.status === 'completed') {
+      return '<span class="hc-slot-badge completed ' + (s.ratio_ok ? 'ok' : 'bad') + '">' + (s.ratio_ok ? 'Ratio OK' : 'Under ratio') + '</span>';
+    }
+    if (s.status === 'missed') return '<span class="hc-slot-badge missed">Missed</span>';
+    return '<span class="hc-slot-badge scheduled">Scheduled</span>';
+  }
+
+  function _renderSlots(slots) {
+    var el = document.getElementById('hc-slots');
+    if (!slots.length) { el.innerHTML = '<div class="hc-empty">No headcounts scheduled today.</div>'; return; }
+    el.innerHTML = slots.map(function (s) {
+      var meta = s.status === 'completed'
+        ? (s.children_present + ' children · ' + s.staff_present + ' staff (' + (s.completed_by_first || '') + ' ' + (s.completed_by_last || '') + ')')
+        : (s.status === 'missed' ? 'Not completed in time' : 'Awaiting completion');
+      return '<div class="hc-slot-row">' +
+        '<div class="hc-slot-time">' + _time(s.scheduled_for) + '</div>' +
+        '<div class="hc-slot-meta">' + _esc(meta) + '</div>' +
+        _slotBadge(s) +
+      '</div>';
+    }).join('');
+  }
+
+  function _loadToday() {
+    Wren.api('/api/room-headcounts/today').then(function (slots) {
+      _renderSlots(slots || []);
+    }).catch(function () {
+      document.getElementById('hc-slots').innerHTML = '<div class="hc-empty">Could not load today\'s headcounts.</div>';
+    });
+  }
+
+  function _loadPending() {
+    Wren.api('/api/room-headcounts/pending').then(function (d) {
+      STATE.slot = d.slot; STATE.children = d.children || []; STATE.staff = d.staff || []; STATE.ratios = d.ratios;
+      var btn = document.getElementById('hc-btn-go');
+      if (d.slot) {
+        document.getElementById('hc-next-time').textContent = _time(d.slot.scheduled_for);
+        document.getElementById('hc-next-sub').textContent = 'Tap to record who is physically present.';
+        btn.disabled = false;
+      } else {
+        document.getElementById('hc-next-time').textContent = '—';
+        document.getElementById('hc-next-sub').textContent = 'All of today\'s headcounts are done.';
+        btn.disabled = true;
+      }
+    }).catch(function () {
+      document.getElementById('hc-next-sub').textContent = 'Could not load — pull down to retry.';
+    });
+  }
+
+  function _checkRow(item, checked, sub) {
+    return '<label class="hc-check-row">' +
+      '<input type="checkbox" data-id="' + item.id + '"' + (checked ? ' checked' : '') + '>' +
+      '<span><span class="nm">' + _esc(item.first_name) + ' ' + _esc(item.last_name || '') + '</span>' +
+      (sub ? ' <span class="rl">' + _esc(sub) + '</span>' : '') + '</span>' +
+    '</label>';
+  }
+
+  function _openForm() {
+    if (!STATE.slot) return;
+    document.getElementById('hc-verdict').style.display = 'none';
+    document.getElementById('hc-children').innerHTML = STATE.children.map(function (c) { return _checkRow(c, true); }).join('') || '<div class="hc-empty">No children currently signed in.</div>';
+    document.getElementById('hc-staff').innerHTML = STATE.staff.map(function (s) { return _checkRow(s, true, s.role); }).join('') || '<div class="hc-empty">No staff assigned to this room.</div>';
+    _updateCounts();
+    document.getElementById('hc-form').style.display = 'block';
+    document.querySelectorAll('#hc-children input, #hc-staff input').forEach(function (cb) {
+      cb.addEventListener('change', _updateCounts);
+    });
+    document.getElementById('hc-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function _closeForm() {
+    document.getElementById('hc-form').style.display = 'none';
+  }
+
+  function _updateCounts() {
+    var cN = document.querySelectorAll('#hc-children input:checked').length;
+    var sN = document.querySelectorAll('#hc-staff input:checked').length;
+    document.getElementById('hc-child-count').textContent = '(' + cN + ')';
+    document.getElementById('hc-staff-count').textContent = '(' + sN + ')';
+  }
+
+  function _submit() {
+    var childIds = Array.prototype.map.call(document.querySelectorAll('#hc-children input:checked'), function (cb) { return Number(cb.getAttribute('data-id')); });
+    var staffIds = Array.prototype.map.call(document.querySelectorAll('#hc-staff input:checked'), function (cb) { return Number(cb.getAttribute('data-id')); });
+    var btn = document.getElementById('hc-submit');
+    btn.disabled = true; btn.textContent = 'Submitting…';
+    Wren.api('/api/room-headcounts/' + STATE.slot.id + '/complete', { method: 'POST', body: { children_ids: childIds, staff_ids: staffIds } })
+      .then(function (row) {
+        btn.disabled = false; btn.textContent = 'Submit Headcount';
+        var v = document.getElementById('hc-verdict');
+        var t = document.getElementById('hc-verdict-title');
+        var s = document.getElementById('hc-verdict-sub');
+        v.className = 'hc-verdict ' + (row.ratio_ok ? 'ok' : 'bad');
+        t.textContent = row.ratio_ok ? 'Ratio OK' : 'UNDER RATIO';
+        s.textContent = row.children_present + ' children, ' + row.staff_present + ' staff, need ' + row.required_staff + '.';
+        v.style.display = 'block';
+        Wren.toast(row.ratio_ok ? 'Headcount complete — ratio OK' : 'Headcount complete — UNDER RATIO', row.ratio_ok ? 'success' : 'error', 5000);
+        _loadToday();
+        _loadPending();
+        setTimeout(_closeForm, 3500);
+      })
+      .catch(function (e) {
+        btn.disabled = false; btn.textContent = 'Submit Headcount';
+        Wren.toast((e && e.error) || 'Submit failed', 'error');
+      });
+  }
+
+  function _injectBack() {
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (!hamburger) return;
+    var btn = document.createElement('button');
+    btn.id = 'hc-back';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Back to More');
+    btn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+    btn.addEventListener('click', function () {
+      if (history.length > 1) history.back(); else location.href = '/ey/more';
+    });
+    hamburger.parentNode.insertBefore(btn, hamburger);
+    hamburger.style.display = 'none';
+  }
+
+  document.addEventListener('wren:ready', function () {
+    _injectBack();
+    document.getElementById('hc-btn-go').addEventListener('click', _openForm);
+    document.getElementById('hc-cancel').addEventListener('click', _closeForm);
+    document.getElementById('hc-submit').addEventListener('click', _submit);
+    _loadToday();
+    _loadPending();
+  });
+}());
+</script>
+</body>
+</html>

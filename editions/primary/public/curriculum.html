@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="primary">
+  <title>Curriculum — Wren Primary</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">📅 Curriculum Planning</div>
+    <button class="btn btn-primary" id="btn-new-plan">+ New Plan</button>
+  </div>
+
+  <div class="filter-bar">
+    <select class="form-control" id="room-filter" style="flex:0 0 160px">
+      <option value="">All Rooms</option>
+    </select>
+    <select class="form-control" id="term-filter" style="flex:0 0 150px">
+      <option value="">All Terms</option>
+      <option value="Autumn 1">Autumn 1</option>
+      <option value="Autumn 2">Autumn 2</option>
+      <option value="Spring 1">Spring 1</option>
+      <option value="Spring 2">Spring 2</option>
+      <option value="Summer 1">Summer 1</option>
+      <option value="Summer 2">Summer 2</option>
+    </select>
+  </div>
+
+  <!-- b257 — taught programmes the school has been given or bought in sit next to,
+       not inside, the weekly plans below: a programme is somebody else's sequence
+       with its own slides and films, a plan is one this school wrote. Rendered
+       only when at least one programme is actually mounted. -->
+  <div id="programmes-strip" hidden style="margin-bottom:18px">
+    <div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--c-orange);font-weight:700;margin-bottom:10px">
+      Teaching programmes
+    </div>
+    <div id="programmes-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+  </div>
+
+  <div id="plans-area"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+
+<script>
+let rooms = [];
+
+// b257 — programmes come from the setting-content mount, so an instance with no
+// mount simply never shows the strip. Failure here must never stop the plans
+// below from loading, which is why it is its own try/catch and not awaited into
+// init()'s critical path.
+async function loadProgrammes() {
+  try {
+    const list = await Wren.api('/api/setting-content/programmes');
+    if (!Array.isArray(list) || !list.length) return;
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    document.getElementById('programmes-list').innerHTML = list.map(p => `
+      <a href="/curriculum-programmes.html" style="display:block;text-decoration:none;background:var(--c-card);
+         border:1px solid var(--c-border);border-top:4px solid var(--c-orange);border-radius:12px;padding:15px">
+        <div style="font-weight:700;color:var(--c-text);margin-bottom:5px">${esc(p.title || p.slug)}</div>
+        ${p.subtitle ? `<div style="font-size:.82rem;color:var(--c-muted);line-height:1.45;margin-bottom:8px">${esc(p.subtitle)}</div>` : ''}
+        <div style="font-size:.72rem;color:var(--c-muted)">${p.lesson_count} lesson${p.lesson_count === 1 ? '' : 's'}${p.age_range ? ' · ' + esc(p.age_range) : ''}</div>
+      </a>`).join('');
+    document.getElementById('programmes-strip').hidden = false;
+  } catch (e) { /* no mount, or not available on this edition — strip stays hidden */ }
+}
+
+async function init() {
+  loadProgrammes();
+  rooms = await Wren.api('/api/staff/rooms').catch(() => []);
+  const sel = document.getElementById('room-filter');
+  rooms.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.id; opt.textContent = r.name;
+    sel.appendChild(opt);
+  });
+  loadPlans();
+}
+
+async function loadPlans() {
+  const room = document.getElementById('room-filter').value;
+  const term = document.getElementById('term-filter').value;
+  let url = '/api/curriculum/plans?';
+  if (room) url += `room_id=${room}&`;
+  if (term) url += `term=${encodeURIComponent(term)}`;
+  try {
+    const plans = await Wren.api(url);
+    renderPlans(plans);
+  } catch(e) {
+    document.getElementById('plans-area').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderPlans(plans) {
+  const area = document.getElementById('plans-area');
+  if (!plans.length) {
+    area.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📅</div>
+      <div class="empty-title">No curriculum plans yet</div>
+    </div>`;
+    return;
+  }
+  area.innerHTML = plans.map(p => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-weight:700">${p.title || `Week ${p.week_number} — ${p.term}`}</div>
+          <div style="font-size:.78rem;color:#64748b">
+            ${p.room_name} · ${p.term}
+            ${p.week_start ? `· w/c ${new Date(p.week_start).toLocaleDateString('en-GB')}` : ''}
+            · ${p.staff_name}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <span class="badge ${p.status==='published'?'badge-green':'badge-amber'}">${p.status}</span>
+          ${p.status !== 'published' ?
+            `<button class="btn btn-sm btn-primary" data-action="publish-plan" data-id="${p.id}">Publish</button>` : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function publishPlan(id) {
+  await Wren.api(`/api/curriculum/plans/${id}/publish`, { method: 'PUT' });
+  Wren.toast('Plan published ✓', 'success');
+  loadPlans();
+}
+
+function newPlan() {
+  Wren.modal('New Curriculum Plan', `
+    <div class="form-group">
+      <label class="form-label">Room</label>
+      <select class="form-control" id="plan-room">
+        ${rooms.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Term</label>
+        <select class="form-control" id="plan-term">
+          <option>Autumn 1</option><option>Autumn 2</option>
+          <option>Spring 1</option><option>Spring 2</option>
+          <option>Summer 1</option><option>Summer 2</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Week Number</label>
+        <input type="number" class="form-control" id="plan-week" min="1" max="7" value="1">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Week Starting</label>
+      <input type="date" class="form-control" id="plan-weekstart">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Title / Theme</label>
+      <input class="form-control" id="plan-title" placeholder="e.g. Autumn Animals">
+    </div>
+  `, [
+    { label: 'Create', class: 'btn-primary', close: false, action: async () => {
+      try {
+        await Wren.api('/api/curriculum/plans', { method: 'POST', body: {
+          room_id: document.getElementById('plan-room').value,
+          term: document.getElementById('plan-term').value,
+          week_number: document.getElementById('plan-week').value,
+          week_start: document.getElementById('plan-weekstart').value,
+          title: document.getElementById('plan-title').value
+        }});
+        Wren.toast('Plan created ✓', 'success');
+        document.querySelector('.wren-modal-overlay')?.remove();
+        loadPlans();
+      } catch(e) { Wren.toast('Failed', 'error'); }
+    }},
+    { label: 'Cancel', class: 'btn-ghost' }
+  ]);
+}
+
+document.getElementById('btn-new-plan').addEventListener('click', newPlan);
+document.getElementById('room-filter').addEventListener('change', loadPlans);
+document.getElementById('term-filter').addEventListener('change', loadPlans);
+document.getElementById('plans-area').addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action="publish-plan"]');
+  if (btn) publishPlan(parseInt(btn.dataset.id));
+});
+document.addEventListener('DOMContentLoaded', () => { init(); });
+</script>
+</body>
+</html>

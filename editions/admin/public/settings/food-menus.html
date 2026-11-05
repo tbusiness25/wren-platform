@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Food Menus — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* b171 (2026-07-28) — Food Menus: EyLog-style menu-group list (date-range
+       rotations) each holding Week 1..N, with room/age-group variations. */
+    .fm-breadcrumb { font-size:.8rem; color:#94a3b8; margin-bottom:10px; }
+    .fm-breadcrumb a { color:#4a9abf; text-decoration:none; }
+    .fm-this-week-card { background:linear-gradient(135deg, rgba(74,154,191,.15), rgba(224,120,32,.08)); border:1px solid rgba(74,154,191,.3); border-radius:12px; padding:18px 20px; margin-bottom:20px; }
+    .fm-this-week-card .fm-tw-title { font-weight:700; font-size:1rem; margin-bottom:2px; }
+    .fm-this-week-card .fm-tw-sub { color:#94a3b8; font-size:.82rem; }
+    .fm-group-card { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:18px 20px; margin-bottom:14px; }
+    .fm-group-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+    .fm-group-name { font-weight:700; font-size:1.02rem; display:flex; align-items:center; gap:8px; }
+    .fm-group-dates { color:#94a3b8; font-size:.82rem; margin-top:2px; }
+    .fm-group-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .fm-week-chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+    .fm-week-chip { padding:8px 14px; border-radius:8px; background:#0f2235; border:1px solid #263449; cursor:pointer; font-size:.82rem; font-weight:600; color:#cbd5e1; }
+    .fm-week-chip:hover { border-color:#4a9abf; }
+    .fm-week-chip.fm-week-active { border-color:#4a9abf; color:#4a9abf; background:rgba(74,154,191,.12); }
+    .fm-week-chip .fm-item-count { color:#64748b; font-weight:400; margin-left:4px; }
+    .fm-badge-live { display:inline-block; font-size:.66rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:2px 8px; border-radius:6px; background:rgba(34,197,94,.15); color:#22c55e; }
+    .fm-badge-inactive { display:inline-block; font-size:.66rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:2px 8px; border-radius:6px; background:#334155; color:#94a3b8; }
+    .fm-day-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap:14px; margin-top:16px; }
+    .fm-day-card { background:#0f2235; border:1px solid #263449; border-radius:10px; padding:14px; }
+    .fm-day-title { font-weight:700; margin-bottom:8px; font-size:.88rem; }
+    .fm-meal-row { padding:8px 0; border-bottom:1px solid #1c2c40; }
+    .fm-meal-row:last-child { border-bottom:none; }
+    .fm-meal-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:#4a9abf; font-weight:700; }
+    .fm-meal-desc { font-size:.85rem; margin-top:2px; }
+    .fm-meal-room { font-size:.72rem; color:#e07820; margin-top:2px; }
+    .fm-meal-allergens { font-size:.7rem; color:#94a3b8; margin-top:2px; }
+    .fm-meal-actions { margin-top:6px; display:flex; gap:6px; }
+    .fm-meal-actions button { font-size:.7rem; padding:2px 8px; }
+    .fm-add-item-row { margin-top:10px; }
+    .modal-form-row { margin-bottom:14px; }
+    .modal-form-row label { display:block; font-size:.8rem; color:#94a3b8; margin-bottom:5px; }
+    .fm-empty { text-align:center; color:#94a3b8; padding:30px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="fm-breadcrumb"><a href="/settings/index.html">Settings</a> / Food Menus</div>
+      <div class="page-title">🍽️ Food Menus</div>
+      <div class="page-subtitle" style="color:#94a3b8;font-size:.85rem">Menu groups (rotations), weekly menus, and room/age-group variations — EyLog-style.</div>
+    </div>
+    <button class="btn btn-primary" id="btn-add-group">+ Add Menu Group</button>
+  </div>
+
+  <div id="this-week-card"></div>
+  <div id="groups-list"><div style="color:#94a3b8">Loading menu groups…</div></div>
+</div>
+
+<script>
+let GROUPS = [];
+const DAY_NAMES = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const MEAL_LABELS = { breakfast: 'Breakfast', morning_snack: 'Morning Snack', snack: 'Snack', lunch: 'Lunch', afternoon_snack: 'Afternoon Snack', tea: 'Tea' };
+const MEAL_ORDER = { breakfast: 1, morning_snack: 2, snack: 2, lunch: 3, afternoon_snack: 4, tea: 5 };
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(d) { if (!d) return ''; return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
+
+async function loadThisWeek() {
+  const card = document.getElementById('this-week-card');
+  try {
+    const data = await Wren.api('/api/food-menus/this-week');
+    if (!data.group) { card.innerHTML = ''; return; }
+    const dayCount = (data.days || []).reduce((n, d) => n + d.meals.length, 0);
+    card.innerHTML = `
+      <div class="fm-this-week-card">
+        <div class="fm-tw-title">This week: ${esc(data.group.name)} — ${esc(data.week ? data.week.name : 'Week ' + data.week_number)}</div>
+        <div class="fm-tw-sub">${dayCount} meal slot${dayCount === 1 ? '' : 's'} set for the week of ${fmtDate(data.date)}. Rotation resolves automatically from the group's start date + rotation length — no manual "which week is it" step.</div>
+      </div>`;
+  } catch (e) { card.innerHTML = ''; }
+}
+
+async function loadGroups() {
+  const list = document.getElementById('groups-list');
+  try {
+    GROUPS = await Wren.api('/api/food-menus/groups');
+    if (!GROUPS.length) { list.innerHTML = '<div class="fm-empty">No menu groups yet. Click "+ Add Menu Group" to create one.</div>'; return; }
+    list.innerHTML = GROUPS.map(renderGroupCard).join('');
+    wireGroupCards();
+  } catch (e) {
+    list.innerHTML = `<div style="color:#ef4444">Could not load menu groups: ${esc(e.error || e.message || 'error')}</div>`;
+  }
+}
+
+function renderGroupCard(g) {
+  const weeks = g.weeks || [];
+  return `
+    <div class="fm-group-card" data-group-id="${g.id}">
+      <div class="fm-group-head">
+        <div>
+          <div class="fm-group-name">${esc(g.name)} ${g.covers_today ? '<span class="fm-badge-live">Live now</span>' : (g.is_active ? '' : '<span class="fm-badge-inactive">Inactive</span>')}</div>
+          <div class="fm-group-dates">${fmtDate(g.date_from)} → ${fmtDate(g.date_to)} · rotates every ${g.rotation_weeks} week${g.rotation_weeks === 1 ? '' : 's'}</div>
+        </div>
+        <div class="fm-group-actions">
+          <button class="btn btn-sm btn-ghost btn-edit-group">Edit</button>
+          <button class="btn btn-sm btn-ghost btn-clone-group">Clone →</button>
+        </div>
+      </div>
+      <div class="fm-week-chip-row" data-weeks-for="${g.id}">
+        ${weeks.map(w => `<div class="fm-week-chip" data-week-id="${w.id}">${esc(w.name || ('Week ' + w.week_number))}<span class="fm-item-count">${w.item_count}</span></div>`).join('') || '<span style="color:#64748b;font-size:.8rem">No weeks yet</span>'}
+      </div>
+      <div class="fm-week-detail" data-detail-for="${g.id}"></div>
+    </div>`;
+}
+
+function wireGroupCards() {
+  document.querySelectorAll('.fm-week-chip').forEach(chip => {
+    chip.addEventListener('click', () => openWeek(chip));
+  });
+  document.querySelectorAll('.btn-edit-group').forEach(btn => {
+    btn.addEventListener('click', () => openEditGroup(btn.closest('.fm-group-card').dataset.groupId));
+  });
+  document.querySelectorAll('.btn-clone-group').forEach(btn => {
+    btn.addEventListener('click', () => openCloneGroup(btn.closest('.fm-group-card').dataset.groupId));
+  });
+}
+
+async function openWeek(chip) {
+  document.querySelectorAll('.fm-week-chip').forEach(c => c.classList.remove('fm-week-active'));
+  chip.classList.add('fm-week-active');
+  const card = chip.closest('.fm-group-card');
+  const detail = card.querySelector('.fm-week-detail');
+  detail.innerHTML = '<div style="color:#94a3b8;margin-top:12px">Loading week…</div>';
+  try {
+    const data = await Wren.api(`/api/food-menus/weeks/${chip.dataset.weekId}/items`);
+    detail.innerHTML = renderWeekGrid(data.week, data.items);
+    wireWeekGrid(detail, data.week);
+  } catch (e) {
+    detail.innerHTML = `<div style="color:#ef4444;margin-top:12px">Could not load week: ${esc(e.error || e.message || 'error')}</div>`;
+  }
+}
+
+function renderWeekGrid(week, items) {
+  const byDay = {};
+  items.forEach(it => { (byDay[it.day_of_week] = byDay[it.day_of_week] || []).push(it); });
+  const days = [1,2,3,4,5];
+  return `
+    <div class="fm-day-grid">
+      ${days.map(d => `
+        <div class="fm-day-card">
+          <div class="fm-day-title">${DAY_NAMES[d]}</div>
+          ${(byDay[d] || []).sort((a,b)=>(MEAL_ORDER[a.meal_type]||9)-(MEAL_ORDER[b.meal_type]||9)).map(it => `
+            <div class="fm-meal-row" data-item-id="${it.id}">
+              <div class="fm-meal-label">${esc(MEAL_LABELS[it.meal_type] || it.meal_type)}</div>
+              <div class="fm-meal-desc">${esc(it.description || '(no description)')}</div>
+              ${it.room_variation ? `<div class="fm-meal-room">Variation: ${esc(it.room_variation)}</div>` : ''}
+              ${(it.allergens && it.allergens.length) ? `<div class="fm-meal-allergens">Allergens: ${esc(it.allergens.join(', '))}</div>` : ''}
+              <div class="fm-meal-actions">
+                <button class="btn btn-ghost btn-edit-item" data-id="${it.id}">Edit</button>
+                <button class="btn btn-ghost btn-delete-item" data-id="${it.id}">Delete</button>
+              </div>
+            </div>
+          `).join('') || '<div style="color:#64748b;font-size:.78rem">No meals set</div>'}
+          <div class="fm-add-item-row">
+            <button class="btn btn-sm btn-ghost btn-add-item" data-day="${d}" data-week-id="${week.id}">+ Add meal</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+function wireWeekGrid(detail, week) {
+  detail.querySelectorAll('.btn-add-item').forEach(btn => {
+    btn.addEventListener('click', () => openItemModal({ weekId: btn.dataset.weekId, day: parseInt(btn.dataset.day, 10) }, week));
+  });
+  detail.querySelectorAll('.btn-edit-item').forEach(btn => {
+    btn.addEventListener('click', () => openItemModal({ itemId: btn.dataset.id }, week));
+  });
+  detail.querySelectorAll('.btn-delete-item').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this menu item?')) return;
+      try {
+        await Wren.api(`/api/food-menus/items/${btn.dataset.id}`, { method: 'DELETE' });
+        Wren.toast('Menu item deleted', 'success');
+        const chip = document.querySelector(`.fm-week-chip[data-week-id="${week.id}"]`);
+        if (chip) openWeek(chip);
+      } catch (e) { Wren.toast('Delete failed: ' + (e.error || e.message || 'error'), 'error'); }
+    });
+  });
+}
+
+function openItemModal(ctx, week) {
+  const isEdit = !!ctx.itemId;
+  const existing = isEdit ? findItemInDom(ctx.itemId) : null;
+  const body = `
+    <div class="modal-form-row">
+      <label>Meal</label>
+      <select class="form-control" id="fm-item-meal">
+        ${Object.entries(MEAL_LABELS).map(([k, v]) => `<option value="${k}" ${existing && existing.meal === k ? 'selected' : ''}>${v}</option>`).join('')}
+      </select>
+    </div>
+    <div class="modal-form-row">
+      <label>Description</label>
+      <textarea class="form-control" id="fm-item-desc" rows="2">${esc(existing ? existing.desc : '')}</textarea>
+    </div>
+    <div class="modal-form-row">
+      <label>Allergens (comma separated, e.g. G, M, E)</label>
+      <input class="form-control" id="fm-item-allergens" value="${esc(existing ? existing.allergens : '')}">
+    </div>
+    <div class="modal-form-row">
+      <label>Room / age-group variation (leave blank = applies to all rooms)</label>
+      <input class="form-control" id="fm-item-room" placeholder="e.g. baby_room" value="${esc(existing ? existing.room : '')}">
+    </div>
+  `;
+  Wren.modal(isEdit ? 'Edit menu item' : 'Add menu item', body, [
+    { label: 'Cancel', class: 'btn-ghost' },
+    { label: isEdit ? 'Save' : 'Add', class: 'btn-primary', action: async () => {
+      const meal_type = document.getElementById('fm-item-meal').value;
+      const description = document.getElementById('fm-item-desc').value;
+      const allergens = document.getElementById('fm-item-allergens').value.split(',').map(s => s.trim()).filter(Boolean);
+      const room_variation = document.getElementById('fm-item-room').value.trim() || null;
+      try {
+        if (isEdit) {
+          await Wren.api(`/api/food-menus/items/${ctx.itemId}`, { method: 'PUT', body: { meal_type, description, allergens, room_variation } });
+        } else {
+          await Wren.api(`/api/food-menus/weeks/${ctx.weekId}/items`, { method: 'POST', body: { day_of_week: ctx.day, meal_type, description, allergens, room_variation } });
+        }
+        Wren.toast('Saved', 'success');
+        const chip = document.querySelector(`.fm-week-chip[data-week-id="${week.id}"]`);
+        if (chip) openWeek(chip);
+        loadGroups();
+      } catch (e) { Wren.toast('Save failed: ' + (e.error || e.message || 'error'), 'error'); }
+    } },
+  ]);
+}
+
+function findItemInDom(itemId) {
+  const row = document.querySelector(`.fm-meal-row[data-item-id="${itemId}"]`);
+  if (!row) return null;
+  return {
+    meal: (row.querySelector('.fm-meal-label').textContent || '').toLowerCase().replace(/ /g, '_'),
+    desc: row.querySelector('.fm-meal-desc').textContent,
+    room: (row.querySelector('.fm-meal-room')?.textContent || '').replace('Variation: ', ''),
+    allergens: (row.querySelector('.fm-meal-allergens')?.textContent || '').replace('Allergens: ', ''),
+  };
+}
+
+function openEditGroup(groupId) {
+  const g = GROUPS.find(x => String(x.id) === String(groupId));
+  if (!g) return;
+  const body = `
+    <div class="modal-form-row"><label>Name</label><input class="form-control" id="fm-g-name" value="${esc(g.name)}"></div>
+    <div class="modal-form-row"><label>Start date</label><input class="form-control" type="date" id="fm-g-from" value="${(g.date_from||'').slice(0,10)}"></div>
+    <div class="modal-form-row"><label>End date</label><input class="form-control" type="date" id="fm-g-to" value="${(g.date_to||'').slice(0,10)}"></div>
+    <div class="modal-form-row"><label>Rotation length (weeks)</label><input class="form-control" type="number" min="1" max="12" id="fm-g-weeks" value="${g.rotation_weeks}"></div>
+    <div class="modal-form-row"><label><input type="checkbox" id="fm-g-active" ${g.is_active ? 'checked' : ''}> Active</label></div>
+  `;
+  Wren.modal('Edit menu group', body, [
+    { label: 'Cancel', class: 'btn-ghost' },
+    { label: 'Save', class: 'btn-primary', action: async () => {
+      try {
+        await Wren.api(`/api/food-menus/groups/${g.id}`, { method: 'PUT', body: {
+          name: document.getElementById('fm-g-name').value,
+          date_from: document.getElementById('fm-g-from').value,
+          date_to: document.getElementById('fm-g-to').value,
+          rotation_weeks: parseInt(document.getElementById('fm-g-weeks').value, 10) || 1,
+          is_active: document.getElementById('fm-g-active').checked,
+        } });
+        Wren.toast('Menu group updated', 'success');
+        loadGroups(); loadThisWeek();
+      } catch (e) { Wren.toast('Save failed: ' + (e.error || e.message || 'error'), 'error'); }
+    } },
+  ]);
+}
+
+function openCloneGroup(groupId) {
+  const g = GROUPS.find(x => String(x.id) === String(groupId));
+  if (!g) return;
+  const body = `
+    <p style="color:#94a3b8;font-size:.85rem">Copies "${esc(g.name)}"'s weeks and all menu items into a new group with a new date range.</p>
+    <div class="modal-form-row"><label>New name</label><input class="form-control" id="fm-c-name" value="${esc(g.name)} (copy)"></div>
+    <div class="modal-form-row"><label>Start date</label><input class="form-control" type="date" id="fm-c-from"></div>
+    <div class="modal-form-row"><label>End date</label><input class="form-control" type="date" id="fm-c-to"></div>
+  `;
+  Wren.modal('Clone menu group', body, [
+    { label: 'Cancel', class: 'btn-ghost' },
+    { label: 'Clone', class: 'btn-primary', action: async () => {
+      try {
+        await Wren.api(`/api/food-menus/groups/${g.id}/clone`, { method: 'POST', body: {
+          name: document.getElementById('fm-c-name').value,
+          date_from: document.getElementById('fm-c-from').value,
+          date_to: document.getElementById('fm-c-to').value,
+        } });
+        Wren.toast('Menu group cloned', 'success');
+        loadGroups(); loadThisWeek();
+      } catch (e) { Wren.toast('Clone failed: ' + (e.error || e.message || 'error'), 'error'); }
+    } },
+  ]);
+}
+
+document.getElementById('btn-add-group').addEventListener('click', () => {
+  const body = `
+    <div class="modal-form-row"><label>Name</label><input class="form-control" id="fm-n-name" placeholder="e.g. Spring Menu 2027"></div>
+    <div class="modal-form-row"><label>Start date</label><input class="form-control" type="date" id="fm-n-from"></div>
+    <div class="modal-form-row"><label>End date</label><input class="form-control" type="date" id="fm-n-to"></div>
+    <div class="modal-form-row"><label>Rotation length (weeks)</label><input class="form-control" type="number" min="1" max="12" id="fm-n-weeks" value="4"></div>
+  `;
+  Wren.modal('Add menu group', body, [
+    { label: 'Cancel', class: 'btn-ghost' },
+    { label: 'Create', class: 'btn-primary', action: async () => {
+      const name = document.getElementById('fm-n-name').value;
+      const date_from = document.getElementById('fm-n-from').value;
+      const date_to = document.getElementById('fm-n-to').value;
+      const rotation_weeks = parseInt(document.getElementById('fm-n-weeks').value, 10) || 4;
+      if (!name || !date_from || !date_to) { Wren.toast('Name, start and end date are required', 'error'); return; }
+      try {
+        await Wren.api('/api/food-menus/groups', { method: 'POST', body: { name, date_from, date_to, rotation_weeks } });
+        Wren.toast('Menu group created', 'success');
+        loadGroups(); loadThisWeek();
+      } catch (e) { Wren.toast('Create failed: ' + (e.error || e.message || 'error'), 'error'); }
+    } },
+  ]);
+});
+
+document.addEventListener('wren:ready', () => { loadThisWeek(); loadGroups(); });
+</script>
+</body>
+</html>

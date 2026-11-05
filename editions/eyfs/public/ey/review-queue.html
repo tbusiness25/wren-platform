@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Review Queue">
+  <meta name="wren-app-chat"  content="on">
+  <title>Review Queue · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-rq-page { padding: 12px 12px env(safe-area-inset-bottom, 16px); }
+
+    #ey-rq-back {
+      width: 44px; height: 44px;
+      background: transparent; border: none;
+      color: var(--c-text); cursor: pointer;
+      border-radius: 10px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #ey-rq-back:hover { background: rgba(255,255,255,0.06); }
+
+    .rq-intro {
+      font-size: .85rem; color: var(--c-muted);
+      margin: 0 2px 14px;
+    }
+
+    .rq-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .rq-card-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 10px; margin-bottom: 6px;
+    }
+    .rq-child-name { font-weight: 700; font-size: .95rem; color: var(--c-text); }
+    .rq-meta { font-size: .78rem; color: var(--c-muted); margin-top: 2px; }
+    .rq-badge {
+      font-size: .68rem; font-weight: 700; padding: 2px 9px; border-radius: 12px;
+      background: rgba(245,158,11,.15); color: var(--c-amber, #f59e0b);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .rq-text {
+      font-size: .88rem; color: var(--c-text); line-height: 1.5;
+      white-space: pre-wrap; margin: 8px 0;
+      display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .rq-text.open { -webkit-line-clamp: unset; }
+    .rq-expand {
+      background: none; border: none; color: var(--c-blue); font-size: .8rem;
+      cursor: pointer; padding: 0 0 8px; font-weight: 600;
+    }
+    .rq-areas { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .rq-area-chip {
+      font-size: .68rem; padding: 2px 8px; border-radius: 10px;
+      background: rgba(74,154,191,.15); color: var(--c-blue);
+    }
+    .rq-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .rq-btn {
+      min-height: 40px; padding: 0 16px; border-radius: 10px; font-size: .85rem;
+      font-weight: 700; cursor: pointer; border: none; transition: opacity .15s;
+    }
+    .rq-btn:hover { opacity: .88; }
+    .rq-btn-approve { background: #166534; color: #fff; }
+    .rq-btn-return  { background: transparent; border: 1px solid var(--c-red); color: var(--c-red); }
+
+    .rq-return-box {
+      display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--c-border);
+    }
+    .rq-return-box.open { display: block; }
+    .rq-return-box textarea {
+      width: 100%; min-height: 70px; padding: 10px; border-radius: 10px;
+      background: var(--c-bg); border: 1px solid var(--c-border); color: var(--c-text);
+      font: inherit; font-size: .85rem; resize: vertical;
+    }
+    .rq-return-box .rq-actions { margin-top: 8px; }
+
+    .ey-rq-empty { text-align: center; padding: 48px 24px; color: var(--c-muted); }
+    .ey-rq-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .ey-rq-empty-title { font-size: 1rem; font-weight: 700; color: var(--c-text); margin-bottom: 6px; }
+
+    .ey-rq-denied { text-align: center; padding: 48px 24px; color: var(--c-muted); }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-rq-page">
+  <p class="rq-intro">Observations from staff who don't yet have publish rights wait here.
+    <strong>Approve</strong> publishes it (and notifies the key person + parents if it was
+    marked to share). <strong>Return</strong> sends it back to the author with a note.</p>
+  <div id="ey-rq-content">
+    <div class="app-skeleton" style="height:120px;border-radius:14px;margin-bottom:12px"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function relTime(iso) {
+    var diff = Date.now() - new Date(iso).getTime();
+    var mins = Math.floor(diff / 60000);
+    if (mins < 1)  return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24)  return hrs + 'h ago';
+    return Math.floor(hrs / 24) + 'd ago';
+  }
+
+  function injectBack() {
+    var topbar = document.getElementById('wren-app-topbar');
+    var hamburger = document.getElementById('wren-app-hamburger');
+    if (!topbar || !hamburger) return;
+    var btn = document.createElement('button');
+    btn.id = 'ey-rq-back';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Back to More');
+    btn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>';
+    btn.addEventListener('click', function () {
+      if (history.length > 1) history.back(); else location.href = '/ey/more';
+    });
+    hamburger.parentNode.insertBefore(btn, hamburger);
+    hamburger.style.display = 'none';
+  }
+
+  function renderCard(it) {
+    var areas = (it.eyfs_areas || []).map(function (a) {
+      return '<span class="rq-area-chip">' + esc(a) + '</span>';
+    }).join('');
+    return '<div class="rq-card" data-id="' + it.id + '">' +
+      '<div class="rq-card-head">' +
+        '<div>' +
+          '<div class="rq-child-name">' + esc(it.child_name) + (it.room_name ? ' &middot; ' + esc(it.room_name) : '') + '</div>' +
+          '<div class="rq-meta">By ' + esc(it.author_name || 'Unknown') + ' &middot; ' + relTime(it.submitted_for_review_at || it.created_at) +
+            (it.requested_shared_with_parents ? ' &middot; wants to share with parents' : ' &middot; not marked to share') + '</div>' +
+        '</div>' +
+        '<span class="rq-badge">Awaiting review</span>' +
+      '</div>' +
+      (areas ? '<div class="rq-areas">' + areas + '</div>' : '') +
+      '<div class="rq-text" data-text>' + esc(it.observation_text) + '</div>' +
+      '<button class="rq-expand" data-action="expand">Read more</button>' +
+      '<div class="rq-actions">' +
+        '<button class="rq-btn rq-btn-approve" data-action="approve">Approve</button>' +
+        '<button class="rq-btn rq-btn-return" data-action="return-toggle">Return with a note</button>' +
+      '</div>' +
+      '<div class="rq-return-box" data-return-box>' +
+        '<textarea data-return-note placeholder="What should they change or add?"></textarea>' +
+        '<div class="rq-actions">' +
+          '<button class="rq-btn rq-btn-approve" data-action="return-send">Send back</button>' +
+          '<button class="rq-btn rq-btn-return" data-action="return-cancel">Cancel</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function toast(msg, type) {
+    if (window.Wren && Wren.toast) Wren.toast(msg, type || 'info');
+    else alert(msg);
+  }
+
+  function loadQueue() {
+    var host = document.getElementById('ey-rq-content');
+    if (!host) return;
+    Wren.api('/api/observations/review-queue').then(function (rows) {
+      if (!rows || !rows.length) {
+        host.innerHTML = '<div class="ey-rq-empty"><div class="ey-rq-empty-icon">🎉</div>' +
+          '<div class="ey-rq-empty-title">Nothing to review</div>' +
+          '<div>New observations from staff without publish rights will appear here.</div></div>';
+        return;
+      }
+      host.innerHTML = rows.map(renderCard).join('');
+    }).catch(function (e) {
+      var msg = (e && e.error) || '';
+      if (msg === 'Reviewer role required') {
+        host.innerHTML = '<div class="ey-rq-denied">This page is for managers, deputies and room leaders.</div>';
+      } else {
+        host.innerHTML = '<div class="ey-rq-empty">Could not load the review queue' + (msg ? ' — ' + esc(msg) : '') + '.</div>';
+      }
+    });
+  }
+
+  document.addEventListener('wren:ready', function () {
+    injectBack();
+    loadQueue();
+
+    var host = document.getElementById('ey-rq-content');
+    if (!host) return;
+    host.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      var card = btn.closest('.rq-card');
+      if (!card) return;
+      var id = card.dataset.id;
+      var action = btn.dataset.action;
+
+      if (action === 'expand') {
+        var t = card.querySelector('[data-text]');
+        var open = t.classList.toggle('open');
+        btn.textContent = open ? 'Show less' : 'Read more';
+      } else if (action === 'return-toggle') {
+        card.querySelector('[data-return-box]').classList.add('open');
+      } else if (action === 'return-cancel') {
+        card.querySelector('[data-return-box]').classList.remove('open');
+      } else if (action === 'approve') {
+        card.style.opacity = '.5';
+        Wren.api('/api/observations/' + id + '/review/approve', { method: 'POST', body: {} })
+          .then(function () { toast('Approved and published', 'success'); card.remove(); })
+          .catch(function (err) { card.style.opacity = '1'; toast('Failed' + (err && err.error ? ': ' + err.error : ''), 'error'); });
+      } else if (action === 'return-send') {
+        var note = card.querySelector('[data-return-note]').value.trim();
+        if (!note) { toast('Add a note so they know what to change', 'warning'); return; }
+        card.style.opacity = '.5';
+        Wren.api('/api/observations/' + id + '/review/return', { method: 'POST', body: { note: note } })
+          .then(function () { toast('Returned to the author', 'success'); card.remove(); })
+          .catch(function (err) { card.style.opacity = '1'; toast('Failed' + (err && err.error ? ': ' + err.error : ''), 'error'); });
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

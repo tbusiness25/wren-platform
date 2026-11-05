@@ -1,0 +1,513 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Setting Incidents · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf;--orange:#e07820}
+ .si-wrap{padding:18px;max-width:1500px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}
+ .sub{color:var(--mut);font-size:.85rem;margin-bottom:14px;max-width:900px;line-height:1.5}
+ .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+ .spacer{flex:1}
+ .btn{background:var(--blue);border:1px solid var(--blue);color:#04121b;border-radius:9px;padding:9px 15px;
+   font-size:.85rem;font-weight:700;cursor:pointer;min-height:40px}
+ .btn:hover{filter:brightness(1.08)}
+ .btn.ghost{background:transparent;color:var(--txt);border-color:var(--bd)}
+ .btn.ghost.on{border-color:var(--orange);color:var(--orange)}
+ .btn.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+ .btn:disabled{opacity:.45;cursor:default}
+ select,input[type=search],input[type=date],input[type=text],textarea{
+   background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:8px;
+   padding:9px 10px;font-size:.85rem;font-family:inherit}
+ input[type=search]{min-width:210px}
+ textarea{width:100%;box-sizing:border-box;min-height:80px;resize:vertical;line-height:1.5}
+ .empty{text-align:center;color:var(--mut);padding:40px 0;font-size:.9rem}
+ .banner{font-size:.82rem;color:var(--mut);min-height:1em}
+
+ /* stat strip */
+ .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+ .stat{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px}
+ .stat .k{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+ .stat .v{font-size:1.5rem;font-weight:800;margin-top:3px}
+ .stat .d{font-size:.75rem;color:var(--mut);margin-top:2px}
+ .stat.alert{border-color:var(--bad)}
+ .stat.alert .v{color:var(--bad)}
+ .stat.warnb{border-color:var(--warn)}
+ .stat.warnb .v{color:var(--warn)}
+
+ /* list */
+ .tbl-scroll{overflow-x:auto;border:1px solid var(--bd);border-radius:14px;background:var(--card)}
+ table{border-collapse:collapse;width:100%;font-size:.82rem;min-width:1050px}
+ th,td{padding:10px 11px;text-align:left;border-bottom:1px solid var(--bd);vertical-align:top}
+ thead th{position:sticky;top:0;background:#0b1428;color:var(--mut);font-weight:700;font-size:.72rem;
+   text-transform:uppercase;letter-spacing:.04em;z-index:2;white-space:nowrap}
+ tbody tr{cursor:pointer}
+ tbody tr:hover{background:rgba(255,255,255,.03)}
+ td.ref{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;white-space:nowrap}
+ td.what{min-width:260px}
+ .what .desc{color:var(--mut);font-size:.78rem;margin-top:3px;line-height:1.45;
+   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ .grp{color:var(--mut);font-size:.72rem;display:block}
+ .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.7rem;font-weight:700;
+   border:1px solid currentColor;white-space:nowrap}
+ .p-ok{color:var(--ok)}.p-warn{color:var(--warn)}.p-bad{color:var(--bad)}.p-mut{color:#94a3b8}
+ .p-blue{color:var(--blue)}
+ .badges{display:flex;gap:5px;flex-wrap:wrap}
+
+ /* drawer */
+ #ovl{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:60}
+ #ovl.open{display:block}
+ #drw{position:fixed;top:0;right:0;bottom:0;width:min(660px,100%);background:var(--card);
+   border-left:1px solid var(--bd);transform:translateX(100%);transition:transform .18s ease;
+   z-index:61;overflow-y:auto;color:var(--txt)}
+ #drw.open{transform:translateX(0)}
+ .dhd{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--bd);
+   padding:14px 18px;display:flex;gap:10px;align-items:flex-start;z-index:2}
+ .dhd h2{font-size:1.05rem;margin:0 0 3px}
+ .dbody{padding:16px 18px 40px}
+ .fld{margin-bottom:14px}
+ .fld .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin-bottom:4px}
+ .fld .val{font-size:.88rem;line-height:1.55;white-space:pre-wrap}
+ .fld .val.mut{color:var(--mut)}
+ .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+ .sec-h{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);
+   font-weight:800;margin:22px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--bd)}
+ .ofsted-box{border:1px solid var(--warn);background:rgba(245,158,11,.10);border-radius:10px;
+   padding:12px 14px;margin-bottom:14px;font-size:.85rem;line-height:1.5}
+ .ofsted-box.bad{border-color:var(--bad);background:rgba(239,68,68,.12)}
+ .ofsted-box.done{border-color:var(--ok);background:rgba(34,197,94,.10)}
+ .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+ .kidlist{display:flex;flex-wrap:wrap;gap:6px}
+ .kid{padding:3px 10px;border-radius:999px;background:rgba(74,154,191,.15);
+   border:1px solid var(--blue);font-size:.78rem}
+ .photos{display:flex;flex-wrap:wrap;gap:8px}
+ .photos img{width:92px;height:92px;object-fit:cover;border-radius:8px;border:1px solid var(--bd)}
+ .err{color:var(--bad);font-size:.82rem;margin-top:8px;min-height:1em}
+ .note{color:var(--mut);font-size:.78rem;line-height:1.5;margin-top:6px}
+</style></head>
+<body data-portal="admin">
+<div class="si-wrap">
+  <h1>🏚️ Setting Incidents</h1>
+  <div class="sub">Significant events at the <strong>setting</strong> — fire, intruder, water leak, power failure,
+    lost child, an adult under the influence at collection, an outbreak, a near miss. This is a third record,
+    separate from <a href="/incidents.html">accidents and injuries</a> and from safeguarding concerns,
+    because these events often have no single child and none of the injury fields apply.
+    Escalating one to safeguarding is one click on the record — never automatic.</div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input type="search" id="f-q" placeholder="Search description, place or ref…" autocomplete="off">
+    <select id="f-group"><option value="">All groups</option></select>
+    <select id="f-status">
+      <option value="">All statuses</option>
+      <option value="open">Open</option>
+      <option value="under_review">Under review</option>
+      <option value="closed">Closed</option>
+    </select>
+    <select id="f-severity">
+      <option value="">All severities</option>
+      <option value="major">Major</option>
+      <option value="significant">Significant</option>
+      <option value="minor">Minor</option>
+    </select>
+    <input type="date" id="f-from" aria-label="From date">
+    <input type="date" id="f-to" aria-label="To date">
+    <button class="btn ghost" id="btn-ofsted">Ofsted outstanding only</button>
+    <span class="spacer"></span>
+    <span class="banner" id="banner"></span>
+    <button class="btn ghost" id="btn-refresh">Refresh</button>
+  </div>
+
+  <div class="tbl-scroll">
+    <table id="tbl">
+      <thead><tr>
+        <th>Ref</th><th>When</th><th>What happened</th><th>Where</th>
+        <th>Severity</th><th>Children</th><th>Ofsted</th><th>Status</th><th>Reported by</th>
+      </tr></thead>
+      <tbody id="tb"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="ovl"></div>
+<aside id="drw" aria-label="Incident detail" role="dialog" aria-modal="true">
+  <div class="dhd">
+    <div style="flex:1">
+      <h2 id="d-title">—</h2>
+      <div class="badges" id="d-badges"></div>
+    </div>
+    <button class="btn ghost" id="d-close" aria-label="Close">✕</button>
+  </div>
+  <div class="dbody" id="d-body"></div>
+</aside>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/setting-incidents';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  var STATE={rows:[],stats:null,ofstedOnly:false,current:null};
+
+  function api(p,opts){opts=opts||{};
+    return fetch(API+p,{method:opts.method||'GET',
+      headers:{'Authorization':'Bearer '+TOKEN(),'Content-Type':'application/json'},
+      body:opts.body?JSON.stringify(opts.body):undefined})
+    .then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};})
+      .catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){
+    return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+  function fmtDateTime(d){
+    if(!d) return '—';
+    var s=String(d), p=s.slice(0,10).split('-');
+    if(p.length!==3) return s;
+    return p[2]+'/'+p[1]+'/'+p[0]+(s.length>=16?(' '+s.slice(11,16)):'');
+  }
+  function fmtDate(d){
+    if(!d) return '—';
+    var p=String(d).slice(0,10).split('-');
+    return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:String(d);
+  }
+  function daysTo(d){
+    if(!d) return null;
+    var t=new Date(new Date().toISOString().slice(0,10)+'T00:00:00Z');
+    return Math.round((new Date(String(d).slice(0,10)+'T00:00:00Z')-t)/86400000);
+  }
+
+  var SEV={major:'p-bad',significant:'p-warn',minor:'p-mut'};
+  var STL={open:'p-warn',under_review:'p-blue',closed:'p-ok'};
+  var STLAB={open:'Open',under_review:'Under review',closed:'Closed'};
+
+  /* Ofsted position for a row: the single most important thing on this page. */
+  function ofstedState(r){
+    if(!r.ofsted_notifiable) return {cls:'p-mut',text:'—',rank:0};
+    if(r.ofsted_notified_at) return {cls:'p-ok',text:'Notified '+fmtDate(r.ofsted_notified_at),rank:1};
+    var d=daysTo(r.ofsted_due_by);
+    if(d==null) return {cls:'p-warn',text:'To notify',rank:3};
+    if(d<0) return {cls:'p-bad',text:'OVERDUE by '+Math.abs(d)+'d',rank:4};
+    return {cls:'p-warn',text:'Due in '+d+'d',rank:3};
+  }
+
+  /* ── list ─────────────────────────────────────────────────────────────── */
+  function qs(){
+    var p=[];
+    if(el('f-q').value.trim()) p.push('q='+encodeURIComponent(el('f-q').value.trim()));
+    if(el('f-group').value)    p.push('group='+encodeURIComponent(el('f-group').value));
+    if(el('f-status').value)   p.push('status='+encodeURIComponent(el('f-status').value));
+    if(el('f-severity').value) p.push('severity='+encodeURIComponent(el('f-severity').value));
+    if(el('f-from').value)     p.push('from='+encodeURIComponent(el('f-from').value));
+    if(el('f-to').value)       p.push('to='+encodeURIComponent(el('f-to').value));
+    if(STATE.ofstedOnly)       p.push('ofsted=due');
+    return p.length?('?'+p.join('&')):'';
+  }
+
+  function load(){
+    el('banner').textContent='Loading…';
+    return api('/'+qs()).then(function(r){
+      if(!r.ok){ el('banner').textContent=(r.j&&r.j.error)||('Error '+r.status);
+        el('tb').innerHTML='<tr><td colspan="9" class="empty">'+esc((r.j&&r.j.error)||'Could not load')+'</td></tr>'; return; }
+      STATE.rows=r.j.incidents||[];
+      el('banner').textContent=STATE.rows.length+' incident'+(STATE.rows.length===1?'':'s');
+      render();
+    });
+  }
+
+  function render(){
+    if(!STATE.rows.length){
+      el('tb').innerHTML='<tr><td colspan="9" class="empty">No setting incident matches this filter. '
+        +'That is a good thing to see — but a setting with no near misses recorded usually means they are not being logged.</td></tr>';
+      return;
+    }
+    el('tb').innerHTML=STATE.rows.map(function(r){
+      var o=ofstedState(r);
+      return '<tr data-id="'+esc(r.id)+'">'+
+        '<td class="ref">'+esc(r.incident_ref||('#'+r.id))+'</td>'+
+        '<td style="white-space:nowrap">'+fmtDateTime(r.occurred_at)+'</td>'+
+        '<td class="what"><strong>'+esc(r.category_label||r.category||'—')+'</strong>'+
+          '<span class="grp">'+esc(r.group_name||'')+'</span>'+
+          '<div class="desc">'+esc(r.description||'')+'</div></td>'+
+        '<td>'+esc(r.location||'—')+'</td>'+
+        '<td><span class="pill '+(SEV[r.severity]||'p-mut')+'">'+esc(r.severity||'—')+'</span></td>'+
+        '<td>'+(Number(r.children_linked)?('<span class="pill p-blue">'+r.children_linked+'</span>'):'<span class="p-mut">none</span>')+'</td>'+
+        '<td><span class="pill '+o.cls+'">'+esc(o.text)+'</span></td>'+
+        '<td><span class="pill '+(STL[r.status]||'p-mut')+'">'+esc(STLAB[r.status]||r.status)+'</span>'+
+          (r.safeguarding_concern_id?' <span class="pill p-bad">🛡️ escalated</span>':'')+'</td>'+
+        '<td>'+esc(r.reported_by_name||'—')+'</td>'+
+      '</tr>';
+    }).join('');
+    el('tb').querySelectorAll('tr[data-id]').forEach(function(tr){
+      tr.addEventListener('click',function(){ openDrawer(tr.dataset.id); });
+    });
+  }
+
+  /* ── stats ────────────────────────────────────────────────────────────── */
+  function loadStats(){
+    return api('/stats').then(function(r){
+      if(!r.ok) return;
+      STATE.stats=r.j;
+      var t=r.j.totals||{}, o=r.j.ofsted||{};
+      var cards=[
+        {k:'Logged (12 months)',v:t.total,d:(t.major||0)+' major'},
+        {k:'Open / under review',v:(Number(t.open||0)+Number(t.under_review||0)),d:(t.closed||0)+' closed',
+         cls:(Number(t.open||0)+Number(t.under_review||0))>0?'warnb':''},
+        {k:'Ofsted to notify',v:(Number(o.pending||0)+Number(o.overdue||0)),
+         d:(o.notified||0)+' notified · 14-day limit',
+         cls:Number(o.overdue||0)>0?'alert':(Number(o.pending||0)>0?'warnb':'')},
+        {k:'Ofsted OVERDUE',v:o.overdue||0,d:'past the 14 days',cls:Number(o.overdue||0)>0?'alert':''},
+        {k:'Escalated to safeguarding',v:t.escalated||0,d:'linked concerns'},
+        {k:'Evacuations',v:t.evacuations||0,d:(t.emergency_services||0)+' with 999 called'}
+      ];
+      el('stats').innerHTML=cards.map(function(c){
+        return '<div class="stat '+(c.cls||'')+'"><div class="k">'+esc(c.k)+'</div>'+
+               '<div class="v">'+esc(c.v==null?'—':c.v)+'</div><div class="d">'+esc(c.d)+'</div></div>';
+      }).join('');
+    });
+  }
+
+  function loadGroups(){
+    return api('/categories').then(function(r){
+      if(!r.ok) return;
+      var sel=el('f-group');
+      (r.j.groups||[]).forEach(function(g){
+        var o=document.createElement('option'); o.value=g.group_name; o.textContent=g.group_name; sel.appendChild(o);
+      });
+    });
+  }
+
+  /* ── drawer ───────────────────────────────────────────────────────────── */
+  function fld(label,value,mut){
+    return '<div class="fld"><div class="lbl">'+esc(label)+'</div>'+
+           '<div class="val'+(value?'':' mut')+(mut?' mut':'')+'">'+esc(value||'Not recorded')+'</div></div>';
+  }
+  // b491 (2026-10-12): /api/setting-incidents/photo/... URLs now arrive from the
+  // API already signed (a short-lived MEDIA_URL_KEY token, src/lib/media-url.js)
+  // — that replaced the old long-lived-JWT-via-?token= fallback this function
+  // used to build itself (release CHECK.md F1). Roost isn't device-gated, so
+  // nothing else needs appending here; kept as a function so call sites don't change.
+  function photoUrl(u){ return u; }
+
+  function openDrawer(id){
+    api('/'+id).then(function(r){
+      if(!r.ok){ alert((r.j&&r.j.error)||'Could not load the incident'); return; }
+      var d=r.j; STATE.current=d;
+      el('d-title').textContent=(d.incident_ref||('#'+d.id))+' · '+(d.category_label||d.category||'');
+      var o=ofstedState(d);
+      el('d-badges').innerHTML=
+        '<span class="pill '+(SEV[d.severity]||'p-mut')+'">'+esc(d.severity)+'</span>'+
+        '<span class="pill '+(STL[d.status]||'p-mut')+'">'+esc(STLAB[d.status]||d.status)+'</span>'+
+        (d.ofsted_notifiable?'<span class="pill '+o.cls+'">Ofsted: '+esc(o.text)+'</span>':'')+
+        (d.safeguarding_concern_id?'<span class="pill p-bad">🛡️ concern #'+esc(d.safeguarding_concern_id)+'</span>':'');
+
+      var h='';
+
+      /* Ofsted first — it is the only part of this record with a legal clock. */
+      if(d.ofsted_notifiable){
+        var dd=daysTo(d.ofsted_due_by);
+        if(d.ofsted_notified_at){
+          h+='<div class="ofsted-box done"><strong>Ofsted notified '+fmtDate(d.ofsted_notified_at)+'.</strong>'+
+             (d.ofsted_reference?(' Reference '+esc(d.ofsted_reference)+'.'):' No Ofsted reference recorded yet.')+'</div>';
+        } else {
+          h+='<div class="ofsted-box'+((dd!=null&&dd<0)?' bad':'')+'">'+
+             '<strong>'+((dd!=null&&dd<0)?('Ofsted notification is OVERDUE by '+Math.abs(dd)+' days.'):
+                         ('Ofsted must be notified'+(d.ofsted_due_by?(' by '+fmtDate(d.ofsted_due_by)):'')+'.'))+'</strong> '+
+             'EYFS requires notification as soon as reasonably practicable and within 14 days. '+
+             'Record it below once it is done — this chases itself in the nightly compliance sweep until you do.'+
+             '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+               '<input type="date" id="i-ofsted-date" value="'+new Date().toISOString().slice(0,10)+'">'+
+               '<input type="text" id="i-ofsted-ref" placeholder="Ofsted reference (optional)" style="min-width:200px">'+
+               '<button class="btn" id="btn-notified">Mark Ofsted notified</button>'+
+             '</div></div>';
+        }
+      }
+
+      h+='<div class="grid2">'+fld('Happened',fmtDateTime(d.occurred_at))+fld('Discovered',d.discovered_at?fmtDateTime(d.discovered_at):null)+'</div>';
+      h+='<div class="grid2">'+fld('Where',d.location)+fld('Reported by',d.reported_by_name)+'</div>';
+      h+=fld('What happened',d.description);
+      h+=fld('Immediate action',d.immediate_action);
+      h+=fld('Witnesses',d.witness_names);
+
+      h+='<div class="sec-h">Who was there</div>';
+      h+='<div class="grid2">'+fld('Children present',d.children_present==null?null:String(d.children_present))+
+         fld('Staff present',d.staff_present==null?null:String(d.staff_present))+'</div>';
+      h+='<div class="fld"><div class="lbl">Children linked</div>'+
+         (d.children&&d.children.length
+           ? '<div class="kidlist">'+d.children.map(function(c){return '<span class="kid">'+esc(c.child_name)+'</span>';}).join('')+'</div>'
+           : '<div class="val mut">No individual child — normal for a fire, a leak or a power cut.</div>')+'</div>';
+
+      if(d.evacuation_required){
+        h+='<div class="sec-h">Evacuation</div>';
+        h+='<div class="grid2">'+fld('Completed',d.evacuation_completed_at?fmtDateTime(d.evacuation_completed_at):null)+
+           fld('Roll call',d.roll_call_complete==null?null:(d.roll_call_complete?'Complete — everyone accounted for':'NOT complete'))+'</div>';
+        h+=fld('Roll call notes',d.roll_call_notes);
+      }
+
+      if(d.emergency_services_called||d.external_ref||(d.other_agencies&&d.other_agencies.length)){
+        h+='<div class="sec-h">Services & agencies</div>';
+        h+='<div class="grid2">'+fld('Services attended',(d.services_attended||[]).join(', '))+
+           fld('Their incident number',d.external_ref)+'</div>';
+        h+=fld('Other agencies informed',(d.other_agencies||[]).join(', '));
+        if(d.riddor_dangerous_occurrence){
+          h+=fld('RIDDOR dangerous occurrence',d.riddor_notified_at?('Notified '+fmtDate(d.riddor_notified_at)):'Flagged — HSE not yet notified');
+        }
+      }
+
+      h+='<div class="sec-h">Parents</div>';
+      h+=fld('Told',d.parents_informed?('Yes'+(d.parents_informed_at?(' — '+fmtDateTime(d.parents_informed_at)):'')):'Not yet');
+      h+=fld('What they were told',d.parents_message);
+
+      h+='<div class="sec-h">Review & learning</div>';
+      h+=fld('Root cause',d.root_cause);
+      h+=fld('Actions taken',d.actions_taken);
+      h+=fld('Lessons learned',d.lessons_learned);
+      h+=fld('Preventive actions',d.preventive_actions);
+      h+=fld('Manager review',d.manager_reviewed_at?((d.manager_reviewed_by_name||'A manager')+' — '+fmtDateTime(d.manager_reviewed_at)):null);
+
+      if(d.photo_urls&&d.photo_urls.length){
+        h+='<div class="sec-h">Photos</div><div class="photos">'+
+           d.photo_urls.map(function(u){return '<img src="'+esc(photoUrl(u))+'" alt="Incident photo" loading="lazy">';}).join('')+'</div>';
+      }
+
+      /* Close — the gate. The API rejects a close with no actions and no
+         lessons, so the form asks for both here rather than letting a manager
+         discover the rule as an error message. */
+      if(d.status!=='closed'){
+        h+='<div class="sec-h">Close this incident</div>'+
+           '<div class="note">An incident cannot be closed empty. Say what was done and what changes as a result — '+
+           'that second box is the one that stops it happening again, and the one an inspector reads.</div>'+
+           '<div class="fld" style="margin-top:10px"><div class="lbl">Actions taken (required)</div>'+
+             '<textarea id="i-actions">'+esc(d.actions_taken||'')+'</textarea></div>'+
+           '<div class="fld"><div class="lbl">Lessons learned (required)</div>'+
+             '<textarea id="i-lessons">'+esc(d.lessons_learned||'')+'</textarea></div>'+
+           '<div class="fld"><div class="lbl">Preventive actions</div>'+
+             '<textarea id="i-prevent">'+esc(d.preventive_actions||'')+'</textarea></div>'+
+           '<div class="fld"><div class="lbl">Root cause</div>'+
+             '<textarea id="i-root">'+esc(d.root_cause||'')+'</textarea></div>'+
+           '<div class="actions-row">'+
+             '<button class="btn" id="btn-close-inc">Close incident</button>'+
+             '<button class="btn ghost" id="btn-save">Save without closing</button>'+
+             (d.manager_reviewed_at?'':'<button class="btn ghost" id="btn-review">Mark reviewed</button>')+
+           '</div><div class="err" id="d-err"></div>';
+      } else {
+        h+='<div class="fld"><div class="lbl">Closed</div><div class="val">'+fmtDateTime(d.closed_at)+'</div></div>';
+      }
+
+      /* Escalation — one click, never automatic. */
+      h+='<div class="sec-h">Safeguarding</div>';
+      if(d.safeguarding_concern_id){
+        h+='<div class="val">Escalated to safeguarding concern #'+esc(d.safeguarding_concern_id)+
+           (d.escalated_at?(' on '+fmtDateTime(d.escalated_at)):'')+'. '+
+           '<a href="/admin/safeguarding/concerns">Open the concern</a>.</div>';
+      } else {
+        h+='<div class="note">A lost child, an unauthorised collection attempt or an adult under the influence '+
+           'very often <strong>is</strong> also a safeguarding matter. That is a judgement, so nothing escalates '+
+           'by itself — this raises a linked concern for the DSL and stores the link on this record.</div>'+
+           '<div class="actions-row"><button class="btn danger" id="btn-escalate">Escalate to safeguarding</button></div>'+
+           '<div class="err" id="d-err2"></div>';
+      }
+
+      el('d-body').innerHTML=h;
+      wireDrawer(d);
+      el('ovl').classList.add('open'); el('drw').classList.add('open');
+    });
+  }
+
+  function wireDrawer(d){
+    var err=function(msg,which){ var e=el(which||'d-err'); if(e) e.textContent=msg||''; };
+
+    var bN=el('btn-notified');
+    if(bN) bN.addEventListener('click',function(){
+      bN.disabled=true;
+      var date=el('i-ofsted-date').value;
+      api('/'+d.id,{method:'PUT',body:{
+        ofsted_notified_at:date?(date+'T09:00:00Z'):new Date().toISOString(),
+        ofsted_reference:el('i-ofsted-ref').value.trim()||null}})
+      .then(function(r){ if(!r.ok){bN.disabled=false;alert((r.j&&r.j.error)||'Failed');return;}
+        openDrawer(d.id); loadStats(); load(); });
+    });
+
+    var bS=el('btn-save');
+    if(bS) bS.addEventListener('click',function(){
+      bS.disabled=true; err('');
+      api('/'+d.id,{method:'PUT',body:{
+        actions_taken:el('i-actions').value.trim()||null,
+        lessons_learned:el('i-lessons').value.trim()||null,
+        preventive_actions:el('i-prevent').value.trim()||null,
+        root_cause:el('i-root').value.trim()||null}})
+      .then(function(r){ bS.disabled=false;
+        if(!r.ok){err((r.j&&r.j.error)||'Failed');return;} openDrawer(d.id); load(); });
+    });
+
+    var bR=el('btn-review');
+    if(bR) bR.addEventListener('click',function(){
+      bR.disabled=true;
+      api('/'+d.id,{method:'PUT',body:{manager_reviewed:true}}).then(function(r){
+        if(!r.ok){bR.disabled=false;err((r.j&&r.j.error)||'Failed');return;} openDrawer(d.id); load(); });
+    });
+
+    var bC=el('btn-close-inc');
+    if(bC) bC.addEventListener('click',function(){
+      var a=el('i-actions').value.trim(), l=el('i-lessons').value.trim();
+      if(!a||!l){ err('Both "Actions taken" and "Lessons learned" are required before this can be closed.'); return; }
+      bC.disabled=true; err('');
+      api('/'+d.id+'/close',{method:'POST',body:{
+        actions_taken:a, lessons_learned:l,
+        preventive_actions:el('i-prevent').value.trim()||null,
+        root_cause:el('i-root').value.trim()||null}})
+      .then(function(r){ bC.disabled=false;
+        if(!r.ok){ err((r.j&&r.j.error)||'Failed'); return; }
+        closeDrawer(); loadStats(); load(); });
+    });
+
+    var bE=el('btn-escalate');
+    if(bE) bE.addEventListener('click',function(){
+      var kids=(d.children||[]);
+      var who=kids.length===1?('concerning '+kids[0].child_name)
+             :kids.length>1?('concerning '+kids.length+' children — you will need to say which on the concern')
+             :'with no individual child attached';
+      if(!confirm('Raise a safeguarding concern '+who+', linked to '+(d.incident_ref||('#'+d.id))+'?\n\n'
+                 +'The DSL is notified immediately.')) return;
+      bE.disabled=true; err('','d-err2');
+      api('/'+d.id+'/escalate-to-safeguarding',{method:'POST',body:{}}).then(function(r){
+        bE.disabled=false;
+        if(!r.ok){ err((r.j&&r.j.error)||'Failed','d-err2'); return; }
+        openDrawer(d.id); loadStats(); load();
+      });
+    });
+  }
+
+  function closeDrawer(){
+    el('ovl').classList.remove('open'); el('drw').classList.remove('open'); STATE.current=null;
+  }
+
+  /* ── wiring ───────────────────────────────────────────────────────────── */
+  function boot(){
+    el('d-close').addEventListener('click',closeDrawer);
+    el('ovl').addEventListener('click',closeDrawer);
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeDrawer(); });
+
+    ['f-group','f-status','f-severity','f-from','f-to'].forEach(function(id){
+      el(id).addEventListener('change',load);
+    });
+    var t=null;
+    el('f-q').addEventListener('input',function(){ clearTimeout(t); t=setTimeout(load,300); });
+    el('btn-refresh').addEventListener('click',function(){ loadStats(); load(); });
+    el('btn-ofsted').addEventListener('click',function(){
+      STATE.ofstedOnly=!STATE.ofstedOnly;
+      el('btn-ofsted').classList.toggle('on',STATE.ofstedOnly);
+      load();
+    });
+
+    loadGroups(); loadStats(); load();
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+}());
+</script>
+</body></html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Notifications — Your Nursery</title>
+<meta name="lap-title" content="Notifications">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#2d5a4a;--green-d:#1e3d31;--green-l:#3d7a64;
+  --orange:#f0a050;--orange-d:#d8823a;
+  --cream:#fefcf8;--cream-d:#f5f0e8;
+  --text:#2a2a2a;--text-m:#5a5a5a;--border:#e8e0d0;
+}
+body{font-family:'Nunito',system-ui,-apple-system,Arial,sans-serif;background:var(--cream);color:var(--text);line-height:1.6}
+a{color:var(--lap-ink,var(--green));text-decoration:none}
+.nt-more{display:block;margin:14px auto 0;min-height:44px;padding:0 20px;border:1px solid var(--border);border-radius:12px;background:var(--surface,#fff);color:var(--lap-ink,var(--green));font:800 .88rem Nunito,system-ui,sans-serif;cursor:pointer}
+.nt-set{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 16px 0;padding:0 16px;min-height:48px;background:var(--surface,#fff);border:1px solid var(--border);border-radius:14px;color:var(--lap-ink,var(--green));font:800 .9rem Nunito,system-ui,sans-serif}
+.nt-set span{color:var(--text-m);font-size:1.3rem;font-weight:400}
+.nt-skel{height:74px;margin-top:8px;border-radius:14px;background:linear-gradient(90deg,var(--cream-d) 0%,var(--surface,#fff) 50%,var(--cream-d) 100%);background-size:200% 100%;animation:ntsk 1.2s ease-in-out infinite}
+@keyframes ntsk{to{background-position:-200% 0}}
+@media(prefers-reduced-motion:reduce){.nt-skel{animation:none}}
+</style>
+<link rel="stylesheet" href="/css/parents-app.css" data-parents-app-css="1">
+<script src="/js/lap-boot.js"></script>
+<script src="/pwa.js" defer></script>
+</head>
+<body>
+
+<!-- b339 (2026-09-18) — the screen behind the bell in the top bar. It reads what
+     /api/notifications already returns for a parent and adds nothing to it; b340
+     builds the preferences (what gets sent, and how) that will sit above this list. -->
+<!-- b340: the choices live on their own screen; this is the way in from the list -->
+<a class="nt-set" href="/welcome/notifications/settings">Choose how we tell you<span aria-hidden="true">›</span></a>
+<main class="nt" id="nt">
+  <div class="nt-skel"></div><div class="nt-skel"></div><div class="nt-skel"></div>
+</main>
+
+<script src="/js/wren-parent-empty.js"></script>
+<script>
+(function () {
+  'use strict';
+  var el = document.getElementById('nt');
+  var PAGE = 0, ROWS = [], TOKEN = null;
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function ico(d) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; }
+  var I = {
+    bell:    ico('<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 2H4.4z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>'),
+    leaf:    ico('<path d="M12 21c0-5 2.2-8.4 6.6-9.6"/><path d="M12 21c0-4.2-1.8-7-5.5-8.2"/><path d="M19.5 4.2c.6 4.2-1.4 7-5 7.4-1.6.2-2.6-.6-2.8-2-.4-3 2.8-5.4 7.8-5.4z"/><path d="M4 8.4c2.8.2 4.6 1.8 4.8 4 .1 1.2-.6 1.9-1.8 1.8-2.2-.2-3.6-2.2-3-5.8z"/>'),
+    book:    ico('<path d="M5 4.5h11.5a2.5 2.5 0 0 1 2.5 2.5v13H7.5A2.5 2.5 0 0 1 5 17.5z"/><path d="M5 17.5A2.5 2.5 0 0 1 7.5 15H19"/><path d="M9 8.5h6"/>'),
+    chat:    ico('<path d="M20.5 12.2c0 3.9-3.8 7-8.5 7a9.8 9.8 0 0 1-2.6-.35L4.5 20.5l1.2-3.4A6.6 6.6 0 0 1 3.5 12.2c0-3.9 3.8-7 8.5-7s8.5 3.1 8.5 7z"/>'),
+    pound:   ico('<circle cx="12" cy="12" r="8.5"/><path d="M14.6 8.6c-.6-1-1.6-1.4-2.6-1.2-1.4.3-2 1.5-2 2.7v2.4m-1.4 0h5M9 15.8h6.2"/>'),
+    cal:     ico('<rect x="4" y="5.5" width="16" height="14.5" rx="3"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>'),
+    paper:   ico('<path d="M6 4.5h9.5a2.5 2.5 0 0 1 2.5 2.5v12.5H8.5A2.5 2.5 0 0 1 6 17z"/><path d="M9.5 8.5h5M9.5 12h5"/>'),
+    shield:  ico('<path d="M12 3.5l7 2.6v5.4c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6.1z"/><path d="M9 12l2.2 2.2L15.5 10"/>')
+  };
+  function iconFor(cat) {
+    cat = String(cat || '').toLowerCase();
+    if (/observ|journey|milestone|photo/.test(cat)) return I.leaf;
+    if (/report|termly|check|plan/.test(cat)) return I.book;
+    if (/message|chat|reply/.test(cat)) return I.chat;
+    if (/invoice|payment|fee|money|balance/.test(cat)) return I.pound;
+    if (/event|trip|booking|calendar/.test(cat)) return I.cal;
+    if (/newsletter|news/.test(cat)) return I.paper;
+    if (/consent|policy|safeguard|declar|permission|sign/.test(cat)) return I.shield;
+    if (/diary|meal|sleep|nappy/.test(cat)) return I.book;
+    return I.bell;
+  }
+  function when(iso) {
+    var d = new Date(iso); if (isNaN(d)) return '';
+    var mins = Math.round((Date.now() - d.getTime()) / 60000);
+    if (mins < 1) return 'Now';
+    if (mins < 60) return mins + 'm';
+    if (mins < 60 * 24) return Math.round(mins / 60) + 'h';
+    if (mins < 60 * 48) return 'Yesterday';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {});
+    return fetch(path, opts);
+  }
+
+  function paint() {
+    if (!ROWS.length) { WrenParentEmpty.render(el, 'notifications'); syncAction(); return; }
+    el.innerHTML = ROWS.map(function (n) {
+      var unread = !n.read_at;
+      var link = (n.link && String(n.link).charAt(0) === '/') ? n.link : '';
+      return '<' + (link ? 'a href="' + esc(link) + '"' : 'button type="button"') + ' class="nt-row' + (unread ? ' unread' : '') + '" data-id="' + n.id + '">' +
+        '<span class="nt-ic">' + iconFor(n.category) + '</span>' +
+        '<span class="nt-main"><span class="nt-t">' + esc(n.title) + '</span>' +
+        (n.body ? '<span class="nt-b" style="display:-webkit-box">' + esc(n.body) + '</span>' : '') + '</span>' +
+        '<span style="display:flex;flex-direction:column;align-items:flex-end"><span class="nt-when">' + esc(when(n.created_at)) + '</span>' +
+        (unread ? '<span class="nt-pip" aria-label="Unread"></span>' : '') + '</span>' +
+        '</' + (link ? 'a' : 'button') + '>';
+    }).join('') + (ROWS.length && ROWS.length % 40 === 0 ? '<button type="button" class="nt-more" id="nt-more">Show older</button>' : '');
+    Array.prototype.forEach.call(el.querySelectorAll('.nt-row'), function (r) {
+      r.addEventListener('click', function () { markRead(parseInt(r.getAttribute('data-id'), 10)); });
+    });
+    var more = document.getElementById('nt-more');
+    if (more) more.addEventListener('click', function () { PAGE++; load(); });
+    syncAction();
+  }
+  function unreadCount() { return ROWS.filter(function (n) { return !n.read_at; }).length; }
+  function syncAction() {
+    if (!window.LapShell) return;
+    LapShell.bell(unreadCount());
+    LapShell.setAction(unreadCount() ? { label: 'Mark all read', onClick: markAll } : null);
+  }
+  function markRead(id) {
+    var row = ROWS.filter(function (n) { return n.id === id; })[0];
+    if (!row || row.read_at) return;
+    row.read_at = new Date().toISOString();
+    // keepalive: the click may be a navigation, and the request must still land
+    api('/api/notifications/' + id + '/read', { method: 'POST', keepalive: true }).catch(function () {});
+    syncAction();
+    var node = el.querySelector('[data-id="' + id + '"]');
+    if (node) { node.classList.remove('unread'); var pip = node.querySelector('.nt-pip'); if (pip) pip.remove(); }
+  }
+  function markAll() {
+    api('/api/notifications/read-all', { method: 'POST' }).then(function (r) {
+      if (!r.ok) return;
+      var now = new Date().toISOString();
+      ROWS.forEach(function (n) { if (!n.read_at) n.read_at = now; });
+      paint();
+    }).catch(function () {});
+  }
+  function fail() {
+    WrenParentEmpty.render(el, 'error', { action: { label: 'Try again', onClick: function () { location.reload(); } } });
+  }
+  function load() {
+    api('/api/notifications?page=' + PAGE).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (rows) { ROWS = ROWS.concat(Array.isArray(rows) ? rows : []); paint(); })
+      .catch(fail);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!window.LapShell) return fail();
+    LapShell.token().then(function (t) {
+      if (!t) return fail();
+      TOKEN = t; load();
+    });
+  });
+})();
+</script>
+</body>
+</html>

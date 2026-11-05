@@ -1,0 +1,237 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wren Leads · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .wl-wrap{padding:18px;max-width:1300px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+ .c{background:#0b1428;border:1px solid var(--bd);border-radius:9px;padding:11px;cursor:pointer}
+ .c.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
+ .c .n{font-size:1.5rem;font-weight:800}.c .l{color:var(--mut);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+ .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+ table{width:100%;border-collapse:collapse;font-size:.83rem}
+ th{color:var(--mut);font-weight:600;text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+ td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top}
+ tr:hover td{background:rgba(255,255,255,.02)}
+ .who{font-weight:700}.who a{color:var(--blue);text-decoration:none}
+ .meta{color:var(--mut);font-size:.74rem;margin-top:2px}
+ .msg-cell{max-width:320px;color:var(--mut);font-size:.78rem;line-height:1.5}
+ .badge{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:999px}
+ .b-new{background:rgba(74,154,191,.18);color:#7cc4e6}
+ .b-contacted{background:rgba(245,158,11,.15);color:var(--warn)}
+ .b-closed{background:rgba(148,163,184,.15);color:var(--mut)}
+ .chip{display:inline-block;background:#0b1428;border:1px solid var(--bd);border-radius:5px;padding:1px 7px;font-size:.7rem;color:var(--txt)}
+ select{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:6px;padding:5px 8px;font-size:.78rem}
+ .banner{font-size:.82rem;color:var(--mut);margin:8px 0;min-height:1em}
+ .empty{text-align:center;color:var(--mut);padding:40px 0;font-size:.9rem}
+ .hide{display:none}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="wl-wrap">
+  <h1>🐦 Wren Leads</h1>
+  <div class="sub">Product-sales enquiries from <strong>getwren.co.uk</strong>. Separate from nursery admissions — these never touch the enquiries pipeline.</div>
+
+  <div class="cards" id="wl-cards">
+    <div class="c active" data-filter="all"><div class="n" id="wl-n-all">–</div><div class="l">All leads</div></div>
+    <div class="c" data-filter="new"><div class="n" id="wl-n-new">–</div><div class="l">New</div></div>
+    <div class="c" data-filter="contacted"><div class="n" id="wl-n-contacted">–</div><div class="l">Contacted</div></div>
+    <div class="c" data-filter="closed"><div class="n" id="wl-n-closed">–</div><div class="l">Closed</div></div>
+  </div>
+
+  <div class="banner" id="wl-msg"></div>
+
+  <div class="panel">
+    <table>
+      <thead><tr>
+        <th>Received</th><th>Who</th><th>Setting</th><th>Tier</th><th>Message</th><th>Status</th>
+      </tr></thead>
+      <tbody id="wl-rows"></tbody>
+    </table>
+    <div class="empty hide" id="wl-empty">No leads yet.</div>
+  </div>
+
+  <!-- 2026-10-09 — the leads as a mailing list. Sent from Toby's getwren address in his own Gmail. -->
+  <div class="panel" id="ml-panel" style="margin-top:16px;padding:14px">
+    <h2 style="font-size:1.05rem;margin:0 0 4px">📬 Mailing list</h2>
+    <div class="sub" id="ml-sub">Loading…</div>
+    <label class="ml-l" for="ml-subject">Subject</label>
+    <input id="ml-subject" class="ml-in" type="text">
+    <label class="ml-l" for="ml-body">Email</label>
+    <textarea id="ml-body" class="ml-in" rows="14"></textarea>
+    <div class="sub" style="margin-top:4px">An unsubscribe line is added to the bottom automatically. Recipients go in <b>BCC</b>, so nobody sees anyone else's address.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <a class="ml-btn primary" id="ml-gmail" target="_blank" rel="noopener">Open in Gmail →</a>
+      <button class="ml-btn" id="ml-copy-bcc" type="button">Copy BCC list</button>
+      <button class="ml-btn" id="ml-copy-body" type="button">Copy email text</button>
+      <button class="ml-btn" id="ml-sent" type="button">✓ I've sent it</button>
+    </div>
+    <div class="sub" style="margin-top:6px">In Gmail, set <b>From</b> to your getwren address before sending.</div>
+    <div class="banner" id="ml-msg"></div>
+    <div id="ml-history" class="sub"></div>
+  </div>
+</div>
+<style>
+ .ml-l{display:block;font-size:.72rem;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 4px}
+ .ml-in{width:100%;box-sizing:border-box;background:#0b1428;color:var(--txt);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;font:inherit}
+ .ml-btn{display:inline-block;padding:8px 14px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--txt);font-weight:700;font-size:.85rem;cursor:pointer;text-decoration:none}
+ .ml-btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+</style>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/wren-leads';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  var STATE={leads:[],filter:'all'};
+
+  function api(p,opts){opts=opts||{};return fetch(API+p,{method:opts.method||'GET',
+    headers:{'Authorization':'Bearer '+TOKEN(),'Content-Type':'application/json'},
+    body:opts.body?JSON.stringify(opts.body):undefined}).then(function(r){
+      return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};}).catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+  function msg(t){el('wl-msg').textContent=t||'';}
+  function fmtDate(s){if(!s)return'';var d=new Date(s);if(isNaN(d))return esc(s);
+    return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
+
+  function render(){
+    var rows=STATE.leads.filter(function(l){return STATE.filter==='all'||l.status===STATE.filter;});
+    el('wl-empty').classList.toggle('hide',rows.length>0);
+    el('wl-rows').innerHTML=rows.map(function(l){
+      var setting=[];
+      if(l.org) setting.push('<div class="who" style="font-weight:600">'+esc(l.org)+'</div>');
+      var tags=[];
+      if(l.setting_type) tags.push('<span class="chip">'+esc(l.setting_type)+'</span>');
+      if(l.setting_size) tags.push('<span class="chip">'+esc(l.setting_size)+'</span>');
+      if(tags.length) setting.push('<div style="margin-top:3px">'+tags.join(' ')+'</div>');
+      var opts=['new','contacted','closed'].map(function(s){
+        return '<option value="'+s+'"'+(l.status===s?' selected':'')+'>'+s.charAt(0).toUpperCase()+s.slice(1)+'</option>';}).join('');
+      return '<tr>'
+        +'<td style="white-space:nowrap;color:var(--mut);font-size:.76rem">'+fmtDate(l.created_at)
+          +(l.source?'<div class="meta">'+esc(l.source)+'</div>':'')+'</td>'
+        +'<td><div class="who">'+esc(l.name)+'</div><div class="meta"><a href="mailto:'+esc(l.email)+'" style="color:var(--blue)">'+esc(l.email)+'</a></div></td>'
+        +'<td>'+(setting.join('')||'<span class="meta">–</span>')+'</td>'
+        +'<td>'+(l.tier_interest?'<span class="chip">'+esc(l.tier_interest)+'</span>':'<span class="meta">–</span>')+'</td>'
+        +'<td class="msg-cell">'+(l.message?esc(l.message):'<span class="meta">–</span>')+'</td>'
+        +'<td><span class="badge b-'+esc(l.status)+'">'+esc(l.status)+'</span>'
+          +'<div style="margin-top:5px"><select data-id="'+l.id+'">'+opts+'</select></div></td>'
+        +'</tr>';
+    }).join('');
+    el('wl-rows').querySelectorAll('select[data-id]').forEach(function(sel){
+      sel.addEventListener('change',function(){setStatus(sel.getAttribute('data-id'),sel.value);});
+    });
+  }
+
+  function setStatus(id,status){
+    msg('Updating…');
+    api('/'+id+'/status',{method:'PATCH',body:{status:status}}).then(function(r){
+      if(!r.ok){msg('Could not update (HTTP '+r.status+')');return;}
+      var lead=STATE.leads.filter(function(l){return String(l.id)===String(id);})[0];
+      if(lead) lead.status=status;
+      msg(''); refreshCounts(); render();
+    });
+  }
+
+  function refreshCounts(){
+    var c={all:STATE.leads.length,new:0,contacted:0,closed:0};
+    STATE.leads.forEach(function(l){if(c[l.status]!==undefined)c[l.status]++;});
+    ['all','new','contacted','closed'].forEach(function(k){el('wl-n-'+k).textContent=c[k];});
+  }
+
+  function load(){
+    msg('Loading…');
+    api('/').then(function(r){
+      if(!r.ok){msg(r.status===403?'Manager access required.':'Could not load leads (HTTP '+r.status+').');return;}
+      STATE.leads=(r.j&&r.j.leads)||[];
+      msg(''); refreshCounts(); render();
+    });
+  }
+
+  function init(){
+    el('wl-cards').querySelectorAll('.c').forEach(function(card){
+      card.addEventListener('click',function(){
+        STATE.filter=card.getAttribute('data-filter');
+        el('wl-cards').querySelectorAll('.c').forEach(function(x){x.classList.remove('active');});
+        card.classList.add('active');
+        render();
+      });
+    });
+    load();
+  }
+
+  document.addEventListener('wren:ready', init);
+})();
+
+// ── Mailing list (2026-10-09) ────────────────────────────────────────────────
+(function(){
+  var API='/api/wren-leads';
+  function TOKEN(){return sessionStorage.getItem('wrenToken');}
+  function api(p,o){o=o||{};return fetch(API+p,{method:o.method||'GET',headers:{'Authorization':'Bearer '+TOKEN(),'Content-Type':'application/json'},
+    body:o.body?JSON.stringify(o.body):undefined}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};}).catch(function(){return{ok:r.ok,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+  var FOOTER='\n\n—\nYou are getting this because you registered interest in Wren at getwren.co.uk. To stop these emails, reply "unsubscribe" or visit https://getwren.co.uk/unsubscribe.html';
+  var DRAFT_SUBJECT='Wren: an update, and a free phonics programme';
+  var DRAFT_BODY=[
+    'Hi,',
+    '',
+    'Thank you for registering your interest in Wren, and sorry it has taken me a while to write. Here is where things are.',
+    '',
+    'Wren is the platform I built to run my own setting, Your Nursery in Ealing. It now runs the whole nursery: observations and learning journeys, the daily diary, registers and ratios, staff and HR, invoicing and funding, and the parent app, all in one place, with children\'s data kept on our own servers.',
+    '',
+    'We are now getting Wren ready for other nurseries and schools (version 1.0), and I am looking for a small number of settings to pilot it with this term. I set each pilot up personally over Zoom, including bringing your data across from your current system, and you would help shape what comes next.',
+    '',
+    'In the meantime, we have made our phonics programme free for everyone at getwren.co.uk/phonics: a full system for settings and families, because most phonics resources are either locked behind a login or cost money.',
+    '',
+    'If you would like a 20-minute look at Wren, just reply with a couple of times that suit you.',
+    '',
+    'Thanks,',
+    'Nursery Manager',
+    'Founder, Wren · Owner, Your Nursery',
+    'getwren.co.uk'
+  ].join('\n');
+  var RECIP=[];
+  function bcc(){return RECIP.map(function(r){return r.email;}).join(',');}
+  function full(){return el('ml-body').value.replace(/\s+$/,'')+FOOTER;}
+  function refreshLink(){
+    var u='https://mail.google.com/mail/?view=cm&fs=1&bcc='+encodeURIComponent(bcc())+'&su='+encodeURIComponent(el('ml-subject').value)+'&body='+encodeURIComponent(full());
+    el('ml-gmail').href=u; el('ml-gmail').textContent='Open in Gmail (BCC '+RECIP.length+') →';
+  }
+  function copy(t,label){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){el('ml-msg').textContent=label+' copied.';},function(){window.prompt('Copy this:',t);});}
+  function load(){
+    api('/mailing').then(function(r){
+      if(!r.ok){el('ml-sub').textContent='Could not load the mailing list.';return;}
+      RECIP=r.j.recipients||[];
+      el('ml-sub').innerHTML='<b>'+RECIP.length+'</b> subscribed'+(r.j.unsubscribed?' · '+r.j.unsubscribed+' unsubscribed':'')+' · new sign-ups join automatically.';
+      el('ml-history').innerHTML=(r.j.mailings||[]).length?'Sent before: '+r.j.mailings.map(function(m){return esc(new Date(m.created_at).toLocaleDateString('en-GB'))+' — '+esc(m.subject)+' ('+m.recipients+')';}).join(' · '):'';
+      refreshLink();
+    });
+  }
+  function start(){
+    if(!el('ml-panel'))return;
+    if(!el('ml-subject').value) el('ml-subject').value=DRAFT_SUBJECT;
+    if(!el('ml-body').value) el('ml-body').value=DRAFT_BODY;
+    el('ml-subject').addEventListener('input',refreshLink); el('ml-body').addEventListener('input',refreshLink);
+    el('ml-copy-bcc').addEventListener('click',function(){copy(bcc(),'BCC list');});
+    el('ml-copy-body').addEventListener('click',function(){copy(full(),'Email text');});
+    el('ml-sent').addEventListener('click',function(){
+      if(!RECIP.length)return;
+      if(!confirm('Record this email as sent to '+RECIP.length+' people? New leads will be marked "contacted".'))return;
+      api('/mailing/sent',{method:'POST',body:{subject:el('ml-subject').value,body:full(),lead_ids:RECIP.map(function(r){return r.id;})}})
+        .then(function(r){el('ml-msg').textContent=r.ok?'Recorded. ✓':'Could not record it.';load();});
+    });
+    load();
+  }
+  document.addEventListener('wren:ready', start);
+})();
+</script>
+</body></html>

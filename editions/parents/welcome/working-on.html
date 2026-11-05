@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Your Nursery — What we're working on</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@600;700&family=Nunito:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+/* colour-ok-begin: the parents-app light-mode palette defaults — the same :root block every /welcome page carries; parents-app.css overrides every one of these in dark mode */
+:root{
+  --green:#2d5a4a;--green-d:#1e3d31;--green-l:#3d7a64;
+  --orange:#f0a050;--orange-d:#d8823a;
+  --cream:#fefcf8;--cream-d:#f5f0e8;
+  --text:#2a2a2a;--text-m:#5a5a5a;--border:#e8e0d0;
+  --on-green:#fff;
+}
+/* colour-ok-end */
+body{font-family:'Nunito',system-ui,Arial,sans-serif;background:var(--cream);color:var(--text);line-height:1.6}
+h1,h2,h3{font-family:'Crimson Pro',Georgia,serif}
+a{color:var(--lap-ink,var(--green));text-decoration:none}
+.nav{background:var(--green);position:sticky;top:0;z-index:100;width:100%;left:0;right:0}
+.nav-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:60px}
+.nav-logo img{height:40px;display:block}
+.nav-links{display:flex;gap:4px}
+.nav-link{color:color-mix(in srgb, var(--on-green) 80%, transparent);font-size:.9rem;font-weight:600;padding:6px 14px;border-radius:6px}
+.nav-link.active{color:var(--on-green);border-bottom:2px solid var(--orange);border-radius:0;padding-bottom:4px}
+.page-hero{background:var(--green);color:var(--on-green);padding:52px 20px 36px;text-align:center}
+.page-hero h1{font-size:2.1rem;margin-bottom:10px}
+.page-hero p{font-size:.95rem;opacity:.85;max-width:540px;margin:0 auto;line-height:1.65}
+.container{max-width:640px;margin:0 auto;padding:32px 20px 60px}
+.ws-card{background:var(--surface,var(--cream-d));border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin-bottom:16px}
+.ws-card .desc{font-size:1rem;color:var(--text)}
+.ws-help{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:.86rem;color:var(--text-m)}
+.ws-help strong{color:var(--lap-ink,var(--green))}
+.empty{background:var(--surface,var(--cream-d));border:1px dashed var(--border);border-radius:16px;padding:28px;text-align:center;color:var(--text-m);font-size:.9rem}
+footer{background:var(--green-d);color:color-mix(in srgb, var(--on-green) 70%, transparent);text-align:center;padding:24px 20px;font-size:.82rem;margin-top:20px}
+</style>
+<script src="/pwa.js" defer></script>
+<link rel="stylesheet" href="/css/parents-app.css" data-parents-app-css="1">
+<script src="/js/lap-boot.js"></script>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/welcome" class="nav-logo"><img src="/little-angels-logo.png" alt="Your Nursery"></a>
+    <div class="nav-links">
+      <a href="/welcome" class="nav-link">Home</a>
+      <a href="/welcome/working-on" class="nav-link active">What we're working on</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page-hero">
+  <h1>What we're working on</h1>
+  <p>The things your child's key person is focusing on with them right now, and how you can help at home.</p>
+</div>
+
+<div class="container" id="ws-container">
+  <p class="empty">Loading…</p>
+</div>
+
+<footer>
+  <strong>Your Nursery</strong> · 123 Example Lane, Your Town, AB1 2CD
+</footer>
+
+<script>
+(function(){
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  // The card route sits behind parentAuth (bearer only). 'wren_token' is never set on the
+  // parents portal, so this used to send an empty bearer, get a 401, and lap-boot.js bounced
+  // the parent to /login. Use the shell's one-per-tab token, as phonics.html does; with no
+  // token, don't make the call at all — a 401 here would be ours, not a signed-out parent.
+  function authFetch(path, opts){
+    var p = (window.LapShell && LapShell.token) ? LapShell.token() : Promise.resolve(null);
+    return p.then(function(t){
+      if (!t) throw new Error('no token');
+      opts = opts || {};
+      opts.credentials = 'include';
+      opts.headers = Object.assign({ 'Authorization': 'Bearer ' + t }, opts.headers || {});
+      return fetch(path, opts);
+    });
+  }
+
+  function childId(){
+    if (window.LapShell && typeof LapShell.child === 'function'){ var c = LapShell.child(); if (c && c !== 'all') return c; }
+    return null;
+  }
+
+  function stepCard(n){
+    var help = n.how_to_help
+      ? '<div class="ws-help"><strong>Try at home:</strong> ' + esc(n.how_to_help.title)
+        + (n.how_to_help.strapline ? ' — ' + esc(n.how_to_help.strapline) : '') + '</div>'
+      : '';
+    return '<div class="ws-card"><div class="desc">' + esc(n.description) + '</div>' + help + '</div>';
+  }
+
+  function render(){
+    var cid = childId();
+    var box = document.getElementById('ws-container');
+    if (!cid){ box.innerHTML = '<p class="empty">Choose a child from the switcher above to see what they\'re working on.</p>'; return; }
+    authFetch('/api/parents/child/' + encodeURIComponent(cid) + '/next-steps').then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+      if (!d || !d.enabled){
+        box.innerHTML = '<div class="empty">This is not switched on for your account yet.</div>';
+        return;
+      }
+      if (!d.items.length){
+        box.innerHTML = '<div class="empty">Nothing shared here yet — ask their key person what they\'re working on.</div>';
+        return;
+      }
+      box.innerHTML = d.items.map(stepCard).join('');
+    }).catch(function(){ box.innerHTML = '<p class="empty">Could not load this right now.</p>'; });
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    render();
+    if (window.LapShell && typeof LapShell.onChild === 'function') LapShell.onChild(render);
+  });
+})();
+</script>
+</body>
+</html>

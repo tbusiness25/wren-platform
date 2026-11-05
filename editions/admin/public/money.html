@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Invoices &amp; Payments — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<link rel="stylesheet" href="/css/wren-money.css?v=b535">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div class="v2-page">
+  <div class="mny-wrap">
+    <h1 class="page-title">💷 Invoices &amp; Payments</h1>
+    <p class="mny-intro">
+      One list per job, the way EyMan laid it out — generate and send invoices, record what
+      came in, reconcile the bank, and see a family's whole statement in one place.
+      <a href="/finance.html">The full Finance workbench</a> (dashboard, P&amp;L, forecast,
+      wages, payroll) is still here, renamed <b>Finance (full)</b> in the sidebar.
+    </p>
+
+    <nav class="wren-tab-bar" role="tablist" aria-label="Invoices and payments tabs">
+      <div class="tab-bar-track">
+        <button class="wren-tab wren-tab-active" role="tab" aria-selected="true"  tabindex="0"  data-tab="owes"      id="mny-tab-owes">Who owes</button>
+        <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="invoices"  id="mny-tab-inv">Invoices</button>
+        <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="payments"  id="mny-tab-pay">Payments</button>
+        <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="reconcile" id="mny-tab-rec">Reconcile</button>
+        <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="funding"   id="mny-tab-fund">Funding</button>
+        <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="families"  id="mny-tab-fam">Families</button>
+        <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="forecast"  id="mny-tab-fc">Income forecast</button>
+      </div>
+      <button class="tab-scroll-arrow left" aria-hidden="true" tabindex="-1">‹</button>
+      <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+    </nav>
+
+    <!-- ══ WHO OWES (2026-10-09) — one line per family, the balance parents see ══ -->
+    <div class="wren-tab-panel" role="tabpanel" id="mny-panel-owes" data-tab="owes" aria-labelledby="mny-tab-owes">
+      <div id="owes-totals" class="mny-bar" style="gap:10px;flex-wrap:wrap"><span class="mny-muted">Loading…</span></div>
+      <div class="mny-bar" style="gap:8px;flex-wrap:wrap;margin:6px 0 12px">
+        <b style="font-size:.85rem">Accountant data pack</b>
+        <span class="mny-muted">the raw finance rows, as stored, in one spreadsheet —</span>
+        <label class="mny-muted">from <input type="date" id="pack-from" class="mny-input" value="2026-09-26"></label>
+        <label class="mny-muted">to <input type="date" id="pack-to" class="mny-input"></label>
+        <label class="mny-muted"><input type="checkbox" id="pack-names"> include names</label>
+        <button class="mny-btn" id="pack-go" type="button">⬇ Download</button>
+      </div>
+      <div class="mny-table-wrap"><table class="mny-table"><thead><tr>
+        <th>Family</th><th class="num">Owes</th><th>Bills open</th><th>Oldest due</th><th class="num">Days overdue</th><th>Last payment</th><th></th>
+      </tr></thead><tbody id="owes-rows"></tbody></table></div>
+      <details style="margin-top:14px"><summary class="mny-muted" style="cursor:pointer" id="owes-credit-sum">Families in credit</summary>
+        <div class="mny-table-wrap" style="margin-top:8px"><table class="mny-table"><thead><tr>
+          <th>Family</th><th class="num">In credit</th><th>Last payment</th><th></th></tr></thead><tbody id="owes-credit-rows"></tbody></table></div>
+      </details>
+    </div>
+
+    <!-- ══ INVOICES ══════════════════════════════════════════════════════ -->
+    <div class="wren-tab-panel" role="tabpanel" id="mny-panel-inv" data-tab="invoices" aria-labelledby="mny-tab-inv" hidden>
+      <div class="mny-bar">
+        <select id="inv-f-year" class="mny-input"></select>
+        <select id="inv-f-month" class="mny-input">
+          <option value="">All months</option>
+          <option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option>
+          <option value="4">Apr</option><option value="5">May</option><option value="6">Jun</option>
+          <option value="7">Jul</option><option value="8">Aug</option><option value="9">Sep</option>
+          <option value="10">Oct</option><option value="11">Nov</option><option value="12">Dec</option>
+        </select>
+        <select id="inv-f-mode" class="mny-input">
+          <option value="">All payment modes</option>
+          <option>Bank transfer</option><option>Tax-Free Childcare</option><option>Card</option>
+          <option>Cash</option><option>Childcare vouchers</option><option>Direct Debit</option>
+        </select>
+        <select id="inv-f-paystatus" class="mny-input">
+          <option value="">Any payment status</option>
+          <option value="paid">Paid</option><option value="part">Part-paid</option>
+          <option value="unpaid">Unpaid</option><option value="credit">Credit</option>
+        </select>
+        <select id="inv-f-status" class="mny-input">
+          <option value="">Any invoice status</option>
+          <option value="draft">Draft</option><option value="sent">Sent</option>
+          <option value="paid">Paid</option><option value="overdue">Overdue</option>
+          <option value="written_off">Written off</option><option value="credit_note">Credit note</option>
+        </select>
+        <input id="inv-f-q" class="mny-input" type="search" placeholder="Search child or invoice #…" style="flex:1 1 180px">
+        <button class="mny-btn" id="btn-inv-search">Search</button>
+      </div>
+      <div class="mny-bar">
+        <button class="mny-btn mny-btn-primary" id="btn-inv-generate">Generate invoices for a month…</button>
+        <button class="mny-btn" id="btn-inv-send-selected">Send selected</button>
+        <!-- b535 (2026-10-29) — the invoices that no longer match today's bookings, funding,
+             discounts and prices. Hidden until the count is in, so the bar never flashes a
+             number that turns out to be nothing. -->
+        <button class="b535-chip" id="inv-stale-chip" type="button" hidden>Checking…</button>
+        <span class="mny-muted" id="inv-sel-count"></span>
+        <!-- b481 port (release-money2 review): the dashboard and child-profile "All invoices" links
+             now land here, so this is the only way left to the older invoices page — where
+             "Print all" (bulk print) still lives. Kept reachable, not orphaned (CLAUDE.md rule 3). -->
+        <a class="mny-btn" href="/invoices.html" style="margin-left:auto">Bulk print (older invoices page) →</a>
+      </div>
+      <div class="mny-table-wrap">
+        <table class="mny-table" id="inv-table">
+          <thead><tr>
+            <th style="width:28px"><input type="checkbox" id="inv-sel-all"></th>
+            <th>Year</th><th>Month</th><th>Child</th><th>Mode</th><th>Invoice no.</th>
+            <th>Issued</th><th>Due</th><th class="num">Amount</th><th class="num">Balance</th>
+            <th>Payment</th><th>Status</th><th>Sent</th>
+          </tr></thead>
+          <tbody id="inv-tbody"><tr><td colspan="12" class="mny-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="mny-total" id="inv-total"></div>
+    </div>
+
+    <!-- ══ PAYMENTS ══════════════════════════════════════════════════════ -->
+    <div class="wren-tab-panel" role="tabpanel" id="mny-panel-pay" data-tab="payments" aria-labelledby="mny-tab-pay" hidden>
+      <div class="mny-bar">
+        <input id="pay-f-q" class="mny-input" type="search" placeholder="Search child, payment no., reference…" style="flex:1 1 220px">
+        <select id="pay-f-mode" class="mny-input">
+          <option value="">All modes</option>
+          <option>Bank transfer</option><option>Tax-Free Childcare</option><option>Card</option>
+          <option>Cash</option><option>Childcare vouchers</option><option>Direct Debit</option><option>Deposit</option>
+        </select>
+        <select id="pay-f-status" class="mny-input">
+          <option value="">Any status</option>
+          <option value="succeeded">Succeeded</option><option value="pending">Pending</option>
+          <option value="failed">Failed</option><option value="reversed">Reversed</option>
+        </select>
+        <select id="pay-f-locked" class="mny-input">
+          <option value="">Locked or not</option>
+          <option value="false">Editable (manual)</option>
+          <option value="true">Locked</option>
+        </select>
+        <button class="mny-btn" id="btn-pay-search">Search</button>
+      </div>
+      <div class="mny-bar">
+        <button class="mny-btn mny-btn-primary" id="btn-pay-add">Add payment…</button>
+        <button class="mny-btn" id="btn-pay-credit">Add credit note…</button>
+      </div>
+      <div class="mny-table-wrap">
+        <table class="mny-table" id="pay-table">
+          <thead><tr>
+            <th>Year</th><th>Month</th><th>Payment no.</th><th>Child</th><th>Date</th>
+            <th>Mode</th><th class="num">Amount paid</th><th class="num">Balance</th>
+            <th>Locked</th><th>Status</th>
+          </tr></thead>
+          <tbody id="pay-tbody"><tr><td colspan="10" class="mny-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ RECONCILE ═════════════════════════════════════════════════════ -->
+    <div class="wren-tab-panel" role="tabpanel" id="mny-panel-rec" data-tab="reconcile" aria-labelledby="mny-tab-rec" hidden>
+      <p class="mny-note">
+        The unmatched queue below is the day-to-day job. For bank statement upload, TFC
+        references, splitting a line across invoices, or the certainty-first matcher's settings,
+        use <a href="/admin/finance/reconcile">the full Reconcile workbench</a> —
+        it is the same data, this just is not the place those deeper tools were rebuilt.
+      </p>
+      <div class="mny-bar">
+        <span class="mny-muted" id="rec-summary"></span>
+        <button class="mny-btn" id="btn-rec-refresh">Refresh</button>
+        <a class="mny-btn" href="/admin/finance/reconcile">Open full workbench →</a>
+      </div>
+      <div class="mny-split">
+        <div class="mny-panel">
+          <div class="mny-panel-head">Bank lines waiting to be matched</div>
+          <div class="mny-table-wrap">
+            <table class="mny-table" id="rec-table">
+              <thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Best match</th><th></th></tr></thead>
+              <tbody id="rec-tbody"><tr><td colspan="5" class="mny-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ FUNDING ═══════════════════════════════════════════════════════ -->
+    <div class="wren-tab-panel" role="tabpanel" id="mny-panel-fund" data-tab="funding" aria-labelledby="mny-tab-fund" hidden>
+      <div class="mny-bar">
+        <h2 class="mny-h2" id="fund-term-title">Funding</h2>
+        <a class="mny-btn" href="/funding.html?full=1">Open full Funding manager →</a>
+        <a class="mny-btn" href="/funding-dates.html">Funding dates &amp; rates →</a>
+      </div>
+      <div class="mny-stat-grid" id="fund-stats"></div>
+      <div class="mny-table-wrap">
+        <table class="mny-table" id="fund-table">
+          <thead><tr><th>Child</th><th>Room</th><th>Universal hrs/wk</th><th>Extended hrs/wk</th>
+            <th>2YO hrs/wk</th><th>Code</th><th>Declaration</th></tr></thead>
+          <tbody id="fund-tbody"><tr><td colspan="7" class="mny-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ INCOME FORECAST (2026-10-09) — EyMan's report, from Wren's own invoice run ══ -->
+    <div class="wren-tab-panel" role="tabpanel" id="mny-panel-fc" data-tab="forecast" aria-labelledby="mny-tab-fc" hidden>
+      <div class="mny-bar" style="flex-wrap:wrap;gap:8px">
+        <label class="mny-muted">From <input type="month" id="fc-from" class="mny-input"></label>
+        <label class="mny-muted">To <input type="month" id="fc-to" class="mny-input"></label>
+        <label class="mny-muted">Forecast by
+          <select id="fc-by" class="mny-input"><option value="children">Children</option><option value="rooms">Rooms</option><option value="products">Sessions / products</option><option value="categories">Categories</option></select></label>
+        <label class="mny-muted">Show
+          <select id="fc-view" class="mny-input"><option value="both">Income &amp; funding</option><option value="income">Parents pay only</option><option value="funding">Funding only</option></select></label>
+        <button class="mny-btn mny-btn-primary" id="fc-go">View</button>
+        <button class="mny-btn" id="fc-csv">Download CSV</button>
+      </div>
+      <div class="mny-muted" id="fc-note" style="margin:6px 0 10px"></div>
+      <div class="mny-table-wrap"><table class="mny-table" id="fc-table"><tbody><tr><td class="mny-muted">Choose the months and press View.</td></tr></tbody></table></div>
+    </div>
+
+    <!-- ══ FAMILIES ══════════════════════════════════════════════════════ -->
+    <div class="wren-tab-panel" role="tabpanel" id="mny-panel-fam" data-tab="families" aria-labelledby="mny-tab-fam" hidden>
+      <div class="mny-bar">
+        <input id="fam-search" class="mny-input" type="search" placeholder="Search a child or family…" style="flex:1 1 260px">
+        <button class="mny-btn" id="btn-fam-search">Search</button>
+      </div>
+      <div id="fam-results" class="mny-fam-results"></div>
+
+      <div id="fam-statement" hidden>
+        <div class="mny-bar">
+          <h2 class="mny-h2" id="fam-title">Family</h2>
+          <span class="mny-balance" id="fam-balance"></span>
+          <button class="mny-btn mny-btn-primary" id="btn-fam-pay">Add payment…</button>
+          <!-- b492 (2026-10-12, DEV ONLY) — pre-fills Add payment's amount with the family's
+               whole outstanding balance and "Oldest unpaid first" (twins, a few open invoices,
+               one bank transfer/TFC payment that clears all of them in one go). Hidden until
+               openFamily() knows the balance is owed. -->
+          <button class="mny-btn mny-btn-primary" id="btn-fam-pay-balance" hidden>Record balance payment…</button>
+          <button class="mny-btn" id="btn-fam-credit">Add credit note…</button>
+          <!-- b423 (2026-10-08, DEV ONLY) — shown/hidden and labelled by openFamily() depending on
+               whether this family's child has an EyLog opening balance row yet. -->
+          <button class="mny-btn" id="btn-fam-ob" hidden>Opening balance…</button>
+          <button class="mny-btn" id="btn-fam-close">Close ✕</button>
+        </div>
+        <div class="wren-tab-bar" role="tablist" aria-label="Family tabs">
+          <div class="tab-bar-track">
+            <button class="wren-tab wren-tab-active" role="tab" data-famtab="transactions" id="famtab-txn">Transactions</button>
+            <button class="wren-tab" role="tab" data-famtab="invoices" id="famtab-inv">Invoices</button>
+            <button class="wren-tab" role="tab" data-famtab="payments" id="famtab-pay">Payments</button>
+            <button class="wren-tab" role="tab" data-famtab="funding" id="famtab-fund">Funding</button>
+            <button class="wren-tab" role="tab" data-famtab="account" id="famtab-acct">Account details</button>
+          </div>
+        </div>
+        <div class="wren-tab-panel" data-famtab="transactions" id="fampanel-txn">
+          <div class="mny-table-wrap">
+            <table class="mny-table" id="fam-txn-table">
+              <thead><tr><th>Txn no.</th><th>Date</th><th>Type</th><th>Mode</th><th>Reference</th>
+                <th class="num">Amount</th><th class="num">Balance</th></tr></thead>
+              <tbody id="fam-txn-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="wren-tab-panel" data-famtab="invoices" id="fampanel-inv" hidden></div>
+        <div class="wren-tab-panel" data-famtab="payments" id="fampanel-pay" hidden></div>
+        <div class="wren-tab-panel" data-famtab="funding" id="fampanel-fund" hidden></div>
+        <div class="wren-tab-panel" data-famtab="account" id="fampanel-acct" hidden></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+<script src="/js/wren-money.js?v=b535" defer></script>
+</body>
+</html>

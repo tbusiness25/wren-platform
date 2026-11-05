@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Planning">
+  <meta name="wren-app-chat"  content="on">
+  <title>Planning · Termly · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260727">
+  <style>
+    /* b181 — EY termly + 6-week planning. Tablet-first: 44px touch targets,
+       one stage on screen at a time, no horizontal scroll. */
+    #tp-page { padding:12px 12px env(safe-area-inset-bottom,16px); max-width:1000px; margin:0 auto; }
+    #tp-page h1 { font-size:1.15rem; margin:6px 2px 4px; color:var(--c-text,#f1f5f9); }
+    .tp-sub { font-size:.8rem; color:var(--c-muted,#94a3b8); margin:0 2px 12px; line-height:1.5; }
+    .tp-ctl { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .tp-sel { flex:1; min-width:150px; border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b);
+      color:var(--c-text,#f1f5f9); padding:8px 12px; min-height:44px; border-radius:12px; font-size:.88rem; font-family:inherit; }
+    .tp-btn { border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b); color:var(--c-text,#f1f5f9);
+      padding:8px 14px; min-height:44px; border-radius:12px; font-size:.86rem; font-weight:600; cursor:pointer; font-family:inherit; }
+    .tp-btn.primary { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; }
+    .tp-btn.sm { min-height:36px; padding:6px 11px; font-size:.76rem; border-radius:9px; }
+    /* b238 (2026-08-27) — Planning is ONE entry with TWO tabs: Termly (this page,
+       the b181 half-term plan) and Weekly (/ey/planning's week grid). Mirrored from
+       planning.html so the pair reads as one feature rather than two menu entries. */
+    .pl-tabs { display:flex; gap:0; border:1px solid var(--c-border,#2d3748); border-radius:12px;
+      overflow:hidden; margin:0 0 12px; }
+    .pl-tabs a, .pl-tabs button, .pl-tabs span { flex:1; background:var(--c-surface,#1e293b); color:var(--c-muted,#94a3b8);
+      border:none; padding:11px 14px; min-height:46px; font-size:.9rem; font-weight:600; cursor:pointer;
+      font-family:inherit; text-align:center; text-decoration:none; display:flex; align-items:center;
+      justify-content:center; gap:6px; }
+    .pl-tabs a:hover, .pl-tabs button:hover { color:var(--c-text,#f1f5f9); }
+    .pl-tabs .on, .pl-tabs .active { background:var(--c-blue,#4a9abf); color:#fff; }
+    .pl-tools { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+    .pl-tool { display:inline-flex; align-items:center; gap:7px; min-height:44px; padding:0 14px;
+      border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b);
+      color:var(--c-text,#f1f5f9); border-radius:12px; font-size:.85rem; font-weight:600;
+      text-decoration:none; }
+    .pl-tool:hover { border-color:var(--c-blue,#4a9abf); }
+    .tp-stages { display:flex; gap:6px; margin-bottom:12px; }
+    .tp-stages button { flex:1; background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748);
+      color:var(--c-muted,#94a3b8); padding:8px 6px; min-height:44px; border-radius:10px; font-size:.75rem;
+      font-weight:700; cursor:pointer; font-family:inherit; }
+    .tp-stages button.on { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; }
+    .tp-stage { display:none; } .tp-stage.on { display:block; }
+    .tp-card { background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748);
+      border-radius:12px; padding:13px; margin-bottom:11px; }
+    .tp-card h3 { margin:0 0 9px; font-size:.85rem; color:var(--c-text,#f1f5f9); }
+    .tp-lbl { display:block; font-size:.74rem; font-weight:600; color:var(--c-muted,#94a3b8); margin:0 0 5px; }
+    .tp-in, .tp-ta { width:100%; box-sizing:border-box; border:1px solid var(--c-border,#2d3748);
+      background:var(--c-bg,#0f172a); color:var(--c-text,#f1f5f9); padding:9px 11px; border-radius:10px;
+      font-size:.88rem; font-family:inherit; min-height:44px; }
+    .tp-ta { min-height:80px; resize:vertical; line-height:1.5; }
+    .tp-hint { font-size:.73rem; color:var(--c-muted,#64748b); line-height:1.5; margin-top:5px; }
+    .tp-msg { font-size:.76rem; color:var(--c-muted,#94a3b8); margin-left:8px; }
+    .tp-msg.ok { color:var(--c-green,#22c55e); } .tp-msg.bad { color:var(--c-red,#f87171); }
+    .tp-area { border:1px solid var(--c-border,#2d3748); border-radius:10px; margin-bottom:8px; overflow:hidden; }
+    .tp-area-h { background:var(--c-card,#16212f); padding:11px 12px; min-height:44px; display:flex; align-items:center;
+      gap:8px; font-weight:700; font-size:.82rem; cursor:pointer; color:var(--c-text,#f1f5f9); }
+    .tp-area-h .cnt { margin-left:auto; font-size:.7rem; font-weight:600; color:var(--c-muted,#94a3b8);
+      border:1px solid var(--c-border,#2d3748); border-radius:999px; padding:2px 9px; }
+    .tp-area-h .cnt.full { color:var(--c-green,#22c55e); border-color:rgba(34,197,94,.4); }
+    .tp-area-b { display:none; padding:8px 12px 12px; } .tp-area.open .tp-area-b { display:block; }
+    .tp-sub-h { font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--c-muted,#94a3b8); font-weight:700; margin:10px 0 5px; }
+    .tp-stmt { display:flex; gap:8px; align-items:flex-start; padding:9px 8px; border-radius:8px;
+      font-size:.8rem; line-height:1.45; cursor:pointer; min-height:44px; box-sizing:border-box; color:var(--c-text,#e2e8f0); }
+    .tp-stmt.picked { background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.32); }
+    .tp-stmt input { width:auto; min-height:0; margin-top:3px; flex:0 0 auto; }
+    .tp-code { font-size:.66rem; color:var(--c-muted,#94a3b8); font-weight:700; flex:0 0 auto; }
+    .tp-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+    .tp-chip { border:1px solid var(--c-border,#2d3748); background:var(--c-card,#16212f); border-radius:999px;
+      padding:5px 10px; font-size:.74rem; color:var(--c-text,#e2e8f0); display:inline-flex; align-items:center; gap:6px; }
+    .tp-chip button { background:none; border:none; color:var(--c-red,#f87171); cursor:pointer; font-size:.95rem; line-height:1; padding:0 2px; }
+    .tp-wk { border:1px solid var(--c-border,#2d3748); border-radius:11px; margin-bottom:9px; background:var(--c-card,#16212f); }
+    .tp-wk-h { padding:11px 12px; font-weight:700; font-size:.83rem; display:flex; align-items:center;
+      gap:9px; flex-wrap:wrap; color:var(--c-text,#f1f5f9); }
+    .tp-wk-h .wc { font-size:.71rem; color:var(--c-muted,#94a3b8); font-weight:600; }
+    .tp-room { border:1px solid var(--c-border,#2d3748); border-radius:9px; padding:10px;
+      margin:0 12px 10px; background:var(--c-card,#111c2a); }
+    .tp-room h4 { margin:0 0 8px; font-size:.78rem; display:flex; align-items:center;
+      gap:8px; flex-wrap:wrap; color:var(--c-text,#f1f5f9); }
+    .tp-liblbl { font-size:.67rem; text-transform:uppercase; letter-spacing:.04em;
+      color:var(--c-muted,#94a3b8); font-weight:700; margin:8px 0 3px; }
+    /* b245 — the weekday rhythm. A week is five named days, each tappable.
+       Tablet-first: the whole row is the target, never just the ＋. */
+    .tp-day { border:1px solid var(--c-border,#2d3748); border-radius:10px; background:var(--c-surface,#1e293b);
+      padding:10px 11px; margin-bottom:7px; cursor:pointer; min-height:44px; box-sizing:border-box; }
+    .tp-day:hover { border-color:var(--c-blue,#4a9abf); }
+    .tp-day.empty { border-style:dashed; }
+    /* nowrap: at 390px "Wednesday · ART/DESIGN · block 1" would otherwise push
+       the ＋ onto a line of its own and leave a dead gap mid-row. The day name
+       and category shrink with an ellipsis instead. */
+    .tp-day-h { display:flex; align-items:center; gap:7px; flex-wrap:nowrap; }
+    /* The day name never shrinks — "Thur..." is the one word on the row a
+       practitioner scans for. The category chip absorbs the squeeze instead. */
+    .tp-day-n { font-weight:700; font-size:.82rem; color:var(--c-text,#f1f5f9);
+      white-space:nowrap; flex:0 0 auto; }
+    .tp-day-cat { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+      border-radius:999px; padding:3px 9px; border:1px solid var(--c-border,#2d3748);
+      color:var(--c-muted,#94a3b8); background:var(--c-card,#16212f); white-space:nowrap;
+      flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .tp-day-cat.sensory        { color:var(--c-blue,#4a9abf);   border-color:var(--c-blue,#4a9abf); }
+    .tp-day-cat.maths_physical { color:var(--c-green,#22c55e);  border-color:var(--c-green,#22c55e); }
+    .tp-day-cat.art_design     { color:var(--c-orange,#e07820); border-color:var(--c-orange,#e07820); }
+    .tp-day-cat.small_world    { color:var(--c-amber,#f59e0b);  border-color:var(--c-amber,#f59e0b); }
+    .tp-day-cat.book_focus     { color:var(--c-red,#f87171);    border-color:var(--c-red,#f87171); }
+    .tp-day-add { margin-left:auto; flex:0 0 auto; min-width:44px; min-height:44px; display:inline-flex;
+      align-items:center; justify-content:center; border-radius:10px; font-size:1.05rem; font-weight:700;
+      color:var(--c-blue,#4a9abf); border:1px solid var(--c-border,#2d3748); background:var(--c-card,#16212f); }
+    .tp-day-t { font-size:.86rem; font-weight:600; color:var(--c-text,#f1f5f9); margin:7px 0 0; line-height:1.4; }
+    .tp-day-t.none { font-weight:500; color:var(--c-muted,#64748b); font-style:italic; }
+    .tp-day-r { font-size:.75rem; color:var(--c-muted,#94a3b8); line-height:1.5; margin-top:4px; }
+    /* Day chips carry a full 44px tap target on the remove control — this page
+       is used standing up, one-handed. */
+    .tp-dchips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+    .tp-dchip { display:inline-flex; align-items:center; gap:4px; min-height:44px; box-sizing:border-box;
+      border:1px solid var(--c-border,#2d3748); background:var(--c-card,#16212f); border-radius:12px;
+      padding:0 0 0 11px; font-size:.76rem; color:var(--c-text,#e2e8f0); max-width:100%; }
+    .tp-dchip .lbl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:210px; }
+    .tp-dchip button { min-width:44px; min-height:44px; background:none; border:none; cursor:pointer;
+      color:var(--c-red,#f87171); font-size:.95rem; font-family:inherit; border-radius:0 12px 12px 0; }
+    .tp-blk { font-size:.66rem; font-weight:700; color:var(--c-muted,#94a3b8);
+      border:1px solid var(--c-border,#2d3748); border-radius:999px; padding:2px 9px;
+      white-space:nowrap; flex:0 0 auto; }
+    .tp-empty-note { font-size:.72rem; color:var(--c-amber,#f59e0b); margin-top:6px; line-height:1.5; }
+    /* b245 — the shared phone pass in wren-app-shell.css (2026-07-27) caps EVERY
+       button at min-height:40px below 768px, and `body.wren-app-shell button`
+       (0,1,2) out-specifies this page's own `.tp-btn` rules — so the 44px this
+       file asks for silently became 40px on exactly the device the page is used
+       on. This re-asserts 44px for THIS page's controls only.
+
+       The shared shell chrome (logo, avatar, tab bar) is deliberately NOT
+       touched: it is used by every EY page, and changing it is a separate
+       decision rather than a side effect of the planning build.
+
+       Checkboxes are excluded — the intentions list puts one inside each
+       statement row and stretching it to 44px would break that layout. */
+    @media (max-width: 768px) {
+      body.wren-app-shell #tp-page button,
+      body.wren-app-shell #tp-pick button,
+      body.wren-app-shell #tp-cal button,
+      body.wren-app-shell #tp-page select,
+      body.wren-app-shell #tp-pick select,
+      body.wren-app-shell #tp-cal select,
+      body.wren-app-shell #tp-page input:not([type="checkbox"]):not([type="radio"]),
+      body.wren-app-shell #tp-pick input:not([type="checkbox"]):not([type="radio"]),
+      body.wren-app-shell #tp-cal input:not([type="checkbox"]):not([type="radio"]) {
+        min-height: 44px;
+      }
+    }
+    .tp-kid { border:1px solid var(--c-border,#2d3748); border-radius:11px; padding:11px 12px;
+      margin-bottom:9px; background:var(--c-card,#16212f); }
+    .tp-kid h4 { margin:0 0 5px; font-size:.85rem; color:var(--c-text,#f1f5f9); }
+    .tp-kid .pa { font-size:.74rem; color:var(--c-muted,#94a3b8); line-height:1.5; margin-bottom:7px; }
+    #tp-pick { position:fixed; inset:0; background:rgba(8,15,30,.78); z-index:1000; display:none; overflow-y:auto; padding:16px; }
+    #tp-pick.open { display:block; }
+    #tp-pick-in { max-width:820px; margin:20px auto; background:var(--c-bg,#0f172a);
+      border:1px solid var(--c-border,#2d3748); border-radius:16px; padding:16px; }
+    #tp-pick-in h3 { margin:0 0 12px; font-size:1rem; color:var(--c-text,#f1f5f9); }
+    .tp-ptabs { display:flex; gap:6px; margin-bottom:10px; }
+    .tp-ptabs button { flex:1; background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748);
+      color:var(--c-muted,#94a3b8); padding:8px; min-height:44px; border-radius:9px; cursor:pointer;
+      font-size:.77rem; font-weight:700; font-family:inherit; }
+    .tp-ptabs button.on { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; }
+    #tp-pick-list { max-height:48vh; overflow-y:auto; margin-top:9px; }
+    .tp-pitem { border:1px solid var(--c-border,#2d3748); border-radius:9px; padding:10px 11px;
+      margin-bottom:7px; cursor:pointer; background:var(--c-card,#16212f); min-height:44px; box-sizing:border-box; }
+    .tp-pitem.on { border-color:var(--c-green,#22c55e); background:rgba(34,197,94,.09); }
+    .tp-pitem b { font-size:.83rem; display:block; color:var(--c-text,#f1f5f9); }
+    .tp-pitem span { font-size:.71rem; color:var(--c-muted,#94a3b8); }
+    /* b217 — the school term calendar: where we are in the year, and what a
+       break week means (evaluation + preparation, never an empty week grid). */
+    .tp-banner { border:1px solid var(--c-border,#2d3748); background:var(--c-card,#16212f);
+      border-radius:11px; padding:9px 12px; margin:0 0 11px; font-size:.79rem; line-height:1.5;
+      color:var(--c-text,#e2e8f0); display:flex; gap:8px; align-items:flex-start; }
+    .tp-banner .k { flex:0 0 auto; }
+    .tp-banner.teaching { border-color:rgba(34,197,94,.34); background:rgba(34,197,94,.07); }
+    .tp-banner.break    { border-color:rgba(245,158,11,.38); background:rgba(245,158,11,.08); }
+    .tp-banner.outside  { border-color:rgba(148,163,184,.34); }
+    .tp-banner .draft { font-size:.64rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+      border:1px solid rgba(245,158,11,.5); color:var(--c-amber,#f59e0b); border-radius:999px;
+      padding:1px 8px; margin-left:6px; white-space:nowrap; }
+    /* b290 — is this half-term a DRAFT the room team is still working on, or is
+       it PUBLISHED and in front of parents? The strip is deliberately the first
+       thing under the term picker: it is the difference between a note to
+       yourself and something a family will read. */
+    .tp-pub { border:1px solid var(--c-border,#2d3748); background:var(--c-card,#16212f);
+      border-radius:11px; padding:10px 12px; margin:0 0 11px; font-size:.79rem; line-height:1.5;
+      color:var(--c-text,#e2e8f0); display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+    .tp-pub.is-draft { border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.08); }
+    .tp-pub.is-live  { border-color:rgba(34,197,94,.36); background:rgba(34,197,94,.07); }
+    .tp-pub .pill { font-size:.64rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+      border-radius:999px; padding:2px 9px; white-space:nowrap; flex:0 0 auto; }
+    .tp-pub.is-draft .pill { border:1px solid rgba(245,158,11,.55); color:var(--c-amber,#f59e0b); }
+    .tp-pub.is-live  .pill { border:1px solid rgba(34,197,94,.5); color:var(--c-green,#22c55e); }
+    .tp-pub .why { flex:1 1 210px; color:var(--c-muted,#94a3b8); }
+    .tp-pub .tp-btn { flex:0 0 auto; }
+    #tp-break { display:none; margin-bottom:12px; }
+    #tp-break.on { display:block; }
+    .tp-brk-grid { display:grid; gap:9px; grid-template-columns:1fr 1fr; }
+    @media (max-width:640px){ .tp-brk-grid { grid-template-columns:1fr; } }
+    .tp-brk-card { border:1px solid var(--c-border,#2d3748); background:var(--c-card,#16212f);
+      border-radius:11px; padding:12px; }
+    .tp-brk-card h4 { margin:0 0 5px; font-size:.83rem; color:var(--c-text,#f1f5f9); }
+    .tp-wk.closed { opacity:.72; }
+    .tp-wk-h .flag { font-size:.63rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+      border:1px solid var(--c-border,#2d3748); color:var(--c-muted,#94a3b8);
+      border-radius:999px; padding:1px 8px; }
+    .tp-wk-h .flag.closure { border-color:rgba(245,158,11,.5); color:var(--c-amber,#f59e0b); }
+    /* term-dates editor */
+    #tp-cal { position:fixed; inset:0; background:rgba(8,15,30,.78); z-index:1001; display:none; overflow-y:auto; padding:16px; }
+    #tp-cal.open { display:block; }
+    #tp-cal-in { max-width:760px; margin:20px auto; background:var(--c-bg,#0f172a);
+      border:1px solid var(--c-border,#2d3748); border-radius:16px; padding:16px; }
+    #tp-cal-in h3 { margin:0 0 4px; font-size:1rem; color:var(--c-text,#f1f5f9); }
+    .tp-crow { display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding:8px 0;
+      border-bottom:1px solid var(--c-border,#2d3748); }
+    .tp-crow .nm { flex:1 1 150px; font-size:.8rem; font-weight:600; color:var(--c-text,#f1f5f9); }
+    .tp-crow input[type=date], .tp-crow input[type=text], .tp-crow select {
+      border:1px solid var(--c-border,#2d3748); background:var(--c-bg,#0f172a); color:var(--c-text,#f1f5f9);
+      padding:7px 9px; min-height:40px; border-radius:9px; font-size:.79rem; font-family:inherit; }
+    .tp-crow input[type=text] { flex:1 1 130px; min-width:0; }
+  </style>
+</head>
+<body>
+<div id="tp-page">
+  <h1>🗓️ Planning</h1>
+  <!-- b238 (2026-08-27, Toby's walkthrough) — one Planning entry, two tabs.
+       Termly = the why / what was discussed (this page). Weekly = resources and
+       activities (/ey/planning). Both tab bars are identical. -->
+  <nav class="pl-tabs" aria-label="Planning">
+    <span class="on" aria-current="page">📅 Termly</span>
+    <a href="/ey/planning">🗓️ Weekly</a>
+  </nav>
+  <div class="pl-tools">
+    <a class="pl-tool" href="/ey/activities">🎨 Activity Bank</a>
+    <a class="pl-tool" href="/ey/resource-cards">🗂️ Resource Cards</a>
+    <a class="pl-tool" href="/ey/story-studio">📖 Story Studio</a>
+    <a class="pl-tool" href="/ey/phonics">🔤 Phonics</a>
+    <a class="pl-tool" href="/ey/phonics-tracker">✅ Phonics tracker</a>
+  </div>
+  <!-- b217 — a half-term, not a whole term, and however many weeks it really is -->
+  <p class="tp-sub">Half-term, theme and learning intentions; then each week's continuous provision and
+    planned activities for each playroom; then the end-of-half-term evaluation and what to carry forward.
+    Half-term and holiday weeks carry no planning.</p>
+
+  <div class="tp-ctl">
+    <select id="tp-term" class="tp-sel"></select>
+    <select id="tp-room" class="tp-sel"></select>
+    <!-- b217 — manager-only; the term dates are data, not a deploy -->
+    <button class="tp-btn" id="tp-caledit" style="display:none">🗓️ Term dates</button>
+  </div>
+  <!-- b217 — where the setting is in the Ealing school year, right now -->
+  <div class="tp-banner" id="tp-banner" style="display:none"></div>
+  <!-- b290 — draft / published state for THIS half-term, and the Publish action -->
+  <div class="tp-pub" id="tp-pub" style="display:none"></div>
+  <div class="tp-hint" id="tp-meta" style="margin:-6px 2px 12px">—</div>
+
+  <!-- b217 — a break carries no planning: evaluation + preparation instead -->
+  <div id="tp-break"></div>
+
+  <!-- b302 (2026-09-10) — Toby: "I want the exact planning I uploaded put on
+       there — the intentions, the activities, everything. Just like how it is on
+       the parents app." This is that: the whole half-term, read-only, in the
+       parents app's own layout, above the controls that edit it. It sits OUTSIDE
+       the stage tabs on purpose — the intentions live on stage 1 and the
+       activities on stage 2, and the complaint was that no one screen showed the
+       plan whole. -->
+  <div id="tp-view"></div>
+
+  <div class="tp-stages">
+    <button class="on" data-stage="0">1 · Term</button>
+    <button data-stage="1" id="tp-stage1-lbl">2 · Weeks</button>
+    <button data-stage="2">3 · Evaluate</button>
+  </div>
+
+  <div class="tp-stage on" id="tp-s0">
+    <div class="tp-card">
+      <h3>🎯 Theme</h3>
+      <input type="text" id="tp-theme" class="tp-in" placeholder="e.g. Growing &amp; Changing" list="tp-themes">
+      <datalist id="tp-themes"></datalist>
+      <div class="tp-hint">Previous terms' themes are offered as you type.</div>
+    </div>
+
+    <div class="tp-card">
+      <h3>📌 Learning intentions — 1 to 3 per area</h3>
+      <div class="tp-hint" id="tp-fwmeta" style="margin:0 0 9px">—</div>
+      <!-- b245 — says so when an imported plan has none yet -->
+      <div id="tp-int-empty" style="margin:0 0 9px"></div>
+      <!-- b211 — tick the sub-aspects you want covered, instead of scrolling every statement -->
+      <div id="tp-int-filters" style="margin-bottom:10px"></div>
+      <div id="tp-areas"></div>
+    </div>
+
+    <!-- b218 — intentions the area owners TICKED for this half-term, gathered from
+         the children's current next steps. Read-only here: this card exists so the
+         room's plan is written next to what the evidence actually asked for. -->
+    <div class="tp-card" id="tp-carried-card" style="display:none">
+      <h3>🎯 Carried in from the children's next steps</h3>
+      <div class="tp-hint" style="margin:0 0 8px">Ticked by the practitioner who owns each area, from
+        every child's current next steps. Choose or change these in
+        <a href="/ey/areas" style="color:var(--c-blue,#4a9abf)">My Area &amp; Intentions</a>,
+        or have Wren <a href="/ey/plan-draft" style="color:var(--c-blue,#4a9abf)">draft them for you</a>
+        (b223) and sign the draft off.</div>
+      <div id="tp-carried">—</div>
+    </div>
+
+    <div class="tp-card">
+      <h3>📖 Books</h3>
+      <div style="display:flex;gap:7px">
+        <input type="text" id="tp-book" class="tp-in" placeholder="Add a book…" list="tp-booklist" style="flex:1">
+        <datalist id="tp-booklist"></datalist>
+        <button class="tp-btn" id="tp-addbook">+</button>
+      </div>
+      <div class="tp-chips" id="tp-bookchips"></div>
+    </div>
+
+    <div class="tp-card">
+      <h3>🎵 Songs &amp; rhymes</h3>
+      <div style="display:flex;gap:7px">
+        <input type="text" id="tp-song" class="tp-in" placeholder="Add a song…" list="tp-songlist" style="flex:1">
+        <datalist id="tp-songlist"></datalist>
+        <button class="tp-btn" id="tp-addsong">+</button>
+      </div>
+      <div class="tp-chips" id="tp-songchips"></div>
+    </div>
+
+    <div class="tp-card">
+      <h3>📅 Events this term</h3>
+      <div class="tp-hint" style="margin:0 0 8px">From the setting calendar, between the term's start and end
+        dates. Tap the ones that belong in this plan.</div>
+      <div id="tp-events">—</div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <button class="tp-btn primary" id="tp-save">💾 Save termly plan</button>
+      <span class="tp-msg" id="tp-savemsg"></span>
+    </div>
+  </div>
+
+  <div class="tp-stage" id="tp-s1">
+    <div id="tp-weeks" class="tp-hint">Save the termly plan first.</div>
+  </div>
+
+  <div class="tp-stage" id="tp-s2">
+    <div class="tp-card">
+      <h3>👥 Group evaluation <span style="font-weight:400;color:var(--c-muted,#94a3b8)">— one per term, per room</span></h3>
+      <div class="tp-hint" id="tp-evalmeta" style="margin:0 0 8px">—</div>
+      <textarea id="tp-eval" class="tp-ta" placeholder="How did this half-term's plan work out against the intentions, theme, books, songs and events?"></textarea>
+      <!-- b217 — the other half of an end-of-half-term review -->
+      <label class="tp-lbl" style="margin-top:11px">➡️ Carry forward into the next half-term</label>
+      <textarea id="tp-carry" class="tp-ta" placeholder="What worked and should run again, what to pick up, which children need more of something…"></textarea>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:9px">
+        <button class="tp-btn primary" id="tp-saveeval">💾 Save</button>
+        <span class="tp-msg" id="tp-evalmsg"></span>
+      </div>
+    </div>
+    <div class="tp-card">
+      <h3>🧒 Individual evaluations <span style="font-weight:400;color:var(--c-muted,#94a3b8)">— against each child's own planned activities</span></h3>
+      <div id="tp-kids" class="tp-hint">Save the termly plan first.</div>
+    </div>
+  </div>
+</div>
+
+<div id="tp-pick">
+  <div id="tp-pick-in">
+    <h3 id="tp-pick-title">Add cards</h3>
+    <div class="tp-ptabs">
+      <button id="tp-ptab-rc" class="on">🗂️ Resource cards</button>
+      <button id="tp-ptab-ab">📚 Activity bank</button>
+    </div>
+    <!-- b211 — same sub-aspect tick list as the card picker and the intentions list -->
+    <div id="tp-pick-filters" style="margin-bottom:9px"></div>
+    <div class="tp-hint" id="tp-pick-note" style="margin:0 0 8px"></div>
+    <div id="tp-pick-list">Loading…</div>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+      <button class="tp-btn primary" id="tp-pick-done" style="flex:1">Done</button>
+      <button class="tp-btn" id="tp-pick-cancel">Cancel</button>
+    </div>
+    <div class="tp-msg" id="tp-pick-msg" style="margin:8px 0 0"></div>
+  </div>
+</div>
+
+<!-- b217 — term-dates editor. Manager-only. Ealing publishes term and half-term
+     dates but NOT the 5 INSET + 3 occasional days, so those can only be added here. -->
+<div id="tp-cal">
+  <div id="tp-cal-in">
+    <h3>🗓️ Term dates</h3>
+    <div class="tp-hint" style="margin:0 0 12px">The half-terms planning runs on, and the breaks that carry no
+      planning. These are <b>not</b> funding periods — funding runs 1 Sep–31 Dec, 1 Jan–31 Mar, 1 Apr–31 Aug
+      and is set separately under Funding.</div>
+    <div class="tp-ctl" style="margin-bottom:8px">
+      <select id="tp-cal-year" class="tp-sel"></select>
+    </div>
+    <h4 style="font-size:.8rem;margin:12px 0 2px;color:var(--c-text,#f1f5f9)">Half-terms</h4>
+    <div id="tp-cal-terms">—</div>
+    <h4 style="font-size:.8rem;margin:16px 0 2px;color:var(--c-text,#f1f5f9)">Breaks, bank holidays, INSET &amp; occasional days</h4>
+    <div id="tp-cal-breaks">—</div>
+    <div class="tp-crow" style="border-bottom:none;margin-top:6px">
+      <input type="text" id="tp-cal-nbname" placeholder="e.g. INSET day">
+      <select id="tp-cal-nbkind">
+        <option value="inset">INSET day</option>
+        <option value="occasional">Occasional day</option>
+        <option value="bank_holiday">Bank holiday</option>
+        <option value="holiday">Holiday</option>
+        <option value="half_term">Half term</option>
+        <option value="closure">Closure</option>
+      </select>
+      <input type="date" id="tp-cal-nbfrom">
+      <input type="date" id="tp-cal-nbto">
+      <button class="tp-btn sm" id="tp-cal-addbreak">＋ Add</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+      <button class="tp-btn primary" id="tp-cal-close" style="flex:1">Done</button>
+      <span class="tp-msg" id="tp-cal-msg"></span>
+    </div>
+  </div>
+</div>
+
+<!-- b211 — this page has carried no shell scripts since b181, so `Wren` was never
+     defined, wren:ready never fired and boot() never ran: /ey/termly-plan rendered
+     an empty form. Same three tags as ey/planning.html. -->
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<!-- b211 — the SAME sub-aspect vocabulary and tick list the card picker uses -->
+<script src="/js/resource-cards-filters.js?v=b219"></script>
+<script src="/js/wren-subaspect-picker.js?v=b219"></script>
+<!-- b302 — the plan as parents see it, rendered the same way on EY and Roost -->
+<script src="/js/wren-term-plan-view.js?v=b302"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/planning/termly';
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function el(id){ return document.getElementById(id); }
+  function msg(id,t,cls){ var e=el(id); e.textContent=t; e.className='tp-msg'+(cls?' '+cls:''); }
+
+  var CTX=null, FW=null, PLAN=null, WEEKS=[], WEEKDATES=[], EVENTS=[];
+  /* b302 — the server-resolved view of the plan: intentions from whichever
+     column holds them, plus books, songs, events and the planned activities. */
+  var VIEW=null;
+  var DAYS=[], RHYTHM=[];   // b245 — the five weekday slots and what is planned in them
+  var PICKED={}, BOOKS=[], SONGS=[], EVIDS=[];
+  var LIB={cards:null, acts:null};
+  var pickCtx=null;
+  /* b217 — the school term calendar. NOW is where the setting is in the Ealing
+     year today; PLANWEEKS is the selected half-term's real weeks (break weeks
+     already removed, part weeks flagged); PERIOD is the selected period. */
+  var NOW=null, PLANWEEKS=[], PERIOD=null, CALEDIT=null;
+  /* b290 — publish/unpublish history for the plan on screen. Empty on a schema
+     without the b290 table, which is not an error: the state still renders. */
+  var PUBLOG=[];
+  var CAL_ROLES=['manager','deputy_manager','admin','headteacher'];
+
+  function go(n){
+    [0,1,2].forEach(function(i){
+      el('tp-s'+i).classList.toggle('on', i===n);
+      document.querySelector('.tp-stages button[data-stage="'+i+'"]').classList.toggle('on', i===n);
+    });
+    if(n===1) renderWeeks();
+    if(n===2) loadKids();
+  }
+
+  /* b217 — the term picker holds 'h:<id>' for a TEACHING half-term (what
+     planning runs on) and 'f:<id>' for a legacy funding period, so a plan saved
+     before b217 still opens. The two are never silently swapped. */
+  function periodVal(){ return el('tp-term').value||''; }
+  function periodQS(){
+    var v=periodVal();
+    return v.charAt(0)==='f' ? 'term_id='+encodeURIComponent(v.slice(2))
+                             : 'half_term_id='+encodeURIComponent(v.slice(2));
+  }
+  function periodBody(){
+    var v=periodVal(), id=parseInt(v.slice(2),10);
+    return v.charAt(0)==='f' ? {term_id:id} : {half_term_id:id};
+  }
+  function selectPeriod(v){ if(v){ el('tp-term').value=v; } }
+  function halfTermById(id){
+    return ((CTX&&CTX.half_terms)||[]).filter(function(t){return t.id===id;})[0]||null;
+  }
+  function roomId(){ return parseInt(el('tp-room').value,10); }
+  function fmtD(ymd){
+    if(!ymd) return '';
+    var d=new Date(String(ymd).slice(0,10)+'T00:00:00Z');
+    return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'}).replace(',','');
+  }
+
+  /* ── intentions ────────────────────────────────────────────────────────── */
+  /* b211 — the tick list. Built from the framework's OWN sub-areas, which since
+     b211 use exactly the 17 sub-aspects the resource cards are tagged with, so
+     "Managing Self" means the same thing on both screens. If a framework has no
+     sub-areas at all we say so and fall back to ticking whole areas rather than
+     showing an empty list. */
+  var INTF=null, INT_BY_SUB=true, INT_TOTAL=0;
+
+  function frameworkHasSubAreas(){
+    if(!FW) return false;
+    return FW.areas.some(function(a){
+      return a.sub_areas.some(function(s){
+        return s.statements.some(function(st){ return !!st.sub_area; });
+      });
+    });
+  }
+  function statementIndex(){
+    var out=[];
+    (FW?FW.areas:[]).forEach(function(a){
+      a.sub_areas.forEach(function(s){
+        s.statements.forEach(function(st){
+          out.push({ area:a.area, sub:st.sub_area||s.sub_area||null, st:st,
+                     aspects: INT_BY_SUB ? (st.sub_area?[st.sub_area]:[]) : [a.area],
+                     areas:[a.area] });
+        });
+      });
+    });
+    return out;
+  }
+  function buildIntFilters(){
+    var mount=el('tp-int-filters');
+    if(!mount || !window.WrenSubAspectPicker || !window.WrenRCFilters) return;
+    var idx=statementIndex();
+    INT_TOTAL=idx.length;
+    var groups;
+    if(INT_BY_SUB){
+      groups=WrenRCFilters.aspectGroups(idx);
+    } else {
+      // No sub-areas in this framework — tick whole areas instead, and say so.
+      var counts={};
+      idx.forEach(function(r){ counts[r.area]=(counts[r.area]||0)+1; });
+      groups=[{ area:'Areas of learning', label:'Areas of learning',
+                aspects:Object.keys(counts).map(function(a){
+                  return { aspect:a, label:a, count:counts[a] }; }) }];
+    }
+    if(INTF){ INTF.setGroups(groups); return; }
+    INTF=WrenSubAspectPicker.create({
+      mount: mount,
+      groups: groups,
+      placeholder: 'Keyword — statement text or code…',
+      tickLabel: INT_BY_SUB ? 'Sub-aspects' : 'Areas',
+      emptyText: 'This framework has no sub-areas yet — search by keyword instead.',
+      onChange: renderAreas
+    });
+  }
+
+  function renderAreas(){
+    if(!FW){ el('tp-areas').textContent='Loading framework…'; return; }
+    var max=(CTX&&CTX.max_intentions_per_area)||3;
+    var st=INTF?INTF.state():{q:'',aspects:[],bands:[]};
+    var q=(st.q||'').toLowerCase();
+    var ticks=st.aspects;
+
+    function keep(area, stmt){
+      // A picked intention always stays visible, or you could not untick it.
+      if((PICKED[area]||[]).some(function(p){return p.statement_id===stmt.id;})) return true;
+      if(ticks.length){
+        var key = INT_BY_SUB ? stmt.sub_area : area;
+        if(!key || ticks.indexOf(key)<0) return false;
+      }
+      if(q && String(stmt.text||'').toLowerCase().indexOf(q)<0
+           && String(stmt.code||'').toLowerCase().indexOf(q)<0) return false;
+      return true;
+    }
+
+    var shown=0;
+    var html=FW.areas.map(function(a,ai){
+      var n=(PICKED[a.area]||[]).length;
+      var any=false;
+      var body=a.sub_areas.map(function(s){
+        var stmts=s.statements.filter(function(x){ return keep(a.area, x); });
+        if(!stmts.length) return '';
+        any=true; shown+=stmts.length;
+        return (s.sub_area?'<div class="tp-sub-h">'+esc(s.sub_area)+'</div>':'')+
+          stmts.map(function(stmt){
+            var on=(PICKED[a.area]||[]).some(function(p){return p.statement_id===stmt.id;});
+            return '<label class="tp-stmt'+(on?' picked':'')+'" data-area="'+esc(a.area)+'" data-sid="'+stmt.id+'">'+
+              '<input type="checkbox" '+(on?'checked':'')+'>'+
+              (stmt.code?'<span class="tp-code">'+esc(stmt.code)+'</span>':'')+
+              '<span>'+esc(stmt.text)+'</span></label>';
+          }).join('');
+      }).join('');
+      if(!any) return '';
+      // With a filter on, open every area that still has something to show.
+      var open=(ticks.length||q)?true:(ai===0);
+      return '<div class="tp-area'+(open?' open':'')+'"><div class="tp-area-h">▾ '+esc(a.area)+
+        '<span class="cnt'+(n>0?' full':'')+'">'+n+'/'+max+'</span></div>'+
+        '<div class="tp-area-b">'+body+'</div></div>';
+    }).join('');
+
+    el('tp-areas').innerHTML = html ||
+      '<div class="tp-hint">Nothing matches those sub-aspects. Clear a tick or the keyword.</div>';
+    if(INTF) INTF.setCount(shown+' of '+(INT_TOTAL||shown)+' statements');
+    el('tp-fwmeta').innerHTML='Active framework: <b>'+esc(FW.framework)+'</b> — '+FW.areas.length+
+      ' area(s), '+(INT_BY_SUB
+        ? 'grouped by sub-area. Tick the sub-aspects you want this term to cover.'
+        : '<b>no sub-areas defined</b> — ticking filters by area of learning instead.');
+  }
+  function toggleStmt(lbl){
+    var area=lbl.getAttribute('data-area'), sid=parseInt(lbl.getAttribute('data-sid'),10);
+    var max=(CTX&&CTX.max_intentions_per_area)||3;
+    PICKED[area]=PICKED[area]||[];
+    var i=-1;
+    PICKED[area].forEach(function(p,j){ if(p.statement_id===sid) i=j; });
+    if(i>=0){ PICKED[area].splice(i,1); }
+    else {
+      if(PICKED[area].length>=max){ alert('Maximum '+max+' intentions per area.'); renderAreas(); return; }
+      var st=null;
+      FW.areas.forEach(function(a){ if(a.area!==area) return;
+        a.sub_areas.forEach(function(s){ s.statements.forEach(function(x){ if(x.id===sid) st=x; }); }); });
+      if(st) PICKED[area].push({statement_id:st.id, code:st.code, text:st.text, sub_area:st.sub_area});
+    }
+    renderAreas();
+  }
+  /* b245 — a plan imported from the room's own paper planning carries a theme
+     and its books, but no songs and no learning intentions: the source PDFs do
+     not contain them. Those two say plainly that they are waiting for staff,
+     rather than showing a bare "none yet" that reads like something broke. */
+  function imported(){ return !!(PLAN && PLAN.plan_source); }
+  function renderChips(){
+    el('tp-bookchips').innerHTML=BOOKS.map(function(b,i){
+      return '<span class="tp-chip">📖 '+esc(b)+'<button data-rm="book" data-i="'+i+'">✕</button></span>';}).join('')
+      || '<span class="tp-hint">No books yet.</span>';
+    el('tp-songchips').innerHTML=SONGS.map(function(s,i){
+      return '<span class="tp-chip">🎵 '+esc(s)+'<button data-rm="song" data-i="'+i+'">✕</button></span>';}).join('')
+      || (imported()
+          ? '<span class="tp-empty-note">Not filled in yet — the paper planning this term came from did not list songs. Add the ones the room actually sings.</span>'
+          : '<span class="tp-hint">No songs yet.</span>');
+    var im=el('tp-int-empty');
+    if(im){
+      var n=0; Object.keys(PICKED||{}).forEach(function(k){ n+=(PICKED[k]||[]).length; });
+      /* b302 — this note used to fire on ANY imported plan with nothing ticked,
+         and said the paper planning carried no intentions. On Autumn 1 pre-school
+         that was flatly untrue: five intentions were sitting in
+         learning_intentions and the parents app was showing them. The plan's own
+         resolved view says which case this actually is. */
+      var src=(VIEW&&VIEW.intentions_source)||'none';
+      var have=(VIEW&&VIEW.intentions&&VIEW.intentions.length)||0;
+      im.innerHTML = !n
+        ? (src==='imported'
+            ? '<span class="tp-empty-note">This half-term already has <b>'+have+'</b> learning intention'+
+              (have===1?'':'s')+' from the plan the setting uploaded — they are listed at the top of this '+
+              'page and are what parents see. Nothing is ticked below because imported intentions are '+
+              'sentences, not framework statements. Tick statements here only if you want to add to them.</span>'
+            : (imported()
+                ? '<span class="tp-empty-note">Not filled in yet — the paper planning did not carry learning intentions. Tick 1 to 3 per area below.</span>'
+                : ''))
+        : '';
+    }
+  }
+  function renderEvents(){
+    if(!EVENTS.length){ el('tp-events').innerHTML='<span class="tp-hint">No calendar events fall inside this term.</span>'; return; }
+    el('tp-events').innerHTML=EVENTS.map(function(e){
+      var on=EVIDS.indexOf(e.id)>=0;
+      return '<label class="tp-stmt'+(on?' picked':'')+'" data-ev="'+e.id+'">'+
+        '<input type="checkbox" '+(on?'checked':'')+'>'+
+        '<span class="tp-code">'+esc(String(e.event_date).slice(0,10))+'</span>'+
+        '<span>'+esc(e.title)+'</span></label>';}).join('');
+  }
+
+  /* ── load ──────────────────────────────────────────────────────────────── */
+  function loadContext(){
+    return Wren.api(API+'/context').then(function(c){
+      CTX=c;
+      /* b217 — planning runs on HALF-TERMS. Funding periods stay in the list,
+         under a heading that says what they are, only so plans saved before
+         b217 (which were keyed to one) can still be opened. */
+      var hts=(c.half_terms||[]).map(function(t){
+        return '<option value="h:'+t.id+'">'+esc(t.name)+' · '+esc(t.academic_year)+
+               ' ('+t.weeks+' wk)</option>';}).join('');
+      var fts=(c.terms||[]).map(function(t){
+        return '<option value="f:'+t.id+'">'+esc(t.name)+' '+(t.year||'')+'</option>';}).join('');
+      el('tp-term').innerHTML=
+        (hts?'<optgroup label="Planning half-terms">'+hts+'</optgroup>':'')+
+        (fts?'<optgroup label="⚠️ Funding periods — NOT planning terms">'+fts+'</optgroup>':'');
+      el('tp-room').innerHTML=c.rooms.map(function(r){
+        return '<option value="'+r.id+'">'+esc(r.name)+'</option>';}).join('');
+      el('tp-themes').innerHTML=c.suggestions.themes.map(function(t){return '<option value="'+esc(t)+'">';}).join('');
+      el('tp-booklist').innerHTML=c.suggestions.books.map(function(t){return '<option value="'+esc(t)+'">';}).join('');
+      el('tp-songlist').innerHTML=c.suggestions.songs.map(function(t){return '<option value="'+esc(t)+'">';}).join('');
+      return Wren.api(API+'/framework').then(function(f){
+        FW=f; INT_BY_SUB=frameworkHasSubAreas(); buildIntFilters(); renderAreas();
+      });
+    });
+  }
+  function loadPlan(){
+    if(!periodVal()||!roomId()) return Promise.resolve();
+    el('tp-meta').textContent='Loading…';
+    var qs=periodQS();
+    return Promise.all([
+      Wren.api(API+'/plan?'+qs+'&room_id='+roomId()),
+      Wren.api(API+'/events?'+qs).catch(function(){return {events:[]};})
+    ]).then(function(r){
+      var p=r[0]; EVENTS=(r[1]&&r[1].events)||[];
+      PUBLOG=[];   /* b290 — filled in below once we know the plan id */
+      PLAN=p.plan; VIEW=p.view||null; WEEKS=p.weeks||[]; WEEKDATES=p.week_dates||[];
+      DAYS=p.days||[]; RHYTHM=p.rhythm||RHYTHM;
+      PLANWEEKS=p.plan_weeks||[]; PERIOD=p.term||null;
+      if(PLAN){
+        el('tp-theme').value=PLAN.theme||'';
+        PICKED=(PLAN.intentions&&typeof PLAN.intentions==='object')?PLAN.intentions:{};
+        BOOKS=(PLAN.key_books||[]).slice(); SONGS=(PLAN.songs||[]).slice();
+        EVIDS=(PLAN.event_ids||[]).map(Number);
+        el('tp-eval').value=PLAN.evaluation||'';
+        el('tp-carry').value=PLAN.carry_forward||'';
+        el('tp-meta').innerHTML='Plan #'+PLAN.id+' · '+esc(PLAN.term_name)+' '+esc(PLAN.academic_year)+
+          ' · '+PLANWEEKS.length+' planning week(s) · '+WEEKS.length+' week/room row(s)';
+        el('tp-evalmeta').textContent=PLAN.evaluated_at
+          ? 'Last evaluated '+String(PLAN.evaluated_at).slice(0,10) : 'Not yet evaluated.';
+      } else {
+        el('tp-theme').value=''; PICKED={}; BOOKS=[]; SONGS=[]; EVIDS=[]; VIEW=null;
+        el('tp-eval').value=''; el('tp-carry').value='';
+        el('tp-meta').textContent='No plan yet for this half-term + room — fill this in and save. '+
+          'It starts as a draft, so nothing reaches parents until you publish it.';
+        el('tp-evalmeta').textContent='—';
+      }
+      /* b302 — one call, one shape. `view` resolves the intentions from
+         whichever column holds them, so an imported plan shows its five
+         sentences here even though nothing is ticked below. */
+      if (window.WrenTermPlanView) WrenTermPlanView.render('#tp-view', p.view || null);
+      renderBanner(); renderAreas(); renderChips(); renderEvents(); renderWeeks();
+      renderPublish();                                          /* b290 */
+      loadCarriedIntentions();                                  /* b218 */
+      loadPublishLog();                                         /* b290 */
+    }).catch(function(e){ el('tp-meta').textContent='Could not load plan: '+e.message; });
+  }
+
+  /* ── b290 — draft / published ───────────────────────────────────────────── */
+  /* Who published this half-term and when. Fails quietly: a schema without the
+     b290 table simply shows the state without the history, which is still the
+     useful half. */
+  function loadPublishLog(){
+    if(!PLAN || !PLAN.id) return;
+    var forPlan=PLAN.id;
+    Wren.api(API+'/publish-log?plan_id='+forPlan).then(function(rows){
+      if(!PLAN || PLAN.id!==forPlan) return;        /* the user moved on */
+      PUBLOG=rows||[]; renderPublish();
+    }).catch(function(){});
+  }
+  function lastPublishedBy(){
+    for(var i=0;i<PUBLOG.length;i++){
+      if(PUBLOG[i].action==='publish'){
+        var n=[PUBLOG[i].first_name,PUBLOG[i].last_name].filter(Boolean).join(' ');
+        return { who:n, when:String(PUBLOG[i].created_at||'').slice(0,10) };
+      }
+    }
+    return null;
+  }
+  function renderPublish(){
+    var box=el('tp-pub');
+    /* No plan yet, or a schema with no b290 column at all: say nothing rather
+       than showing a state that does not exist. */
+    if(!PLAN || !PLAN.status){ box.style.display='none'; return; }
+    var live = PLAN.status==='published';
+    /* b276 writes a deliberately blank row for a half-term the paper plan does
+       not cover. There is nothing in it to publish, and the server refuses, so
+       the button says why instead of failing when pressed. */
+    var empty = !String(PLAN.theme||'').trim() || /^not-planned/i.test(String(PLAN.plan_source||''));
+    var last = lastPublishedBy();
+    var why;
+    if(live){
+      why = 'Parents can see this half-term'+
+        (last && last.who ? ' — published by '+esc(last.who)+' on '+esc(fmtD(last.when)) : '')+'.';
+    } else if(empty){
+      why = 'Nothing has been planned for this half-term yet. Give it a theme and save, '+
+            'then you can publish it.';
+    } else {
+      why = 'Only staff can see this. Edit it as much as you like — nothing reaches parents, '+
+            'the website or a newsletter until someone publishes it.';
+    }
+    box.className='tp-pub '+(live?'is-live':'is-draft');
+    box.innerHTML='<span class="pill">'+(live?'Published':'Draft')+'</span>'+
+      '<span class="why">'+why+'</span>'+
+      (live
+        ? '<button class="tp-btn sm" id="tp-unpublish">Move back to draft</button>'
+        : '<button class="tp-btn sm primary" id="tp-publish"'+(empty?' disabled':'')+
+          '>🚀 Publish '+esc(PLAN.term_name||'this half-term')+'</button>')+
+      '<span class="tp-msg" id="tp-pubmsg"></span>';
+    box.style.display='';
+    var pb=el('tp-publish'); if(pb) pb.addEventListener('click', doPublish);
+    var ub=el('tp-unpublish'); if(ub) ub.addEventListener('click', doUnpublish);
+  }
+  function doPublish(){
+    if(!PLAN) return;
+    if(!confirm('Publish '+(PLAN.term_name||'this half-term')+'?\n\n'+
+                'Parents will be able to see its theme, books, songs, intentions and activities '+
+                'on the nursery website, and it can appear in newsletters and termly updates.\n\n'+
+                'Only this one half-term is published. You can move it back to draft at any time.')) return;
+    msg('tp-pubmsg','Publishing…');
+    Wren.api(API+'/publish',{method:'POST',body:{plan_id:PLAN.id}})
+      .then(function(){ msg('tp-pubmsg','Published ✓','ok'); return loadPlan(); })
+      .catch(function(e){ msg('tp-pubmsg',e.message||'Could not publish','bad'); });
+  }
+  function doUnpublish(){
+    if(!PLAN) return;
+    if(!confirm('Move '+(PLAN.term_name||'this half-term')+' back to draft?\n\n'+
+                'It will disappear from the nursery website and stop appearing in new '+
+                'newsletters and termly updates.')) return;
+    msg('tp-pubmsg','Saving…');
+    Wren.api(API+'/unpublish',{method:'POST',body:{plan_id:PLAN.id}})
+      .then(function(){ msg('tp-pubmsg','Back to draft ✓','ok'); return loadPlan(); })
+      .catch(function(e){ msg('tp-pubmsg',e.message||'Could not change it','bad'); });
+  }
+
+  /* b218 — what the area owners carried into THIS half-term out of the children's
+     next steps. Fails quietly: a schema without the b218 tables simply hides the
+     card rather than breaking the termly plan. */
+  function loadCarriedIntentions(){
+    var v=periodVal();
+    if(v.charAt(0)!=='h'){ el('tp-carried-card').style.display='none'; return; }
+    Wren.api('/api/areas/intentions?half_term_id='+encodeURIComponent(v.slice(2)))
+      .then(function(list){
+        if(!list || !list.length){ el('tp-carried-card').style.display='none'; return; }
+        var byArea={};
+        list.forEach(function(i){ (byArea[i.area]=byArea[i.area]||[]).push(i); });
+        el('tp-carried').innerHTML=Object.keys(byArea).map(function(a){
+          return '<div class="tp-sub-h">'+esc(a)+'</div>'+byArea[a].map(function(i){
+            return '<div class="tp-chip" style="display:flex;margin:0 0 6px">'+
+              '<span>'+esc(i.intention_text)+'</span>'+
+              '<span class="tp-code" style="margin-left:auto;white-space:nowrap">'+
+                i.child_count+(i.child_count===1?' child':' children')+
+                (i.room_name?' · '+esc(i.room_name):'')+
+                ' · '+i.source_count+' next step'+(i.source_count===1?'':'s')+'</span></div>';
+          }).join('');
+        }).join('');
+        el('tp-carried-card').style.display='';
+      })
+      .catch(function(){ el('tp-carried-card').style.display='none'; });
+  }
+  function savePlan(){
+    msg('tp-savemsg','Saving…');
+    var body=periodBody();
+    body.room_id=roomId(); body.theme=el('tp-theme').value;
+    body.intentions=PICKED; body.books=BOOKS; body.songs=SONGS; body.event_ids=EVIDS;
+    Wren.api(API+'/plan',{method:'PUT',body:body}).then(function(){ msg('tp-savemsg','Saved ✓','ok'); return loadPlan(); })
+      .catch(function(e){ msg('tp-savemsg',e.message||'Save failed','bad'); });
+  }
+
+  /* ── weeks ─────────────────────────────────────────────────────────────── */
+  function weekRow(wk,room){
+    return WEEKS.filter(function(w){return w.week_no===wk&&w.room_id===room;})[0]||null;
+  }
+  function currentSel(wk,room){
+    var w=weekRow(wk,room);
+    return { rc:((w&&w.resource_cards)||[]).map(function(c){return c.slug;}),
+             ab:((w&&w.activities)||[]).map(function(a){return a.id;}) };
+  }
+  /* b245 — one day of one week of one room. */
+  function dayRow(wk,room,wd){
+    return DAYS.filter(function(d){
+      return d.week_no===wk && d.room_id===room && d.weekday===wd;})[0]||null;
+  }
+  function currentDaySel(wk,room,wd){
+    var d=dayRow(wk,room,wd);
+    return { rc:((d&&d.resource_cards)||[]).map(function(c){return c.slug;}),
+             ab:((d&&d.activities)||[]).map(function(a){return a.id;}) };
+  }
+  /* The rhythm the server sends, with a hard-coded fallback so an older API
+     response still renders five labelled days rather than nothing. */
+  function rhythm(){
+    return (RHYTHM&&RHYTHM.length) ? RHYTHM : [
+      {weekday:1,weekday_name:'Monday',   category:'Sensory',               category_slug:'sensory'},
+      {weekday:2,weekday_name:'Tuesday',  category:'Maths/Physical',        category_slug:'maths_physical'},
+      {weekday:3,weekday_name:'Wednesday',category:'Art/Design',            category_slug:'art_design'},
+      {weekday:4,weekday_name:'Thursday', category:'Small World/Role Play', category_slug:'small_world'},
+      {weekday:5,weekday_name:'Friday',   category:'Book Focus',            category_slug:'book_focus'}
+    ];
+  }
+  /* Loose title match, so a day does not print its own activity twice: the
+     Friday row's title is "'Zoom to the Moon' by Pat-A-Cake" while the book
+     card is titled "Zoom to the Moon". Quotes, punctuation and the "by ..."
+     tail are ignored. */
+  function sameThing(a,b){
+    function norm(x){ return String(x==null?'':x).toLowerCase()
+      .replace(/^[\s'"]+|[\s'"]+$/g,'')
+      .replace(/\bby\b.*$/,'')
+      .replace(/[^a-z0-9]+/g,' ').trim(); }
+    var x=norm(a), y=norm(b);
+    if(!x||!y) return false;
+    return x===y || x.indexOf(y)>=0 || y.indexOf(x)>=0;
+  }
+  /* Renders the five days of one (week, room) — the whole point of b245. Each
+     row is a tap target that opens the card picker for THAT day. */
+  function renderDays(wk,room){
+    return rhythm().map(function(slot){
+      var d=dayRow(wk,room,slot.weekday);
+      var cat=(d&&d.category)||slot.category;
+      var cslug=(d&&d.category_slug)||slot.category_slug;
+      var cards=(d&&d.resource_cards)||[], acts=(d&&d.activities)||[];
+      /* The day's title already names its activity — showing a chip that
+         repeats it is noise on a screen read at arm's length. Only what a
+         practitioner has ADDED on top of the day is chipped. */
+      var t=(d&&d.title)||'';
+      var xcards=cards.filter(function(c){ return !sameThing(t,c.title); });
+      var xacts =acts.filter(function(a){ return !sameThing(t,a.name); });
+      var key=wk+':'+room+':'+slot.weekday;
+      var out='<div class="tp-day'+(d?'':' empty')+'" data-day="'+key+'">'+
+        '<div class="tp-day-h"><span class="tp-day-n">'+esc(slot.weekday_name)+'</span>'+
+        '<span class="tp-day-cat '+esc(cslug||'')+'">'+esc(cat||'')+'</span>'+
+        ((d&&d.block_no)?'<span class="tp-blk">block '+d.block_no+'</span>':'')+
+        '<span class="tp-day-add" aria-hidden="true">＋</span></div>';
+      out+= (d&&d.title)
+        ? '<div class="tp-day-t">'+esc(d.title)+'</div>'
+        : '<div class="tp-day-t none">Nothing planned - tap to add.</div>';
+      if(d&&d.role_of_adult) out+='<div class="tp-day-r"><b>Role of the adult:</b> '+esc(d.role_of_adult)+'</div>';
+      if(xcards.length||xacts.length){
+        out+='<div class="tp-dchips">'+
+          xcards.map(function(c){
+            return '<span class="tp-dchip"><span class="lbl">'+esc(c.title)+'</span>'+
+              '<button data-rmdcard="'+key+':'+esc(c.slug)+'" aria-label="Remove '+esc(c.title)+'">✕</button></span>';
+          }).join('')+
+          xacts.map(function(a){
+            return '<span class="tp-dchip"><span class="lbl">'+esc(a.name)+'</span>'+
+              '<button data-rmdact="'+key+':'+a.id+'" aria-label="Remove '+esc(a.name)+'">✕</button></span>';
+          }).join('')+'</div>';
+      }
+      return out+'</div>';
+    }).join('');
+  }
+  function renderWeeks(){
+    if(!PLAN){ el('tp-weeks').innerHTML='<div class="tp-hint">Save the termly plan first.</div>'; return; }
+    /* b217 — the weeks come from the term calendar, so a half-term is however
+       many weeks it really is (5–8) and break weeks are not offered at all. */
+    var rooms=(CTX&&CTX.rooms)||[], out='';
+    var wks=PLANWEEKS.length ? PLANWEEKS
+      : WEEKDATES.map(function(wc,i){ return {week_no:i+1, week_commencing:wc, partial:false, closures:[]}; });
+    out+=weeksNote();
+    el('tp-stage1-lbl').textContent='2 · '+wks.length+' week'+(wks.length===1?'':'s');
+    if(!wks.length){
+      el('tp-weeks').innerHTML=out+'<div class="tp-hint">This period has no planning weeks in the term calendar.</div>';
+      return;
+    }
+    wks.forEach(function(w){
+      var i=w.week_no, wc=w.week_commencing||'';
+      var flags=(w.partial?'<span class="flag">part week</span>':'')+
+        (w.closures||[]).map(function(c){
+          return '<span class="flag closure">closed '+esc(c.name)+'</span>';}).join('');
+      out+='<div class="tp-wk'+((w.closures||[]).length?' closed':'')+'"><div class="tp-wk-h">Week '+i+
+        (wc?'<span class="wc">w/c '+esc(fmtD(wc))+'</span>':'')+flags+'</div>';
+      out+=rooms.map(function(rm){
+        var w=weekRow(i,rm.id);
+        var cards=(w&&w.resource_cards)||[], acts=(w&&w.activities)||[];
+        /* b245 — the DAYS are the week. The week row (termly_plan_weeks) still
+           carries a rolled-up copy of the same activities so anything reading
+           that table keeps working, but printing them again here would show
+           every activity twice on one screen. Only continuous provision that
+           is NOT already on a day is listed. */
+        var dayNames = rhythm().map(function(sl){
+          var dd=dayRow(i,rm.id,sl.weekday); return dd&&dd.title ? dd.title : ''; }).filter(Boolean);
+        function onADay(name){
+          return dayNames.some(function(t){ return sameThing(t,name); }); }
+        var wcards=cards.filter(function(c){ return !onADay(c.title); });
+        var wacts =acts.filter(function(a){ return !onADay(a.name); });
+        return '<div class="tp-room"><h4>'+esc(rm.name)+'</h4>'+
+          renderDays(i,rm.id)+
+          '<div class="tp-liblbl" style="margin-top:11px">Across the whole week</div>'+
+          '<div class="tp-chips">'+wcards.map(function(c){
+            return '<span class="tp-chip">🗂️ '+esc(c.title)+'<button data-rmcard="'+i+':'+rm.id+':'+esc(c.slug)+'">✕</button></span>';
+          }).join('')+wacts.map(function(a){
+            return '<span class="tp-chip">📚 '+esc(a.name)+'<button data-rmact="'+i+':'+rm.id+':'+a.id+'">✕</button></span>';
+          }).join('')+
+          '<button class="tp-btn sm" data-pick="'+i+':'+rm.id+'">＋ Continuous provision</button></div></div>';
+      }).join('');
+      out+='</div>';
+    });
+    el('tp-weeks').innerHTML=out;
+  }
+  /* b217 — the weeks stage always says which half-term these weeks belong to and
+     whether it is finished or still a draft. Never a bare grid with no context. */
+  function weeksNote(){
+    if(!PERIOD) return '';
+    if(PERIOD.kind!=='half_term'){
+      return '<div class="tp-banner outside"><span class="k">⚠️</span><span>These weeks belong to a <b>funding period</b>, '+
+        'not a school half-term. Funding periods are claim windows, not planning terms — pick a half-term above to plan.</span></div>';
+    }
+    var t=NOW&&NOW.date||'';
+    var lead='<b>'+esc(PERIOD.name)+'</b> · '+esc(fmtD(PERIOD.start_date))+' – '+esc(fmtD(PERIOD.end_date));
+    if(PERIOD.start_date>t) return '<div class="tp-banner break"><span class="k">📝</span><span>'+lead+
+      ' <span class="draft">draft</span><br>Not started yet — this is next half-term\'s plan.</span></div>';
+    if(PERIOD.end_date<t)   return '<div class="tp-banner outside"><span class="k">✅</span><span>'+lead+
+      '<br>This half-term has finished — these are its weeks as they were planned.</span></div>';
+    return '<div class="tp-banner teaching"><span class="k">📅</span><span>'+lead+'</span></div>';
+  }
+  function weekCommencing(wk){
+    var m=PLANWEEKS.filter(function(w){return w.week_no===wk;})[0];
+    return m ? m.week_commencing : (WEEKDATES[wk-1]||null);
+  }
+  function saveWeek(wk,room,cards,acts){
+    return Wren.api(API+'/week',{method:'PUT',body:{
+      plan_id:PLAN.id, week_no:wk, room_id:room,
+      week_commencing:weekCommencing(wk), resource_card_ids:cards, activity_ids:acts
+    }}).then(function(){ return loadPlan().then(function(){ go(1); }); })
+      .catch(function(e){ alert('Week save failed: '+e.message); });
+  }
+
+  /* ── picker — the SAME libraries the next-steps UI offers ──────────────── */
+  function ensureLib(){
+    if(LIB.cards&&LIB.acts) return Promise.resolve();
+    return Wren.api('/api/next-steps/libraries').then(function(d){
+      LIB.cards=d.cards||[]; LIB.acts=d.activities||[];
+    }).catch(function(){ LIB.cards=[]; LIB.acts=[]; });
+  }
+  function openPicker(wk,room){
+    var rm=((CTX&&CTX.rooms)||[]).filter(function(r){return r.id===room;})[0];
+    pickCtx={wk:wk, room:room, wd:null, tab:'rc', sel:currentSel(wk,room)};
+    el('tp-pick-title').textContent='Week '+wk+' · '+(rm?rm.name:'room '+room)+' · across the week';
+    el('tp-pick').classList.add('open');
+    switchTab('rc');
+  }
+  /* b245 — the same picker, aimed at ONE day. Tapping Wednesday and picking a
+     card is the whole interaction this build exists for. */
+  function openDayPicker(wk,room,wd){
+    var rm=((CTX&&CTX.rooms)||[]).filter(function(r){return r.id===room;})[0];
+    var slot=rhythm().filter(function(x){return x.weekday===wd;})[0]||{};
+    pickCtx={wk:wk, room:room, wd:wd, tab:'rc', sel:currentDaySel(wk,room,wd)};
+    el('tp-pick-title').textContent=(slot.weekday_name||'Day '+wd)+' · '+(slot.category||'')+
+      ' · week '+wk+(rm?' · '+rm.name:'');
+    el('tp-pick').classList.add('open');
+    switchTab('rc');
+  }
+  /* Writes one day. The server flips source to 'staff' on any edit, which is
+     what stops a re-import of the source PDFs overwriting the room's changes. */
+  function saveDay(wk,room,wd,cards,acts){
+    var d=dayRow(wk,room,wd)||{};
+    var slot=rhythm().filter(function(x){return x.weekday===wd;})[0]||{};
+    return Wren.api(API+'/day',{method:'PUT',body:{
+      plan_id:PLAN.id, week_no:wk, room_id:room, weekday:wd,
+      category:d.category||slot.category, category_slug:d.category_slug||slot.category_slug,
+      title:d.title||null, role_of_adult:d.role_of_adult||null, staff_note:d.staff_note||null,
+      resource_card_ids:cards, activity_ids:acts, notes:d.notes||null
+    }}).then(function(){ return loadPlan().then(function(){ go(1); }); })
+      .catch(function(e){ alert('Day save failed: '+e.message); });
+  }
+  function switchTab(t){
+    pickCtx.tab=t;
+    el('tp-ptab-rc').classList.toggle('on',t==='rc');
+    el('tp-ptab-ab').classList.toggle('on',t==='ab');
+    ensureLib().then(function(){ buildPickFilters(); renderPick(); });
+  }
+
+  /* b211 — the week picker's own tick list. Resource cards carry sub-aspects;
+     ladn.curriculum_activities carries AREA codes only (CL / PD / MATH …), so on
+     the activity tab a tick widens to its parent area and the note says so. */
+  var PICKF=null;
+  function buildPickFilters(){
+    var mount=el('tp-pick-filters');
+    if(!mount || !window.WrenSubAspectPicker || !window.WrenRCFilters) return;
+    var groups=WrenRCFilters.aspectGroups(LIB.cards||[]);
+    if(pickCtx && pickCtx.tab==='ab'){
+      groups.forEach(function(g){
+        var set=WrenRCFilters.areaMatchSet([g.area]);
+        var n=(LIB.acts||[]).filter(function(a){
+          return (a.eyfs_areas||[]).some(function(x){ return set[String(x).toUpperCase()]; });
+        }).length;
+        g.aspects.forEach(function(a){ a.count=n; });
+      });
+    }
+    // b219 — themes are the facet that actually narrows; activities carry none,
+    // so the row empties on that tab rather than offering ticks that do nothing.
+    var themes = (pickCtx && pickCtx.tab==='ab') ? [] : WrenRCFilters.themeOptions(LIB.cards||[]);
+    if(PICKF){ PICKF.setGroups(groups); PICKF.setThemes(themes); return; }
+    PICKF=WrenSubAspectPicker.create({
+      mount: mount,
+      groups: groups,
+      themes: themes,
+      themeLabel: 'Theme',
+      collapsed: true,
+      placeholder: 'Keyword — title, strapline, intent, key questions…',
+      onChange: renderPick
+    });
+  }
+  function renderPick(){
+    var st=PICKF?PICKF.state():{q:'',aspects:[],bands:[],themes:[]};
+    var q=(st.q||'').trim().toLowerCase(), html, shown, total;
+    if(pickCtx.tab==='rc'){
+      total=(LIB.cards||[]).length;
+      var cards=window.WrenRCFilters
+        ? WrenRCFilters.applyMulti(LIB.cards||[], st)
+        : (LIB.cards||[]);
+      shown=cards.length;
+      if(PICKF) PICKF.setCount(shown+' of '+total+' cards');
+      var bits=[];
+      if(st.themes.length) bits.push(st.themes.map(WrenRCFilters.themeLabel).join(' + '));
+      if(st.aspects.length) bits.push(st.aspects.length+' ticked sub-aspect'+(st.aspects.length>1?'s':''));
+      el('tp-pick-note').textContent = bits.length
+        ? 'Cards covering '+bits.join(' · ')+'.'
+        : 'Pick a theme above to narrow these '+total+' cards.';
+      html=cards.slice(0,300).map(function(c){
+          var on=pickCtx.sel.rc.indexOf(c.slug)>=0;
+          return '<div class="tp-pitem'+(on?' on':'')+'" data-rc="'+esc(c.slug)+'"><b>'+esc(c.title)+'</b>'+
+            '<span>'+esc((c.areas||[]).join(' · ')||c.category||'')+'</span></div>';}).join('');
+    } else {
+      total=(LIB.acts||[]).length;
+      var areas=[];
+      st.aspects.forEach(function(a){
+        var ar=WrenRCFilters.areaOfAspect(a);
+        if(ar && areas.indexOf(ar)<0) areas.push(ar);
+      });
+      var set=areas.length?WrenRCFilters.areaMatchSet(areas):null;
+      var acts=(LIB.acts||[]).filter(function(a){
+        if(set && !(a.eyfs_areas||[]).some(function(x){ return set[String(x).toUpperCase()]; })) return false;
+        if(q && String(a.name||'').toLowerCase().indexOf(q)<0
+             && String(a.description||'').toLowerCase().indexOf(q)<0) return false;
+        return true;
+      });
+      shown=acts.length;
+      if(PICKF) PICKF.setCount(shown+' of '+total+' activities');
+      el('tp-pick-note').textContent='Activities are tagged by area, not by theme or sub-aspect — a tick shows everything in that area'+
+        (areas.length?' ('+areas.join(', ')+').':'.');
+      html=acts.slice(0,300).map(function(a){
+          var on=pickCtx.sel.ab.indexOf(a.id)>=0;
+          return '<div class="tp-pitem'+(on?' on':'')+'" data-ab="'+a.id+'"><b>'+esc(a.name)+'</b>'+
+            '<span>'+esc((a.eyfs_areas||[]).join(' · ')||a.category||'')+'</span></div>';}).join('');
+    }
+    el('tp-pick-list').innerHTML=html||'<div class="tp-hint">Nothing matches those sub-aspects.</div>';
+    msg('tp-pick-msg',pickCtx.sel.rc.length+' card(s), '+pickCtx.sel.ab.length+' activity(ies) selected');
+  }
+
+  /* ── children ──────────────────────────────────────────────────────────── */
+  function loadKids(){
+    if(!PLAN){ el('tp-kids').innerHTML='Save the termly plan first.'; return; }
+    el('tp-kids').textContent='Loading…';
+    Wren.api(API+'/plan/'+PLAN.id+'/children').then(function(d){
+      var kids=d.children||[];
+      if(!kids.length){ el('tp-kids').innerHTML='<span class="tp-hint">No active children in this room.</span>'; return; }
+      el('tp-kids').innerHTML=kids.map(function(k){
+        var pa=k.planned_activities||[], ev=k.evaluation||{};
+        return '<div class="tp-kid"><h4>'+esc(k.first_name+' '+k.last_name)+'</h4>'+
+          '<div class="pa"><b>Their planned activities ('+pa.length+'):</b> '+
+            (pa.length?pa.map(function(p){return esc(p.name||('#'+p.id));}).join(' · ')
+              :'none planned for this child this term')+'</div>'+
+          '<textarea class="tp-ta" data-ev="'+k.id+'" placeholder="Evaluation against this child\'s planned activities…">'+esc(ev.evaluation||'')+'</textarea>'+
+          '<div style="display:flex;gap:7px;margin-top:7px">'+
+            '<input type="text" class="tp-in" data-nf="'+k.id+'" placeholder="Next focus…" value="'+esc(ev.next_focus||'')+'" style="flex:1">'+
+            '<button class="tp-btn sm" data-savekid="'+k.id+'" data-acts="'+esc(JSON.stringify(pa.map(function(p){return p.activity_id||p.id;})))+'">💾</button>'+
+          '</div></div>';
+      }).join('');
+    }).catch(function(e){ el('tp-kids').textContent='Could not load children: '+e.message; });
+  }
+
+
+  /* ── b217 · the school term calendar ───────────────────────────────────── */
+  /* Planning follows the Ealing school rhythm: Autumn 1 · half term · Autumn 2 ·
+     Christmas · Spring 1 … A half-term is a planning period. A break is not —
+     during a break this page shows evaluation and preparation instead of a week
+     grid nobody is going to fill in. */
+
+  function renderBanner(){
+    var b=el('tp-banner');
+    if(!NOW){ b.style.display='none'; return; }
+    var w=NOW.week||{}, cls='outside', icon='📅';
+    if(w.status==='teaching'){ cls='teaching'; icon='📅'; }
+    else if(w.status==='break'){ cls='break'; icon='🌿'; }
+    else if(w.status==='no_calendar'){ cls='outside'; icon='⚠️'; }
+    var draft = PERIOD && PERIOD.kind==='half_term' && PERIOD.start_date>NOW.date
+      ? '<span class="draft">draft</span>' : '';
+    b.className='tp-banner '+cls;
+    b.innerHTML='<span class="k">'+icon+'</span><span>'+esc(w.message||'')+draft+'</span>';
+    b.style.display='';
+  }
+
+  /* The break view: how the half-term that just ended went, what to carry
+     forward, and the next half-term in draft. */
+  function renderBreak(){
+    var box=el('tp-break');
+    if(!NOW || (NOW.week&&NOW.week.plannable)){ box.classList.remove('on'); box.innerHTML=''; return; }
+    var prev=NOW.previous_half_term, next=NOW.next_half_term;
+    var head=NOW['break']
+      ? esc(NOW['break'].name)
+      : 'Outside term time';
+    var out='<div class="tp-brk-card" style="margin-bottom:9px">'+
+      '<h4>🌿 '+head+'</h4>'+
+      '<div class="tp-hint">No planning this week. This is time to evaluate the half-term that has just '+
+      'finished and prepare the next one.</div></div><div class="tp-brk-grid">';
+    out+= prev
+      ? '<div class="tp-brk-card"><h4>🔍 How '+esc(prev.name)+' went</h4>'+
+        '<div class="tp-hint" style="margin-bottom:9px">'+esc(fmtD(prev.start_date))+' – '+esc(fmtD(prev.end_date))+
+        ' · group and per-child evaluation, plus what to carry forward.</div>'+
+        '<button class="tp-btn sm" data-brk="evaluate" data-id="'+prev.id+'">Evaluate '+esc(prev.name)+'</button></div>'
+      : '<div class="tp-brk-card"><h4>🔍 Nothing to evaluate</h4>'+
+        '<div class="tp-hint">No earlier half-term in the term calendar yet.</div></div>';
+    out+= next
+      ? '<div class="tp-brk-card"><h4>📝 Prepare '+esc(next.name)+'</h4>'+
+        '<div class="tp-hint" style="margin-bottom:9px">Starts '+esc(fmtD(next.start_date))+
+        ' · saved as a draft until it begins.</div>'+
+        '<button class="tp-btn sm primary" data-brk="prepare" data-id="'+next.id+'">Draft '+esc(next.name)+' plan</button></div>'
+      : '<div class="tp-brk-card"><h4>📝 Nothing to prepare</h4>'+
+        '<div class="tp-hint">The next half-term has no dates yet — add them under Term dates.</div></div>';
+    box.innerHTML=out+'</div>';
+    box.classList.add('on');
+  }
+
+  /* ── term-dates editor (manager only) ──────────────────────────────────── */
+  var KINDS={half_term:'Half term',holiday:'Holiday',bank_holiday:'Bank holiday',
+             inset:'INSET day',occasional:'Occasional day',closure:'Closure'};
+
+  function calYears(){
+    var seen={}, out=[];
+    ((CALEDIT&&CALEDIT.terms)||[]).concat((CALEDIT&&CALEDIT.breaks)||[]).forEach(function(r){
+      if(!seen[r.academic_year]){ seen[r.academic_year]=1; out.push(r.academic_year); }});
+    out.sort();
+    return out;
+  }
+  function loadCalEditor(){
+    return Wren.api('/api/planning/calendar').then(function(c){
+      CALEDIT=c; renderCalEditor(); return c;
+    });
+  }
+  function calYear(){ return el('tp-cal-year').value||''; }
+  function renderCalEditor(){
+    if(!CALEDIT) return;
+    var years=calYears();
+    if(!el('tp-cal-year').options.length || el('tp-cal-year').options.length!==years.length){
+      var cur=calYear();
+      el('tp-cal-year').innerHTML=years.map(function(y){
+        return '<option value="'+esc(y)+'">'+esc(y.replace('-','/'))+'</option>';}).join('');
+      if(cur&&years.indexOf(cur)>=0) el('tp-cal-year').value=cur;
+    }
+    var y=calYear()||years[0]||'';
+    var ts=(CALEDIT.terms||[]).filter(function(t){return t.academic_year===y;});
+    var bs=(CALEDIT.breaks||[]).filter(function(b){return b.academic_year===y;});
+    el('tp-cal-terms').innerHTML = ts.length ? ts.map(function(t){
+      return '<div class="tp-crow"><span class="nm">'+esc(t.name)+'</span>'+
+        '<input type="date" data-tstart="'+t.id+'" value="'+esc(t.start_date)+'">'+
+        '<input type="date" data-tend="'+t.id+'" value="'+esc(t.end_date)+'">'+
+        '<button class="tp-btn sm" data-tsave="'+t.id+'">Save</button></div>';
+    }).join('') : '<div class="tp-hint">No half-terms for '+esc(y)+' yet. Add next year\'s dates by copying a '+
+      'year that exists — or ask for them to be seeded.</div>';
+    el('tp-cal-breaks').innerHTML = bs.length ? bs.map(function(b){
+      return '<div class="tp-crow"><span class="nm">'+esc(b.name)+
+        '<br><span style="font-weight:400;font-size:.7rem;color:var(--c-muted,#94a3b8)">'+
+        esc(KINDS[b.kind]||b.kind)+'</span></span>'+
+        '<input type="date" data-bstart="'+b.id+'" value="'+esc(b.start_date)+'">'+
+        '<input type="date" data-bend="'+b.id+'" value="'+esc(b.end_date)+'">'+
+        '<button class="tp-btn sm" data-bsave="'+b.id+'">Save</button>'+
+        '<button class="tp-btn sm" data-bdel="'+b.id+'">✕</button></div>';
+    }).join('') : '<div class="tp-hint">No breaks recorded for '+esc(y)+'.</div>';
+  }
+  /* b298 (2026-09-10) — ask before a date moves under a plan.
+     term_plans links on school_term_id and termly_plan_weeks numbers its weeks
+     from the half-term's start, so a shifted date silently changes which weeks a
+     plan covers and a shortened one strands weeks somebody has already written.
+     Roost's Settings -> Term dates shows this as a full panel; here it is a
+     confirm, because this editor is a drawer on a tablet. Same endpoint, so the
+     two save paths cannot disagree. A failed check never blocks the save. */
+  function calImpact(query){
+    return Wren.api('/api/planning/calendar/impact?'+query).catch(function(){ return null; });
+  }
+  function calConfirm(imp, what){
+    if(!imp || !imp.needs_confirmation) return true;
+    var lines=(imp.affected_plans||[]).map(function(p){
+      return '• '+(p.term_name||'')+(p.room_name?' — '+p.room_name:'')+
+        ' ('+p.week_rows+' week'+(p.week_rows===1?'':'s')+' written'+
+        (p.weeks_before!==p.weeks_after?', '+p.weeks_before+' → '+p.weeks_after+' plannable weeks':'')+')'+
+        (p.stranded_weeks&&p.stranded_weeks.length
+          ? '\n    ⚠️ week '+p.stranded_weeks.map(function(w){return w.week_no;}).join(', ')+
+            ' would fall outside the half-term'
+          : '');
+    }).join('\n');
+    return confirm(what+'\n\n'+imp.summary+'\n\n'+lines+'\n\nChange the date anyway?');
+  }
+  function calSaveTerm(id){
+    var t=(CALEDIT.terms||[]).filter(function(x){return x.id===parseInt(id,10);})[0];
+    if(!t) return;
+    var start=document.querySelector('[data-tstart="'+id+'"]').value;
+    var end=document.querySelector('[data-tend="'+id+'"]').value;
+    if(start===t.start_date && end===t.end_date){ msg('tp-cal-msg','Nothing changed'); return; }
+    msg('tp-cal-msg','Checking what this affects…');
+    calImpact('term_id='+id+'&start_date='+start+'&end_date='+end).then(function(imp){
+      if(!calConfirm(imp,'Moving '+t.name)){ msg('tp-cal-msg','Left as it was'); return; }
+      msg('tp-cal-msg','Saving…');
+      return Wren.api('/api/planning/calendar/term',{method:'POST',body:{
+        id:t.id, academic_year:t.academic_year, term:t.term, half:t.half, name:t.name,
+        start_date:start, end_date:end
+      }}).then(function(){ msg('tp-cal-msg','Saved ✓','ok'); return refreshCalendar(); });
+    }).catch(function(e){ msg('tp-cal-msg',(e&&(e.error||e.message))||'Failed','bad'); });
+  }
+  function calSaveBreak(id){
+    var b=(CALEDIT.breaks||[]).filter(function(x){return x.id===parseInt(id,10);})[0];
+    if(!b) return;
+    msg('tp-cal-msg','Saving…');
+    Wren.api('/api/planning/calendar/break',{method:'POST',body:{
+      id:b.id, academic_year:b.academic_year, name:b.name, kind:b.kind,
+      start_date:document.querySelector('[data-bstart="'+id+'"]').value,
+      end_date:document.querySelector('[data-bend="'+id+'"]').value
+    }}).then(function(){ msg('tp-cal-msg','Saved ✓','ok'); return refreshCalendar(); })
+      .catch(function(e){ msg('tp-cal-msg',(e&&(e.error||e.message))||'Failed','bad'); });
+  }
+  function calAddBreak(){
+    var name=el('tp-cal-nbname').value.trim(), from=el('tp-cal-nbfrom').value, to=el('tp-cal-nbto').value||from;
+    if(!name||!from){ msg('tp-cal-msg','Name and a date are needed','bad'); return; }
+    msg('tp-cal-msg','Adding…');
+    Wren.api('/api/planning/calendar/break',{method:'POST',body:{
+      academic_year:calYear(), name:name, kind:el('tp-cal-nbkind').value,
+      start_date:from, end_date:to
+    }}).then(function(){
+      el('tp-cal-nbname').value=''; el('tp-cal-nbfrom').value=''; el('tp-cal-nbto').value='';
+      msg('tp-cal-msg','Added ✓','ok'); return refreshCalendar();
+    }).catch(function(e){ msg('tp-cal-msg',(e&&(e.error||e.message))||'Failed','bad'); });
+  }
+  function calDelBreak(id){
+    if(!confirm('Remove this break from the term calendar?')) return;
+    Wren.api('/api/planning/calendar/break/'+id,{method:'DELETE'})
+      .then(function(){ msg('tp-cal-msg','Removed ✓','ok'); return refreshCalendar(); })
+      .catch(function(e){ msg('tp-cal-msg',(e&&(e.error||e.message))||'Failed','bad'); });
+  }
+  /* Editing the dates changes what "this week" means, so everything the page
+     shows has to be recomputed — not just the editor list. */
+  function refreshCalendar(){
+    return Promise.all([loadCalEditor(), loadNow(), reloadContextTerms()])
+      .then(function(){ renderBreak(); return loadPlan(); });
+  }
+  function reloadContextTerms(){
+    return Wren.api(API+'/context').then(function(c){
+      var keep=periodVal();
+      CTX=c;
+      var hts=(c.half_terms||[]).map(function(t){
+        return '<option value="h:'+t.id+'">'+esc(t.name)+' · '+esc(t.academic_year)+
+               ' ('+t.weeks+' wk)</option>';}).join('');
+      var fts=(c.terms||[]).map(function(t){
+        return '<option value="f:'+t.id+'">'+esc(t.name)+' '+(t.year||'')+'</option>';}).join('');
+      el('tp-term').innerHTML=
+        (hts?'<optgroup label="Planning half-terms">'+hts+'</optgroup>':'')+
+        (fts?'<optgroup label="⚠️ Funding periods — NOT planning terms">'+fts+'</optgroup>':'');
+      selectPeriod(keep);
+    });
+  }
+  function currentUser(){
+    var u=(window.Wren&&Wren.getUser&&Wren.getUser())||null;
+    if(u&&u.role) return u;
+    try{
+      var t=(window.Wren&&Wren.getToken&&Wren.getToken())||'';
+      if(!t) return {};
+      return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))||{};
+    }catch(_){ return {}; }
+  }
+  function loadNow(){
+    var q=new URLSearchParams(location.search).get('date');
+    return Wren.api('/api/planning/calendar/current'+(q?'?date='+encodeURIComponent(q):''))
+      .then(function(n){ NOW=n; return n; })
+      .catch(function(){ NOW=null; return null; });
+  }
+
+  /* ── wiring ────────────────────────────────────────────────────────────── */
+  function boot(){
+    document.querySelectorAll('.tp-stages button').forEach(function(b){
+      b.addEventListener('click',function(){ go(parseInt(b.getAttribute('data-stage'),10)); });});
+    el('tp-term').addEventListener('change',loadPlan);
+    el('tp-room').addEventListener('change',loadPlan);
+    el('tp-save').addEventListener('click',savePlan);
+
+    el('tp-areas').addEventListener('click',function(e){
+      var h=e.target.closest('.tp-area-h');
+      if(h){ h.parentNode.classList.toggle('open'); return; }
+      var lbl=e.target.closest('.tp-stmt'); if(lbl){ e.preventDefault(); toggleStmt(lbl); }
+    });
+    el('tp-events').addEventListener('click',function(e){
+      var lbl=e.target.closest('[data-ev]'); if(!lbl) return;
+      e.preventDefault();
+      var id=parseInt(lbl.getAttribute('data-ev'),10);
+      var i=EVIDS.indexOf(id); if(i>=0) EVIDS.splice(i,1); else EVIDS.push(id);
+      renderEvents();
+    });
+    el('tp-addbook').addEventListener('click',function(){
+      var v=el('tp-book').value.trim(); if(!v) return; BOOKS.push(v); el('tp-book').value=''; renderChips();});
+    el('tp-addsong').addEventListener('click',function(){
+      var v=el('tp-song').value.trim(); if(!v) return; SONGS.push(v); el('tp-song').value=''; renderChips();});
+    // Enter adds too (2026-08-21). Typing a title and pressing Enter is the natural action;
+    // previously it did nothing at all and the "+" button was the only way in, which read
+    // as "books can't be added".
+    ['tp-book','tp-song'].forEach(function(id){
+      el(id).addEventListener('keydown',function(ev){
+        if(ev.key!=='Enter') return;
+        ev.preventDefault();
+        el(id==='tp-book'?'tp-addbook':'tp-addsong').click();
+      });
+    });
+    document.addEventListener('click',function(e){
+      var rm=e.target.closest('[data-rm]'); if(!rm) return;
+      var i=parseInt(rm.getAttribute('data-i'),10);
+      if(rm.getAttribute('data-rm')==='book') BOOKS.splice(i,1); else SONGS.splice(i,1);
+      renderChips();
+    });
+
+    el('tp-weeks').addEventListener('click',function(e){
+      /* b245 — day-chip removal must be tested BEFORE the day row itself, or
+         removing a card would also reopen the picker. */
+      var dc=e.target.closest('[data-rmdcard]');
+      if(dc){ var d1=dc.getAttribute('data-rmdcard').split(':');
+        var w1=parseInt(d1[0],10), r1=parseInt(d1[1],10), y1=parseInt(d1[2],10), slug1=d1[3];
+        var s1=currentDaySel(w1,r1,y1);
+        s1.rc=s1.rc.filter(function(x){return x!==slug1;});
+        saveDay(w1,r1,y1,s1.rc,s1.ab); return; }
+      var da=e.target.closest('[data-rmdact]');
+      if(da){ var d2=da.getAttribute('data-rmdact').split(':');
+        var w2=parseInt(d2[0],10), r2=parseInt(d2[1],10), y2=parseInt(d2[2],10), aid2=parseInt(d2[3],10);
+        var s2=currentDaySel(w2,r2,y2);
+        s2.ab=s2.ab.filter(function(x){return x!==aid2;});
+        saveDay(w2,r2,y2,s2.rc,s2.ab); return; }
+      var dy=e.target.closest('[data-day]');
+      if(dy){ var d3=dy.getAttribute('data-day').split(':');
+        openDayPicker(parseInt(d3[0],10),parseInt(d3[1],10),parseInt(d3[2],10)); return; }
+      var p=e.target.closest('[data-pick]');
+      if(p){ var a=p.getAttribute('data-pick').split(':'); openPicker(parseInt(a[0],10),parseInt(a[1],10)); return; }
+      var rc=e.target.closest('[data-rmcard]');
+      if(rc){ var b=rc.getAttribute('data-rmcard').split(':');
+        var wk=parseInt(b[0],10), room=parseInt(b[1],10), slug=b[2], sel=currentSel(wk,room);
+        sel.rc=sel.rc.filter(function(s){return s!==slug;}); saveWeek(wk,room,sel.rc,sel.ab); return; }
+      var ra=e.target.closest('[data-rmact]');
+      if(ra){ var c=ra.getAttribute('data-rmact').split(':');
+        var wk2=parseInt(c[0],10), room2=parseInt(c[1],10), aid=parseInt(c[2],10), sel2=currentSel(wk2,room2);
+        sel2.ab=sel2.ab.filter(function(x){return x!==aid;}); saveWeek(wk2,room2,sel2.rc,sel2.ab); }
+    });
+
+    el('tp-ptab-rc').addEventListener('click',function(){switchTab('rc');});
+    el('tp-ptab-ab').addEventListener('click',function(){switchTab('ab');});
+    el('tp-pick-cancel').addEventListener('click',function(){el('tp-pick').classList.remove('open');});
+    el('tp-pick').addEventListener('click',function(e){ if(e.target===this) this.classList.remove('open'); });
+    el('tp-pick-list').addEventListener('click',function(e){
+      var rc=e.target.closest('[data-rc]');
+      if(rc){ var s=rc.getAttribute('data-rc'), i=pickCtx.sel.rc.indexOf(s);
+        if(i>=0) pickCtx.sel.rc.splice(i,1); else pickCtx.sel.rc.push(s); renderPick(); return; }
+      var ab=e.target.closest('[data-ab]');
+      if(ab){ var id=parseInt(ab.getAttribute('data-ab'),10), j=pickCtx.sel.ab.indexOf(id);
+        if(j>=0) pickCtx.sel.ab.splice(j,1); else pickCtx.sel.ab.push(id); renderPick(); }
+    });
+    el('tp-pick-done').addEventListener('click',function(){
+      var c=pickCtx; el('tp-pick').classList.remove('open');
+      if(c.wd) saveDay(c.wk,c.room,c.wd,c.sel.rc,c.sel.ab);
+      else     saveWeek(c.wk,c.room,c.sel.rc,c.sel.ab);
+    });
+
+    el('tp-saveeval').addEventListener('click',function(){
+      if(!PLAN){ msg('tp-evalmsg','Save the termly plan first.','bad'); return; }
+      msg('tp-evalmsg','Saving…');
+      Wren.api(API+'/evaluation',{method:'PUT',body:{
+        plan_id:PLAN.id, evaluation:el('tp-eval').value, carry_forward:el('tp-carry').value}})
+        .then(function(){ msg('tp-evalmsg','Saved ✓','ok'); loadPlan(); })
+        .catch(function(e){ msg('tp-evalmsg',e.message||'Failed','bad'); });
+    });
+    el('tp-kids').addEventListener('click',function(e){
+      var b=e.target.closest('[data-savekid]'); if(!b) return;
+      var id=parseInt(b.getAttribute('data-savekid'),10), acts=[];
+      try{ acts=JSON.parse(b.getAttribute('data-acts'))||[]; }catch(_){}
+      b.disabled=true; b.textContent='…';
+      Wren.api(API+'/child-evaluation',{method:'PUT',body:{
+        plan_id:PLAN.id, child_id:id,
+        evaluation:document.querySelector('[data-ev="'+id+'"]').value,
+        next_focus:document.querySelector('[data-nf="'+id+'"]').value,
+        activity_ids:acts.filter(function(x){return x;})
+      }}).then(function(){ b.disabled=false; b.textContent='✓'; })
+        .catch(function(){ b.disabled=false; b.textContent='💾'; });
+    });
+
+    /* b217 — the break view's two actions: evaluate the half-term that just
+       ended, or start next half-term's plan as a draft. */
+    el('tp-break').addEventListener('click',function(e){
+      var b=e.target.closest('[data-brk]'); if(!b) return;
+      selectPeriod('h:'+b.getAttribute('data-id'));
+      var act=b.getAttribute('data-brk');
+      loadPlan().then(function(){ go(act==='evaluate'?2:0); });
+    });
+
+    /* b217 — term dates are data. A manager edits them here; nobody else sees
+       the button, and the API refuses the write either way. */
+    var me=currentUser();
+    if(CAL_ROLES.indexOf(me.role)>=0){
+      el('tp-caledit').style.display='';
+      el('tp-caledit').addEventListener('click',function(){
+        el('tp-cal').classList.add('open'); msg('tp-cal-msg','');
+        if(!CALEDIT) loadCalEditor().catch(function(e){ msg('tp-cal-msg',e.message||'Failed','bad'); });
+      });
+    }
+    el('tp-cal-close').addEventListener('click',function(){ el('tp-cal').classList.remove('open'); });
+    el('tp-cal').addEventListener('click',function(e){ if(e.target===this) this.classList.remove('open'); });
+    el('tp-cal-year').addEventListener('change',renderCalEditor);
+    el('tp-cal-addbreak').addEventListener('click',calAddBreak);
+    el('tp-cal-in').addEventListener('click',function(e){
+      var t=e.target.closest('[data-tsave]'); if(t){ calSaveTerm(t.getAttribute('data-tsave')); return; }
+      var b=e.target.closest('[data-bsave]'); if(b){ calSaveBreak(b.getAttribute('data-bsave')); return; }
+      var d=e.target.closest('[data-bdel]');  if(d){ calDelBreak(d.getAttribute('data-bdel')); }
+    });
+
+    /* b217 — open on the half-term we are actually in. During a break there is
+       no current half-term, so open on the one that just finished (to evaluate)
+       or, failing that, the one coming up (to draft). */
+    Promise.all([loadContext(), loadNow()]).then(function(){
+      var qs=new URLSearchParams(location.search);
+      var want=qs.get('half_term_id') ? 'h:'+qs.get('half_term_id')
+             : (qs.get('term_id') ? 'f:'+qs.get('term_id')
+             : (NOW && NOW.open_on ? 'h:'+NOW.open_on.id : ''));
+      if(want) selectPeriod(want);
+      renderBreak();
+      return loadPlan().then(function(){
+        if(qs.get('tab')==='evaluate') { go(2); return; }
+        // A break week opens on evaluation, not on a week grid nobody will fill.
+        if(NOW && NOW.week && !NOW.week.plannable && NOW.open_reason==='evaluate_previous') go(2);
+      });
+    });
+  }
+  document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

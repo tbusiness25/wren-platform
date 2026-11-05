@@ -1,0 +1,291 @@
+const express = require('express');
+const router = express.Router();
+const { getPool } = require('../db/pool');
+const authenticate = require('../middleware/auth');
+const schema = () => process.env.PG_SCHEMA || 'ladn';
+// b501 (Tasks v2): Action Plans are now project tasks. This API still answers exactly as before, and anything written
+// through it is mirrored into tasks (src/lib/task-projects.js) so a plan never exists in one place only.
+const TP = require('../lib/task-projects');
+const { hasRole } = require('../middleware/auth'); // one role rule: ROLE_SATISFIES in src/middleware/auth.js
+
+// Whisper transcription helper (Node 20 native FormData)
+async function transcribeAudio(filePath) {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const buffer = fs.readFileSync(filePath);
+    const blob = new Blob([buffer], { type: 'audio/webm' });
+    const form = new FormData();
+    form.append('file', blob, path.basename(filePath));
+    const resp = await fetch('http://wren-whisper:9876/transcribe', {
+      method: 'POST', body: form, signal: AbortSignal.timeout(90000)
+    });
+    if (!resp.ok) { console.error('[whisper] HTTP', resp.status, await resp.text().catch(()=> '')); return null; }
+    const j = await resp.json().catch(() => null);
+    return j && typeof j.text === 'string' ? j.text.trim() : null;
+  } catch (e) { console.error('[whisper] transcription failed:', e.cause?.code || e.message); return null; }
+}
+
+router.use(authenticate);
+
+// GET /escalated — action plans >7 days past target with no recent progress note
+router.get('/escalated', async (req, res) => {
+  if (!hasRole(req.user, ['manager','deputy_manager', 'admin','room_leader','senior_practitioner'])) return res.status(403).json({error:'Forbidden'});
+  try {
+    const db = getPool();
+    const { rows } = await db.query(`
+      SELECT ap.*, s.first_name || ' ' || s.last_name as owner_name
+      FROM ${schema()}.action_plans ap
+      LEFT JOIN ${schema()}.staff s ON s.id=ap.owner_staff_id
+      WHERE ap.status NOT IN ('completed','cancelled')
+        AND ap.target_date IS NOT NULL
+        AND ap.target_date < NOW()::date - 7
+        AND (
+          ap.progress_notes = '[]'::jsonb
+          OR NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(ap.progress_notes) pn
+            WHERE (pn->>'date')::date > NOW()::date - 7
+          )
+        )
+      ORDER BY ap.target_date ASC
+    `);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET / — list action plans
+router.get('/', async (req, res) => {
+  const isManager = hasRole(req.user, ['manager','deputy_manager', 'admin','room_leader','senior_practitioner']);
+  try {
+    const db = getPool();
+    let q = `
+      SELECT ap.*, s.first_name || ' ' || s.last_name as owner_name,
+        s2.first_name || ' ' || s2.last_name as created_by_name,
+        sv.scheduled_date as linked_supervision_date
+      FROM ${schema()}.action_plans ap
+      LEFT JOIN ${schema()}.staff s ON s.id = ap.owner_staff_id
+      LEFT JOIN ${schema()}.staff s2 ON s2.id = ap.created_by
+      LEFT JOIN ${schema()}.supervisions sv ON sv.id = ap.supervision_id
+    `;
+    const params = [];
+    if (!isManager) {
+      q += ` WHERE ap.owner_staff_id=$1 OR ap.actions::text LIKE '%"assignee_id":${req.user.id}%'`;
+      params.push(req.user.id);
+    }
+    q += ' ORDER BY CASE ap.priority WHEN \'urgent\' THEN 1 WHEN \'high\' THEN 2 WHEN \'medium\' THEN 3 ELSE 4 END, ap.target_date ASC NULLS LAST';
+    const { rows } = await db.query(q, params);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /:id
+router.get('/:id', async (req, res) => {
+  const isManager = hasRole(req.user, ['manager','deputy_manager', 'admin','room_leader','senior_practitioner']);
+  try {
+    const db = getPool();
+    const { rows } = await db.query(`
+      SELECT ap.*, s.first_name || ' ' || s.last_name as owner_name,
+        sv.scheduled_date as linked_supervision_date, sv.type as linked_supervision_type
+      FROM ${schema()}.action_plans ap
+      LEFT JOIN ${schema()}.staff s ON s.id = ap.owner_staff_id
+      LEFT JOIN ${schema()}.supervisions sv ON sv.id = ap.supervision_id
+      WHERE ap.id=$1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    // IDOR guard: non-managers can only read plans they own or are assigned to
+    if (!isManager) {
+      const ap = rows[0];
+      const apOwner = Number(ap.owner_staff_id) || 0;
+      const userId = Number(req.user.id);
+      if (apOwner !== userId) {
+        // Check if user is assigned in the actions JSON
+        const actions = ap.actions || ap.actions_json || [];
+        const rawActions = typeof actions === 'string' ? actions : JSON.stringify(actions);
+        let found = false;
+        try {
+          const arr = typeof actions === 'string' ? JSON.parse(actions) : actions;
+          found = Array.isArray(arr) && arr.some(a => Number(a.assignee_id || a.assigned_staff_id || 0) === userId);
+        } catch { found = false; }
+        if (!found) return res.status(403).json({ error: 'Forbidden — not your action plan' });
+      }
+    }
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /
+router.post('/', async (req, res) => {
+  const { title, area, priority, description, success_criteria, actions, target_date,
+          owner_staff_id, linked_to, linked_id, supervision_id, visible_to_parents } = req.body;
+  if (!title) return res.status(400).json({ error: 'title required' });
+  try {
+    const db = getPool();
+    const { rows } = await db.query(`
+      INSERT INTO ${schema()}.action_plans (title, area, priority, description, success_criteria, actions,
+        target_date, owner_staff_id, linked_to, linked_id, supervision_id, created_by,
+        progress_notes, evidence_attachments, visible_to_parents)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'[]','[]',$13)
+      RETURNING *
+    `, [title, area, priority||'medium', description, success_criteria,
+        JSON.stringify(actions||[]), target_date||null,
+        owner_staff_id||req.user.id, linked_to||null, linked_id||null,
+        supervision_id||null, req.user.id, visible_to_parents||false]);
+    await TP.foldPlan(db, rows[0].id);
+    res.status(201).json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /:id
+router.put('/:id', async (req, res) => {
+  // IDOR guard: owner or manager
+  try {
+    const db = getPool();
+    const { rows: apRows } = await db.query(
+      `SELECT owner_staff_id FROM ${schema()}.action_plans WHERE id=$1`, [req.params.id]
+    );
+    if (!apRows.length) return res.status(404).json({ error: 'Not found' });
+    const isManager = hasRole(req.user, ['manager','deputy_manager', 'admin','room_leader','senior_practitioner']);
+    if (!isManager) {
+      const apOwner = Number(apRows[0].owner_staff_id) || 0;
+      if (apOwner !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Forbidden — only the owner or a manager' });
+      }
+    }
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  const fields = ['title','area','priority','status','description','success_criteria','actions',
+    'target_date','completed_date','actual_completion_date','review_notes','owner_staff_id',
+    'linked_to','linked_id','supervision_id','progress_notes','evidence_attachments',
+    'visible_to_parents'];
+  const jsonFields = ['actions','progress_notes','evidence_attachments'];
+  const updates=[], vals=[];
+  fields.forEach(f=>{
+    if(req.body[f]!==undefined){
+      vals.push(jsonFields.includes(f)?JSON.stringify(req.body[f]):req.body[f]);
+      updates.push(`${f}=$${vals.length}`);
+    }
+  });
+  if(!updates.length) return res.status(400).json({error:'No fields'});
+  updates.push(`updated_at=NOW()`);
+  vals.push(req.params.id);
+  try {
+    const db = getPool();
+    const { rows } = await db.query(
+      `UPDATE ${schema()}.action_plans SET ${updates.join(',')} WHERE id=$${vals.length} RETURNING *`, vals
+    );
+    if (rows[0]) { await TP.foldPlan(db, rows[0].id); await TP.syncPlanFields(db, rows[0].id); }
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /:id/progress-note — add a progress note (text or voice)
+router.post('/:id/progress-note', async (req, res) => {
+  const { note, voice_transcript } = req.body;
+  const text = note || voice_transcript;
+  if (!text) return res.status(400).json({ error: 'note or voice_transcript required' });
+  try {
+    const db = getPool();
+    const { rows: ap } = await db.query(
+      `SELECT progress_notes, owner_staff_id FROM ${schema()}.action_plans WHERE id=$1`, [req.params.id]
+    );
+    if (!ap.length) return res.status(404).json({ error: 'Not found' });
+    // IDOR guard: only owner or manager may add progress notes
+    const isManager = hasRole(req.user, ['manager','deputy_manager', 'admin','room_leader','senior_practitioner']);
+    if (!isManager && (Number(ap[0].owner_staff_id) || 0) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden — only the owner or a manager' });
+    }
+    const notes = ap[0].progress_notes || [];
+    notes.push({ date: new Date().toISOString().split('T')[0], note: text, by: req.user.username || req.user.id, source: voice_transcript ? 'voice' : 'text' });
+    await db.query(`UPDATE ${schema()}.action_plans SET progress_notes=$1, updated_at=NOW() WHERE id=$2`, [JSON.stringify(notes), req.params.id]);
+    res.json({ ok: true, notes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /:id
+router.delete('/:id', async (req, res) => {
+  if (!hasRole(req.user, ['manager','deputy_manager', 'admin','room_leader','senior_practitioner'])) return res.status(403).json({error:'Forbidden'});
+  try {
+    const db = getPool();
+    await TP.archivePlan(db, req.params.id);   // b501: the project task is archived, never deleted
+    await db.query(`DELETE FROM ${schema()}.action_plans WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── New routes added for cross-portal action plans module ─────────────────────
+
+// PATCH /:id — soft-archive, scope, category changes (manager only)
+// Coexists with PUT /:id above (different HTTP method).
+router.patch('/:id', async (req, res) => {
+  if (!hasRole(req.user, ['manager', 'deputy_manager', 'admin'])) return res.status(403).json({ error: 'Forbidden' });
+  const allowed = ['title', 'scope', 'category', 'description', 'status', 'priority',
+    'target_date', 'owner_staff_id', 'related_child_id', 'archived_at'];
+  const updates = [], vals = [];
+  for (const f of allowed) {
+    if (req.body[f] !== undefined) {
+      vals.push(req.body[f]);
+      updates.push(`${f}=$${vals.length}`);
+    }
+  }
+  if (!updates.length) return res.status(400).json({ error: 'No fields' });
+  updates.push('updated_at=NOW()');
+  vals.push(req.params.id);
+  try {
+    const db = getPool();
+    const { rows } = await db.query(
+      `UPDATE ${schema()}.action_plans SET ${updates.join(',')} WHERE id=$${vals.length} RETURNING *`, vals
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    await TP.foldPlan(db, rows[0].id); await TP.syncPlanFields(db, rows[0].id);
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /:id/items — convenience: add action item to a plan (delegates to items table)
+router.post('/:id/items', async (req, res) => {
+  const isManager = hasRole(req.user, ['manager', 'deputy_manager', 'admin', 'room_leader', 'senior_practitioner']);
+  if (!isManager) return res.status(403).json({ error: 'Manager role required' });
+  const { title, description, priority, deadline, category, tags, assigned_staff_id } = req.body;
+  if (!title) return res.status(400).json({ error: 'title required' });
+  try {
+    const db = getPool();
+    const { rows: plan } = await db.query(
+      `SELECT id, title, scope FROM ${schema()}.action_plans WHERE id=$1 AND archived_at IS NULL`, [req.params.id]
+    );
+    if (!plan.length) return res.status(404).json({ error: 'Plan not found' });
+    const { rows } = await db.query(`
+      INSERT INTO ${schema()}.action_plan_items
+        (plan_id, title, description, priority, deadline, category, tags, assigned_staff_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
+    `, [req.params.id, title, description || null, priority || 'medium',
+        deadline || null, category || null, tags || null, assigned_staff_id || null]);
+    if (assigned_staff_id) {
+      // login-20261023: through the one Telegram sender (src/lib/notifications.js), which carries the dev guard.
+      const dl = deadline ? ` (due ${new Date(deadline).toLocaleDateString('en-GB')})` : '';
+      require('../lib/notifications').sendTelegramNow({ parse_mode: null,
+        text: `[ACTIONS] New action assigned: "${title}"${dl} on plan "${plan[0].title}"` });
+    }
+    await TP.foldPlan(db, req.params.id);
+    res.status(201).json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /plan-items/:id — fetch items + stats for a specific plan
+router.get('/plan-items/:id', async (req, res) => {
+  try {
+    const db = getPool();
+    if (!(await require('../lib/action-plan-access').canSeePlan(db, req.user, req.params.id, schema())))
+      return res.status(403).json({ error: 'Forbidden — not your action plan' });
+    const { rows } = await db.query(`
+      SELECT i.*,
+             s.first_name || ' ' || s.last_name AS assignee_name,
+             (SELECT COUNT(*)::int FROM ${schema()}.action_plan_comments c WHERE c.item_id = i.id) AS comment_count
+      FROM ${schema()}.action_plan_items i
+      LEFT JOIN ${schema()}.staff s ON s.id = i.assigned_staff_id
+      WHERE i.plan_id = $1
+      ORDER BY i.position ASC, i.deadline ASC NULLS LAST
+    `, [req.params.id]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+module.exports = router;

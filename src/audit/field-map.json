@@ -1,0 +1,353 @@
+{
+  "_": "b314 — every editable field that matters → where it is meant to land → who reads it.",
+  "_why": "POST /room-move wrote children.room_id and returned 201. Occupancy reads child_bookings.room_id. A round-trip test PASSES on that bug: write the field, read the field back, green. So this map records CONSUMERS, and scripts/b314-field-audit.js asserts against them, not against the field it just wrote.",
+  "_how_built": "By reading the source, not by guessing. Form controls come from src/audit/control-inventory.json (scripts/b314-extract-controls.js). Destination tables and consumer endpoints come from src/audit/consumer-graph.json (scripts/b314-trace-consumers.js), which parses the SQL in every route file and attributes it to the endpoint it sits in.",
+  "_verdicts": {
+    "PASS": "wrote, every declared table changed, and every consumer now reports the new value",
+    "FAIL": "wrote and landed, but a consumer still reports the OLD value — the room bug",
+    "PARTIAL": "some declared destination tables changed and others did not",
+    "SILENT": "the endpoint returned 2xx and not one declared table changed",
+    "UNMAPPED": "a form control whose endpoint or destination could not be determined — an untested field, reported not skipped"
+  },
+  "_blast": "5 = feeds ratios or safety · 4 = feeds money · 3 = feeds a lifecycle decision · 2 = feeds a report · 1 = a display label",
+  "_scope": "The four portals wren-ladn serves: admin (Roost), learning (EY), hr, parents. Demo editions are separate containers and are out of scope.",
+  "fields": [
+    {
+      "id": "child.room_id@children-put",
+      "surface": "Roost · Child profile → Details / Children → bulk edit / Admissions → convert",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "[data-cf] / bulk-edit room column"
+      },
+      "field": "room_id",
+      "blast": 5,
+      "writes_via": "PUT /api/children/:id",
+      "lands_in": [
+        "ladn.children.room_id",
+        "ladn.children.room",
+        "ladn.child_bookings.room_id"
+      ],
+      "note": "b190 added _propagateRoomChange(): a room change closes the live booking the day before and opens a new one in the new room. That is what makes occupancy follow.",
+      "consumers": [
+        "GET /api/children/:id",
+        "GET /api/bookings/child/:childId",
+        "GET /api/occupancy-v2/person/child/:id",
+        "GET /api/occupancy-calendar/grid",
+        "GET /api/rota/week/:date/ratio",
+        "GET /api/occupancy/projection"
+      ]
+    },
+    {
+      "id": "child.room_id@room-move",
+      "surface": "Roost · Child profile → \"Move to room\"",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "#rm-room + #rm-date"
+      },
+      "field": "to_room_id",
+      "blast": 5,
+      "writes_via": "POST /api/occupancy-v2/room-move",
+      "lands_in": [
+        "ladn.child_room_moves",
+        "ladn.children.room_id",
+        "ladn.child_bookings.room_id"
+      ],
+      "note": "THE BUG TOBY FOUND (2026-09-10). child_bookings was not in this list until b314.",
+      "consumers": [
+        "GET /api/occupancy-v2/room-moves",
+        "GET /api/occupancy-v2/person/child/:id",
+        "GET /api/occupancy-calendar/grid",
+        "GET /api/rota/week/:date/ratio",
+        "GET /api/occupancy/projection"
+      ]
+    },
+    {
+      "id": "booking.room_id",
+      "surface": "Roost · Child profile → Bookings",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "#bk-room"
+      },
+      "field": "room_id",
+      "blast": 5,
+      "writes_via": "PUT /api/bookings/:id",
+      "lands_in": [
+        "ladn.child_bookings.room_id"
+      ],
+      "note": "The reverse direction of the room bug: this moves the booking without moving children.room_id, so the profile and the register disagree the other way round.",
+      "consumers": [
+        "GET /api/bookings/child/:childId",
+        "GET /api/occupancy-calendar/grid",
+        "GET /api/rota/week/:date/ratio",
+        "GET /api/children/:id"
+      ]
+    },
+    {
+      "id": "booking.days",
+      "surface": "Roost · Child profile → Bookings (Mon–Fri tick boxes)",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "booking weekday checkboxes (no id — addressed positionally)"
+      },
+      "field": "mon..fri",
+      "blast": 5,
+      "writes_via": "PUT /api/bookings/:id",
+      "lands_in": [
+        "ladn.child_bookings.mon",
+        "ladn.child_bookings.tue",
+        "ladn.child_bookings.wed",
+        "ladn.child_bookings.thu",
+        "ladn.child_bookings.fri"
+      ],
+      "consumers": [
+        "GET /api/occupancy-calendar/grid",
+        "GET /api/rota/week/:date/ratio",
+        "GET /api/occupancy/projection",
+        "GET /api/occupancy-v2/person/child/:id"
+      ]
+    },
+    {
+      "id": "booking.funded",
+      "surface": "Roost · Child profile → Bookings",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "#bk-funded"
+      },
+      "field": "funded",
+      "blast": 4,
+      "writes_via": "PUT /api/bookings/:id",
+      "lands_in": [
+        "ladn.child_bookings.funded"
+      ],
+      "consumers": [
+        "GET /api/bookings/child/:childId"
+      ]
+    },
+    {
+      "id": "child.date_of_birth",
+      "surface": "Roost · Child profile → Details",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "date-of-birth field"
+      },
+      "field": "date_of_birth",
+      "blast": 5,
+      "writes_via": "PUT /api/children/:id",
+      "lands_in": [
+        "ladn.children.date_of_birth"
+      ],
+      "note": "Age band drives the staffing ratio: under-2 is 1:3, two is 1:4/1:5, three-plus is 1:8/1:13. A wrong DOB is a wrong legal requirement.",
+      "consumers": [
+        "GET /api/children/:id",
+        "GET /api/rota/week/:date/ratio",
+        "GET /api/occupancy-v2/person/child/:id"
+      ]
+    },
+    {
+      "id": "child.allergies",
+      "surface": "Roost · Child profile → Details (\"Allergies\")",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "allergies field"
+      },
+      "field": "allergies",
+      "blast": 5,
+      "writes_via": "PUT /api/children/:id",
+      "lands_in": [
+        "ladn.children.allergies"
+      ],
+      "consumers": [
+        "GET /api/children/:id",
+        "GET /api/kitchen/allergen-summary"
+      ]
+    },
+    {
+      "id": "child.food_allergies@about-me",
+      "surface": "Roost · Child profile → All About Me (\"Food Allergies\") — and the SAME box in the parents portal",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "#mw-allergies"
+      },
+      "field": "food_allergies",
+      "blast": 5,
+      "writes_via": "PUT /api/children/:id/about-me",
+      "lands_in": [
+        "ladn.child_about_me.food_allergies"
+      ],
+      "note": "A SECOND place to type a food allergy. src/routes/kitchen.js joins child_about_me for food_texture only — it takes allergies from children.allergies / allergens / allergen_notes. Expected to FAIL against the kitchen consumers.",
+      "consumers": [
+        "GET /api/children/:id/about-me",
+        "GET /api/kitchen/allergen-summary",
+        "GET /api/kitchen/day-sheet"
+      ]
+    },
+    {
+      "id": "child.funded_hours",
+      "surface": "Roost · Child profile → Funding",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "funded-hours field"
+      },
+      "field": "funded_hours",
+      "blast": 4,
+      "writes_via": "PUT /api/children/:id",
+      "lands_in": [
+        "ladn.children.funded_hours"
+      ],
+      "consumers": [
+        "GET /api/children/:id",
+        "GET /api/occupancy-v2/person/child/:id"
+      ]
+    },
+    {
+      "id": "child.key_person_id",
+      "surface": "Roost · Child profile → Details",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "key-person select"
+      },
+      "field": "key_person_id",
+      "blast": 2,
+      "writes_via": "PUT /api/children/:id",
+      "lands_in": [
+        "ladn.children.key_person_id"
+      ],
+      "consumers": [
+        "GET /api/children/:id",
+        "GET /api/children/:id/profile"
+      ]
+    },
+    {
+      "id": "child.leave_date",
+      "surface": "Roost · Child profile → Details",
+      "control": {
+        "page": "editions/admin/public/child-profile.html",
+        "element": "leave-date field"
+      },
+      "field": "leave_date",
+      "blast": 3,
+      "writes_via": "PUT /api/children/:id",
+      "lands_in": [
+        "ladn.children.leave_date"
+      ],
+      "note": "A past leave_date also flips is_active immediately (b-fix in children.js) rather than waiting for the 02:45 nightly roll.",
+      "consumers": [
+        "GET /api/children/:id",
+        "GET /api/occupancy/projection"
+      ]
+    },
+    {
+      "id": "room.capacity",
+      "surface": "Roost · Settings → Rooms",
+      "control": {
+        "page": "editions/admin/public/settings.html",
+        "element": "room capacity input"
+      },
+      "field": "capacity",
+      "blast": 5,
+      "writes_via": "PUT /api/admin/rooms/:id",
+      "lands_in": [
+        "ladn.rooms.capacity"
+      ],
+      "consumers": [
+        "GET /api/occupancy-calendar/grid",
+        "GET /api/occupancy/projection",
+        "GET /api/occupancy-v2/rooms"
+      ]
+    },
+    {
+      "id": "room.name",
+      "surface": "Roost · Settings → Rooms (the room's name)",
+      "control": {
+        "page": "editions/admin/public/settings.html",
+        "element": "room name input"
+      },
+      "field": "display_name",
+      "blast": 3,
+      "writes_via": "PUT /api/admin/rooms/:id",
+      "lands_in": [
+        "ladn.rooms.display_name"
+      ],
+      "note": "The editor writes display_name. Occupancy, ratios, the kitchen sheets and public availability all SELECT rooms.name. Same shape as the room bug: the save works, the board keeps the old name.",
+      "consumers": [
+        "GET /api/occupancy-v2/rooms",
+        "GET /api/occupancy-calendar/grid",
+        "GET /api/rota/week/:date/ratio"
+      ]
+    },
+    {
+      "id": "staff.room_id",
+      "surface": "Roost · Staff → profile",
+      "control": {
+        "page": "editions/admin/public/staff-profile.html",
+        "element": "room select"
+      },
+      "field": "room_id",
+      "blast": 4,
+      "writes_via": "PUT /api/staff/:id",
+      "lands_in": [
+        "ladn.staff.room_id"
+      ],
+      "consumers": [
+        "GET /api/staff/:id",
+        "GET /api/occupancy-v2/person/staff/:id",
+        "GET /api/occupancy-v2/staff-roster"
+      ]
+    },
+    {
+      "id": "staff.contracted_hours",
+      "surface": "Roost · Staff → profile",
+      "control": {
+        "page": "editions/admin/public/staff-profile.html",
+        "element": "contracted hours input"
+      },
+      "field": "contracted_hours",
+      "blast": 4,
+      "writes_via": "PUT /api/staff/:id",
+      "lands_in": [
+        "ladn.staff.contracted_hours"
+      ],
+      "consumers": [
+        "GET /api/staff/:id",
+        "GET /api/occupancy-v2/staff-roster"
+      ]
+    }
+  ],
+  "unmapped_policy": "Every form control in src/audit/control-inventory.json that is not covered by a field above is UNMAPPED. The audit report states that count at the top. UNMAPPED is not a pass.",
+  "open_findings": [
+    {
+      "id": "room-change-rewrites-history",
+      "severity": "medium — past dates only; today and the future are correct",
+      "seen_as": "3 FAILs on 'GET /api/occupancy-calendar/grid — a PAST day must not move'",
+      "what": "child_bookings.room_id is one value for the whole booking period, and is_active is doing two jobs: 'not cancelled' and 'current'. Close-and-reopen (_propagateRoomChange) deactivates the old segment, and every occupancy loader filters is_active=true, so the child vanishes from the old room for every past date. An in-place room update on a booking rewrites the past the other way.",
+      "why_not_fixed": "The obvious loader fix (is_active=true OR end_date IS NOT NULL) is wrong on production: 38 inactive bookings carry source='attendance-derived' and an end date, deliberately superseded by the EyMan import. Including them would double-count last term.",
+      "options": [
+        "small: stamp the closed segment (source='room-transfer-closed') and include only those in the date-aware loaders",
+        "proper: make is_active mean 'not cancelled' only, and make 'current' a date question in every booking reader"
+      ],
+      "decision": "Toby"
+    },
+    {
+      "id": "funded-hours-dead-end",
+      "severity": "medium — a visible money field that changes nothing",
+      "seen_as": "FAIL on child.funded_hours vs GET /api/occupancy-v2/person/child/:id",
+      "what": "Roost > Children > edit child has a 'Funded Hours' number input (#f-funded in editions/admin/public/children.html) writing children.funded_hours. Every funding and fee calculation reads child_funding instead. On production not one child has children.funded_hours set — the column is vestigial.",
+      "why_not_fixed": "A single number cannot express what child_funding holds (term, type, universal/extended/stretched, eligibility code), so 'make it feed child_funding' is a decision about intent, not a translation.",
+      "options": [
+        "remove the field",
+        "keep it, label it, make it read-only"
+      ],
+      "decision": "Toby"
+    }
+  ],
+  "fixed_in_b314": [
+    "POST /api/occupancy-v2/room-move now calls _propagateRoomChange (the one transfer) instead of its own",
+    "PUT /api/bookings/:id and POST /api/bookings move children.room_id when the booking is live today",
+    "src/routes/import-wizard.js propagates a CSV room change to the booking",
+    "GET /api/rota/week/:date/ratio counts each room's OWN booked children instead of splitting by age",
+    "kitchen allergen-summary, day-sheet and chef briefing now read child_about_me.food_allergies",
+    "PUT /api/admin/rooms/:id writes rooms.name as well as rooms.display_name",
+    "PUT /api/children/:id bounds live bookings by a new leave_date",
+    "occupancy grid + ratio board report children with no live booking instead of under-counting silently"
+  ]
+}

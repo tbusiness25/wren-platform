@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Phonics Tracker — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b255 §4 — b247's phonics tracker, on Roost.
+   Toby went looking for the phonics tracker on Roost and it was not there: b247
+   built it EY-only, at /ey/phonics-tracker. This is the SAME tracker against the
+   SAME routes — /api/phonics/enrolled, /api/phonics/child/:id/tracker — so the
+   per-child switch keeps working exactly as it did. A child whose phonics switch
+   is off is not in /enrolled and every read/write for them 409s server-side
+   (b247RequireSwitch), so they stay invisible here too without this page having
+   to know anything about the gate.
+
+   What is different is only the chrome: Roost's tokens and controls rather than
+   the EY tablet's 44px touch targets. b247's rule still holds — every chip says
+   its own state in words, so the grid needs no key. */
+:root {
+  --pt-green-bg:  var(--c-green-light);
+  --pt-amber-bg:  var(--c-amber-light);
+  --pt-red-bg:    var(--c-red-light);
+}
+@supports (color: color-mix(in srgb, red 50%, white)) {
+  :root {
+    --pt-green-bg: color-mix(in srgb, var(--c-green) 22%, transparent);
+    --pt-amber-bg: color-mix(in srgb, var(--c-amber) 26%, transparent);
+    --pt-red-bg:   color-mix(in srgb, var(--c-red)   22%, transparent);
+  }
+}
+
+.pt-card { background: var(--c-surface); border: 1px solid var(--c-border);
+           border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+.pt-card h2 { font-size: .95rem; margin: 0 0 4px; color: var(--c-text); }
+.pt-muted { color: var(--c-muted); font-size: .8rem; line-height: 1.55; margin: 0; }
+.pt-hidden { display: none !important; }
+
+#pt-who { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#pt-who .pt-name { font-size: 1.05rem; font-weight: 700; color: var(--c-text); flex: 1; min-width: 160px; }
+
+.pt-block-title { font-size: .7rem; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: .6px; color: var(--c-muted); margin: 18px 2px 8px; }
+.pt-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.pt-chip { min-height: 62px; border-radius: 10px; border: 2px solid var(--c-border);
+           background: transparent; color: var(--c-text); display: flex; flex-direction: column;
+           align-items: center; justify-content: center; gap: 1px; padding: 6px 4px;
+           cursor: pointer; font-family: inherit;
+           transition: transform .08s ease, background .12s ease, border-color .12s ease; }
+.pt-chip:active { transform: scale(.96); }
+.pt-chip .pt-sound { font-size: 1.25rem; font-weight: 800; line-height: 1.1; }
+.pt-chip .pt-eg    { font-size: .62rem; color: var(--c-muted); line-height: 1.1; }
+.pt-chip .pt-state { font-size: .6rem; font-weight: 700; text-transform: lowercase;
+                     line-height: 1.1; margin-top: 2px; color: var(--c-muted); }
+.pt-chip[data-state="green"] { background: var(--pt-green-bg); border-color: var(--c-green); }
+.pt-chip[data-state="green"] .pt-state, .pt-chip[data-state="green"] .pt-sound { color: var(--c-green); }
+.pt-chip[data-state="amber"] { background: var(--pt-amber-bg); border-color: var(--c-amber); }
+.pt-chip[data-state="amber"] .pt-state, .pt-chip[data-state="amber"] .pt-sound { color: var(--c-amber); }
+.pt-chip[data-state="red"]   { background: var(--pt-red-bg);   border-color: var(--c-red); }
+.pt-chip[data-state="red"] .pt-state, .pt-chip[data-state="red"] .pt-sound { color: var(--c-red); }
+.pt-chip.pt-saving { opacity: .55; }
+
+#pt-cvc-block .pt-chip { min-height: 66px; width: 100%; flex-direction: row; gap: 14px;
+                         justify-content: flex-start; padding: 10px 14px; text-align: left; }
+#pt-cvc-block .pt-chip .pt-sound { font-size: 1rem; }
+#pt-cvc-block .pt-chip .pt-cvc-text { flex: 1; }
+#pt-cvc-block .pt-chip .pt-state { margin-top: 0; font-size: .72rem; }
+
+.pt-kid { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 50px;
+          padding: 9px 12px; margin-bottom: 8px; border: 1px solid var(--c-border);
+          border-radius: 10px; background: transparent; color: var(--c-text);
+          font-family: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; text-align: left; }
+.pt-kid:hover { border-color: var(--c-blue); }
+.pt-kid small { display: block; font-weight: 400; font-size: .74rem; color: var(--c-muted); }
+.pt-kid .pt-chev { margin-left: auto; color: var(--c-muted); }
+
+.pt-sent { border-left: 3px solid var(--c-green); padding: 8px 10px; margin-top: 8px;
+           border-radius: 0 8px 8px 0; font-size: .82rem; color: var(--c-text);
+           background: var(--c-navy-light); }
+.pt-sent small { display: block; color: var(--c-muted); font-size: .72rem; }
+
+#pt-send { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 9000;
+           display: none; align-items: center; justify-content: center; padding: 16px; }
+#pt-send.open { display: flex; }
+#pt-send-sheet { background: var(--c-navy-mid, var(--c-surface)); border: 1px solid var(--c-border);
+                 border-radius: 14px; width: 100%; max-width: 640px; max-height: 84vh;
+                 overflow-y: auto; padding: 16px 18px; }
+#pt-send-tabs { display: flex; gap: 8px; margin: 12px 0; }
+#pt-send-tabs button { flex: 1; min-height: 36px; border-radius: 8px; font-family: inherit;
+                       font-size: .82rem; font-weight: 700; cursor: pointer;
+                       border: 1px solid var(--c-border); background: transparent; color: var(--c-muted); }
+#pt-send-tabs button.on { background: var(--c-blue); border-color: var(--c-blue); color: #fff; }
+#pt-send-q { width: 100%; min-height: 36px; border-radius: 8px; padding: 8px 10px;
+             border: 1px solid var(--c-border); background: transparent;
+             color: var(--c-text); font-family: inherit; font-size: .9rem; }
+.pt-sendcard { width: 100%; text-align: left; border: 1px solid var(--c-border); border-radius: 10px;
+               padding: 10px 12px; margin-top: 8px; background: transparent; color: var(--c-text);
+               font-family: inherit; cursor: pointer; }
+.pt-sendcard:hover { border-color: var(--c-blue); }
+.pt-sendcard b { display: block; font-size: .88rem; }
+.pt-sendcard small { display: block; color: var(--c-muted); font-size: .76rem; margin-top: 2px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title">🔤 Phonics Tracker</div>
+      <div style="font-size:.78rem;color:var(--c-muted);margin-top:2px">
+        The same tracker the EY tablets use. Only children whose phonics switch is on appear here.
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn btn-sm btn-ghost" href="/phonics-library.html">📖 Phonics library</a>
+      <a class="btn btn-sm btn-ghost" href="/framework-tracker.html">📈 Tracker grid</a>
+    </div>
+  </div>
+
+  <div class="pt-card pt-hidden" id="pt-who-card">
+    <div id="pt-who">
+      <span class="pt-name" id="pt-name">Loading…</span>
+      <button class="btn btn-sm btn-ghost" id="pt-change" type="button">Change child</button>
+    </div>
+    <p class="pt-muted" id="pt-started" style="margin-top:6px"></p>
+  </div>
+
+  <div class="pt-card pt-hidden" id="pt-picker-card">
+    <h2>Who are you tracking?</h2>
+    <p class="pt-muted">Only children whose phonics switch is on appear here. Turn it on from a
+      child's profile to start them.</p>
+    <div id="pt-picker-list" style="margin-top:12px"></div>
+  </div>
+
+  <div id="pt-grid-wrap" class="pt-hidden">
+    <div class="pt-card">
+      <div id="pt-blocks"></div>
+      <div id="pt-cvc-block" class="pt-hidden">
+        <div class="pt-block-title">Reading whole words</div>
+        <div id="pt-cvc"></div>
+      </div>
+    </div>
+
+    <div class="pt-card">
+      <h2>📮 Send a book or game home</h2>
+      <p class="pt-muted">Goes to the family as a next step — they can print it or work through it
+        in the parents app.</p>
+      <div style="margin-top:10px"><button class="btn btn-sm" id="pt-send-open" type="button">Choose a book or game</button></div>
+      <div id="pt-sent-list"></div>
+    </div>
+  </div>
+
+  <div class="pt-card pt-hidden" id="pt-off-card">
+    <h2>Not in phonics yet</h2>
+    <p class="pt-muted" id="pt-off-msg">This child has not started phonics.</p>
+    <div style="margin-top:10px"><button class="btn btn-sm btn-ghost" id="pt-off-profile" type="button">Open their profile</button></div>
+  </div>
+
+</div>
+
+<div id="pt-send" role="dialog" aria-modal="true" aria-label="Choose a book or game to send home">
+  <div id="pt-send-sheet">
+    <div style="display:flex;align-items:center;gap:10px">
+      <strong style="flex:1;color:var(--c-text)">Send home</strong>
+      <button class="btn btn-sm btn-ghost" id="pt-send-close" type="button">Close</button>
+    </div>
+    <div id="pt-send-tabs">
+      <button type="button" data-kind="book" class="on">📖 Books</button>
+      <button type="button" data-kind="game">🎲 Games</button>
+    </div>
+    <input id="pt-send-q" type="search" placeholder="Search by name…" autocomplete="off">
+    <div id="pt-send-list"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+(function () {
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  function niceDate(v) {
+    if (!v) return '';
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+    var d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v);
+    return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function toast(m, k) { if (window.Wren && Wren.toast) Wren.toast(m, k || 'info'); }
+
+  // b247's cycle and vocabulary, unchanged — the two screens must not disagree
+  // about what a colour means or how many taps green costs.
+  var CYCLE = ['not_yet', 'green', 'amber', 'red'];
+  var WORD  = { not_yet: 'not yet', green: 'confident', amber: 'getting there', red: 'just met' };
+  function nextState(s) { return CYCLE[(CYCLE.indexOf(s) + 1) % CYCLE.length] || 'green'; }
+
+  var STATE = { childId: null, cards: null, kind: 'book', sending: false };
+
+  function chipHTML(item, isCvc) {
+    var st = item.state || 'not_yet';
+    if (isCvc) {
+      return '<button class="pt-chip" type="button" data-sound="' + esc(item.sound) + '" data-state="' + esc(st) + '"' +
+             ' aria-label="Decoding CVC words — ' + esc(WORD[st]) + '. Click to change.">' +
+             '<span class="pt-cvc-text"><span class="pt-sound" style="display:block">Decoding CVC words</span>' +
+             '<span class="pt-eg">' + esc(item.example || '') + '</span></span>' +
+             '<span class="pt-state">' + esc(WORD[st]) + '</span></button>';
+    }
+    return '<button class="pt-chip" type="button" data-sound="' + esc(item.sound) + '" data-state="' + esc(st) + '"' +
+           ' aria-label="' + esc(item.sound) + ' — ' + esc(WORD[st]) + '. Click to change.">' +
+           '<span class="pt-sound">' + esc(item.sound) + '</span>' +
+           (item.example ? '<span class="pt-eg">' + esc(item.example) + '</span>' : '') +
+           '<span class="pt-state">' + esc(WORD[st]) + '</span></button>';
+  }
+
+  function renderGrid(d) {
+    var byPhase = {};
+    (d.sounds || []).forEach(function (s) { (byPhase[s.phase] || (byPhase[s.phase] = [])).push(s); });
+    var html = '';
+    Object.keys(byPhase).sort().forEach(function (p) {
+      html += '<div class="pt-block-title">' + (p === '2' ? 'First sounds' : 'Next sounds') + '</div>';
+      html += '<div class="pt-grid">' + byPhase[p].map(function (s) { return chipHTML(s, false); }).join('') + '</div>';
+    });
+    document.getElementById('pt-blocks').innerHTML = html;
+
+    var cvcBlock = document.getElementById('pt-cvc-block');
+    if (d.cvc) {
+      document.getElementById('pt-cvc').innerHTML = chipHTML(d.cvc, true);
+      cvcBlock.classList.remove('pt-hidden');
+    } else { cvcBlock.classList.add('pt-hidden'); }
+  }
+
+  function onChipClick(btn) {
+    if (btn.classList.contains('pt-saving')) return;
+    var sound = btn.getAttribute('data-sound');
+    var was = btn.getAttribute('data-state') || 'not_yet';
+    var now = nextState(was);
+    btn.setAttribute('data-state', now);
+    btn.querySelector('.pt-state').textContent = WORD[now];
+    btn.classList.add('pt-saving');
+    Wren.api('/api/phonics/child/' + STATE.childId + '/tracker',
+      { method: 'PUT', body: { sound: sound, state: now } })
+      .then(function () { btn.classList.remove('pt-saving'); })
+      .catch(function (e) {
+        btn.setAttribute('data-state', was);
+        btn.querySelector('.pt-state').textContent = WORD[was];
+        btn.classList.remove('pt-saving');
+        toast((e && (e.error === 'phonics_off' ? 'Phonics is off for this child' : (e.error || e.message))) || 'Could not save', 'error');
+      });
+  }
+
+  // ── Send home ────────────────────────────────────────────────────────────
+  function renderSendList() {
+    var host = document.getElementById('pt-send-list');
+    var q = (document.getElementById('pt-send-q').value || '').trim().toLowerCase();
+    var list = (STATE.cards || []).filter(function (c) { return c.kind === STATE.kind; });
+    if (q) list = list.filter(function (c) { return (c.name + ' ' + (c.description || '')).toLowerCase().indexOf(q) !== -1; });
+    if (!list.length) { host.innerHTML = '<p class="pt-muted" style="margin-top:12px">Nothing matches.</p>'; return; }
+    host.innerHTML = list.map(function (c) {
+      return '<button class="pt-sendcard" type="button" data-act="' + c.activity_id + '"><b>' + esc(c.name) + '</b>' +
+             '<small>' + esc(String(c.description || '').slice(0, 130)) + '</small></button>';
+    }).join('');
+  }
+
+  function openSend() {
+    document.getElementById('pt-send').classList.add('open');
+    if (STATE.cards) { renderSendList(); return; }
+    document.getElementById('pt-send-list').innerHTML = '<p class="pt-muted" style="margin-top:12px">Loading…</p>';
+    Wren.api('/api/phonics/home-cards').then(function (r) {
+      STATE.cards = (r && r.cards) || [];
+      renderSendList();
+    }).catch(function () {
+      document.getElementById('pt-send-list').innerHTML =
+        '<p class="pt-muted" style="margin-top:12px">Could not load the books and games.</p>';
+    });
+  }
+
+  function sendCard(activityId) {
+    if (STATE.sending) return;
+    STATE.sending = true;
+    Wren.api('/api/phonics/child/' + STATE.childId + '/home-step',
+      { method: 'POST', body: { activity_id: Number(activityId) } })
+      .then(function (r) {
+        STATE.sending = false;
+        document.getElementById('pt-send').classList.remove('open');
+        toast(r && r.duplicate ? 'Already sent home' : 'Sent home', 'success');
+        loadSent();
+      })
+      .catch(function (e) {
+        STATE.sending = false;
+        toast((e && (e.error || e.message)) || 'Could not send', 'error');
+      });
+  }
+
+  function loadSent() {
+    var host = document.getElementById('pt-sent-list');
+    Wren.api('/api/phonics/child/' + STATE.childId + '/home-steps').then(function (rows) {
+      if (!rows || !rows.length) { host.innerHTML = ''; return; }
+      host.innerHTML = rows.map(function (r) {
+        return '<div class="pt-sent">' + (r.kind === 'book' ? '📖 ' : '🎲 ') + esc(r.name) +
+               '<small>' + esc(r.status === 'pending' ? 'with the family' : r.status) +
+               ' · ' + esc(niceDate(r.created_at)) + '</small></div>';
+      }).join('');
+    }).catch(function () { host.innerHTML = ''; });
+  }
+
+  // ── Loading ──────────────────────────────────────────────────────────────
+  function showPicker() {
+    document.getElementById('pt-who-card').classList.add('pt-hidden');
+    document.getElementById('pt-grid-wrap').classList.add('pt-hidden');
+    document.getElementById('pt-off-card').classList.add('pt-hidden');
+    document.getElementById('pt-picker-card').classList.remove('pt-hidden');
+    var host = document.getElementById('pt-picker-list');
+    host.innerHTML = '<p class="pt-muted">Loading…</p>';
+    Wren.api('/api/phonics/enrolled').then(function (kids) {
+      if (!kids || !kids.length) {
+        host.innerHTML = '<p class="pt-muted">No child has phonics switched on yet.</p>';
+        return;
+      }
+      host.innerHTML = kids.map(function (k) {
+        return '<button class="pt-kid" type="button" data-child="' + k.id + '">' +
+               '<span>' + esc(k.first_name + ' ' + (k.last_name || '')) +
+               '<small>' + esc(k.room_name || '') +
+               (k.started_on ? ' · since ' + esc(niceDate(k.started_on)) : '') + '</small></span>' +
+               '<span class="pt-chev">›</span></button>';
+      }).join('');
+    }).catch(function () { host.innerHTML = '<p class="pt-muted">Could not load the list.</p>'; });
+  }
+
+  function load(childId) {
+    STATE.childId = childId;
+    document.getElementById('pt-picker-card').classList.add('pt-hidden');
+    document.getElementById('pt-who-card').classList.remove('pt-hidden');
+    Wren.api('/api/phonics/child/' + childId + '/tracker').then(function (d) {
+      Wren.api('/api/children/' + childId).then(function (c) {
+        document.getElementById('pt-name').textContent =
+          c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : ('Child ' + childId);
+      }).catch(function () { document.getElementById('pt-name').textContent = 'Child ' + childId; });
+      document.getElementById('pt-started').textContent = d.started_on
+        ? 'Phonics since ' + niceDate(d.started_on) + (d.enabled_by_name ? ' · started by ' + d.enabled_by_name : '')
+        : '';
+      document.getElementById('pt-off-card').classList.add('pt-hidden');
+      document.getElementById('pt-grid-wrap').classList.remove('pt-hidden');
+      renderGrid(d);
+      loadSent();
+    }).catch(function (e) {
+      // 409 phonics_off — the gate is server-side, so this is the only branch
+      // Roost needs: the child exists, but phonics does not exist for them.
+      document.getElementById('pt-grid-wrap').classList.add('pt-hidden');
+      document.getElementById('pt-off-card').classList.remove('pt-hidden');
+      document.getElementById('pt-off-msg').textContent =
+        (e && (e.message || e.error)) || 'This child has not started phonics.';
+      document.getElementById('pt-name').textContent = 'Phonics';
+      document.getElementById('pt-started').textContent = '';
+    });
+  }
+
+  function boot() {
+    var params = new URLSearchParams(window.location.search);
+    var child = params.get('child') || params.get('child_id');
+
+    document.getElementById('pt-blocks').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.pt-chip') : null; if (b) onChipClick(b);
+    });
+    document.getElementById('pt-cvc').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.pt-chip') : null; if (b) onChipClick(b);
+    });
+    document.getElementById('pt-picker-list').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.pt-kid') : null;
+      if (b) load(b.getAttribute('data-child'));
+    });
+    document.getElementById('pt-change').addEventListener('click', showPicker);
+    document.getElementById('pt-off-profile').addEventListener('click', function () {
+      if (STATE.childId) window.location.href = '/child-profile.html?id=' + STATE.childId;
+    });
+    document.getElementById('pt-send-open').addEventListener('click', openSend);
+    document.getElementById('pt-send-close').addEventListener('click', function () {
+      document.getElementById('pt-send').classList.remove('open');
+    });
+    document.getElementById('pt-send').addEventListener('click', function (e) {
+      if (e.target.id === 'pt-send') this.classList.remove('open');
+    });
+    document.getElementById('pt-send-tabs').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button[data-kind]') : null;
+      if (!b) return;
+      STATE.kind = b.getAttribute('data-kind');
+      Array.prototype.forEach.call(this.querySelectorAll('button'), function (x) { x.classList.toggle('on', x === b); });
+      renderSendList();
+    });
+    document.getElementById('pt-send-q').addEventListener('input', renderSendList);
+    document.getElementById('pt-send-list').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.pt-sendcard') : null;
+      if (b) sendCard(b.getAttribute('data-act'));
+    });
+
+    if (child) load(child); else showPicker();
+  }
+
+  if (window.Wren && Wren.user) boot(); else document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

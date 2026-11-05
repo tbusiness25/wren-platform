@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Observation reviewer — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+  /* ══ b536 — the observation reviewer ═════════════════════════════════════════
+     Tokens only. Every colour below is a var(--c-*) or a color-mix() of one, so
+     the page follows whichever of Wren's appearance presets is chosen and reads
+     correctly in light AND dark. Checked at 390px: the filter bar becomes a
+     bottom sheet, the cards are single-column and nothing scrolls sideways. */
+  #or-wrap{max-width:1180px;margin:0 auto;padding:16px 16px 72px}
+  body.or-embed #or-wrap{padding-top:4px}
+
+  .or-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .or-head h1{font-size:1.3rem;margin:0;flex:1 1 18ch;line-height:1.25}
+  .or-sub{color:var(--c-muted);font-size:.84rem;margin:2px 0 0;max-width:78ch;line-height:1.5}
+
+  .or-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .or-btn{padding:8px 13px;border:1px solid var(--c-border-strong);background:var(--c-surface);color:var(--c-text);
+          border-radius:10px;cursor:pointer;font-family:inherit;font-size:.85rem;min-height:40px;display:inline-flex;
+          align-items:center;gap:6px}
+  .or-btn:hover{border-color:var(--c-blue)}
+  .or-btn[disabled]{opacity:.5;cursor:not-allowed}
+  .or-btn.primary{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-on-blue);font-weight:700}
+  .or-btn.anon{background:var(--c-orange);border-color:var(--c-orange);color:var(--c-on-orange);font-weight:700}
+  .or-tick{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;color:var(--c-muted);
+           padding:6px 10px;border:1px dashed var(--c-border-strong);border-radius:10px;min-height:40px}
+
+  /* ── the filter bar ───────────────────────────────────────────────────────── */
+  .or-bar{background:var(--c-surface);border:1px solid var(--c-border);border-radius:14px;padding:12px;margin:0 0 12px}
+  .or-bar h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);margin:0 0 8px}
+  .or-presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .or-presets button{padding:7px 12px;border:1px solid var(--c-border-strong);border-radius:999px;background:transparent;
+                     color:var(--c-text);cursor:pointer;font-family:inherit;font-size:.82rem;min-height:38px}
+  .or-presets button[aria-pressed="true"]{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-on-blue);font-weight:700}
+  .or-dates{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .or-dates label{font-size:.78rem;color:var(--c-muted)}
+
+  .or-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+  input.or-in,select.or-in{padding:8px 10px;border:1px solid var(--c-border-strong);border-radius:9px;
+    background:var(--c-surface-solid);color:var(--c-text);font-family:inherit;font-size:.85rem;min-height:40px;width:100%;
+    box-sizing:border-box}
+  input.or-in[type="date"]{min-width:9.5rem}
+  input.or-in:focus,select.or-in:focus,.or-pick>summary:focus-visible{outline:2px solid var(--c-focus);outline-offset:1px}
+
+  /* a multi-select that works with a thumb: a <details> panel of checkboxes */
+  .or-pick{position:relative}
+  .or-pick>summary{list-style:none;cursor:pointer;padding:8px 10px;border:1px solid var(--c-border-strong);
+    border-radius:9px;background:var(--c-surface-solid);color:var(--c-text);font-size:.85rem;min-height:40px;
+    display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .or-pick>summary::-webkit-details-marker{display:none}
+  .or-pick>summary::after{content:'▾';color:var(--c-muted);font-size:.8rem}
+  .or-pick[open]>summary{border-color:var(--c-blue)}
+  .or-pick .or-n{background:var(--c-blue);color:var(--c-on-blue);border-radius:999px;padding:0 7px;font-size:.72rem;font-weight:700}
+  .or-panel{position:absolute;z-index:40;top:calc(100% + 4px);left:0;right:0;max-height:min(50vh,340px);overflow:auto;
+    background:var(--c-surface-solid);border:1px solid var(--c-border-strong);border-radius:11px;padding:8px;
+    box-shadow:0 10px 28px var(--c-shadow)}
+  .or-panel input.or-search{margin-bottom:6px}
+  .or-opt{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:7px;font-size:.84rem;cursor:pointer;
+    min-height:36px;line-height:1.3}
+  .or-opt:hover{background:var(--c-tint-neutral)}
+  .or-opt input{flex:none;width:17px;height:17px}
+  .or-opt .or-c{margin-left:auto;color:var(--c-muted);font-size:.76rem;font-variant-numeric:tabular-nums;flex:none}
+  .or-opt .or-c.zero{opacity:.45}
+  .or-opt-group{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);
+    padding:8px 6px 3px;position:sticky;top:0;background:var(--c-surface-solid)}
+
+  /* ── chips ────────────────────────────────────────────────────────────────── */
+  .or-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}
+  .or-chip{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;padding:5px 6px 5px 10px;border-radius:999px;
+    background:var(--c-tint-blue);color:var(--c-text);border:1px solid var(--c-border)}
+  .or-chip button{all:unset;cursor:pointer;color:var(--c-muted);font-size:1rem;line-height:1;padding:0 4px;min-width:20px;
+    min-height:20px;text-align:center}
+  .or-chip button:hover{color:var(--c-danger)}
+  .or-clear{all:unset;cursor:pointer;font-size:.78rem;color:var(--c-blue);text-decoration:underline;padding:5px 4px}
+
+  .or-count{font-size:.88rem;color:var(--c-text);margin:0 0 10px;display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+  .or-count b{font-size:1.25rem;font-variant-numeric:tabular-nums}
+  .or-count .or-win{color:var(--c-muted);font-size:.8rem}
+
+  /* ── results ──────────────────────────────────────────────────────────────── */
+  .or-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:13px;padding:12px 14px;margin:0 0 9px}
+  .or-card-top{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+  .or-card-top h3{font-size:.98rem;margin:0;flex:1 1 14ch}
+  .or-meta{color:var(--c-muted);font-size:.78rem}
+  .or-tags{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0 0}
+  .or-tag{font-size:.71rem;padding:2px 8px;border-radius:999px;background:var(--c-tint-neutral);color:var(--c-text)}
+  .or-tag.area{background:var(--c-tint-blue)}
+  .or-tag.flag{background:var(--c-tint-amber)}
+  .or-tag.shared{background:var(--c-tint-green)}
+  .or-tag.pend{background:var(--c-tint-red)}
+  .or-body{font-size:.86rem;color:var(--c-text);line-height:1.55;margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+  .or-body.clipped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .or-more{all:unset;cursor:pointer;color:var(--c-blue);font-size:.79rem;text-decoration:underline;margin-top:6px;
+    display:inline-block;padding:4px 0;min-height:30px}
+  .or-field{margin-top:9px}
+  .or-field-l{font-size:.69rem;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);margin-bottom:2px}
+  .or-stmts{margin:7px 0 0;padding-left:1.1em;font-size:.8rem;color:var(--c-muted);line-height:1.5}
+
+  .or-pager{display:flex;gap:8px;align-items:center;justify-content:center;margin:16px 0 0;flex-wrap:wrap}
+  .or-empty{text-align:center;color:var(--c-muted);padding:38px 12px;font-size:.9rem;line-height:1.6}
+  .or-note{font-size:.78rem;color:var(--c-muted);line-height:1.5;margin:10px 0 0}
+
+  /* ── phone: the filter bar becomes a bottom sheet ─────────────────────────── */
+  .or-sheet-btn{display:none}
+  @media (max-width:720px){
+    #or-wrap{padding:12px 16px 80px}
+    .or-head h1{font-size:1.14rem}
+    .or-sheet-btn{display:inline-flex}
+    /* --c-surface is semi-transparent in the Wren palettes, which is right for a card
+       ON the page and wrong for a sheet OVER it — the first screenshot showed the
+       past-due banner reading through the filters. A sheet needs the opaque token. */
+    .or-bar{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:60;margin:0;border-radius:16px 16px 0 0;
+      max-height:86vh;overflow:auto;border-bottom:0;box-shadow:0 -12px 34px var(--c-shadow);
+      background:var(--c-surface-solid);
+      transform:translateY(102%);transition:transform .22s ease;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+    /* "Done" sits above the first heading rather than floating beside it */
+    .or-bar .or-sheet-close{display:inline-flex;float:none;width:100%;justify-content:center;margin:0 0 12px}
+    .or-panel{background:var(--c-surface-solid)}
+    body.or-sheet-open .or-bar{transform:translateY(0)}
+    body.or-sheet-open::after{content:'';position:fixed;inset:0;background:var(--c-scrim);z-index:55}
+    .or-bar .or-sheet-close{display:inline-flex}
+    .or-grid{grid-template-columns:1fr}
+    .or-panel{max-height:46vh}
+  }
+  .or-sheet-close{display:none;float:right}
+  @media (min-width:721px){ .or-bar{position:static!important;transform:none!important} }
+</style>
+</head>
+<body>
+<div id="wren-content">
+<div id="or-wrap">
+
+  <div class="or-head">
+    <div style="flex:1 1 20ch;min-width:0">
+      <h1>🔎 Observation reviewer</h1>
+      <p class="or-sub">Every observation in the setting, filtered the way EyLog let you filter them — then exported
+        as a PDF. <strong>Export anonymised</strong> takes the names out for training, moderation and INSET.</p>
+    </div>
+    <div class="or-actions">
+      <button type="button" class="or-btn or-sheet-btn" id="or-open-sheet">⚙️ Filters</button>
+      <label class="or-tick" for="or-photos"><input type="checkbox" id="or-photos"> Include photos</label>
+      <button type="button" class="or-btn primary" id="or-pdf">⬇️ Export PDF</button>
+      <button type="button" class="or-btn anon" id="or-pdf-anon">🕶️ Export anonymised PDF</button>
+    </div>
+  </div>
+
+  <!-- ══ FILTER BAR ═══════════════════════════════════════════════════════════ -->
+  <section class="or-bar" id="or-bar" aria-label="Filters">
+    <button type="button" class="or-btn or-sheet-close" id="or-close-sheet">Done</button>
+    <h2>Date range</h2>
+    <div class="or-presets" id="or-presets" role="group" aria-label="Date range preset"></div>
+    <div class="or-dates">
+      <label for="or-from">From</label>
+      <input type="date" class="or-in" id="or-from" style="width:auto">
+      <label for="or-to">To</label>
+      <input type="date" class="or-in" id="or-to" style="width:auto">
+    </div>
+
+    <h2>Narrow it down</h2>
+    <div class="or-grid" id="or-grid">
+      <input type="search" class="or-in" id="or-q" placeholder="Search the observation text…" aria-label="Search the observation text">
+      <details class="or-pick" id="pick-children"><summary><span>Children</span></summary></details>
+      <details class="or-pick" id="pick-rooms"><summary><span>Room</span></summary></details>
+      <details class="or-pick" id="pick-keyperson"><summary><span>Key person</span></summary></details>
+      <details class="or-pick" id="pick-staff"><summary><span>Practitioner</span></summary></details>
+      <details class="or-pick" id="pick-bands"><summary><span>Age at the observation</span></summary></details>
+      <details class="or-pick" id="pick-areas"><summary><span>Areas of learning</span></summary></details>
+      <details class="or-pick" id="pick-statements"><summary><span>Framework statement</span></summary></details>
+      <details class="or-pick" id="pick-coel"><summary><span>Characteristics (COEL)</span></summary></details>
+      <details class="or-pick" id="pick-tags"><summary><span>Tags</span></summary></details>
+      <details class="or-pick" id="pick-types"><summary><span>Type</span></summary></details>
+      <details class="or-pick" id="pick-flags"><summary><span>Flags</span></summary></details>
+      <details class="or-pick" id="pick-review"><summary><span>Review status</span></summary></details>
+      <select class="or-in" id="or-shared" aria-label="Shared with parents">
+        <option value="">Shared with parents — any</option>
+        <option value="1">Shared with parents</option>
+        <option value="0">Not shared with parents</option>
+      </select>
+      <select class="or-in" id="or-has-analysis" aria-label="Has what it shows">
+        <option value="">“What it shows” — any</option>
+        <option value="1">Has “what it shows”</option>
+        <option value="0">Missing “what it shows”</option>
+      </select>
+      <select class="or-in" id="or-has-next" aria-label="Has next steps">
+        <option value="">Next steps — any</option>
+        <option value="1">Has next steps</option>
+        <option value="0">No next steps</option>
+      </select>
+      <select class="or-in" id="or-has-photos" aria-label="Has photos or media">
+        <option value="">Photos / media — any</option>
+        <option value="1">Has photos or media</option>
+        <option value="0">No photos or media</option>
+      </select>
+      <select class="or-in" id="or-group-mode" aria-label="Individual or group">
+        <option value="per_child">A card per child</option>
+        <option value="per_group">A card per group observation</option>
+      </select>
+      <select class="or-in" id="or-source" aria-label="Written in Wren or imported">
+        <option value="">Wren and EyLog</option>
+        <option value="wren">Written in Wren</option>
+        <option value="eylog">Imported from EyLog</option>
+      </select>
+      <select class="or-in" id="or-sort" aria-label="Sort">
+        <option value="date_desc">Newest first</option>
+        <option value="date_asc">Oldest first</option>
+        <option value="age_asc">Youngest first</option>
+        <option value="age_desc">Oldest child first</option>
+      </select>
+      <select class="or-in" id="or-page-size" aria-label="Per page">
+        <option value="25">25 per page</option>
+        <option value="50">50 per page</option>
+        <option value="100">100 per page</option>
+      </select>
+    </div>
+  </section>
+
+  <div class="or-chips" id="or-chips"></div>
+  <p class="or-count" id="or-count"><b>…</b> <span>loading</span></p>
+
+  <div id="or-results"></div>
+  <div class="or-pager" id="or-pager"></div>
+  <p class="or-note" id="or-note"></p>
+
+</div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * b536 — the observation reviewer's client.
+ *
+ * Three rules it keeps:
+ *   · the FILTER IS THE URL. Every control writes to location.search through
+ *     history.replaceState, so a view can be bookmarked, shared with Toby's
+ *     other browser, or reopened after a refresh — and the PDF export sends the
+ *     very same query string the list was built from, so an export can never be
+ *     of something other than what is on screen.
+ *   · a bearer token cannot ride on an <a href>, so both exports are fetched
+ *     with Wren.authHeaders() and handed over as a blob.
+ *   · wren:ready, never a bare call. The shell dispatches it at the end of
+ *     buildShell(); a page that calls the API before then gets no chrome and,
+ *     in an iframe, no token.
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+  var API = '/api/observation-review';
+  var el = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  };
+
+  if (/[?&]embed=1\b/.test(location.search)) document.body.classList.add('or-embed');
+
+  // ── state ──────────────────────────────────────────────────────────────────
+  var OPTS = null;          // /options payload
+  var DATA = null;          // last list payload
+  var LOADING = false;
+  var PENDING = null;       // debounce handle
+
+  // Every filter lives here and nowhere else. `multi` fields are arrays of
+  // strings; scalars are strings ('' meaning "not set").
+  var S = {
+    preset: 'last12m', from: '', to: '',
+    child_ids: [], room_ids: [], key_person_ids: [], staff_ids: [], author_names: [],
+    age_bands: [], areas: [], other_area: '', no_area: '',
+    statement_ids: [], coel: [], tags: [], types: [], flags: [], review_status: [],
+    shared: '', has_analysis: '', has_next_steps: '', has_photos: '',
+    group_mode: 'per_child', source: '', q: '', sort: 'date_desc',
+    page: '1', page_size: '25',
+  };
+  var MULTI = ['child_ids', 'room_ids', 'key_person_ids', 'staff_ids', 'author_names',
+               'age_bands', 'areas', 'statement_ids', 'coel', 'tags', 'types', 'flags', 'review_status'];
+
+  function isMulti(k) { return MULTI.indexOf(k) >= 0; }
+
+  // ── URL ↔ state ────────────────────────────────────────────────────────────
+  function readUrl() {
+    var p = new URLSearchParams(location.search);
+    Object.keys(S).forEach(function (k) {
+      if (!p.has(k)) return;
+      var v = p.get(k);
+      S[k] = isMulti(k) ? String(v).split(',').filter(Boolean) : String(v);
+    });
+  }
+  function queryString(extra) {
+    var p = new URLSearchParams();
+    Object.keys(S).forEach(function (k) {
+      var v = S[k];
+      if (isMulti(k)) { if (v.length) p.set(k, v.join(',')); }
+      else if (v !== '' && v != null) p.set(k, v);
+    });
+    if (extra) Object.keys(extra).forEach(function (k) { p.set(k, extra[k]); });
+    return p.toString();
+  }
+  function writeUrl() {
+    // `page` belongs in the URL (a bookmark should reopen on the same page) but
+    // `facets` and `photos` are request-time, not view state.
+    try { history.replaceState(null, '', location.pathname + '?' + queryString()); } catch (_) { /* file:// etc */ }
+  }
+
+  // ── the multi-select picker ────────────────────────────────────────────────
+  /**
+   * Render one <details> picker.
+   * @param id      element id
+   * @param label   the summary text
+   * @param key     the S key it writes (a MULTI key), or null for a custom set
+   * @param items   [{ value, label, count?, group? }]
+   * @param opts    { search: bool, extras: [{key,label}] }
+   */
+  function picker(id, label, key, items, opts) {
+    var o = opts || {};
+    var d = el(id);
+    if (!d) return;
+    var sel = key ? S[key] : [];
+    var extraOn = (o.extras || []).filter(function (x) { return S[x.key] === '1'; }).length;
+    var n = sel.length + extraOn;
+
+    var sum = '<summary><span>' + esc(label) + (n ? ' <span class="or-n">' + n + '</span>' : '') + '</span></summary>';
+    var body = '<div class="or-panel">';
+    if (o.search) body += '<input type="search" class="or-in or-search" placeholder="Type to filter…" aria-label="Filter ' + esc(label) + '">';
+    var lastGroup = null;
+    (o.extras || []).forEach(function (x) {
+      body += '<label class="or-opt"><input type="checkbox" data-extra="' + esc(x.key) + '"'
+            + (S[x.key] === '1' ? ' checked' : '') + '><span>' + esc(x.label) + '</span></label>';
+    });
+    items.forEach(function (it) {
+      if (it.group && it.group !== lastGroup) { body += '<div class="or-opt-group">' + esc(it.group) + '</div>'; lastGroup = it.group; }
+      var c = (it.count == null) ? '' : '<span class="or-c' + (it.count ? '' : ' zero') + '">' + it.count + '</span>';
+      body += '<label class="or-opt" data-text="' + esc(String(it.label).toLowerCase()) + '">'
+            + '<input type="checkbox" value="' + esc(it.value) + '"'
+            + (sel.indexOf(String(it.value)) >= 0 ? ' checked' : '') + '>'
+            + '<span>' + esc(it.label) + '</span>' + c + '</label>';
+    });
+    if (!items.length && !(o.extras || []).length) body += '<div class="or-opt" style="color:var(--c-muted)">Nothing to choose from</div>';
+    body += '</div>';
+
+    var wasOpen = d.hasAttribute('open');
+    d.innerHTML = sum + body;
+    if (wasOpen) d.setAttribute('open', '');
+
+    d.addEventListener('change', function (e) {
+      var cb = e.target;
+      if (!cb || cb.type !== 'checkbox') return;
+      if (cb.dataset.extra) { S[cb.dataset.extra] = cb.checked ? '1' : ''; }
+      else if (key) {
+        var v = String(cb.value);
+        var i = S[key].indexOf(v);
+        if (cb.checked && i < 0) S[key].push(v);
+        if (!cb.checked && i >= 0) S[key].splice(i, 1);
+      }
+      S.page = '1';
+      refresh();
+    });
+    var search = d.querySelector('.or-search');
+    if (search) {
+      search.addEventListener('input', function () {
+        var q = this.value.trim().toLowerCase();
+        d.querySelectorAll('.or-opt[data-text]').forEach(function (l) {
+          l.style.display = (!q || l.dataset.text.indexOf(q) >= 0) ? '' : 'none';
+        });
+      });
+      // Typing in the search box must not toggle the <details> shut.
+      search.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+  }
+
+  function countFor(list, keyName, value) {
+    if (!list) return null;
+    var hit = list.filter(function (r) { return String(r[keyName]) === String(value); })[0];
+    return hit ? hit.n : 0;
+  }
+
+  function renderPickers() {
+    if (!OPTS) return;
+    var F = DATA && DATA.facets;
+
+    var kids = OPTS.children.map(function (c) {
+      return { value: c.id, label: c.name + (c.on_roll ? '' : ' (left)'), group: c.on_roll ? 'On roll' : 'No longer on roll' };
+    }).sort(function (a, b) { return (a.group === b.group) ? 0 : (a.group === 'On roll' ? -1 : 1); });
+    picker('pick-children', 'Children', 'child_ids', kids, { search: true });
+
+    picker('pick-rooms', 'Room', 'room_ids',
+      OPTS.rooms.map(function (r) { return { value: r.id, label: r.name }; }), {});
+
+    var people = OPTS.staff.filter(function (s) { return s.name; });
+    picker('pick-keyperson', 'Key person', 'key_person_ids',
+      people.map(function (s) { return { value: s.id, label: s.name + (s.is_active ? '' : ' (left)') }; }), { search: true });
+
+    // Practitioner: staff rows with their facet count, then the recorded authors
+    // of imports that have no staff row at all.
+    var staffItems = people.map(function (s) {
+      return { value: s.id, label: s.name + (s.is_active ? '' : ' (left)'),
+               count: F ? countFor(F.authors, 'staff_id', s.id) : null, group: 'Staff' };
+    }).sort(function (a, b) { return (b.count || 0) - (a.count || 0); });
+    picker('pick-staff', 'Practitioner', 'staff_ids', staffItems, { search: true });
+
+    picker('pick-bands', 'Age at the observation', 'age_bands',
+      (DATA && DATA.age_bands ? DATA.age_bands : OPTS.age_bands).map(function (b) {
+        return { value: b.ordinal, label: b.label, count: b.n == null ? null : b.n };
+      }), {});
+
+    // The wire value is the SLUG (cl / psed / pd / literacy / mathematics / utw /
+    // ead), never the canonical key: "personal, social and emotional development"
+    // has a comma in it and the query string is comma-separated.
+    picker('pick-areas', 'Areas of learning', 'areas',
+      (F ? F.areas : OPTS.areas).map(function (a) {
+        return { value: a.slug, label: a.label, count: a.n == null ? null : a.n };
+      }), { extras: [
+        { key: 'other_area', label: 'Tagged outside the seven areas' + (F ? ' (' + F.area_other + ')' : '') },
+        { key: 'no_area', label: 'No area tagged at all' },
+      ] });
+
+    picker('pick-statements', 'Framework statement', 'statement_ids',
+      OPTS.statements.map(function (s) {
+        return { value: s.id, label: (s.age_range ? s.age_range + ' — ' : '') + (s.statement_text || s.statement_code || ('#' + s.id)),
+                 group: s.area || 'Other' };
+      }), { search: true });
+
+    picker('pick-coel', 'Characteristics (COEL)', 'coel',
+      (OPTS.coel || []).map(function (k) { return { value: k, label: k }; }), {});
+
+    // Tags — Wren's own (Tracking, Next-step follow-up, Phonics group…) and the
+    // bare numeric ids EyLog's importer brought across, which Wren has no
+    // dictionary for and so labels honestly as "EyLog tag N".
+    picker('pick-tags', 'Tags', 'tags',
+      ((F && F.tags) ? F.tags : (OPTS.tags || [])).map(function (t) {
+        return { value: t.key, label: t.label, count: t.n == null ? null : t.n };
+      }), { search: true });
+
+    var TYPEL = { learning_story: 'Learning story', planned_activity: 'Planned activity', milestone: 'Milestone',
+                  note: 'Note', '2year_check': 'Two-year check', assessment: 'Assessment' };
+    picker('pick-types', 'Type', 'types',
+      OPTS.types.map(function (t) {
+        return { value: t, label: TYPEL[t] || t, count: F ? countFor(F.types, 'key', t) : null };
+      }), {});
+
+    var FLAGL = { baseline: 'Baseline', termly_update: 'Termly update', parental: 'Parent observation' };
+    picker('pick-flags', 'Flags', 'flags',
+      OPTS.flags.map(function (f) {
+        return { value: f, label: FLAGL[f] || f, count: F && F.flags ? (F.flags[f] || 0) : null };
+      }), {});
+
+    var REVL = { published: 'Published', pending_review: 'Awaiting review', returned: 'Returned to writer' };
+    picker('pick-review', 'Review status', 'review_status',
+      OPTS.review_statuses.map(function (r) { return { value: r, label: REVL[r] || r }; }), {});
+  }
+
+  // ── presets ───────────────────────────────────────────────────────────────
+  var PRESET_LABELS = { last30: 'Last 30 days', half_term: 'This half term', term: 'This term',
+                        last12m: 'Last 12 months', custom: 'Custom' };
+  function renderPresets() {
+    el('or-presets').innerHTML = ['last30', 'half_term', 'term', 'last12m', 'custom'].map(function (p) {
+      return '<button type="button" data-p="' + p + '" aria-pressed="' + (S.preset === p) + '">'
+           + esc(PRESET_LABELS[p]) + '</button>';
+    }).join('');
+  }
+
+  // ── chips ─────────────────────────────────────────────────────────────────
+  function chipList() {
+    var out = [];
+    var add = function (key, label, value) { out.push({ key: key, label: label, value: value == null ? null : String(value) }); };
+    var nameOf = function (list, id, field) {
+      var hit = (list || []).filter(function (r) { return String(r[field || 'id']) === String(id); })[0];
+      return hit ? hit.name : '#' + id;
+    };
+    if (S.preset !== 'last12m' || S.from || S.to) {
+      add('preset', S.preset === 'custom'
+        ? 'Custom: ' + (S.from || '…') + ' → ' + (S.to || 'today')
+        : (PRESET_LABELS[S.preset] || S.preset));
+    }
+    if (OPTS) {
+      S.child_ids.forEach(function (i) { add('child_ids', nameOf(OPTS.children, i), i); });
+      S.room_ids.forEach(function (i) { add('room_ids', 'Room: ' + nameOf(OPTS.rooms, i), i); });
+      S.key_person_ids.forEach(function (i) { add('key_person_ids', 'Key person: ' + nameOf(OPTS.staff, i), i); });
+      S.staff_ids.forEach(function (i) { add('staff_ids', nameOf(OPTS.staff, i), i); });
+      S.areas.forEach(function (k) {
+        var a = OPTS.areas.filter(function (x) { return x.slug === k || x.key === k; })[0];
+        add('areas', a ? a.label : k, k);
+      });
+      S.age_bands.forEach(function (o) {
+        var b = (OPTS.age_bands || []).filter(function (x) { return String(x.ordinal) === String(o); })[0];
+        add('age_bands', b ? b.label : 'Range ' + o, o);
+      });
+      S.statement_ids.forEach(function (i) { add('statement_ids', 'Statement #' + i, i); });
+    }
+    if (S.other_area === '1') add('other_area', 'Outside the seven areas');
+    if (S.no_area === '1') add('no_area', 'No area tagged');
+    S.coel.forEach(function (k) { add('coel', 'COEL: ' + k, k); });
+    S.tags.forEach(function (k) {
+      var t = ((OPTS && OPTS.tags) || []).filter(function (x) { return x.key === k; })[0];
+      add('tags', 'Tag: ' + (t ? t.label : k), k);
+    });
+    S.types.forEach(function (t) { add('types', 'Type: ' + t.replace(/_/g, ' '), t); });
+    S.flags.forEach(function (f) { add('flags', f.replace(/_/g, ' '), f); });
+    S.review_status.forEach(function (r) { add('review_status', r.replace(/_/g, ' '), r); });
+    if (S.shared) add('shared', S.shared === '1' ? 'Shared with parents' : 'Not shared');
+    if (S.has_analysis) add('has_analysis', S.has_analysis === '1' ? 'Has “what it shows”' : 'Missing “what it shows”');
+    if (S.has_next_steps) add('has_next_steps', S.has_next_steps === '1' ? 'Has next steps' : 'No next steps');
+    if (S.has_photos) add('has_photos', S.has_photos === '1' ? 'Has photos' : 'No photos');
+    if (S.source) add('source', S.source === 'eylog' ? 'EyLog imports' : 'Written in Wren');
+    if (S.group_mode === 'per_group') add('group_mode', 'Groups shown once');
+    if (S.q) add('q', '“' + S.q + '”');
+    return out;
+  }
+  function renderChips() {
+    var list = chipList();
+    var box = el('or-chips');
+    if (!list.length) { box.innerHTML = '<span style="color:var(--c-muted);font-size:.8rem">No filters — the last 12 months, everything.</span>'; return; }
+    box.innerHTML = list.map(function (c) {
+      return '<span class="or-chip">' + esc(c.label)
+        + '<button type="button" data-k="' + esc(c.key) + '"' + (c.value == null ? '' : ' data-v="' + esc(c.value) + '"')
+        + ' aria-label="Remove ' + esc(c.label) + '">×</button></span>';
+    }).join('') + '<button type="button" class="or-clear" id="or-clear">Clear all</button>';
+  }
+
+  var DEFAULTS = JSON.parse(JSON.stringify(S));
+  function clearAll() {
+    Object.keys(DEFAULTS).forEach(function (k) {
+      S[k] = isMulti(k) ? [] : DEFAULTS[k];
+    });
+    syncControls();
+    refresh();
+  }
+  function dropChip(key, value) {
+    if (key === 'preset') { S.preset = 'last12m'; S.from = ''; S.to = ''; }
+    else if (isMulti(key) && value != null) { S[key] = S[key].filter(function (v) { return v !== value; }); }
+    else if (isMulti(key)) S[key] = [];
+    else S[key] = DEFAULTS[key];
+    syncControls();
+    refresh();
+  }
+
+  // ── results ───────────────────────────────────────────────────────────────
+  var CLIP = 300;
+  function renderRows() {
+    var box = el('or-results');
+    if (!DATA) { box.innerHTML = '<div class="or-empty">Loading…</div>'; return; }
+    if (!DATA.rows.length) {
+      box.innerHTML = '<div class="or-empty">No observations match these filters.<br>'
+        + 'Try widening the date range or clearing a filter chip above.</div>';
+      return;
+    }
+    box.innerHTML = DATA.rows.map(function (r) {
+      var tags = [];
+      (r.areas || []).forEach(function (a) { tags.push('<span class="or-tag area">' + esc(a) + '</span>'); });
+      if (r.baseline) tags.push('<span class="or-tag flag">Baseline</span>');
+      if (r.termly_update) tags.push('<span class="or-tag flag">Termly update</span>');
+      if (r.parental) tags.push('<span class="or-tag flag">Parent observation</span>');
+      if (r.group_size > 1) tags.push('<span class="or-tag">Group of ' + r.group_size + '</span>');
+      if (r.photo_count) tags.push('<span class="or-tag">' + r.photo_count + ' photo' + (r.photo_count === 1 ? '' : 's') + '</span>');
+      if (r.shared_with_parents) tags.push('<span class="or-tag shared">Shared</span>');
+      if (r.review_status && r.review_status !== 'published') tags.push('<span class="or-tag pend">' + esc(r.review_status.replace(/_/g, ' ')) + '</span>');
+      if (r.from_eylog) tags.push('<span class="or-tag">EyLog</span>');
+      if (r.observation_type && r.observation_type !== 'learning_story') tags.push('<span class="or-tag">' + esc(r.observation_type.replace(/_/g, ' ')) + '</span>');
+
+      var d = r.date ? new Date(r.date) : null;
+      var when = d && !isNaN(d) ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' }) : '';
+      var text = r.observation_text || '';
+      var long = text.length > CLIP || r.analysis || r.next_steps || (r.statements || []).length;
+
+      return '<article class="or-card" data-id="' + r.id + '">'
+        + '<div class="or-card-top"><h3>' + esc(r.child_name || 'Child not recorded') + '</h3>'
+        + '<span class="or-meta">' + esc(r.age_text) + ' · ' + esc(when) + ' · ' + esc(r.author || 'Not recorded') + '</span></div>'
+        + (tags.length ? '<div class="or-tags">' + tags.join('') + '</div>' : '')
+        + '<div class="or-body' + (long ? ' clipped' : '') + '" data-body>' + esc(text) + '</div>'
+        + (long ? '<button type="button" class="or-more" data-expand>Show everything ▾</button>' : '')
+        + '<div data-extra hidden>'
+        + (r.analysis ? '<div class="or-field"><div class="or-field-l">What it shows</div><div class="or-body">' + esc(r.analysis) + '</div></div>' : '')
+        + (r.next_steps ? '<div class="or-field"><div class="or-field-l">Next steps</div><div class="or-body">' + esc(r.next_steps) + '</div></div>' : '')
+        + ((r.statements || []).length ? '<div class="or-field"><div class="or-field-l">Statements tagged</div><ul class="or-stmts">'
+            + r.statements.map(function (s) {
+                return '<li>' + esc([s.coel ? 'COEL: ' + s.coel : s.aspect, s.age_range].filter(Boolean).join(' · ')
+                  + (s.text ? ' — ' + s.text : '')) + '</li>';
+              }).join('') + '</ul></div>' : '')
+        + '</div>'
+        + '</article>';
+    }).join('');
+  }
+
+  function renderCount() {
+    var c = el('or-count');
+    if (!DATA) { c.innerHTML = '<b>…</b> <span>loading</span>'; return; }
+    var w = DATA.window || {};
+    var cap = DATA.total > DATA.export_cap
+      ? ' <span class="or-win">· an export takes the first ' + DATA.export_cap + '</span>' : '';
+    c.innerHTML = '<b>' + DATA.total + '</b> <span>observation' + (DATA.total === 1 ? '' : 's')
+      + '</span> <span class="or-win">' + esc(w.label || '')
+      + (w.from ? ' (' + esc(w.from) + ' → ' + esc(w.to || 'today') + ')' : '')
+      + (w.source === 'statutory' ? ' — no published half-term covers today, so this is the statutory term' : '')
+      + '</span>' + cap;
+    el('or-note').textContent = DATA.dsl_included
+      ? 'You are a designated safeguarding lead, so safeguarding-only observations are included.'
+      : 'Safeguarding-only observations are not included — only a designated safeguarding lead sees those.';
+  }
+
+  function renderPager() {
+    var p = el('or-pager');
+    if (!DATA || DATA.pages <= 1) { p.innerHTML = ''; return; }
+    var page = DATA.page;
+    p.innerHTML = '<button type="button" class="or-btn" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + '>‹ Previous</button>'
+      + '<span style="font-size:.84rem;color:var(--c-muted)">Page ' + page + ' of ' + DATA.pages + '</span>'
+      + '<button type="button" class="or-btn" data-page="' + (page + 1) + '"' + (page >= DATA.pages ? ' disabled' : '') + '>Next ›</button>';
+  }
+
+  // ── control sync ──────────────────────────────────────────────────────────
+  function syncControls() {
+    renderPresets();
+    el('or-from').value = S.from || '';
+    el('or-to').value = S.to || '';
+    el('or-q').value = S.q || '';
+    [['or-shared', 'shared'], ['or-has-analysis', 'has_analysis'], ['or-has-next', 'has_next_steps'],
+     ['or-has-photos', 'has_photos'], ['or-group-mode', 'group_mode'], ['or-source', 'source'],
+     ['or-sort', 'sort'], ['or-page-size', 'page_size']].forEach(function (pair) {
+      var e = el(pair[0]); if (e) e.value = S[pair[1]] || '';
+    });
+    renderPickers();
+    renderChips();
+  }
+
+  // ── load ──────────────────────────────────────────────────────────────────
+  function load() {
+    LOADING = true;
+    var qs = queryString();
+    return Wren.api(API + '?' + qs).then(function (d) {
+      if (!d) return;
+      DATA = d;
+      renderCount(); renderRows(); renderPager(); renderPickers(); renderChips();
+    }).catch(function (e) {
+      var msg = (e && (e.message || e.error)) || 'The reviewer could not load.';
+      el('or-results').innerHTML = '<div class="or-empty">' + esc(msg) + '</div>';
+      el('or-count').innerHTML = '<b>—</b> <span>' + esc(msg) + '</span>';
+    }).then(function () { LOADING = false; });
+  }
+
+  function refresh(debounce) {
+    writeUrl();
+    renderChips();
+    if (PENDING) clearTimeout(PENDING);
+    PENDING = setTimeout(load, debounce ? 320 : 0);
+  }
+
+  // ── downloads ─────────────────────────────────────────────────────────────
+  function download(anonymised) {
+    var btn = el(anonymised ? 'or-pdf-anon' : 'or-pdf');
+    var was = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Building…';
+    var extra = { anonymised: anonymised ? '1' : '0', photos: (!anonymised && el('or-photos').checked) ? '1' : '0' };
+    fetch(API + '/pdf?' + queryString(extra), { headers: Wren.authHeaders() }).then(function (r) {
+      if (r.status === 409) {
+        return r.json().then(function (d) {
+          Wren.modal
+            ? Wren.modal({ title: 'Anonymised export stopped', body: '<p>' + esc(d.message || '') + '</p>' })
+            : alert(d.message || 'The anonymised export was stopped.');
+          throw new Error('__handled__');
+        });
+      }
+      if (!r.ok) return r.text().then(function (t) { throw new Error(t.slice(0, 200) || ('HTTP ' + r.status)); });
+      return r.blob();
+    }).then(function (b) {
+      if (!b) return;
+      var u = URL.createObjectURL(b);
+      var a = document.createElement('a');
+      a.href = u;
+      a.download = 'observations-' + (anonymised ? 'anonymised-' : '') + new Date().toISOString().slice(0, 10) + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+      if (Wren.toast) Wren.toast(anonymised ? 'Anonymised PDF downloaded — read it before you share it.' : 'PDF downloaded', 'success');
+    }).catch(function (e) {
+      if (e && e.message === '__handled__') return;
+      var m = 'Export failed: ' + ((e && e.message) || 'unknown error');
+      if (Wren.toast) Wren.toast(m, 'error'); else alert(m);
+    }).then(function () { btn.disabled = false; btn.textContent = was; });
+  }
+
+  // ── wiring ────────────────────────────────────────────────────────────────
+  function wire() {
+    el('or-presets').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-p]'); if (!b) return;
+      S.preset = b.dataset.p;
+      if (S.preset !== 'custom') { S.from = ''; S.to = ''; }
+      S.page = '1';
+      syncControls(); refresh();
+    });
+    ['or-from', 'or-to'].forEach(function (id) {
+      el(id).addEventListener('change', function () {
+        S.from = el('or-from').value; S.to = el('or-to').value;
+        S.preset = 'custom'; S.page = '1';
+        syncControls(); refresh();
+      });
+    });
+    el('or-q').addEventListener('input', function () { S.q = this.value; S.page = '1'; refresh(true); });
+    [['or-shared', 'shared'], ['or-has-analysis', 'has_analysis'], ['or-has-next', 'has_next_steps'],
+     ['or-has-photos', 'has_photos'], ['or-group-mode', 'group_mode'], ['or-source', 'source'],
+     ['or-sort', 'sort'], ['or-page-size', 'page_size']].forEach(function (pair) {
+      el(pair[0]).addEventListener('change', function () { S[pair[1]] = this.value; S.page = '1'; refresh(); });
+    });
+    el('or-chips').addEventListener('click', function (e) {
+      if (e.target.id === 'or-clear') return clearAll();
+      var b = e.target.closest('button[data-k]'); if (!b) return;
+      dropChip(b.dataset.k, b.dataset.v == null ? null : b.dataset.v);
+    });
+    el('or-pager').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-page]'); if (!b || b.disabled) return;
+      S.page = b.dataset.page; refresh();
+      el('or-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    el('or-results').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-expand]'); if (!b) return;
+      var card = b.closest('.or-card');
+      var body = card.querySelector('[data-body]');
+      var extra = card.querySelector('[data-extra]');
+      var open = !body.classList.contains('clipped');
+      body.classList.toggle('clipped', open);
+      // b-trap: `hidden` loses to an inline display, so toggle the attribute and
+      // nothing else — this element has no inline display of its own.
+      if (open) extra.setAttribute('hidden', ''); else extra.removeAttribute('hidden');
+      b.textContent = open ? 'Show everything ▾' : 'Show less ▴';
+    });
+    el('or-pdf').addEventListener('click', function () { download(false); });
+    el('or-pdf-anon').addEventListener('click', function () { download(true); });
+
+    // the phone sheet
+    el('or-open-sheet').addEventListener('click', function () { document.body.classList.add('or-sheet-open'); });
+    el('or-close-sheet').addEventListener('click', function () { document.body.classList.remove('or-sheet-open'); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') document.body.classList.remove('or-sheet-open');
+    });
+    // Only ONE picker open at a time, or two panels overlap on a narrow screen.
+    document.querySelectorAll('.or-pick').forEach(function (d) {
+      d.addEventListener('toggle', function () {
+        if (!d.open) return;
+        document.querySelectorAll('.or-pick[open]').forEach(function (o) { if (o !== d) o.removeAttribute('open'); });
+      });
+    });
+  }
+
+  function start() {
+    readUrl();
+    Wren.api(API + '/options').then(function (o) {
+      OPTS = o || { children: [], rooms: [], staff: [], statements: [], areas: [], types: [], flags: [], review_statuses: [], coel: [], age_bands: [] };
+      syncControls();
+      wire();
+      return load();
+    }).catch(function (e) {
+      var msg = (e && (e.message || e.error)) || 'Could not load the filter options.';
+      el('or-count').innerHTML = '<b>—</b> <span>' + esc(msg) + '</span>';
+      el('or-results').innerHTML = '<div class="or-empty">' + esc(msg) + '</div>';
+    });
+  }
+
+  // The shell dispatches wren:ready at the end of buildShell() — synchronously,
+  // so a later-running script can lose the race (reference_wren_ready_fires_
+  // before_later_defer). This inline script parses BEFORE the deferred
+  // wren-shell-v2.js, so the listener always wins; window._wrenReady is the
+  // belt-and-braces half in case that ever stops being true.
+  if (window._wrenReady) start();
+  else document.addEventListener('wren:ready', start, { once: true });
+})();
+</script>
+</body>
+</html>

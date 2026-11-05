@@ -1,0 +1,1055 @@
+<div class="v2-section" data-section="cameras">
+
+  <nav class="wren-tab-bar" role="tablist" aria-label="Camera tabs">
+    <div class="tab-bar-track">
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="live"       id="tab-cam-live"       aria-controls="panel-cam-live">Live view</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="access-log" id="tab-cam-access-log" aria-controls="panel-cam-access-log">Access log</button>
+      <!-- b249: ADDED. The b234 tabs above are unchanged. -->
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="requests" id="tab-cam-requests" aria-controls="panel-cam-requests">Footage requests</button>
+      <!-- b362: ADDED. The three tabs above are unchanged. -->
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="recordings" id="tab-cam-recordings" aria-controls="panel-cam-recordings">Recordings</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+<style>
+/* b234 — tokens only (--c-*). Translucent fills use color-mix so there is no bare
+   hex anywhere and both themes stay correct without a second palette. */
+.cam-wrap { padding: 20px; max-width: 1200px; }
+.cam-h    { color: var(--c-text); font-size: 1.3rem; margin: 0 0 4px; }
+.cam-sub  { color: var(--c-muted); font-size: .85rem; margin: 0 0 16px; line-height: 1.5; }
+
+/* The rule, stated on the screen. Staff and inspectors both need to see it. */
+.cam-rule {
+  background: color-mix(in srgb, var(--c-blue) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-blue) 35%, transparent);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 18px;
+  color: var(--c-text); font-size: .82rem; line-height: 1.6;
+}
+.cam-rule b { color: var(--c-text); }
+.cam-rule-clock { color: var(--c-muted); display: block; margin-top: 6px; font-size: .78rem; }
+
+.cam-group-h {
+  color: var(--c-text); font-size: .95rem; font-weight: 700;
+  margin: 22px 0 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.cam-group-note { color: var(--c-muted); font-weight: 400; font-size: .78rem; }
+
+.cam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+
+.cam-card {
+  background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+}
+.cam-view {
+  position: relative; aspect-ratio: 16 / 9; background: var(--c-surface);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+}
+.cam-view video { width: 100%; height: 100%; object-fit: cover; display: none; }
+.cam-blocked { padding: 16px; color: var(--c-muted); font-size: .82rem; line-height: 1.55; }
+.cam-blocked-from { color: var(--c-text); font-weight: 700; font-size: 1rem; display: block; margin-bottom: 4px; }
+.cam-countdown {
+  display: block; margin-top: 10px; font-variant-numeric: tabular-nums;
+  color: var(--c-amber); font-weight: 700; font-size: 1.05rem;
+}
+.cam-live-badge {
+  position: absolute; top: 8px; left: 8px; display: none;
+  background: color-mix(in srgb, var(--c-red) 85%, transparent); color: var(--c-bg);
+  font-size: .65rem; font-weight: 800; letter-spacing: .06em;
+  padding: 3px 8px; border-radius: 5px;
+}
+.cam-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.cam-name { color: var(--c-text); font-weight: 700; font-size: .95rem; }
+.cam-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cam-badge {
+  font-size: .66rem; font-weight: 800; letter-spacing: .04em;
+  padding: 3px 8px; border-radius: 5px; white-space: nowrap;
+}
+.cam-b-ext { background: color-mix(in srgb, var(--c-green) 20%, transparent); color: var(--c-green); }
+.cam-b-int { background: color-mix(in srgb, var(--c-blue) 22%, transparent); color: var(--c-blue-light, var(--c-blue)); }
+.cam-b-off { background: color-mix(in srgb, var(--c-muted) 22%, transparent); color: var(--c-muted); }
+.cam-b-ok  { background: color-mix(in srgb, var(--c-green) 20%, transparent); color: var(--c-green); }
+.cam-b-no  { background: color-mix(in srgb, var(--c-amber) 22%, transparent); color: var(--c-amber); }
+.cam-reason { color: var(--c-muted); font-size: .76rem; line-height: 1.5; }
+.cam-btn {
+  border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text);
+  border-radius: 8px; padding: 8px 14px; font-size: .82rem; font-weight: 700; cursor: pointer;
+}
+.cam-btn:hover:not(:disabled) { border-color: var(--c-blue); color: var(--c-blue-light, var(--c-blue)); }
+.cam-btn:disabled { opacity: .5; cursor: not-allowed; }
+.cam-btn-primary { background: var(--c-blue); border-color: var(--c-blue); color: var(--c-bg); }
+.cam-btn-primary:hover:not(:disabled) { background: var(--c-blue-dark); border-color: var(--c-blue-dark); color: var(--c-bg); }
+
+.cam-empty { color: var(--c-muted); font-size: .85rem; padding: 20px 0; }
+.cam-err   { color: var(--c-red); font-size: .85rem; }
+
+/* Access log */
+.cam-log-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.cam-sel {
+  background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border);
+  border-radius: 8px; padding: 7px 10px; font-size: .8rem;
+}
+.cam-log-scroll { overflow-x: auto; }
+.cam-log { width: 100%; border-collapse: collapse; font-size: .8rem; min-width: 640px; }
+.cam-log th {
+  text-align: left; color: var(--c-muted); font-weight: 700; font-size: .72rem;
+  letter-spacing: .04em; text-transform: uppercase;
+  padding: 8px 10px; border-bottom: 1px solid var(--c-border); white-space: nowrap;
+}
+.cam-log td { padding: 9px 10px; border-bottom: 1px solid var(--c-border); color: var(--c-text); vertical-align: top; }
+.cam-log tr:last-child td { border-bottom: none; }
+.cam-log-reason { color: var(--c-muted); font-size: .74rem; max-width: 420px; }
+
+/* ── b249: footage requests + the trigger dialog. Tokens only. ────────────── */
+.cam-req {
+  background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: 11px; padding: 14px 16px; margin-bottom: 12px;
+}
+/* The queue is ordered by footage expiry, so the row's own colour has to say
+   how long is left — a manager scanning the list must not have to read dates. */
+.cam-req.urgent { border-color: color-mix(in srgb, var(--c-red) 55%, transparent); }
+.cam-req.gone   { opacity: .72; }
+.cam-req-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+.cam-req-ref { font-weight: 800; color: var(--c-text); font-size: .95rem; }
+.cam-req-meta { color: var(--c-muted); font-size: .8rem; margin-top: 5px; line-height: 1.6; }
+.cam-req-meta b { color: var(--c-text); }
+.cam-req-reason {
+  color: var(--c-text); font-size: .85rem; line-height: 1.6; margin-top: 9px;
+  padding: 9px 11px; border-radius: 8px; background: var(--c-surface);
+}
+.cam-days {
+  font-weight: 800; font-size: .95rem; color: var(--c-red);
+  font-variant-numeric: tabular-nums;
+}
+.cam-days.safe { color: var(--c-amber); }
+.cam-days.gone { color: var(--c-muted); font-weight: 700; }
+.cam-preserve {
+  margin-top: 9px; padding: 9px 11px; border-radius: 8px; font-size: .8rem; line-height: 1.55;
+}
+.cam-preserve.bad {
+  background: color-mix(in srgb, var(--c-red) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-red) 42%, transparent); color: var(--c-text);
+}
+.cam-preserve.warn {
+  background: color-mix(in srgb, var(--c-amber) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-amber) 42%, transparent); color: var(--c-text);
+}
+.cam-preserve.good {
+  background: color-mix(in srgb, var(--c-green) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-green) 42%, transparent); color: var(--c-text);
+}
+.cam-req-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
+.cam-req-form { margin-top: 11px; display: none; }
+.cam-req-form.open { display: block; }
+.cam-req-form label {
+  display: block; font-size: .72rem; font-weight: 700; color: var(--c-muted);
+  text-transform: uppercase; letter-spacing: .04em; margin: 9px 0 5px;
+}
+.cam-req-form select, .cam-req-form input, .cam-req-form textarea {
+  width: 100%; background: var(--c-surface); color: var(--c-text);
+  border: 1px solid var(--c-border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: .85rem;
+}
+.cam-dialog {
+  position: fixed; inset: 0; background: color-mix(in srgb, var(--c-bg) 78%, transparent);
+  display: none; align-items: center; justify-content: center; z-index: 1200; padding: 18px;
+}
+.cam-dialog.open { display: flex; }
+.cam-dialog-box {
+  background: var(--c-card); border: 1px solid var(--c-border); border-radius: 12px;
+  max-width: 520px; width: 100%; padding: 20px 22px;
+}
+.cam-dialog-box h3 { color: var(--c-text); font-size: 1.05rem; margin: 0 0 6px; }
+.cam-dialog-box p  { color: var(--c-muted); font-size: .83rem; line-height: 1.6; margin: 0 0 14px; }
+.cam-dialog-box label {
+  display: block; font-size: .72rem; font-weight: 700; color: var(--c-muted);
+  text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 5px;
+}
+.cam-dialog-box select, .cam-dialog-box input {
+  width: 100%; background: var(--c-surface); color: var(--c-text);
+  border: 1px solid var(--c-border); border-radius: 8px; padding: 9px 11px; font: inherit; font-size: .88rem;
+}
+.cam-dialog-actions { display: flex; gap: 9px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+
+/* ── b362: recordings. APPENDED — every rule above is untouched, and every
+   colour here is a --c-* token or a color-mix of one. ───────────────────── */
+.cam-warn {
+  background: color-mix(in srgb, var(--c-red) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-red) 45%, transparent);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
+  color: var(--c-text); font-size: .82rem; line-height: 1.6;
+}
+.cam-warn b { color: var(--c-text); }
+.cam-warn.ok {
+  background: color-mix(in srgb, var(--c-green) 11%, transparent);
+  border-color: color-mix(in srgb, var(--c-green) 42%, transparent);
+}
+.cam-warn.neutral {
+  background: color-mix(in srgb, var(--c-amber) 12%, transparent);
+  border-color: color-mix(in srgb, var(--c-amber) 42%, transparent);
+}
+.cam-rec-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+.cam-rec-field { display: flex; flex-direction: column; gap: 4px; }
+.cam-rec-field label {
+  font-size: .7rem; font-weight: 700; color: var(--c-muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.cam-rec-field input, .cam-rec-field select {
+  background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border);
+  border-radius: 8px; padding: 7px 10px; font: inherit; font-size: .82rem; min-height: 40px;
+}
+.cam-rec-cover {
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px;
+  padding: 11px 13px; margin-bottom: 14px; color: var(--c-muted); font-size: .8rem; line-height: 1.6;
+}
+.cam-rec-cover b { color: var(--c-text); }
+.cam-ev {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: 10px; padding: 10px 13px; margin-bottom: 8px;
+}
+.cam-ev-time { font-weight: 800; color: var(--c-text); font-size: .95rem; font-variant-numeric: tabular-nums; }
+.cam-ev-meta { color: var(--c-muted); font-size: .78rem; flex: 1; min-width: 160px; line-height: 1.5; }
+.cam-ev-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.cam-player {
+  background: var(--c-card); border: 1px solid var(--c-border); border-radius: 12px;
+  padding: 14px; margin-bottom: 16px; display: none;
+}
+.cam-player.open { display: block; }
+.cam-player video { width: 100%; max-height: 62vh; border-radius: 8px; background: var(--c-surface); display: block; }
+.cam-player-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.cam-player-title { font-weight: 700; color: var(--c-text); font-size: .95rem; }
+.cam-player-note { color: var(--c-muted); font-size: .76rem; margin-top: 9px; line-height: 1.55; }
+
+@media (max-width: 560px) {
+  .cam-wrap { padding: 14px; }
+  .cam-grid { grid-template-columns: 1fr; }
+  .cam-h { font-size: 1.15rem; }
+  .cam-rec-bar { flex-direction: column; align-items: stretch; }
+  .cam-rec-field input, .cam-rec-field select { width: 100%; }
+}
+</style>
+
+  <div class="wren-tab-panels">
+
+    <!-- ── LIVE VIEW ───────────────────────────────────────────────────────── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-cam-live" data-tab="live" aria-labelledby="tab-cam-live">
+      <div class="cam-wrap">
+        <h2 class="cam-h">📹 Cameras</h2>
+        <p class="cam-sub">Site cameras. Not a monitoring screen — see the rule below.</p>
+
+        <div class="cam-rule" id="cam-rule">Loading…</div>
+
+        <div id="cam-external-group" hidden>
+          <div class="cam-group-h">🌳 External <span class="cam-group-note">— viewable at any time</span></div>
+          <div class="cam-grid" id="cam-external"></div>
+        </div>
+
+        <div id="cam-internal-group" hidden>
+          <div class="cam-group-h">🏠 Internal <span class="cam-group-note">— outside opening hours only, so no room can be watched while children are in it</span></div>
+          <div class="cam-grid" id="cam-internal"></div>
+        </div>
+
+        <div id="cam-empty" class="cam-empty" hidden></div>
+      </div>
+    </div>
+
+    <!-- ── ACCESS LOG ──────────────────────────────────────────────────────── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-cam-access-log" data-tab="access-log" aria-labelledby="tab-cam-access-log" hidden>
+      <div class="cam-wrap">
+        <h2 class="cam-h">🗒️ Camera access log</h2>
+        <p class="cam-sub">Every request to view a camera, granted or refused. There is no viewing path that is not on this list.
+          A view that cannot be written here is refused rather than allowed unrecorded.
+          <span id="cam-log-retention"></span></p>
+        <div class="cam-log-bar">
+          <select class="cam-sel" id="cam-log-granted">
+            <option value="">All attempts</option>
+            <option value="1">Granted only</option>
+            <option value="0">Refused only</option>
+          </select>
+          <select class="cam-sel" id="cam-log-days">
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="">All time</option>
+          </select>
+          <button class="cam-btn" id="cam-log-refresh">Refresh</button>
+        </div>
+        <div class="cam-log-scroll"><table class="cam-log" id="cam-log-table"><tbody><tr><td>Loading…</td></tr></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- ── FOOTAGE REQUESTS (b249) — ADDED. The two panels above are b234's,
+         unchanged. ──────────────────────────────────────────────────────── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-cam-requests" data-tab="requests" aria-labelledby="tab-cam-requests" hidden>
+      <div class="cam-wrap">
+        <h2 class="cam-h">📨 Footage requests</h2>
+        <p class="cam-sub">
+          Disclosure requests from parents and staff. <b>Ordered by when the footage is overwritten, not by when
+          the request arrived</b> — the statutory deadline to answer is one calendar month, but the recording is
+          gone in <span id="cam-req-rd">7</span> days. The top of this list is what you lose first.
+        </p>
+        <div class="cam-rule" id="cam-preserve-state">Loading…</div>
+        <div class="cam-log-bar">
+          <select class="cam-sel" id="cam-req-filter">
+            <option value="open">Open requests</option>
+            <option value="">All requests</option>
+            <option value="closed">Closed</option>
+          </select>
+          <button class="cam-btn" id="cam-req-refresh">Refresh</button>
+        </div>
+        <div id="cam-req-list"><div class="cam-empty">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- ── RECORDINGS (b362) — ADDED. The three panels above are unchanged. ── -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-cam-recordings" data-tab="recordings" aria-labelledby="tab-cam-recordings" hidden>
+      <div class="cam-wrap">
+        <h2 class="cam-h">⏪ Recordings</h2>
+        <p class="cam-sub">
+          What the door camera recorded. Recording started on <b>28 September 2026</b> — before that nothing was
+          being kept at all, so there is no earlier footage to find.
+          Playing a clip is a view: you state the reason, and your name, the reason and the exact footage window
+          go into the access log before any video moves. Footage is played back through Wren and never leaves the building.
+        </p>
+
+        <div id="cam-rec-status" class="cam-warn neutral">Checking the recorder…</div>
+
+        <div class="cam-rec-bar">
+          <div class="cam-rec-field">
+            <label for="cam-rec-camera">Camera</label>
+            <select id="cam-rec-camera"></select>
+          </div>
+          <div class="cam-rec-field">
+            <label for="cam-rec-day">Day</label>
+            <input type="date" id="cam-rec-day">
+          </div>
+          <div class="cam-rec-field">
+            <label for="cam-rec-from">Or a time (from)</label>
+            <input type="time" id="cam-rec-from" step="60">
+          </div>
+          <div class="cam-rec-field">
+            <label for="cam-rec-mins">For (minutes)</label>
+            <select id="cam-rec-mins">
+              <option value="2">2</option>
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+              <option value="30">30</option>
+            </select>
+          </div>
+          <button class="cam-btn" id="cam-rec-load">Show this day</button>
+          <button class="cam-btn cam-btn-primary" id="cam-rec-window">▶ Play that time</button>
+        </div>
+
+        <div class="cam-player" id="cam-rec-player">
+          <div class="cam-player-head">
+            <span class="cam-player-title" id="cam-rec-player-title">—</span>
+            <button class="cam-btn" id="cam-rec-close">■ Close</button>
+          </div>
+          <video id="cam-rec-video" controls playsinline preload="metadata" title="Recorded footage"></video>
+          <div class="cam-player-note" id="cam-rec-player-note"></div>
+        </div>
+
+        <div class="cam-rec-cover" id="cam-rec-cover" hidden></div>
+        <div id="cam-rec-list"><div class="cam-empty">Pick a day and press <b>Show this day</b>.</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- b249 §5 — no view without a stated reason. The server refuses a session
+       that carries no CCTV Policy §3 trigger; this is where the manager gives
+       one. It is not a confirmation dialog, it is the log entry being written. -->
+  <div class="cam-dialog" id="cam-trigger-dialog">
+    <div class="cam-dialog-box">
+      <h3>Why are you opening this camera?</h3>
+      <p>
+        CCTV Policy §3 permits footage to be viewed only when one of five specific things has happened.
+        Your answer is written into the access log with your name and the time — the privacy notice families
+        sign promises them that every single access is logged with the reason.
+      </p>
+      <label for="cam-trigger-select">Trigger</label>
+      <select id="cam-trigger-select"></select>
+      <label for="cam-trigger-ref">Incident reference (optional)</label>
+      <input id="cam-trigger-ref" placeholder="e.g. accident book 2026-114, CCTV-2026-0003">
+      <label for="cam-trigger-note">Note (optional)</label>
+      <input id="cam-trigger-note" placeholder="What you are looking for">
+      <div class="cam-dialog-actions">
+        <button class="cam-btn" id="cam-trigger-cancel">Cancel</button>
+        <button class="cam-btn cam-btn-primary" id="cam-trigger-go">Log it and open the camera</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API  = '/api/cameras';
+  var root = document.querySelector('.v2-section[data-section="cameras"]');
+  if (!root) return;
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function err(e) { return (e && (e.message || e.error)) || 'error'; }
+
+  // ── Live view ───────────────────────────────────────────────────────────────
+  var _tick = null;             // one countdown timer for the whole grid
+  var _players = {};            // cameraId -> { video, session }
+
+  function tile(c) {
+    var badges = '<span class="cam-badge ' + (c.location === 'external' ? 'cam-b-ext">External' : 'cam-b-int">Internal') + '</span>';
+    if (!c.enabled) badges += '<span class="cam-badge cam-b-off">Not connected</span>';
+    else badges += c.viewable_now
+      ? '<span class="cam-badge cam-b-ok">Viewable now</span>'
+      : '<span class="cam-badge cam-b-no">Blocked</span>';
+
+    var view;
+    if (c.viewable_now) {
+      view = '<video id="cam-v-' + c.id + '" autoplay muted playsinline title="' + esc(c.name) + ' live view"></video>'
+           + '<div class="cam-live-badge" id="cam-lb-' + c.id + '">● LIVE</div>'
+           + '<div class="cam-blocked" id="cam-ph-' + c.id + '">Press <b>Watch</b> to open the stream.</div>';
+    } else if (!c.enabled) {
+      view = '<div class="cam-blocked">Camera registered but not switched on.<br>'
+           + 'It stays off until the CCTV paperwork is signed off.</div>';
+    } else {
+      // A blocked internal camera is NOT a dead tile — it says when it opens and
+      // counts down to it. Toby should never have to work out why a tile is blank.
+      view = '<div class="cam-blocked">'
+           + '<span class="cam-blocked-from">Available from 18:00</span>'
+           + 'The nursery is open — internal cameras cannot be viewed while children are here.'
+           + '<span class="cam-countdown" data-countdown="' + esc(c.available_from || '') + '">—</span>'
+           + '</div>';
+    }
+
+    return '<div class="cam-card" data-cam="' + c.id + '">'
+      + '<div class="cam-view">' + view + '</div>'
+      + '<div class="cam-body">'
+      +   '<div class="cam-name">' + esc(c.name) + '</div>'
+      +   '<div class="cam-meta">' + badges + '</div>'
+      +   '<div class="cam-reason">' + esc(c.reason || '') + '</div>'
+      +   (c.viewable_now
+            ? '<div><button class="cam-btn cam-btn-primary" data-watch="' + c.id + '">▶ Watch</button> '
+              + '<button class="cam-btn" data-stop="' + c.id + '" hidden>■ Stop</button></div>'
+            : '')
+      + '</div></div>';
+  }
+
+  function renderCountdowns() {
+    var now = Date.now();
+    root.querySelectorAll('[data-countdown]').forEach(function (el) {
+      var t = Date.parse(el.getAttribute('data-countdown') || '');
+      if (!t) { el.textContent = ''; return; }
+      var ms = t - now;
+      if (ms <= 0) { el.textContent = 'Available now — refresh'; return; }
+      var s = Math.floor(ms / 1000);
+      var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+      el.textContent = 'Opens in ' + (h ? h + 'h ' : '') + m + 'm ' + String(ss).padStart(2, '0') + 's';
+    });
+  }
+
+  function loadLive() {
+    return Wren.api(API).then(function (d) {
+      var cams = (d && d.cameras) || [];
+      var r = (d && d.rule) || {};
+      document.getElementById('cam-rule').innerHTML =
+          '<b>The rule.</b> External cameras: ' + esc(r.external || '') + ' '
+        + 'Internal cameras: ' + esc(r.internal || '') + ' '
+        + 'Opening hours are <b>' + esc(r.opening_hours || '') + '</b> (' + esc(r.timezone || '') + ').<br>'
+        + esc(r.audited || '')
+        + '<span class="cam-rule-clock">Nursery clock: ' + esc((d.clock && d.clock.london) || '') + ' — '
+        + ((d.clock && d.clock.nursery_open) ? 'OPEN' : 'closed')
+        + ((d && d.clock_stubbed) ? ' · ⚠ clock stubbed (dev only)' : '') + '</span>';
+
+      var ext = cams.filter(function (c) { return c.location === 'external'; });
+      var int_ = cams.filter(function (c) { return c.location === 'internal'; });
+      document.getElementById('cam-external').innerHTML = ext.map(tile).join('');
+      document.getElementById('cam-internal').innerHTML = int_.map(tile).join('');
+      document.getElementById('cam-external-group').hidden = !ext.length;
+      document.getElementById('cam-internal-group').hidden = !int_.length;
+      var empty = document.getElementById('cam-empty');
+      empty.hidden = cams.length > 0;
+      if (!cams.length) empty.textContent = 'No cameras registered yet.';
+
+      renderCountdowns();
+      if (_tick) clearInterval(_tick);
+      _tick = setInterval(renderCountdowns, 1000);
+    }).catch(function (e) {
+      document.getElementById('cam-rule').innerHTML = '<span class="cam-err">Could not load cameras: ' + esc(err(e)) + '</span>';
+    });
+  }
+
+  // b249 §5 — Watch now asks WHY first. The server refuses a session with no
+  // CCTV Policy §3 trigger (and logs the refusal), so this dialog is not a
+  // nicety in front of the real thing — it IS how the reason reaches the log.
+  var _pendingWatch = null;
+  var _triggers = {};
+  // b362 — set by the Recordings tab so the one dialog can gate recorded footage
+  // as well as a live stream. Cleared by closeTrigger() either way.
+  var _pendingTrigger = null;
+
+  function askTrigger(id) {
+    var sel = document.getElementById('cam-trigger-select');
+    var keys = Object.keys(_triggers);
+    if (!keys.length) {
+      // The vocabulary comes from the server (GET /api/cameras/access-log ships
+      // it). If it has not loaded, fall back to the policy's own five plus the
+      // §5 install case rather than letting the button do nothing.
+      _triggers = {
+        safeguarding: 'Safeguarding concern or allegation (policy §3.1)',
+        accident: 'Accident or injury with an unclear or disputed cause (policy §3.2)',
+        complaint: 'Complaint from a parent, carer or member of staff (policy §3.3)',
+        security: 'Security incident (policy §3.4)',
+        statutory: 'Lawful request from police, Ofsted or the LADO (policy §3.5)',
+        install_test: 'Installation / camera positioning test (policy §5)'
+      };
+      keys = Object.keys(_triggers);
+    }
+    sel.innerHTML = keys.map(function (k) {
+      return '<option value="' + esc(k) + '">' + esc(_triggers[k]) + '</option>';
+    }).join('');
+    document.getElementById('cam-trigger-ref').value = '';
+    document.getElementById('cam-trigger-note').value = '';
+    _pendingWatch = id;
+    document.getElementById('cam-trigger-dialog').classList.add('open');
+    sel.focus();
+  }
+  function closeTrigger() {
+    document.getElementById('cam-trigger-dialog').classList.remove('open');
+    _pendingWatch = null;
+    _pendingTrigger = null;   // b362 — a cancelled dialog must not leave a callback armed
+  }
+
+  // Watch: ask the server for a session. The server applies the time rule, checks
+  // the trigger and writes the audit row — this button does not decide anything,
+  // it only asks.
+  function watch(id, trigger) {
+    var card = root.querySelector('.cam-card[data-cam="' + id + '"]');
+    var btn  = card && card.querySelector('[data-watch]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Opening…'; }
+    Wren.api(API + '/' + id + '/session', { method: 'POST', body: trigger }).then(function (s) {
+      var v  = document.getElementById('cam-v-' + id);
+      var ph = document.getElementById('cam-ph-' + id);
+      var lb = document.getElementById('cam-lb-' + id);
+      if (!v || !s || !s.url) throw new Error('no session');
+      v.src = s.url;
+      v.style.display = 'block';
+      if (ph) ph.style.display = 'none';
+      if (lb) lb.style.display = 'block';
+      _players[id] = { video: v };
+      v.addEventListener('error', function () {
+        if (lb) lb.style.display = 'none';
+        v.style.display = 'none';
+        if (ph) { ph.style.display = 'block'; ph.innerHTML = 'Stream unavailable — the camera is registered but not connected yet.'; }
+      }, { once: true });
+      if (btn) { btn.hidden = true; btn.disabled = false; btn.textContent = '▶ Watch'; }
+      var stop = card && card.querySelector('[data-stop]');
+      if (stop) stop.hidden = false;
+    }).catch(function (e) {
+      // A refusal is the control working. Show exactly what the server said.
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Watch'; }
+      var reason = card && card.querySelector('.cam-reason');
+      if (reason) reason.innerHTML = '<span class="cam-err">' + esc(err(e)) + '</span>';
+      Wren.toast('Refused: ' + err(e), 'error');
+      loadLive();
+    });
+  }
+
+  function stop(id) {
+    var p = _players[id];
+    if (p && p.video) { p.video.pause(); p.video.removeAttribute('src'); p.video.load(); p.video.style.display = 'none'; }
+    delete _players[id];
+    var card = root.querySelector('.cam-card[data-cam="' + id + '"]');
+    if (card) {
+      var lb = document.getElementById('cam-lb-' + id);
+      var ph = document.getElementById('cam-ph-' + id);
+      if (lb) lb.style.display = 'none';
+      if (ph) ph.style.display = 'block';
+      var w = card.querySelector('[data-watch]'); if (w) w.hidden = false;
+      var s = card.querySelector('[data-stop]');  if (s) s.hidden = true;
+    }
+  }
+
+  // ── Access log ──────────────────────────────────────────────────────────────
+  function loadLog() {
+    var q = [];
+    var g = document.getElementById('cam-log-granted').value;
+    var d = document.getElementById('cam-log-days').value;
+    if (g) q.push('granted=' + encodeURIComponent(g));
+    if (d) q.push('days=' + encodeURIComponent(d));
+    var tb = document.querySelector('#cam-log-table tbody');
+    return Wren.api(API + '/access-log' + (q.length ? '?' + q.join('&') : '')).then(function (r) {
+      var rows = (r && r.entries) || [];
+      if (r && r.triggers) _triggers = r.triggers;
+      if (!rows.length) { tb.innerHTML = '<tr><td>No camera has been viewed in this period.</td></tr>'; return; }
+      // b249: the columns the paper log asks for — trigger, incident ref,
+      // outcome, exported. A row with NO trigger is a pre-b249 row or an
+      // attempt that never named one, and it is called out rather than left
+      // blank: an unexplained access is the thing this log exists to surface.
+      tb.innerHTML =
+        '<tr><th>When</th><th>Who</th><th>Camera</th><th>Result</th><th>Trigger</th><th>Incident</th>'
+        + '<th>Outcome</th><th>Exp.</th><th>Detail</th><th>From</th></tr>'
+        + rows.map(function (e) {
+          var trig = e.trigger_reason
+            ? esc(_triggers[e.trigger_reason] || e.trigger_reason)
+            : '<span class="cam-err">none stated</span>';
+          return '<tr>'
+            + '<td>' + esc(new Date(e.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })) + '</td>'
+            + '<td>' + esc(e.staff_name || ('#' + (e.staff_id == null ? '?' : e.staff_id))) + '</td>'
+            + '<td>' + esc(e.camera_name || '—') + (e.location ? ' <span class="cam-badge ' + (e.location === 'external' ? 'cam-b-ext">Ext' : 'cam-b-int">Int') + '</span>' : '') + '</td>'
+            + '<td><span class="cam-badge ' + (e.granted ? 'cam-b-ok">Granted' : 'cam-b-no">Refused') + '</span></td>'
+            + '<td class="cam-log-reason">' + trig + (e.trigger_note ? '<br>' + esc(e.trigger_note) : '') + '</td>'
+            + '<td class="cam-log-reason">' + esc(e.incident_ref || e.request_reference || '—') + '</td>'
+            + '<td class="cam-log-reason">' + (e.outcome ? esc(e.outcome) : (e.granted ? '<button class="cam-btn" data-outcome="' + e.id + '">Record outcome</button>' : '—')) + '</td>'
+            + '<td>' + (e.exported ? 'Y' : (e.granted ? 'N' : '—')) + (e.deleted_on ? '<br><span class="cam-log-reason">del ' + esc(String(e.deleted_on).slice(0, 10)) + '</span>' : '') + '</td>'
+            + '<td class="cam-log-reason">' + esc(e.reason || '') + '</td>'
+            + '<td class="cam-log-reason">' + esc(e.ip || '') + '</td>'
+            + '</tr>';
+        }).join('');
+      var ret = document.getElementById('cam-log-retention');
+      if (ret && r && r.retention) ret.textContent = 'Retention: ' + r.retention + '.';
+    }).catch(function (e) {
+      tb.innerHTML = '<tr><td class="cam-err">Could not load the log: ' + esc(err(e)) + '</td></tr>';
+    });
+  }
+
+  // ── Wiring ──────────────────────────────────────────────────────────────────
+  root.addEventListener('click', function (ev) {
+    var w = ev.target.closest('[data-watch]'); if (w) { ev.preventDefault(); return askTrigger(w.getAttribute('data-watch')); }
+    var s = ev.target.closest('[data-stop]');  if (s) { ev.preventDefault(); return stop(s.getAttribute('data-stop')); }
+  });
+  ['cam-log-granted', 'cam-log-days'].forEach(function (id) {
+    var el = document.getElementById(id); if (el) el.addEventListener('change', loadLog);
+  });
+  var lr = document.getElementById('cam-log-refresh');
+  if (lr) lr.addEventListener('click', loadLog);
+
+  // ── b249: the trigger dialog's own wiring ──────────────────────────────────
+  document.getElementById('cam-trigger-cancel').addEventListener('click', function (e) {
+    e.preventDefault(); closeTrigger();
+  });
+  document.getElementById('cam-trigger-dialog').addEventListener('click', function (e) {
+    if (e.target === e.currentTarget) closeTrigger();
+  });
+  document.getElementById('cam-trigger-go').addEventListener('click', function (e) {
+    e.preventDefault();
+    var trigger = {
+      trigger_reason: document.getElementById('cam-trigger-select').value,
+      incident_ref:   document.getElementById('cam-trigger-ref').value.trim(),
+      trigger_note:   document.getElementById('cam-trigger-note').value.trim()
+    };
+    // b362 — the same dialog now also gates recorded footage. A caller that
+    // registered a callback takes the answer; with no callback this is a live-view
+    // request and behaves exactly as it did before.
+    if (_pendingTrigger) {
+      var cb = _pendingTrigger;
+      closeTrigger();
+      return cb(trigger);
+    }
+    var id = _pendingWatch;
+    if (id == null) return;
+    closeTrigger();
+    watch(id, trigger);
+  });
+
+  // Record the outcome against a log row after the fact — the paper log's
+  // "Outcome / Action Taken" and "Exported?" columns, which cannot be known when
+  // the stream opens. This route can only ADD; it cannot alter who watched or
+  // when, because that is the record of what happened.
+  function recordOutcome(logId) {
+    var outcome = window.prompt('What came of watching this? (Outcome / action taken)');
+    if (outcome == null || !outcome.trim()) return;
+    var exported = window.confirm('Was a clip exported from this view?\n\nOK = yes, Cancel = no');
+    Wren.api(API + '/access-log/' + logId, {
+      method: 'PATCH', body: { outcome: outcome.trim(), exported: exported, authorised_by: 'me' }
+    }).then(loadLog).catch(function (e) { Wren.toast('Could not save: ' + err(e), 'error'); });
+  }
+
+  // ── b249: the footage-request queue ────────────────────────────────────────
+  function fmtDate(d) {
+    return d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  }
+
+  /* The days figure comes from the SERVER (computed from the expiry stamped on
+     the row at submission), never from this browser's clock. A laptop with the
+     wrong date must not tell a manager the footage is safe for another week. */
+  function daysCell(r) {
+    if (r.footage_expired) return '<span class="cam-days gone">footage overwritten</span>';
+    var d = r.days_to_overwrite;
+    if (d == null) return '';
+    if (d <= 0) return '<span class="cam-days">overwritten TODAY</span>';
+    return '<span class="cam-days' + (d > 3 ? ' safe' : '') + '">' + d + ' day' + (d === 1 ? '' : 's') + ' of footage left</span>';
+  }
+
+  /* Preservation state, said plainly. A request whose clip could not be kept has
+     to shout — that is the difference between this and a paper form, which at
+     least never implied anything had been taken care of. */
+  function preserveCell(r) {
+    switch (r.preserve_status) {
+      case 'preserved':
+        return '<div class="cam-preserve good">✅ A clip has been exported and verified on disk'
+             + (r.clip_bytes ? ' (' + Math.round(r.clip_bytes / 1048576) + ' MB)' : '') + '.</div>';
+      case 'disabled':
+        return '<div class="cam-preserve warn">⚠️ <b>No clip was kept.</b> Automatic preservation is switched off — '
+             + 'nothing is recording yet. Nothing has been lost that existed.</div>';
+      case 'unavailable':
+        return '<div class="cam-preserve bad">🔴 <b>NO CLIP WAS KEPT — the recorder did not answer.</b><br>'
+             + esc(r.preserve_error || '') + '</div>';
+      case 'failed':
+        return '<div class="cam-preserve bad">🔴 <b>PRESERVATION FAILED.</b><br>' + esc(r.preserve_error || '') + '</div>';
+      case 'expired':
+        return '<div class="cam-preserve bad">🔴 <b>Too late — the footage was overwritten before it was kept.</b><br>'
+             + esc(r.preserve_error || '') + '</div>';
+      case 'pending':
+        return '<div class="cam-preserve warn">⏳ An export is in flight. Not preserved until a file is verified.</div>';
+      default:
+        return '<div class="cam-preserve warn">⚠️ No preservation attempt has been recorded.</div>';
+    }
+  }
+
+  function reqCard(r) {
+    var urgent = !r.footage_expired && r.days_to_overwrite != null && r.days_to_overwrite <= 3;
+    var who = (r.requester_type === 'parent' ? '👪 Parent' : '👤 Staff')
+            + (r.requester_name ? ' · ' + esc(r.requester_name) : '')
+            + (r.requester_relationship ? ' (' + esc(r.requester_relationship) + ')' : '');
+    return '<div class="cam-req ' + (r.footage_expired ? 'gone' : (urgent ? 'urgent' : '')) + '" data-req="' + r.id + '">'
+      + '<div class="cam-req-top">'
+      +   '<span class="cam-req-ref">' + esc(r.reference || ('Request ' + r.id)) + '</span>'
+      +   daysCell(r)
+      + '</div>'
+      + '<div class="cam-req-meta">' + who + (r.child_name ? ' · about <b>' + esc(r.child_name) + '</b>' : '') + '</div>'
+      + '<div class="cam-req-meta">Incident <b>' + fmtDate(r.incident_date) + '</b>'
+      +   (r.incident_time_from ? ' ' + esc(String(r.incident_time_from).slice(0, 5)) : '')
+      +   (r.incident_time_to ? '–' + esc(String(r.incident_time_to).slice(0, 5)) : '')
+      +   (r.incident_location ? ' · ' + esc(r.incident_location) : '')
+      + '</div>'
+      + '<div class="cam-req-meta">Raised ' + fmtDate(r.request_date)
+      +   ' · statutory response due <b>' + fmtDate(r.response_due_date) + '</b>'
+      +   ' · identity ' + (r.identity_verified === true ? 'verified' : (r.identity_verified === false ? '<b>NOT verified</b>' : 'not checked'))
+      +   (r.decision ? ' · decision: <b>' + esc(r.decision) + '</b>' : '')
+      + '</div>'
+      + '<div class="cam-req-reason">' + esc(r.reason || '') + '</div>'
+      + preserveCell(r)
+      + '<div class="cam-req-actions">'
+      +   '<button class="cam-btn" data-req-toggle="' + r.id + '">' + (r.decision ? 'Revisit decision' : 'Decide') + '</button>'
+      +   '<button class="cam-btn" data-req-preserve="' + r.id + '">Try to preserve now</button>'
+      + '</div>'
+      + '<div class="cam-req-form" id="cam-req-form-' + r.id + '">'
+      +   '<label>Identity verified, and how</label>'
+      +   '<input id="cam-req-idhow-' + r.id + '" placeholder="e.g. known to us in person; passport seen; police warrant card"'
+      +     ' value="' + esc(r.identity_verified_how || '') + '">'
+      +   '<label>Third parties visible in the footage</label>'
+      +   '<input id="cam-req-tp-' + r.id + '" placeholder="Who else appears, and what will be done about it"'
+      +     ' value="' + esc(r.third_parties_note || '') + '">'
+      +   '<label>Decision</label>'
+      +   '<select id="cam-req-dec-' + r.id + '">'
+      +     '<option value="">— choose —</option>'
+      +     '<option value="disclose"' + (r.decision === 'disclose' ? ' selected' : '') + '>Disclose</option>'
+      +     '<option value="redact"' + (r.decision === 'redact' ? ' selected' : '') + '>Disclose with third parties obscured</option>'
+      +     '<option value="refuse"' + (r.decision === 'refuse' ? ' selected' : '') + '>Refuse</option>'
+      +   '</select>'
+      +   '<label>Reason for the decision (required)</label>'
+      +   '<textarea id="cam-req-why-' + r.id + '" rows="3">' + esc(r.decision_reason || '') + '</textarea>'
+      +   '<div class="cam-req-actions">'
+      +     '<button class="cam-btn cam-btn-primary" data-req-save="' + r.id + '">Save decision</button>'
+      +     '<button class="cam-btn" data-req-close="' + r.id + '">Save and close the request</button>'
+      +   '</div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function loadRequests() {
+    var el = document.getElementById('cam-req-list');
+    var f = document.getElementById('cam-req-filter').value;
+    return Wren.api('/api/cctv/requests' + (f ? '?status=' + encodeURIComponent(f) : '')).then(function (d) {
+      var rows = (d && d.requests) || [];
+      document.getElementById('cam-req-rd').textContent = (d && d.retention_days) || 7;
+      var ps = (d && d.preserve) || {};
+      document.getElementById('cam-preserve-state').innerHTML = ps.available
+        ? '<b>Automatic preservation is ON.</b> A new request asks the recorder to export the window straight away. '
+          + 'A request is only ever marked preserved once the exported file has been found on disk and checked.'
+        : '<b>Automatic preservation is OFF.</b> ' + esc(ps.reason || '')
+          + ' Requests are still recorded, routed and answered — but no clip is being kept, and no request will '
+          + 'claim otherwise.';
+      if (!rows.length) { el.innerHTML = '<div class="cam-empty">No requests in this view.</div>'; return; }
+      el.innerHTML = rows.map(reqCard).join('');
+    }).catch(function (e) {
+      el.innerHTML = '<div class="cam-err">Could not load the queue: ' + esc(err(e)) + '</div>';
+    });
+  }
+
+  function saveDecision(id, close) {
+    var dec = document.getElementById('cam-req-dec-' + id).value;
+    var why = document.getElementById('cam-req-why-' + id).value.trim();
+    var idhow = document.getElementById('cam-req-idhow-' + id).value.trim();
+    var tp = document.getElementById('cam-req-tp-' + id).value.trim();
+    if (dec && !why) { Wren.toast('A decision needs a reason recorded against it.', 'error'); return; }
+    var body = { close: !!close };
+    if (dec) { body.decision = dec; body.decision_reason = why; }
+    if (idhow) { body.identity_verified = true; body.identity_verified_how = idhow; }
+    if (tp) { body.third_parties_visible = true; body.third_parties_note = tp; }
+    Wren.api('/api/cctv/requests/' + id, { method: 'PATCH', body: body })
+      .then(function () { Wren.toast('Saved', 'success'); loadRequests(); })
+      .catch(function (e) { Wren.toast(err(e), 'error'); });
+  }
+
+  root.addEventListener('click', function (ev) {
+    var t = ev.target.closest('[data-req-toggle]');
+    if (t) { ev.preventDefault();
+      document.getElementById('cam-req-form-' + t.getAttribute('data-req-toggle')).classList.toggle('open'); return; }
+    var p = ev.target.closest('[data-req-preserve]');
+    if (p) {
+      ev.preventDefault();
+      var pid = p.getAttribute('data-req-preserve');
+      p.disabled = true; p.textContent = 'Asking the recorder…';
+      Wren.api('/api/cctv/requests/' + pid + '/preserve', { method: 'POST', body: {} }).then(function (r) {
+        // A failure comes back 200 with ok:false — it belongs on the screen, in
+        // red, not in a server log. Never reported as success.
+        Wren.toast(r.ok ? 'A clip was exported and verified.' : ('Not preserved: ' + (r.error || r.status)),
+                   r.ok ? 'success' : 'error');
+        loadRequests();
+      }).catch(function (e) {
+        p.disabled = false; p.textContent = 'Try to preserve now';
+        Wren.toast(err(e), 'error');
+      });
+      return;
+    }
+    var sv = ev.target.closest('[data-req-save]');
+    if (sv) { ev.preventDefault(); return saveDecision(sv.getAttribute('data-req-save'), false); }
+    var cl = ev.target.closest('[data-req-close]');
+    if (cl) { ev.preventDefault(); return saveDecision(cl.getAttribute('data-req-close'), true); }
+    var oc = ev.target.closest('[data-outcome]');
+    if (oc) { ev.preventDefault(); return recordOutcome(oc.getAttribute('data-outcome')); }
+  });
+  ['cam-req-filter'].forEach(function (id) {
+    var el = document.getElementById(id); if (el) el.addEventListener('change', loadRequests);
+  });
+  var rr = document.getElementById('cam-req-refresh');
+  if (rr) rr.addEventListener('click', loadRequests);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // b362 — RECORDINGS. APPENDED; nothing above this line was changed except the
+  // trigger dialog, which now accepts a callback so one dialog serves both tabs.
+  // ═══════════════════════════════════════════════════════════════════════════
+  var _recCameras = [];
+
+  function ymdLocal(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function hhmm(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+  function hhmmss(epochSeconds) {
+    if (epochSeconds == null) return '—';
+    return new Date(epochSeconds * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  // The recorder's state and its retention against the policy. This is the one
+  // thing on the tab that must be right even when everything else fails, so it
+  // reports what the server said and never fills a gap with an assumption.
+  function loadRecStatus() {
+    var el = document.getElementById('cam-rec-status');
+    return Wren.api(API + '/recordings/status').then(function (d) {
+      var bits = [];
+      if (!d.configured) {
+        el.className = 'cam-warn';
+        el.innerHTML = '<b>No recorder is configured.</b> Wren does not know where the recorder is, so it cannot '
+          + 'list or play anything. Nothing has been lost — but nothing can be found either.';
+        return d;
+      }
+      if (!d.reachable) {
+        el.className = 'cam-warn';
+        el.innerHTML = '<b>The recorder did not answer.</b> ' + esc(d.recorder_error || '')
+          + '<br>Address from <code>' + esc(d.address_source) + '</code>. '
+          + 'This is not evidence that anything is wrong with the footage — only that Wren cannot reach the box.';
+        return d;
+      }
+      bits.push('<b>Recorder online</b> — Frigate ' + esc(d.recorder_version || '?')
+                + ' (address from <code>' + esc(d.address_source) + '</code>).');
+      if (d.retention_breach) {
+        el.className = 'cam-warn';
+        bits.push('⚠️ <b>Retention exceeds the policy.</b> ' + esc(d.retention_message));
+        (d.retention_over || []).forEach(function (o) {
+          bits.push('· <b>' + esc(o.camera) + '</b> — continuous ' + (o.continuous_days == null ? '—' : o.continuous_days)
+            + ' days, events ' + (o.event_days == null ? '—' : o.event_days)
+            + ' days, snapshots ' + (o.snapshot_days == null ? '—' : o.snapshot_days)
+            + ' days. Policy: ' + d.policy_days + ' days.');
+        });
+        bits.push('<span class="cam-rule-clock">Wren cannot change the recorder — the fix is a config change on the '
+          + 'Z420 and is written up for Toby. Until it is made, the setting is keeping footage longer than its own '
+          + 'policy and privacy notice say.</span>');
+      } else {
+        el.className = 'cam-warn ok';
+        bits.push('✅ ' + esc(d.retention_message));
+      }
+      if ((d.unknown_to_recorder || []).length) {
+        bits.push('⚠️ In service but not being recorded: <b>' + esc(d.unknown_to_recorder.join(', ')) + '</b>.');
+      }
+      el.innerHTML = bits.join('<br>');
+      return d;
+    }).catch(function (e) {
+      el.className = 'cam-warn';
+      el.innerHTML = '<b>Could not check the recorder.</b> ' + esc(err(e));
+      return null;
+    });
+  }
+
+  // The camera picker is filled from the SAME list the Live tab renders, so a
+  // camera that does not exist cannot be chosen here either.
+  function loadRecCameras() {
+    return Wren.api(API).then(function (d) {
+      _recCameras = ((d && d.cameras) || []).filter(function (c) { return c.in_service !== false; });
+      var sel = document.getElementById('cam-rec-camera');
+      sel.innerHTML = _recCameras.length
+        ? _recCameras.map(function (c) {
+            return '<option value="' + c.id + '">' + esc(c.name) + '</option>';
+          }).join('')
+        : '<option value="">No cameras in service</option>';
+    }).catch(function () { /* the status banner already carries the failure */ });
+  }
+
+  function currentRecCamera() {
+    var v = parseInt(document.getElementById('cam-rec-camera').value, 10);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function evRow(e) {
+    var when = hhmmss(e.start_time);
+    var dur = e.duration_s == null ? '—' : (e.duration_s + 's');
+    return '<div class="cam-ev">'
+      + '<span class="cam-ev-time">' + esc(when) + '</span>'
+      + '<span class="cam-ev-meta">' + esc(e.label || 'motion')
+      +   (e.score != null ? ' · ' + e.score + '%' : '')
+      +   ' · ' + esc(dur)
+      +   (e.has_clip ? '' : ' · <i>no clip kept</i>')
+      + '</span>'
+      + '<span class="cam-ev-actions">'
+      +   (e.has_clip
+            ? '<button class="cam-btn cam-btn-primary" data-play-event="' + esc(e.id) + '">▶ Play</button>'
+            : '<button class="cam-btn" disabled title="The recorder kept no clip for this event">▶ Play</button>')
+      + '</span>'
+      + '</div>';
+  }
+
+  function loadRecordings() {
+    var list = document.getElementById('cam-rec-list');
+    var cover = document.getElementById('cam-rec-cover');
+    var id = currentRecCamera();
+    var day = document.getElementById('cam-rec-day').value;
+    if (!id)  { list.innerHTML = '<div class="cam-empty">No camera in service to look at.</div>'; return Promise.resolve(); }
+    if (!day) { list.innerHTML = '<div class="cam-empty">Pick a day.</div>'; return Promise.resolve(); }
+    list.innerHTML = '<div class="cam-empty">Loading…</div>';
+    return Wren.api(API + '/' + id + '/recordings?day=' + encodeURIComponent(day)).then(function (d) {
+      if (d && d.triggers) _triggers = d.triggers;
+      var c = (d && d.continuous) || {};
+      cover.hidden = false;
+      cover.innerHTML = c.segments
+        ? '<b>' + c.minutes + ' minutes</b> of continuous recording on this day, from <b>' + esc(hhmm(c.first))
+          + '</b> to <b>' + esc(hhmm(c.last)) + '</b>. '
+          + 'Use the time box above to play any window inside that, whether or not an event was detected.'
+        : 'No continuous recording found for this day. Recording started on 28 September 2026, and the recorder '
+          + 'only keeps footage for as long as its retention allows — a day earlier than that has been overwritten.';
+      var evs = (d && d.events) || [];
+      list.innerHTML = evs.length
+        ? evs.map(evRow).join('')
+        : '<div class="cam-empty">No detected events on this day. There may still be continuous footage — '
+          + 'play a time window above.</div>';
+    }).catch(function (e) {
+      cover.hidden = true;
+      list.innerHTML = '<div class="cam-err">Could not read the recordings: ' + esc(err(e)) + '</div>';
+    });
+  }
+
+  // Playing a recording: ask WHY, then ask the server for a session. The server
+  // writes the log row (with the footage window) before it mints a token, so the
+  // button below cannot produce an unlogged view.
+  function playRecording(body, label) {
+    var id = currentRecCamera();
+    if (!id) return;
+    _pendingTrigger = function (trigger) {
+      var req = Object.assign({}, body, trigger);
+      Wren.api(API + '/' + id + '/recordings/session', { method: 'POST', body: req }).then(function (s) {
+        var box = document.getElementById('cam-rec-player');
+        var v   = document.getElementById('cam-rec-video');
+        box.classList.add('open');
+        document.getElementById('cam-rec-player-title').textContent = (s.camera && s.camera.name ? s.camera.name + ' — ' : '') + label;
+        document.getElementById('cam-rec-player-note').innerHTML =
+          'Logged as access-log entry <b>#' + s.access_log_id + '</b> under “' + esc((s.trigger && s.trigger.label) || '')
+          + '”. Footage window ' + esc(hhmm(s.from)) + '–' + esc(hhmm(s.to)) + '. '
+          + '<button class="cam-btn" data-outcome="' + s.access_log_id + '" style="margin-top:8px">Record what came of this</button>';
+        v.src = s.url;
+        v.load();
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }).catch(function (e) {
+        // A refusal is the control working. Say exactly what the server said.
+        Wren.toast('Refused: ' + err(e), 'error');
+      });
+    };
+    askTrigger(null);
+  }
+
+  function closeRecPlayer() {
+    var box = document.getElementById('cam-rec-player');
+    var v = document.getElementById('cam-rec-video');
+    v.pause(); v.removeAttribute('src'); v.load();
+    box.classList.remove('open');
+  }
+
+  // ── Wiring ────────────────────────────────────────────────────────────────
+  document.getElementById('cam-rec-load').addEventListener('click', function (e) {
+    e.preventDefault(); loadRecordings();
+  });
+  document.getElementById('cam-rec-day').addEventListener('change', loadRecordings);
+  document.getElementById('cam-rec-camera').addEventListener('change', loadRecordings);
+  document.getElementById('cam-rec-close').addEventListener('click', function (e) {
+    e.preventDefault(); closeRecPlayer();
+  });
+  document.getElementById('cam-rec-window').addEventListener('click', function (e) {
+    e.preventDefault();
+    var day = document.getElementById('cam-rec-day').value;
+    var t   = document.getElementById('cam-rec-from').value;
+    var mins = parseInt(document.getElementById('cam-rec-mins').value, 10) || 5;
+    if (!day || !t) { Wren.toast('Pick a day and a time first.', 'error'); return; }
+    // Built as a local Date so the browser's own timezone does the conversion —
+    // the nursery, the recorder and the person looking are all in one place.
+    var from = new Date(day + 'T' + t + ':00');
+    if (Number.isNaN(from.getTime())) { Wren.toast('That is not a time.', 'error'); return; }
+    var to = new Date(from.getTime() + mins * 60000);
+    playRecording(
+      { from: Math.floor(from.getTime() / 1000), to: Math.floor(to.getTime() / 1000) },
+      hhmm(from.toISOString()) + ' + ' + mins + ' min');
+  });
+  document.getElementById('cam-rec-list').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-play-event]');
+    if (!b) return;
+    ev.preventDefault();
+    playRecording({ event_id: b.getAttribute('data-play-event') }, 'detected event');
+  });
+  // The "Record what came of this" button sits inside the player note, which is
+  // outside #cam-rec-list, so it needs its own listener. recordOutcome() is b249's.
+  document.getElementById('cam-rec-player').addEventListener('click', function (ev) {
+    var o = ev.target.closest('[data-outcome]');
+    if (!o) return;
+    ev.preventDefault();
+    recordOutcome(o.getAttribute('data-outcome'));
+  });
+
+  function loadRecTab() {
+    var dayEl = document.getElementById('cam-rec-day');
+    if (!dayEl.value) dayEl.value = ymdLocal(new Date());
+    return loadRecStatus()
+      .then(loadRecCameras)
+      .then(loadRecordings);
+  }
+
+  loadLive();
+  window['wrenLoadTab_cameras_live']       = loadLive;
+  window['wrenLoadTab_cameras_access-log'] = loadLog;
+  window['wrenLoadTab_cameras_requests']   = loadRequests;
+  window['wrenLoadTab_cameras_recordings'] = loadRecTab;   // b362
+})();
+</script>
+</div>

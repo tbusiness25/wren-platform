@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="ladn">
+  <title>Policies &amp; Procedures — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <h1 class="page-title">Policies &amp; Procedures</h1>
+    <p style="color:var(--c-muted);margin:0">Read and sign the policies that apply to your role. Updated policies need signing again.</p>
+  </div>
+
+  <!-- b249 (2026-09-01): compulsory policies. Until now nothing distinguished a
+       reference document from one every member of staff must sign, so nothing
+       could chase anyone. This banner is the count; the same figure feeds the
+       Cockpit through the compliance collector. -->
+  <div id="must-sign-banner" style="display:none;border-radius:12px;padding:14px 16px;margin-bottom:18px;
+       font-size:.9rem;line-height:1.6;
+       background:color-mix(in srgb, var(--c-amber) 13%, transparent);
+       border:1px solid color-mix(in srgb, var(--c-amber) 42%, transparent);color:var(--c-text)"></div>
+
+  <div id="policies-pending-section" style="margin-bottom:24px">
+    <h2 class="section-title" style="color:#f59e0b">Needs signing</h2>
+    <div id="policies-pending" style="display:flex;flex-direction:column;gap:8px">
+      <div style="color:var(--c-muted)">Loading…</div>
+    </div>
+  </div>
+
+  <div id="policies-read-section" style="margin-bottom:24px;display:none">
+    <h2 class="section-title" style="color:#22c55e">Signed</h2>
+    <div id="policies-read" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+</div>
+
+<!-- Policy reader modal -->
+<div id="policy-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;overflow-y:auto">
+  <div style="background:var(--c-card,#1e293b);border-radius:12px;max-width:680px;margin:4vh auto;padding:0;overflow:hidden">
+    <div style="padding:20px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--c-border,#2d3748)">
+      <h3 id="modal-title" style="margin:0"></h3>
+      <button id="modal-close" style="background:none;border:none;color:var(--c-muted);font-size:1.25rem;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:24px;max-height:60vh;overflow-y:auto">
+      <div id="modal-meta" style="color:var(--c-muted);font-size:.8rem;margin-bottom:16px"></div>
+      <div id="modal-content" style="line-height:1.7;white-space:pre-wrap"></div>
+    </div>
+    <div style="padding:20px 24px;border-top:1px solid var(--c-border,#2d3748);display:flex;justify-content:flex-end;gap:12px">
+      <button class="btn btn-ghost" id="modal-close-btn">Close</button>
+      <button class="btn btn-primary" id="modal-ack-btn" style="display:none">I have read and understood this policy ✓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentPolicyId = null;
+
+document.addEventListener('wren:ready', loadPolicies);
+
+async function loadPolicies() {
+  loadMustSign();
+  try {
+    const policies = await Wren.api('/api/policies');
+    const pending = policies.filter(p => !p.acknowledged);
+    const done = policies.filter(p => p.acknowledged);
+
+    renderList(document.getElementById('policies-pending'), pending, true);
+    if (done.length) {
+      document.getElementById('policies-read-section').style.display = 'block';
+      renderList(document.getElementById('policies-read'), done, false);
+    }
+    if (!pending.length) {
+      document.getElementById('policies-pending').innerHTML =
+        '<div class="card" style="color:#22c55e;padding:16px">Everything signed — nothing waiting for you.</div>';
+    }
+  } catch (err) {
+    document.getElementById('policies-pending').innerHTML =
+      '<div style="color:#ef4444">Could not load policies</div>';
+  }
+}
+
+function renderList(el, policies, showBadge) {
+  if (!policies.length) { el.innerHTML = ''; return; }
+  el.innerHTML = policies.map(p => `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;cursor:pointer" data-id="${p.id}">
+      <div>
+        <div style="font-weight:600">${escHtml(p.title)}</div>
+        <div style="color:var(--c-muted);font-size:.8rem">
+          ${p.category ? p.category + ' · ' : ''}v${p.version_label || p.version}
+          ${p.published_at ? ' · ' + fmt(p.published_at) : ''}
+          ${p.requires_acknowledgment ? ' · <b style="color:var(--c-amber)">must be signed</b>' : ''}
+        </div>
+      </div>
+      ${showBadge ? '<span class="badge badge-orange">Needs signing</span>' : '<span class="badge badge-green">✓ Signed</span>'}
+    </div>`).join('');
+  el.querySelectorAll('[data-id]').forEach(card => {
+    card.addEventListener('click', () => openPolicy(parseInt(card.dataset.id)));
+  });
+}
+
+async function openPolicy(id) {
+  currentPolicyId = id;
+  try {
+    const policy = await Wren.api('/api/policies/' + id);
+    document.getElementById('modal-title').textContent = policy.title;
+    document.getElementById('modal-meta').textContent =
+      `Version ${policy.version} · ${policy.category || 'General'} · ${policy.published_at ? fmt(policy.published_at) : 'Unpublished'}`;
+    document.getElementById('modal-content').textContent = policy.content;
+    document.getElementById('modal-ack-btn').style.display = policy.acknowledged ? 'none' : 'inline-flex';
+    document.getElementById('policy-modal').style.display = 'block';
+  } catch (err) {
+    Wren.toast('Could not load policy', 'error');
+  }
+}
+
+document.getElementById('modal-ack-btn').addEventListener('click', async () => {
+  try {
+    await Wren.api('/api/policies/' + currentPolicyId + '/acknowledge', { method: 'POST' });
+    document.getElementById('policy-modal').style.display = 'none';
+    Wren.toast('Signed — thank you', 'success');
+    loadPolicies();
+  } catch (err) {
+    Wren.toast(err.error || 'Could not sign policy', 'error');
+  }
+});
+
+function closeModal() { document.getElementById('policy-modal').style.display = 'none'; }
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+document.getElementById('policy-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+// b249 — how many compulsory policies this member of staff still owes.
+// Its own endpoint rather than counting client-side, because "compulsory for MY
+// role" is a server-side question: a policy applies to the roles in
+// required_roles, and the CCTV notification deliberately lists all six —
+// including the apprentice and the cook — where the other 61 list three.
+async function loadMustSign() {
+  const el = document.getElementById('must-sign-banner');
+  if (!el) return;
+  try {
+    const d = await Wren.api('/api/policies/mandatory/mine');
+    if (!d || !d.policies || !d.policies.length) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    if (d.outstanding > 0) {
+      el.innerHTML = '<b>' + d.outstanding + ' of ' + d.policies.length +
+        ' compulsory ' + (d.policies.length === 1 ? 'policy' : 'policies') +
+        ' still need your signature.</b><br>' +
+        d.policies.filter(p => !p.acknowledged).map(p => escHtml(p.title)).join(' · ');
+    } else {
+      el.style.background = 'color-mix(in srgb, var(--c-green) 13%, transparent)';
+      el.style.borderColor = 'color-mix(in srgb, var(--c-green) 42%, transparent)';
+      el.innerHTML = '<b>All ' + d.policies.length + ' compulsory ' +
+        (d.policies.length === 1 ? 'policy is' : 'policies are') + ' signed.</b> Thank you.';
+    }
+  } catch (e) { el.style.display = 'none'; }
+}
+
+function fmt(d) { return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''; }
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

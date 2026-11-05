@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sidebar Layout · Roost</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js?v=20260922-download" defer></script>
+<style>
+  .np-wrap{padding:18px 22px;max-width:1320px}
+  .np-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .np-head h1{font-size:20px;margin:0}
+  .np-sub{font-size:12.5px;color:#64748b;max-width:78ch;margin:0 0 16px}
+  .np-bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+  .np-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+    border:1px solid #e2e8f0;background:#fff;font-size:12px;color:#64748b;font-variant-numeric:tabular-nums}
+  .np-pill.dirty{border-color:#e07820;background:rgba(224,120,32,.10);color:#e07820;font-weight:600}
+  .np-pill.personal{border-color:#4a9abf;background:rgba(74,154,191,.10);color:#4a9abf}
+  .np-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(272px,1fr));gap:14px;align-items:start}
+  .np-grp{background:#fff;border:1px solid #e2e8f0;border-radius:10px;display:flex;flex-direction:column;overflow:hidden}
+  .np-grp.over{border-color:#4a9abf;box-shadow:0 0 0 2px rgba(74,154,191,.18)}
+  .np-gh{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+  .np-gh h3{font-size:13.5px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .np-gh .n{font-size:11px;color:#94a3b8;font-variant-numeric:tabular-nums}
+  .np-body{padding:9px;display:flex;flex-direction:column;gap:6px;min-height:50px}
+  .np-body:empty::after{content:"drop pages here";color:#94a3b8;font-size:12px;display:grid;
+    place-items:center;min-height:42px;border:1px dashed #e2e8f0;border-radius:7px}
+  .np-chip{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;border:1px solid #e2e8f0;
+    background:#fff;cursor:grab}
+  .np-chip:hover{border-color:#4a9abf}
+  .np-chip.moved{border-color:#e07820;background:rgba(224,120,32,.07)}
+  .np-chip.picked{border-color:#4a9abf;box-shadow:0 0 0 2px rgba(74,154,191,.18)}
+  .np-chip .ic{font-size:15px;line-height:1}
+  .np-chip .tx{flex:1;min-width:0}
+  .np-chip .lb{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .np-chip .ky{font-size:10px;color:#94a3b8;font-family:ui-monospace,monospace;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .np-chip .mv{display:flex;gap:2px;opacity:0}
+  .np-chip:hover .mv,.np-chip:focus-within .mv{opacity:1}
+  .np-tray{margin-top:22px;border:1px dashed #cbd5e1;border-radius:10px;padding:13px;background:#fff}
+  .np-tray h3{font-size:13px;margin:0 0 3px}
+  .np-tray p{margin:0 0 10px;font-size:12.5px;color:#64748b}
+  .np-tray .np-body{flex-direction:row;flex-wrap:wrap;padding:0}
+  .np-tray .np-chip{min-width:176px}
+  .np-badge{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;padding:2px 5px;border-radius:4px;
+    background:rgba(74,154,191,.12);color:#4a9abf;font-weight:600}
+</style>
+</head>
+<body>
+<div class="np-wrap">
+  <div class="np-head"><h1>🎛️ Sidebar Layout</h1></div>
+  <p class="np-sub">Drag pages between menus to suit how your setting works. Saving applies the layout
+    to <strong>everyone here</strong>. Pages you remove from a menu stay reachable by search and direct link —
+    nothing is deleted.</p>
+
+  <div class="np-bar">
+    <span class="np-pill" id="np-stat">Loading…</span>
+    <span class="np-pill personal" id="np-personal" style="display:none">You have a personal layout overriding this</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-sm btn-ghost" id="np-clear-personal" style="display:none">Clear my personal layout</button>
+    <button class="btn btn-sm btn-ghost" id="np-reset">Reset to Wren default</button>
+    <button class="btn btn-sm btn-primary" id="np-save">Save for everyone</button>
+  </div>
+
+  <div class="np-board" id="np-board"></div>
+  <div id="np-extra"></div>
+</div>
+
+<script>
+let META=null, groups=[], base=[], picked=null, hidden=new Set();
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function clone(x){return JSON.parse(JSON.stringify(x));}
+function dirty(){return JSON.stringify(groups)!==JSON.stringify(base);}
+function secOf(id){return (META.sections||[]).find(s=>s.id===id)||{id,label:id,icon:'•'};}
+function baseGroupOf(id){const g=base.find(g=>g.sections.includes(id));return g?g.label:null;}
+
+function render(){
+  const board=document.getElementById('np-board');
+  board.innerHTML = groups.map((g,gi)=>`
+    <section class="np-grp" data-gi="${gi}">
+      <div class="np-gh">
+        <h3>${esc(g.label)}</h3><span class="n">${g.sections.length}</span>
+        <button class="btn btn-sm btn-ghost" data-act="rename" data-gi="${gi}">Rename</button>
+        ${g.sections.length===0?`<button class="btn btn-sm btn-ghost" data-act="del" data-gi="${gi}" title="Remove empty menu">✕</button>`:''}
+      </div>
+      <div class="np-body" data-gi="${gi}">${g.sections.map(k=>chip(k,gi)).join('')}</div>
+    </section>`).join('') +
+    `<section class="np-grp" style="border-style:dashed">
+       <div class="np-body" style="min-height:auto">
+         <button class="btn btn-sm btn-ghost" id="np-add" style="width:100%">+ New menu</button>
+       </div></section>`;
+
+  const filed=new Set(groups.flatMap(g=>g.sections));
+  const unfiled=(META.sections||[]).map(s=>s.id).filter(id=>!filed.has(id)&&!hidden.has(id));
+  document.getElementById('np-extra').innerHTML = `
+    <div class="np-tray">
+      <h3>Not in the sidebar</h3>
+      <p>Still reachable by search and direct link. Drag one into a menu to surface it.</p>
+      <div class="np-body" data-gi="unfiled">
+        ${unfiled.map(k=>chip(k,'unfiled')).join('') || '<span style="color:#94a3b8;font-size:12.5px">Everything is filed.</span>'}
+      </div>
+    </div>`;
+
+  const n=groups.reduce((a,g)=>a+g.sections.length,0);
+  const st=document.getElementById('np-stat');
+  st.textContent=`${groups.length} menus · ${n} pages${dirty()?' · unsaved':''}`;
+  st.className='np-pill'+(dirty()?' dirty':'');
+  wire();
+}
+
+function chip(k,gi){
+  const s=secOf(k), from=baseGroupOf(k);
+  const now=typeof gi==='number'?groups[gi].label:null;
+  const moved=from&&now&&from!==now;
+  return `<div class="np-chip${moved?' moved':''}${picked===k?' picked':''}" draggable="true"
+      data-k="${esc(k)}" tabindex="0" title="${esc(s.label)}">
+    <span class="ic">${esc(s.icon||'•')}</span>
+    <span class="tx"><span class="lb">${esc(s.label)}</span><span class="ky">${esc(k)}</span></span>
+    ${moved?'<span class="np-badge" style="background:rgba(224,120,32,.12);color:#e07820">moved</span>':''}
+    <span class="mv">
+      <button class="btn btn-sm btn-ghost" data-act="up" data-k="${esc(k)}" title="Previous menu">▲</button>
+      <button class="btn btn-sm btn-ghost" data-act="down" data-k="${esc(k)}" title="Next menu">▼</button>
+    </span></div>`;
+}
+
+function wire(){
+  document.querySelectorAll('.np-chip').forEach(c=>{
+    c.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',c.dataset.k);e.dataTransfer.effectAllowed='move';});
+  });
+  document.querySelectorAll('.np-body').forEach(z=>{
+    z.addEventListener('dragover',e=>{e.preventDefault();z.closest('.np-grp,.np-tray')?.classList.add('over');});
+    z.addEventListener('dragleave',()=>z.closest('.np-grp,.np-tray')?.classList.remove('over'));
+    z.addEventListener('drop',e=>{e.preventDefault();z.closest('.np-grp,.np-tray')?.classList.remove('over');
+      moveTo(e.dataTransfer.getData('text/plain'),z.dataset.gi);});
+  });
+}
+function moveTo(k,gi){
+  if(!k)return;
+  groups.forEach(g=>{const i=g.sections.indexOf(k);if(i>-1)g.sections.splice(i,1);});
+  if(gi!=='unfiled'&&groups[+gi])groups[+gi].sections.push(k);
+  picked=null;render();
+}
+function shift(k,d){
+  let gi=groups.findIndex(g=>g.sections.includes(k));
+  if(gi<0)return moveTo(k,String(d>0?0:groups.length-1));
+  const t=gi+d; if(t<0||t>=groups.length)return; moveTo(k,String(t));
+}
+
+document.addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]');
+  if(a){
+    const act=a.dataset.act;
+    if(act==='up')return shift(a.dataset.k,-1);
+    if(act==='down')return shift(a.dataset.k,1);
+    if(act==='rename'){const gi=+a.dataset.gi,v=prompt('Rename menu',groups[gi].label);
+      if(v&&v.trim()){groups[gi].label=v.trim();render();}return;}
+    if(act==='del'){groups.splice(+a.dataset.gi,1);render();return;}
+  }
+  if(e.target.id==='np-add'){const v=prompt('Name the new menu');
+    if(v&&v.trim()){groups.push({label:v.trim(),sections:[]});render();}return;}
+  const c=e.target.closest('.np-chip');
+  if(c&&!e.target.closest('[data-act]')){picked=picked===c.dataset.k?null:c.dataset.k;render();return;}
+  const z=e.target.closest('.np-body');
+  if(z&&picked)moveTo(picked,z.dataset.gi);
+});
+document.addEventListener('keydown',e=>{
+  const c=e.target.closest&&e.target.closest('.np-chip'); if(!c)return;
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();picked=picked===c.dataset.k?null:c.dataset.k;render();}
+  if(e.key==='ArrowUp'){e.preventDefault();shift(c.dataset.k,-1);}
+  if(e.key==='ArrowDown'){e.preventDefault();shift(c.dataset.k,1);}
+});
+
+document.getElementById('np-save').addEventListener('click',function(){
+  const btn=this; btn.disabled=true; btn.textContent='Saving…';
+  Wren.saveSettingNav(groups).then(()=>{
+    base=clone(groups); Wren.toast('Sidebar saved for everyone ✓','success'); render();
+  }).catch(err=>Wren.toast('Could not save: '+((err&&err.error)||err),'error'))
+    .finally(()=>{btn.disabled=false;btn.textContent='Save for everyone';});
+});
+document.getElementById('np-reset').addEventListener('click',()=>{
+  if(!confirm('Put every menu back to the Wren default, for everyone here?'))return;
+  Wren.resetSettingNav().then(()=>{
+    groups=clone(META.defaultGroups); base=clone(groups);
+    Wren.toast('Reset to the Wren default ✓','success'); render();
+  }).catch(err=>Wren.toast('Could not reset: '+((err&&err.error)||err),'error'));
+});
+document.getElementById('np-clear-personal').addEventListener('click',()=>{
+  Wren.resetNavGroups();
+  Wren.toast('Personal layout cleared — you now see the setting layout','success');
+  location.reload();
+});
+
+document.addEventListener('wren:ready',()=>{
+  META=Wren.getNavMeta();
+  hidden=new Set(['system','data-governance','cf-access','access','nav-settings']);
+  Wren.loadSettingNav().then(d=>{
+    groups = (d&&Array.isArray(d.groups)&&d.groups.length) ? clone(d.groups) : clone(META.defaultGroups);
+    base=clone(groups);
+    if(Wren.hasPersonalNav()){
+      document.getElementById('np-personal').style.display='';
+      document.getElementById('np-clear-personal').style.display='';
+    }
+    render();
+  }).catch(()=>{ groups=clone(META.defaultGroups); base=clone(groups); render(); });
+});
+</script>
+</body>
+</html>

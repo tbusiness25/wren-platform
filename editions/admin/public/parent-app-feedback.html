@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parent App Feedback · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ .paf-wrap{padding:18px;max-width:1000px;margin:0 auto;color:#f1f5f9}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:#94a3b8;font-size:.85rem;margin-bottom:14px}
+ .paf-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+ .paf-filter{padding:7px 12px;border-radius:999px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.8rem}
+ .paf-filter.on{background:#4a9abf;border-color:#4a9abf;color:#04101c;font-weight:700}
+ .paf-card{background:#0f1a34;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+ .paf-cat{font-size:.72rem;padding:2px 9px;border-radius:10px;margin-right:6px}
+ .c-like{background:rgba(34,197,94,.18);color:#4ade80}.c-change{background:rgba(245,158,11,.18);color:#fbbf24}
+ .c-idea{background:rgba(74,154,191,.2);color:#7dd3fc}.c-bug{background:rgba(239,68,68,.18);color:#f87171}
+ .c-other{background:rgba(148,163,184,.18);color:#cbd5e1}
+ .paf-meta{color:#94a3b8;font-size:.78rem;margin-top:3px}
+ .paf-body{margin-top:8px;white-space:pre-wrap;font-size:.88rem;background:rgba(255,255,255,.03);border-radius:8px;padding:10px}
+ .paf-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+ .paf-act{padding:6px 11px;border-radius:8px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.78rem}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+</head><body data-portal="admin">
+<div class="paf-wrap">
+  <h1>💭 Parent App Feedback</h1>
+  <div class="sub">Everything parents send from "Tell us what to change" in the parent app — each one also lands as a card on your Cockpit backlog (source: parent-app-feedback).</div>
+  <div class="paf-filters" id="paf-filters">
+    <button class="paf-filter on" data-s="">All open</button>
+    <button class="paf-filter" data-s="new">New</button>
+    <button class="paf-filter" data-s="reviewed">Reviewed</button>
+    <button class="paf-filter" data-s="actioned">Actioned</button>
+    <button class="paf-filter" data-s="dismissed">Dismissed</button>
+  </div>
+  <div id="paf-list">Loading…</div>
+</div>
+<script>
+(function(){
+  'use strict';
+  let statusFilter = '';
+  const esc = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+
+  async function load(){
+    const el = document.getElementById('paf-list');
+    try {
+      const rows = await Wren.api('/api/parent-app-feedback' + (statusFilter ? '?status=' + statusFilter : ''));
+      const visible = statusFilter ? rows : rows.filter(r => !['actioned','dismissed'].includes(r.status));
+      if (!visible.length) { el.innerHTML = '<div style="color:#94a3b8">Nothing here — quiet day 🎉</div>'; return; }
+      el.innerHTML = visible.map(r => `
+        <div class="paf-card">
+          <span class="paf-cat c-${esc(r.category)}">${esc(r.category)}</span>
+          <span style="float:right;color:#94a3b8;font-size:.78rem">${esc(r.status)}</span>
+          <div class="paf-meta">${esc(r.parent_email||'unknown parent')}${r.child_name ? ' · ' + esc(r.child_name) : ''} · ${esc(r.page_context||'')} · ${new Date(r.created_at).toLocaleString('en-GB')}${r.cockpit_card_id ? ' · 🛩️ card #'+r.cockpit_card_id : ''}</div>
+          <div class="paf-body">${esc(r.body)}</div>
+          <div class="paf-actions">
+            ${['reviewed','actioned','dismissed'].map(s => `<button class="paf-act" data-id="${r.id}" data-set="${s}">${s}</button>`).join('')}
+          </div>
+        </div>`).join('');
+    } catch(e) { el.innerHTML = '<div style="color:#ef4444">Could not load feedback.</div>'; }
+  }
+
+  document.addEventListener('wren:ready', function(){
+    document.getElementById('paf-filters').addEventListener('click', e => {
+      const b = e.target.closest('.paf-filter'); if (!b) return;
+      statusFilter = b.dataset.s;
+      document.querySelectorAll('.paf-filter').forEach(x => x.classList.toggle('on', x === b));
+      load();
+    });
+    document.getElementById('paf-list').addEventListener('click', async e => {
+      const b = e.target.closest('.paf-act'); if (!b) return;
+      try { await Wren.api('/api/parent-app-feedback/' + b.dataset.id + '/status', { method:'POST', body:{ status: b.dataset.set } }); Wren.toast('Updated','success'); load(); }
+      catch(x){ Wren.toast('Update failed','error'); }
+    });
+    load();
+  });
+})();
+</script>
+</body></html>

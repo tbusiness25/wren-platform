@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="wren-edition" content="admin">
+<title>Staff Records — Roost</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<script src="/js/wren-grid.js?v=b500" defer></script>
+<style>
+  /* b500 (2026-10-13) — Staff records. Tokens only (--c-*), checked in both themes. */
+  .sr-sub { color:var(--c-muted); font-size:.85rem; margin:2px 0 16px; }
+  .sr-tabbar { display:flex; gap:4px; margin-bottom:16px; }
+  .sr-tabbar button { padding:8px 18px; border:none; border-radius:8px; cursor:pointer; font-size:.875rem; font-weight:600; background:var(--c-surface); color:var(--c-muted); }
+  .sr-tabbar button.active { background:var(--c-blue); color:#fff; }
+  .sr-panel { display:none; }
+  .sr-panel.active { display:block; }
+  .sr-toolbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:10px; font-size:.82rem; color:var(--c-muted); }
+  .sr-toolbar label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .sr-scrollbox { overflow:auto; max-height:72vh; border:1px solid var(--c-border); border-radius:12px; background:var(--c-surface); }
+  table.sr-table { border-collapse:separate; border-spacing:0; font-size:.78rem; width:max-content; min-width:100%; }
+  table.sr-table th, table.sr-table td { border-bottom:1px solid var(--c-border); border-right:1px solid var(--c-border); padding:4px 6px; white-space:nowrap; }
+  table.sr-table thead th { position:sticky; top:0; z-index:3; background:var(--c-surface-2); color:var(--c-muted); font-weight:600; font-size:.68rem; text-transform:uppercase; letter-spacing:.03em; text-align:left; vertical-align:bottom; padding:8px 6px; }
+  /* b500 review: ONE header row. wren-grid.js builds sort/filter from thead.rows[0] only, so the old
+     separate "Employment / Qualifications / …" row above the real headers made every group a sortable
+     "column" and left the real columns (Role, Room, DBS expiry…) with no sort or filter at all.
+     The group name now rides on the first header of each group as a ::before label (not in textContent). */
+  table.sr-table thead th::before { content: attr(data-group) "\200b"; display:block; font-size:.6rem; color:var(--c-blue); letter-spacing:.04em; margin-bottom:2px; }
+  table.sr-table th.sr-grp-start, table.sr-table td.sr-grp-start { border-left:2px solid var(--c-border-strong,var(--c-border)); }
+  table.sr-table thead th.sr-name-head::before, table.sr-table thead th.sr-chk-cell::before { content:"\200b"; }
+  /* b500 — --c-surface is deliberately translucent in dark mode (composited over
+     --c-bg); a STICKY cell needs an opaque backing or horizontally-scrolled
+     columns bleed through it, so this uses --c-surface-solid instead (exactly
+     what the token is documented for — see wren-tokens.css's own comment on it). */
+  table.sr-table tbody th.sr-name-cell, table.sr-table thead th.sr-name-head { position:sticky; left:0; z-index:2; background:var(--c-surface-solid); text-align:left; min-width:170px; max-width:200px; white-space:normal; }
+  table.sr-table thead th.sr-name-head { z-index:5; background:var(--c-surface-solid); }
+  table.sr-table tbody tr:hover th.sr-name-cell { background:var(--c-surface-2); }
+  table.sr-table tbody tr.wgrid-empty-row td { border:none; }
+  .sr-name-cell a { color:var(--c-text); font-weight:600; text-decoration:none; }
+  .sr-name-cell a:hover { color:var(--c-blue); }
+  .sr-chk-cell { text-align:center; min-width:30px; }
+  td.sr-cell input[type=text], td.sr-cell input[type=number], td.sr-cell input[type=date], td.sr-cell select {
+    width:100%; min-width:84px; box-sizing:border-box; background:transparent; border:1px solid transparent; border-radius:5px;
+    color:var(--c-text); font:inherit; padding:4px 5px; color-scheme:light dark;
+  }
+  td.sr-cell input[type=number] { min-width:56px; }
+  td.sr-cell input:hover, td.sr-cell select:hover { border-color:var(--c-border); }
+  td.sr-cell input:focus, td.sr-cell select:focus { outline:none; border-color:var(--c-blue); background:var(--c-surface-2); }
+  td.sr-cell input.sr-saved { border-color:var(--c-ok); }
+  td.sr-cell input.sr-error, td.sr-cell select.sr-error { border-color:var(--c-danger); background:var(--c-tint-red); }
+  td.sr-cell input[type=checkbox] { width:16px; height:16px; cursor:pointer; }
+  /* b500 review: these were `.sr-exp-red input` (0,1,1) and lost to `td.sr-cell input[type=date]` (0,2,2),
+     so an expired date never actually turned red. td.sr-cell.sr-exp-* (0,3,2) wins. */
+  td.sr-cell.sr-exp-red, td.sr-cell.sr-exp-red input, td.sr-cell.sr-exp-red select { background:var(--c-tint-red); color:var(--c-danger); font-weight:600; }
+  td.sr-cell.sr-exp-amber, td.sr-cell.sr-exp-amber input, td.sr-cell.sr-exp-amber select { background:var(--c-tint-amber); color:var(--c-warn); font-weight:600; }
+  .sr-bulkbar { position:sticky; bottom:0; z-index:30; display:none; align-items:center; gap:10px; flex-wrap:wrap; background:var(--c-surface-2); border:1px solid var(--c-border); border-radius:10px; padding:10px 14px; margin-top:10px; }
+  .sr-bulkbar.show { display:flex; }
+  .sr-bulkbar select, .sr-bulkbar input { background:var(--c-surface); border:1px solid var(--c-border); color:var(--c-text); border-radius:7px; padding:6px 9px; font-size:.82rem; }
+  .btn-sm { padding:6px 14px; border-radius:7px; font-size:.8rem; font-weight:600; border:none; cursor:pointer; }
+  .btn-blue { background:var(--c-blue); color:#fff; }
+  .btn-ghost2 { background:var(--c-surface); color:var(--c-text); border:1px solid var(--c-border); }
+  /* training matrix cells */
+  .tm-cell { text-align:center; cursor:pointer; min-width:92px; }
+  .tm-cell:hover { outline:2px solid var(--c-blue); outline-offset:-2px; }
+  .tm-pill { display:inline-block; padding:2px 7px; border-radius:7px; font-size:.7rem; font-weight:700; }
+  .tm-current { background:var(--c-tint-green); color:var(--c-ok); }
+  .tm-soon { background:var(--c-tint-amber); color:var(--c-warn); }
+  .tm-overdue { background:var(--c-tint-red); color:var(--c-danger); }
+  .tm-missing { background:var(--c-surface-2); color:var(--c-muted); }
+  .sr-unmapped { margin-top:16px; padding:12px 14px; border:1px solid var(--c-border); border-radius:10px; background:var(--c-surface); font-size:.8rem; }
+  .sr-unmapped-row { display:flex; align-items:center; gap:8px; padding:4px 0; flex-wrap:wrap; }
+  .sr-unmapped select { background:var(--c-surface-2); color:var(--c-text); border:1px solid var(--c-border); border-radius:6px; padding:4px 8px; font-size:.78rem; color-scheme:light dark; }
+  .field-row { margin-bottom:12px; }
+  .field-row label { display:block; font-size:.8rem; color:var(--c-muted); margin-bottom:4px; }
+  .field-row select, .field-row input, .field-row textarea { width:100%; padding:8px 10px; border-radius:8px; background:var(--c-surface-2); border:1px solid var(--c-border); color:var(--c-text); font-size:.875rem; box-sizing:border-box; font-family:inherit; color-scheme:light dark; }
+  .sr-preview-list { max-height:260px; overflow:auto; border:1px solid var(--c-border); border-radius:8px; padding:8px; margin-bottom:10px; font-size:.82rem; }
+  .sr-preview-row { display:flex; justify-content:space-between; gap:10px; padding:3px 2px; border-bottom:1px solid var(--c-border); }
+  .sr-preview-row:last-child { border-bottom:none; }
+  .sr-course-admin-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:6px 0; border-bottom:1px solid var(--c-border); font-size:.8rem; }
+  @media (max-width:600px) {
+    .sr-scrollbox { max-height:60vh; }
+    /* wren-grid.js's own @media(max-width:600px) reflows ANY .wgrid table into
+       stacked pill/card rows — built for a handful of read-only columns, not a
+       27-column editable spreadsheet. For this page the brief is explicit: the
+       TABLE scrolls inside its box, the page doesn't — so these selectors (more
+       specific than wren-grid's `.wgrid table` / `.wgrid thead` / `.wgrid td`)
+       win the cascade and put real table layout back, horizontally scrollable
+       via .sr-scrollbox, same as desktop. */
+    .wgrid table.sr-table, .wgrid table.sr-table tbody, .wgrid table.sr-table tr { display: table-row-group !important; }
+    .wgrid table.sr-table { display: table !important; width: max-content !important; }
+    .wgrid table.sr-table thead { display: table-header-group !important; border-bottom: none !important; margin-bottom: 0 !important; padding-bottom: 0 !important; }
+    .wgrid table.sr-table thead tr { display: table-row !important; flex-wrap: unset !important; gap: 0 !important; }
+    .wgrid table.sr-table thead th { display: table-cell !important; background: var(--c-surface-2) !important; border-radius: 0 !important; font-size: .68rem !important; white-space: nowrap !important; }
+    .wgrid table.sr-table tbody tr { display: table-row !important; border: none !important; border-radius: 0 !important; padding: 0 !important; margin-bottom: 0 !important; background: none !important; }
+    .wgrid table.sr-table tbody tr:nth-child(odd) { background: var(--c-surface) !important; }
+    .wgrid table.sr-table th, .wgrid table.sr-table td { display: table-cell !important; width: auto !important; text-align: left !important; padding: 4px 6px !important; border-top: none !important; }
+    .wgrid table.sr-table td[data-wg-label]::before { content: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 class="page-title">📋 Staff Records</h1>
+      <p class="sr-sub">Edit roles, qualifications, DBS, right-to-work and training in one place — click any cell, or tick rows for a bulk change.</p>
+    </div>
+  </div>
+
+  <div class="sr-tabbar">
+    <button class="active" data-tab="details">Details</button>
+    <button data-tab="training">Training</button>
+  </div>
+
+  <!-- ── Tab 1: Details ──────────────────────────────────────────────── -->
+  <div class="sr-panel active" id="panel-details">
+    <div class="sr-toolbar">
+      <label><input type="checkbox" id="d-show-leavers"> Show leavers</label>
+      <label><input type="checkbox" id="d-show-problems"> Show only problems</label>
+      <span id="d-status" style="margin-left:auto"></span>
+    </div>
+    <div class="sr-scrollbox"><div id="d-table-wrap" style="color:var(--c-muted);padding:20px">Loading…</div></div>
+    <div class="sr-bulkbar" id="d-bulkbar">
+      <span id="d-bulk-count">0 selected</span>
+      <span>Set</span>
+      <select id="d-bulk-field"></select>
+      <span>to</span>
+      <span id="d-bulk-value-wrap"><input id="d-bulk-value" type="text"></span>
+      <button class="btn-sm btn-blue" id="d-bulk-apply">Preview…</button>
+      <button class="btn-sm btn-ghost2" id="d-bulk-clear">Clear selection</button>
+    </div>
+  </div>
+
+  <!-- ── Tab 2: Training ─────────────────────────────────────────────── -->
+  <div class="sr-panel" id="panel-training">
+    <div class="sr-toolbar">
+      <label><input type="checkbox" id="t-show-leavers"> Show leavers</label>
+      <span id="t-status"></span>
+      <button class="btn-sm btn-ghost2" id="t-manage-courses" style="margin-left:auto">Manage courses…</button>
+    </div>
+    <div class="sr-scrollbox"><div id="t-table-wrap" style="color:var(--c-muted);padding:20px">Loading…</div></div>
+    <div class="sr-bulkbar" id="t-bulkbar">
+      <span id="t-bulk-count">0 selected</span>
+      <span>Record</span>
+      <select id="t-bulk-course"></select>
+      <span>on</span>
+      <input id="t-bulk-date" type="date">
+      <input id="t-bulk-provider" type="text" placeholder="Provider (optional)" style="width:140px">
+      <button class="btn-sm btn-blue" id="t-bulk-apply">Record for N people…</button>
+      <button class="btn-sm btn-ghost2" id="t-bulk-clear">Clear selection</button>
+    </div>
+    <div class="sr-unmapped" id="t-unmapped" hidden></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+function esc(s) { return String(s == null ? '' : s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function fmtDate(d) { if (!d) return ''; return String(d).slice(0, 10); }
+function fmtDateUK(d) { if (!d) return '—'; const p = String(d).slice(0, 10).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : String(d); }
+function todayIso() { return new Date().toISOString().slice(0, 10); }
+// Same calendar-month maths as src/lib/training-matrix.js addMonthsIso (UTC, clamped to month end).
+function addMonthsIso(iso, months) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const first = new Date(Date.UTC(y, mo - 1 + months, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  first.setUTCDate(Math.min(d, last));
+  return first.toISOString().slice(0, 10);
+}
+// Wren.toast() sets innerHTML, so anything that came from data (names, server messages) is escaped first.
+function toastErr(msg, ms) { Wren.toast(esc(msg), 'error', ms); }
+// UK-first date parse for pasted spreadsheet cells: 2026-10-14, 14/10/2026, 14.10.26 → ISO, else null.
+function parseDateLoose(raw) {
+  const t = String(raw).trim();
+  let y, mo, d, m;
+  if ((m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/.exec(t))) { d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000; }
+  else return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (isNaN(dt) || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return dt.toISOString().slice(0, 10);
+}
+function expiryClass(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr), today = new Date(todayIso());
+  if (d < today) return 'sr-exp-red';
+  if (d <= new Date(today.getTime() + 60 * 86400000)) return 'sr-exp-amber';
+  return '';
+}
+
+// ── a small Undo toast (Wren.toast has no action button, so this reuses its CSS) ──
+function showUndoToast(message, undo) {
+  let container = document.getElementById('wren-toasts');
+  if (!container) { container = document.createElement('div'); container.id = 'wren-toasts'; document.body.appendChild(container); }
+  const el = document.createElement('div');
+  el.className = 'wren-toast wren-toast-success';
+  el.innerHTML = `<span class="toast-icon">✓</span><span>${esc(message)}</span>`;
+  const btn = document.createElement('button');
+  btn.textContent = 'Undo';
+  btn.style.cssText = 'margin-left:10px;background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;padding:0';
+  btn.onclick = () => { undo(); el.remove(); };
+  el.appendChild(btn);
+  container.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('visible'));
+  setTimeout(() => { el.classList.remove('visible'); setTimeout(() => el.remove(), 300); }, 10000);
+}
+
+function selectHtml(field, options, current, aria) {
+  const cur = current == null ? '' : String(current);
+  let has = options.some(o => String(o.value) === cur);
+  let html = options.map(o => `<option value="${esc(o.value)}" ${String(o.value) === cur ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+  if (!has && cur !== '') html += `<option value="${esc(cur)}" selected>${esc(cur)} (unrecognised)</option>`;
+  return `<select data-field="${field}"${aria ? ` aria-label="${aria}"` : ''}>${html}</select>`;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// DETAILS TAB
+// ═════════════════════════════════════════════════════════════════════════
+const ROLE_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'practitioner', label: 'Practitioner' },
+  { value: 'room_leader', label: 'Room Leader' },
+  { value: 'deputy_manager', label: 'Deputy Manager' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'apprentice', label: 'Apprentice' },
+  { value: 'cook', label: 'Cook' },
+  { value: 'chef', label: 'Chef' },
+  { value: 'accountant', label: 'Accountant' },
+  { value: 'admin', label: 'Admin' },
+];
+const EMPLOYMENT_TYPE_OPTIONS = [
+  { value: '', label: '—' }, { value: 'permanent', label: 'Permanent' },
+  { value: 'fixed_term', label: 'Fixed term' }, { value: 'casual', label: 'Casual' },
+  { value: 'bank', label: 'Bank' },
+];
+const FR_LEVEL_OPTIONS = [{ value: '', label: '—' }, ...[0, 1, 2, 3, 4, 5, 6].map(l => ({ value: String(l), label: String(l) }))];
+const RTW_OPTIONS = [
+  { value: '', label: '—' }, { value: 'british_irish', label: 'British/Irish citizen' },
+  { value: 'settled', label: 'Settled status' }, { value: 'pre_settled', label: 'Pre-settled status' },
+  { value: 'visa', label: 'Work visa' }, { value: 'other', label: 'Other' },
+];
+
+let ROOMS = [];
+function roomOptions() { return [{ value: '', label: '—' }, ...ROOMS.map(r => ({ value: String(r.id), label: r.name }))]; }
+function roomName(id) { const r = ROOMS.find(x => String(x.id) === String(id)); return r ? r.name : ''; }
+
+// group, key, label, type, expiry(bool)
+const D_COLUMNS = [
+  { group: 'Employment', key: 'role', label: 'Role', type: 'select', opts: () => ROLE_OPTIONS },
+  { group: 'Employment', key: 'room_id', label: 'Room', type: 'select', opts: roomOptions },
+  { group: 'Employment', key: 'job_title', label: 'Job title', type: 'text' },
+  { group: 'Employment', key: 'employment_type', label: 'Contract type', type: 'select', opts: () => EMPLOYMENT_TYPE_OPTIONS },
+  { group: 'Employment', key: 'contracted_hours', label: 'Hrs/wk', type: 'number' },
+  { group: 'Employment', key: 'contract_start', label: 'Start date', type: 'date' },
+  { group: 'Qualifications', key: 'qualification', label: 'Qualification', type: 'text' },
+  { group: 'Qualifications', key: 'qualification_level', label: 'Level', type: 'number' },
+  { group: 'Qualifications', key: 'census_fr_level', label: 'F&R level', type: 'select', opts: () => FR_LEVEL_OPTIONS },
+  { group: 'Qualifications', key: 'census_qts', label: 'QTS', type: 'checkbox' },
+  { group: 'Qualifications', key: 'census_eyps', label: 'EYPS', type: 'checkbox' },
+  { group: 'Qualifications', key: 'census_eyts', label: 'EYTS', type: 'checkbox' },
+  { group: 'Qualifications', key: 'census_senco_l3', label: 'SENCO L3/NPQ', type: 'checkbox' },
+  { group: 'Qualifications', key: 'is_volunteer', label: 'Volunteer', type: 'checkbox' },
+  { group: 'Qualifications', key: 'census_works_with_under5', label: 'Works <5s', type: 'checkbox' },
+  { group: 'Qualifications', key: 'census_managerial', label: 'Managerial', type: 'checkbox' },
+  { group: 'Responsibilities', key: 'is_dsl', label: 'DSL', type: 'checkbox' },
+  { group: 'Responsibilities', key: 'is_deputy_dsl', label: 'Deputy DSL', type: 'checkbox' },
+  { group: 'Responsibilities', key: 'is_first_aider', label: 'First aider', type: 'checkbox' },
+  { group: 'DBS', key: 'dbs_number', label: 'DBS number', type: 'text', noBulk: true },
+  { group: 'DBS', key: 'dbs_initial_date', label: 'Issued', type: 'date' },
+  { group: 'DBS', key: 'dbs_check_date', label: 'Checked', type: 'date' },
+  { group: 'DBS', key: 'dbs_expiry', label: 'Expiry', type: 'date', expiry: true },
+  { group: 'DBS', key: 'dbs_followup_date', label: 'Update-service follow-up', type: 'date', expiry: true },
+  { group: 'Right to work', key: 'right_to_work_status', label: 'Status', type: 'select', opts: () => RTW_OPTIONS },
+  { group: 'Right to work', key: 'right_to_work_expiry_date', label: 'RTW expiry', type: 'date', expiry: true },
+  { group: 'Right to work', key: 'visa_expiry_date', label: 'Visa expiry', type: 'date', expiry: true },
+];
+
+let D_STAFF = [];
+const D_OLD = {}; // `${id}:${field}` -> value at last successful save (for undo/revert)
+
+function dCellHtml(col, s, groupStart) {
+  const v = s[col.key];
+  const cls = ['sr-cell'];
+  if (groupStart) cls.push('sr-grp-start');
+  if (col.expiry) cls.push(expiryClass(v));
+  const aria = esc(col.label + ' — ' + ((s.first_name || '') + ' ' + (s.last_name || '')).trim());
+  const attrs = `data-field="${col.key}" aria-label="${aria}"`;
+  let inner, sortVal;
+  if (col.type === 'select') {
+    const options = col.opts();
+    inner = selectHtml(col.key, options, v, aria);
+    sortVal = sortValFor(col, v);
+  } else if (col.type === 'checkbox') {
+    inner = `<input type="checkbox" ${attrs} ${v ? 'checked' : ''}>`;
+    sortVal = v ? 'Yes' : 'No';
+  } else if (col.type === 'date') {
+    inner = `<input type="date" ${attrs} value="${esc(fmtDate(v))}">`;
+    sortVal = fmtDate(v);
+  } else if (col.type === 'number') {
+    inner = `<input type="text" inputmode="decimal" ${attrs} value="${esc(v == null ? '' : v)}">`;
+    sortVal = v == null ? '' : v;
+  } else {
+    inner = `<input type="text" ${attrs} value="${esc(v == null ? '' : v)}">`;
+    sortVal = v == null ? '' : v;
+  }
+  return `<td class="${cls.join(' ')}" data-sort="${esc(sortVal)}" data-field="${col.key}">${inner}</td>`;
+}
+
+// What a cell sorts/filters/exports as. wren-grid's editable-mode sync writes the raw control value
+// (an option value such as "room_leader" / "1", or "1" for a tick) into data-sort on every edit, which
+// would mix with the labels rendered at load — so the commit handler puts this back.
+function sortValFor(col, v) {
+  if (col.type === 'select') {
+    if (col.key === 'room_id') return roomName(v);
+    const m = col.opts().find(o => String(o.value) === String(v == null ? '' : v));
+    return m ? m.label : (v == null ? '' : String(v));
+  }
+  if (col.type === 'checkbox') return v ? 'Yes' : 'No';
+  if (col.type === 'date') return fmtDate(v);
+  return v == null ? '' : String(v);
+}
+
+function dRowHasProblem(s) {
+  const bad = d => d && new Date(d) <= new Date(new Date(todayIso()).getTime() + 60 * 86400000);
+  return bad(s.dbs_expiry) || bad(s.dbs_followup_date) || bad(s.right_to_work_expiry_date) || bad(s.visa_expiry_date)
+    || !s.dbs_number || !s.right_to_work_status;
+}
+
+function renderDetailsTable() {
+  const startKeys = new Set();
+  D_COLUMNS.forEach((c, i) => { if (i === 0 || D_COLUMNS[i - 1].group !== c.group) startKeys.add(c.key); });
+  const headRow = '<tr><th class="sr-name-head">Name</th><th class="sr-chk-cell"><input type="checkbox" id="d-check-all" aria-label="Tick all shown"></th>' +
+    D_COLUMNS.map(c => startKeys.has(c.key)
+      ? `<th class="sr-grp-start" data-group="${esc(c.group)}">${esc(c.label)}</th>`
+      : `<th>${esc(c.label)}</th>`).join('') + '</tr>';
+  const bodyRows = D_STAFF.map(s => {
+    const prob = dRowHasProblem(s) ? ' data-problem="1" class="has-problem"' : '';
+    const nm = ((s.first_name || '') + ' ' + (s.last_name || '')).trim();
+    return `<tr data-staff-id="${s.id}"${prob}>` +
+      `<th class="sr-name-cell" data-sort="${esc(nm)}"><a href="/staff-profile.html?id=${s.id}">${esc(nm)}</a>` +
+      (s.is_active === false ? ' <span style="color:var(--c-muted);font-size:.7rem">(left)</span>' : '') + `</th>` +
+      `<td class="sr-chk-cell" data-sort-type="none"><input type="checkbox" class="d-row-check" aria-label="Tick ${esc(nm)}"></td>` +
+      D_COLUMNS.map(c => dCellHtml(c, s, startKeys.has(c.key))).join('') +
+      `</tr>`;
+  }).join('');
+  SR_RENDERING = true; setTimeout(() => { SR_RENDERING = false; }, 0);
+  document.getElementById('d-table-wrap').innerHTML = `<table class="sr-table" data-wg-editable="1" id="d-table">
+    <thead>${headRow}</thead>
+    <tbody>${bodyRows || '<tr><td colspan="' + (D_COLUMNS.length + 2) + '" style="padding:24px;text-align:center;color:var(--c-muted)">No staff</td></tr>'}</tbody>
+  </table>`;
+  const table = document.getElementById('d-table');
+  if (window.WrenGrid) WrenGrid.attach(table, { id: 'staff-records-details' });
+  table.addEventListener('wgrid:cellcommit', onDetailsCellCommit);
+  document.getElementById('d-check-all').onclick = (e) => {
+    table.querySelectorAll('tbody tr:not(.wgrid-empty-row)').forEach(tr => {
+      if (tr.style.display === 'none') return;
+      const cb = tr.querySelector('.d-row-check'); if (cb) cb.checked = e.target.checked;
+    });
+    updateDBulkbar();
+  };
+  table.querySelectorAll('.d-row-check').forEach(cb => cb.addEventListener('change', updateDBulkbar));
+  applyProblemsFilter();
+}
+
+function selectedDetailsIds() {
+  return Array.from(document.querySelectorAll('#d-table .d-row-check:checked')).map(cb => parseInt(cb.closest('tr').dataset.staffId, 10));
+}
+
+function updateDBulkbar() {
+  const ids = selectedDetailsIds();
+  document.getElementById('d-bulkbar').classList.toggle('show', ids.length > 0);
+  document.getElementById('d-bulk-count').textContent = ids.length + ' selected';
+}
+
+// Same-value test used to skip no-op commits (tabbing through cells fires blur on every one).
+function sameCellValue(col, oldVal, newVal) {
+  const blank = v => v === undefined || v === null || v === '';
+  if (col.type === 'checkbox') return !!oldVal === !!newVal;
+  if (blank(oldVal) && blank(newVal)) return true;
+  if (blank(oldVal) || blank(newVal)) return false;
+  if (col.type === 'number') return Number(oldVal) === Number(newVal);
+  if (col.type === 'date') return fmtDate(oldVal) === fmtDate(newVal);
+  return String(oldVal) === String(newVal);
+}
+
+function revertCtrl(ctrl, col, oldVal) {
+  if (ctrl.type === 'checkbox') ctrl.checked = !!oldVal;
+  else ctrl.value = col.type === 'date' ? fmtDate(oldVal) : (oldVal == null ? '' : oldVal);
+  const td = ctrl.closest('td'); if (td) td.dataset.sort = sortValFor(col, oldVal);
+}
+
+let SR_RENDERING = false; // true while the table is being rebuilt (see below)
+async function onDetailsCellCommit(e) {
+  const { td, field, value } = e.detail;
+  const col = D_COLUMNS.find(c => c.key === field);
+  if (!col) return; // not a data column — e.g. the row-select checkbox also lives in tbody
+  // Re-rendering the table removes the focused input, and Chrome fires blur for it: that is not an edit.
+  // (Without this, pasting into a focused cell then pressing Apply from the keyboard re-saved the old, empty
+  // value over the first pasted row.)
+  if (SR_RENDERING || !td.isConnected) return;
+  const tr = td.closest('tr');
+  const staffId = parseInt(tr.dataset.staffId, 10);
+  const ctrl = td.querySelector('input,select');
+  const oldKey = `${staffId}:${field}`;
+  const oldVal = D_OLD[oldKey] !== undefined ? D_OLD[oldKey] : (D_STAFF.find(s => s.id === staffId) || {})[field];
+  let sendVal = value;
+  if (col.type === 'checkbox') sendVal = !!(ctrl && ctrl.checked);
+  if (col.type === 'number') {
+    const t = String(value).trim();
+    if (t === '') sendVal = null;
+    else if (!Number.isFinite(Number(t))) {   // "abc" used to become NaN -> null: it silently CLEARED the value
+      ctrl.classList.add('sr-error'); ctrl.title = 'Enter a number';
+      toastErr(`${col.label}: "${t}" is not a number`);
+      revertCtrl(ctrl, col, oldVal);
+      return;
+    } else sendVal = Number(t);
+  }
+  if ((col.type === 'date' || col.type === 'select') && value === '') sendVal = null;
+  if (field === 'room_id' && sendVal != null) sendVal = parseInt(sendVal, 10);
+  if (field === 'census_fr_level' && sendVal != null) sendVal = parseInt(sendVal, 10);
+
+  td.dataset.sort = sortValFor(col, sendVal); // see sortValFor
+  // Nothing changed (focus + blur, Tab through the row): no request, no audit row, no toast.
+  if (sameCellValue(col, oldVal, sendVal)) { ctrl.classList.remove('sr-error'); return; }
+
+  ctrl.classList.remove('sr-error');
+  try {
+    const row = await Wren.api('/api/staff/' + staffId, { method: 'PUT', body: { [field]: sendVal } });
+    D_OLD[oldKey] = sendVal;
+    const rec = D_STAFF.find(s => s.id === staffId); if (rec) rec[field] = sendVal;
+    if (col.expiry) { td.classList.remove('sr-exp-red', 'sr-exp-amber'); const c = expiryClass(sendVal); if (c) td.classList.add(c); }
+    ctrl.classList.add('sr-saved');
+    setTimeout(() => ctrl.classList.remove('sr-saved'), 1500);
+    showUndoToast(`Saved ${col.label}`, async () => {
+      const r = await Wren.api('/api/staff/' + staffId, { method: 'PUT', body: { [field]: oldVal } }).catch(err => ({ __err: err }));
+      if (r && r.__err) { toastErr('Could not undo — ' + ((r.__err && (r.__err.detail || r.__err.error)) || 'unknown error')); return; }
+      delete D_OLD[oldKey];
+      // re-fetch rather than re-render from D_STAFF: that cache was updated to
+      // the NEW value at save time and is never written back on undo, so a
+      // plain renderDetailsTable() here would redraw the stale (unrevert) value
+      // even though the server-side undo succeeded.
+      await loadDetails();
+      Wren.toast('Reverted', 'info');
+    });
+  } catch (err) {
+    ctrl.classList.add('sr-error');
+    ctrl.title = (err && (err.detail || err.error)) || 'Could not save';
+    toastErr('Could not save — ' + ((err && (err.detail || err.error)) || 'unknown error'));
+    revertCtrl(ctrl, col, oldVal); // revert the displayed value
+  }
+}
+
+function applyProblemsFilter() {
+  const wrap = document.getElementById('d-table-wrap').querySelector('.wgrid');
+  if (!wrap) return;
+  wrap.classList.toggle('problems-only', !!document.getElementById('d-show-problems').checked);
+}
+(function injectProblemsCss() {
+  const style = document.createElement('style');
+  style.textContent = '.wgrid.problems-only tbody tr:not(.has-problem){display:none !important}';
+  document.head.appendChild(style);
+})();
+
+async function loadDetails() {
+  document.getElementById('d-status').textContent = 'Loading…';
+  const includeInactive = document.getElementById('d-show-leavers').checked ? 1 : 0;
+  try {
+    const [rooms, staff] = await Promise.all([
+      ROOMS.length ? Promise.resolve(ROOMS) : Wren.api('/api/staff/rooms'),
+      Wren.api('/api/staff/records?include_inactive=' + includeInactive),
+    ]);
+    ROOMS = rooms || [];
+    D_STAFF = staff || [];
+    Object.keys(D_OLD).forEach(k => delete D_OLD[k]); // a fresh read is the truth: stale "last saved" values would defeat the no-change check and Undo
+    renderDetailsTable();
+    document.getElementById('d-status').textContent = D_STAFF.length + ' staff';
+  } catch (e) {
+    document.getElementById('d-table-wrap').innerHTML = '<div style="color:var(--c-danger);padding:20px">Could not load staff records.</div>';
+    document.getElementById('d-status').textContent = '';
+  }
+}
+
+// ── bulk edit + paste (Details) ─────────────────────────────────────────────
+function populateDBulkFieldSelect() {
+  const sel = document.getElementById('d-bulk-field');
+  sel.innerHTML = D_COLUMNS.filter(c => !c.noBulk).map(c => `<option value="${c.key}">${esc(c.group)} — ${esc(c.label)}</option>`).join('');
+  sel.onchange = renderDBulkValueControl;
+  renderDBulkValueControl();
+}
+function renderDBulkValueControl() {
+  const field = document.getElementById('d-bulk-field').value;
+  const col = D_COLUMNS.find(c => c.key === field);
+  const wrap = document.getElementById('d-bulk-value-wrap');
+  if (col.type === 'select') wrap.innerHTML = selectHtml('bulk-value', col.opts(), '');
+  else if (col.type === 'checkbox') wrap.innerHTML = `<select id="d-bulk-value"><option value="1">Yes</option><option value="">No</option></select>`;
+  else if (col.type === 'date') wrap.innerHTML = `<input id="d-bulk-value" type="date">`;
+  else wrap.innerHTML = `<input id="d-bulk-value" type="text">`;
+}
+function readBulkValueEl() {
+  const el = document.getElementById('d-bulk-value-wrap').querySelector('input,select');
+  return el;
+}
+
+async function applyChanges(allChanges, { reload }) {
+  // allChanges: [{id, field, name, oldLabel, newLabel, value, invalid?, reason?}] — invalid rows are shown, then skipped.
+  if (!allChanges.length) return;
+  const changes = allChanges.filter(c => !c.invalid);
+  const skipped = allChanges.length - changes.length;
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="sr-preview-list">${allChanges.map(c => c.invalid
+    ? `<div class="sr-preview-row" style="color:var(--c-danger)"><span>${esc(c.name)}</span><span>“${esc(c.raw)}” — ${esc(c.reason)}, skipped</span></div>`
+    : `<div class="sr-preview-row"><span>${esc(c.name)}</span><span>${esc(c.oldLabel)} → <strong style="color:var(--c-text)">${esc(c.newLabel)}</strong></span></div>`
+  ).join('')}</div><p style="color:var(--c-muted);font-size:.8rem;margin:0">${changes.length} change${changes.length === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.</p>`;
+  const buttons = [{ label: changes.length ? 'Cancel' : 'Close', class: 'btn-ghost' }];
+  if (changes.length) buttons.push({ label: 'Apply', class: 'btn-primary', action: async () => {
+      const sameFieldValue = changes.every(c => c.field === changes[0].field && JSON.stringify(c.value) === JSON.stringify(changes[0].value));
+      let results = [];
+      if (sameFieldValue && changes.length > 1) {
+        const r = await Wren.api('/api/staff/bulk-update', { method: 'POST',
+          body: { ids: changes.map(c => c.id), field: changes[0].field, value: changes[0].value } }).catch(err => ({ __err: err }));
+        results = r && r.__err ? changes.map(c => ({ id: c.id, ok: false, error: (r.__err && (r.__err.error || r.__err.message)) || 'failed' })) : (r.results || []);
+      } else {
+        results = await Promise.all(changes.map(c =>
+          Wren.api('/api/staff/' + c.id, { method: 'PUT', body: { [c.field]: c.value } })
+            .then(() => ({ id: c.id, ok: true })).catch(err => ({ id: c.id, ok: false, error: (err && (err.detail || err.error)) || 'failed' }))
+        ));
+      }
+      const failed = results.filter(r => !r.ok);
+      if (failed.length) {
+        const names = failed.map(f => (changes.find(c => c.id === f.id) || {}).name || f.id);
+        toastErr(`${results.length - failed.length} saved, ${failed.length} refused: ${names.join(', ')} — ${failed[0].error}`, 6000);
+      } else {
+        Wren.toast(`${results.length} saved`, 'success');
+      }
+      reload();
+  } });
+  Wren.modal(`Preview changes`, body, buttons);
+}
+
+function setupDetailsBulkBar() {
+  populateDBulkFieldSelect();
+  document.getElementById('d-bulk-clear').onclick = () => {
+    document.querySelectorAll('#d-table .d-row-check:checked').forEach(cb => cb.checked = false);
+    document.getElementById('d-check-all').checked = false;
+    updateDBulkbar();
+  };
+  document.getElementById('d-bulk-apply').onclick = () => {
+    const ids = selectedDetailsIds();
+    if (!ids.length) return;
+    const field = document.getElementById('d-bulk-field').value;
+    const col = D_COLUMNS.find(c => c.key === field);
+    const el = readBulkValueEl();
+    let value = el.value;
+    if (col.type === 'checkbox') value = value === '1';
+    if (col.type === 'number') {
+      if (String(value).trim() !== '' && !Number.isFinite(Number(value))) { toastErr(`${col.label}: "${value}" is not a number`); return; }
+      value = String(value).trim() === '' ? null : Number(value);
+    }
+    if ((col.type === 'date' || col.type === 'select') && value === '') value = null;
+    if (field === 'room_id' && value != null) value = parseInt(value, 10);
+    if (field === 'census_fr_level' && value != null) value = parseInt(value, 10);
+    const newLabel = col.type === 'select' ? (col.opts().find(o => String(o.value) === String(el.value)) || {}).label || el.value
+      : col.type === 'checkbox' ? (value ? 'Yes' : 'No') : (value == null ? '—' : value);
+    const changes = ids.map(id => {
+      const s = D_STAFF.find(x => x.id === id) || {};
+      const oldV = s[field];
+      const oldLabel = col.type === 'select' ? (col.opts().find(o => String(o.value) === String(oldV)) || {}).label || (oldV ?? '—')
+        : col.type === 'checkbox' ? (oldV ? 'Yes' : 'No') : (oldV == null || oldV === '' ? '—' : oldV);
+      return { id, field, value, name: `${s.first_name || ''} ${s.last_name || ''}`.trim(), oldLabel, newLabel };
+    });
+    applyChanges(changes, { reload: loadDetails });
+  };
+}
+
+// Turns one pasted spreadsheet cell into a value for `col`, or { invalid, reason } — never a guess:
+// "Room Leader" is looked up in the column's options (by label or value), "14/10/2026" is read UK-style,
+// "yes/no/y/n/1/0/true/false" for ticks, and anything else is flagged and skipped in the preview.
+function parsePastedCell(col, raw) {
+  const t = String(raw).trim();
+  if (col.type === 'checkbox') {
+    if (/^(y|yes|true|1|x|✓|✔)$/i.test(t)) return { value: true };
+    if (/^(n|no|false|0|)$/i.test(t)) return { value: false };
+    return { invalid: true, reason: 'not yes/no' };
+  }
+  if (col.type === 'number') {
+    if (t === '') return { value: null };
+    const n = Number(t.replace(/,/g, ''));
+    return Number.isFinite(n) ? { value: n } : { invalid: true, reason: 'not a number' };
+  }
+  if (col.type === 'date') {
+    if (t === '') return { value: null };
+    const iso = parseDateLoose(t);
+    return iso ? { value: iso } : { invalid: true, reason: 'not a date' };
+  }
+  if (col.type === 'select') {
+    if (t === '') return { value: null };
+    const hit = col.opts().find(o => o.value !== '' && (String(o.label).toLowerCase() === t.toLowerCase() || String(o.value).toLowerCase() === t.toLowerCase()));
+    if (!hit) return { invalid: true, reason: 'not one of the options' };
+    return { value: (col.key === 'room_id' || col.key === 'census_fr_level') ? parseInt(hit.value, 10) : hit.value };
+  }
+  return { value: t };
+}
+
+// paste-to-fill-down: paste into a focused editable control fills every VISIBLE
+// row below it, in the same column, from clipboard lines (one value per row).
+document.addEventListener('paste', (e) => {
+  const table = document.getElementById('d-table');
+  if (!table) return;
+  const ctrl = e.target.closest && e.target.closest('input,select');
+  if (!ctrl || !table.contains(ctrl)) return;
+  const td = ctrl.closest('td');
+  const field = td && td.dataset.field;
+  if (!field) return;
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  const lines = text.split(/\r\n|\r|\n/).filter((l, i, arr) => !(i === arr.length - 1 && l === ''));
+  if (lines.length < 2) return; // a single value pastes normally into the one cell
+  e.preventDefault();
+  const col = D_COLUMNS.find(c => c.key === field);
+  if (!col) return;
+  const allRows = Array.from(table.querySelectorAll('tbody tr')).filter(tr => tr.style.display !== 'none' && !tr.classList.contains('wgrid-empty-row'));
+  const startIdx = allRows.indexOf(ctrl.closest('tr'));
+  if (startIdx < 0) return;
+  const changes = [];
+  for (let i = 0; i < lines.length && startIdx + i < allRows.length; i++) {
+    const tr = allRows[startIdx + i];
+    const staffId = parseInt(tr.dataset.staffId, 10);
+    const s = D_STAFF.find(x => x.id === staffId) || {};
+    const name = `${s.first_name || ''} ${s.last_name || ''}`.trim();
+    const parsed = parsePastedCell(col, lines[i]);
+    if (parsed.invalid) { changes.push({ id: staffId, field, name, invalid: true, raw: lines[i].trim(), reason: parsed.reason }); continue; }
+    const value = parsed.value;
+    const oldV = s[field];
+    if (sameCellValue(col, oldV, value)) continue; // nothing to change for this row
+    const labelOf = (v) => col.type === 'select' ? ((col.opts().find(o => String(o.value) === String(v)) || {}).label || (v ?? '—'))
+      : col.type === 'checkbox' ? (v ? 'Yes' : 'No') : (v == null || v === '' ? '—' : (col.type === 'date' ? fmtDateUK(v) : v));
+    changes.push({ id: staffId, field, value, name, oldLabel: labelOf(oldV), newLabel: labelOf(value) });
+  }
+  if (!changes.length) { Wren.toast('Nothing to change — the pasted values match what is already there', 'info'); return; }
+  applyChanges(changes, { reload: loadDetails });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// TRAINING TAB
+// ═════════════════════════════════════════════════════════════════════════
+let T_DATA = null;
+
+function tmCellBadge(cell) {
+  const map = { current: ['tm-current', 'OK'], expiring_soon: ['tm-soon', 'Soon'], overdue: ['tm-overdue', 'Overdue'], missing: ['tm-missing', '—'] };
+  const [cls, label] = map[cell.status] || map.missing;
+  const date = cell.completion_date ? fmtDateUK(cell.completion_date) : label;
+  return `<span class="tm-pill ${cls}">${esc(cell.status === 'missing' ? '—' : date)}</span>`;
+}
+
+function renderTrainingTable() {
+  if (!T_DATA) return;
+  const { courses, staff, unmapped } = T_DATA;
+  const headRow = '<tr><th class="sr-name-head">Name</th><th class="sr-chk-cell"><input type="checkbox" id="t-check-all"></th>' +
+    courses.map(c => `<th title="${esc(c.name)}${c.validity_months ? ' — renews every ' + c.validity_months + ' months' : ' — no expiry'}">${esc(c.name)}${c.mandatory ? ' <span aria-label="mandatory" style="color:var(--c-blue)">★</span>' : ''}</th>`).join('') + '</tr>';
+  const bodyRows = staff.map(s => {
+    return `<tr data-staff-id="${s.staff_id}">` +
+      `<th class="sr-name-cell" data-sort="${esc(s.name)}"><a href="/staff-profile.html?id=${s.staff_id}">${esc(s.name)}</a></th>` +
+      `<td class="sr-chk-cell" data-sort-type="none"><input type="checkbox" class="t-row-check" aria-label="Tick ${esc(s.name)}"></td>` +
+      courses.map(c => {
+        const cell = s.cells[c.key] || { status: 'missing' };
+        const exp = cell.status === 'missing' ? 'not recorded' : `${fmtDate(cell.completion_date) || 'date unknown'}; expires ${cell.expiry_date || 'never'}; ${cell.status}`;
+        const tip = cell.status === 'missing' ? 'Not recorded — click to record' : `Completed ${cell.completion_date ? fmtDateUK(cell.completion_date) : '(date unknown)'}` + (cell.expiry_date ? ` · expires ${fmtDateUK(cell.expiry_date)}` : ' · no expiry') + ` · ${cell.status.replace('_', ' ')}`;
+        return `<td class="tm-cell" tabindex="0" role="button" title="${esc(tip)}" data-sort="${esc(cell.status)}" data-export="${esc(exp)}" data-staff-id="${s.staff_id}" data-staff-name="${esc(s.name)}" data-course-key="${esc(c.key)}">${tmCellBadge(cell)}</td>`;
+      }).join('') + `</tr>`;
+  }).join('');
+  document.getElementById('t-table-wrap').innerHTML = `<table class="sr-table" id="t-table">
+    <thead>${headRow}</thead>
+    <tbody>${bodyRows || '<tr><td colspan="' + (courses.length + 2) + '" style="padding:24px;text-align:center;color:var(--c-muted)">No staff</td></tr>'}</tbody>
+  </table>`;
+  const table = document.getElementById('t-table');
+  if (window.WrenGrid) WrenGrid.attach(table, { id: 'staff-records-training', csv: true });
+  table.addEventListener('click', (e) => {
+    const cell = e.target.closest('.tm-cell');
+    if (cell) openTrainingCellModal(cell);
+  });
+  table.addEventListener('keydown', (e) => {
+    const cell = e.target.closest && e.target.closest('.tm-cell');
+    if (cell && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTrainingCellModal(cell); }
+  });
+  document.getElementById('t-check-all').onclick = (e) => {
+    table.querySelectorAll('tbody tr:not(.wgrid-empty-row)').forEach(tr => {
+      if (tr.style.display === 'none') return;
+      const cb = tr.querySelector('.t-row-check'); if (cb) cb.checked = e.target.checked;
+    });
+    updateTBulkbar();
+  };
+  table.querySelectorAll('.t-row-check').forEach(cb => cb.addEventListener('change', updateTBulkbar));
+
+  // Not-mapped list
+  const um = document.getElementById('t-unmapped');
+  if (unmapped && unmapped.length) {
+    um.hidden = false;
+    um.innerHTML = `<strong>Not mapped</strong> — existing training records Wren could not match to a course above:` +
+      unmapped.map(u => `<div class="sr-unmapped-row">
+        <span>${esc(u.course_name)} (${u.count})</span>
+        <select class="t-map-target">${courses.map(c => `<option value="${esc(c.key)}">${esc(c.name)}</option>`).join('')}</select>
+        <button class="btn-sm btn-ghost2" data-map="${esc(u.course_name)}">Map to…</button>
+      </div>`).join('');
+    um.querySelectorAll('[data-map]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const courseName = btn.dataset.map;
+        const targetKey = btn.closest('.sr-unmapped-row').querySelector('.t-map-target').value;
+        const courses2 = T_DATA.courses.map(c => c.key === targetKey
+          ? { ...c, patterns: Array.from(new Set([...(c.patterns || []), courseName.toLowerCase()])) } : c);
+        const r = await Wren.api('/api/cpd/training-matrix/courses', { method: 'PUT', body: { courses: courses2 } }).catch(err => ({ __err: err }));
+        if (r && r.__err) { toastErr('Could not map — ' + ((r.__err && r.__err.error) || 'unknown error')); return; }
+        Wren.toast('Mapped — recalculating…', 'success');
+        loadTraining();
+      });
+    });
+  } else { um.hidden = true; um.innerHTML = ''; }
+}
+
+function selectedTrainingIds() {
+  return Array.from(document.querySelectorAll('#t-table .t-row-check:checked')).map(cb => parseInt(cb.closest('tr').dataset.staffId, 10));
+}
+function updateTBulkbar() {
+  const ids = selectedTrainingIds();
+  document.getElementById('t-bulkbar').classList.toggle('show', ids.length > 0);
+  document.getElementById('t-bulk-count').textContent = ids.length + ' selected';
+}
+
+function openTrainingCellModal(cell) {
+  const staffId = parseInt(cell.dataset.staffId, 10);
+  const staffName = cell.dataset.staffName;
+  const courseKey = cell.dataset.courseKey;
+  const course = T_DATA.courses.find(c => c.key === courseKey);
+  const staffRow = T_DATA.staff.find(s => s.staff_id === staffId);
+  const existing = staffRow && staffRow.cells[courseKey];
+  const hasRecord = existing && existing.status !== 'missing';
+  // A cell can be backed by the HR "Mandatory Training" table (read by the Single Central Record too) as
+  // well as by cpd_records. Updating in place goes to whichever table holds the record; a NEW completion is
+  // always a new cpd_records row, so history is kept either way.
+  const fromMandatory = hasRecord && existing.source === 'mandatory_training';
+
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <p style="margin:0 0 10px;color:var(--c-muted)">${esc(staffName)} — <strong style="color:var(--c-text)">${esc(course.name)}</strong></p>
+    <div class="field-row"><label for="tm-date">Completion date</label><input id="tm-date" type="date" value="${esc(fmtDate(existing && existing.completion_date) || todayIso())}"></div>
+    <div class="field-row"><label for="tm-provider">Provider</label><input id="tm-provider" type="text" value="${esc((existing && existing.provider) || '')}"></div>
+    ${fromMandatory ? '' : `<div class="field-row"><label for="tm-notes">Notes</label><textarea id="tm-notes" rows="2">${esc((existing && existing.notes) || '')}</textarea></div>`}
+    ${hasRecord ? `<p style="font-size:.76rem;color:var(--c-muted);margin:0 0 4px">Last recorded ${existing.completion_date ? fmtDateUK(existing.completion_date) : 'date unknown'}${existing.provider ? ' — ' + esc(existing.provider) : ''}${existing.expiry_date ? ', expires ' + fmtDateUK(existing.expiry_date) : ''}${fromMandatory ? ' (from HR mandatory training)' : ''}.</p>` : ''}
+    <p style="font-size:.76rem;color:var(--c-muted);margin:6px 0 0">“Update this record” corrects the latest entry. “Log new completion” adds a new one and keeps the history.${course.validity_months ? ` The expiry is set to ${course.validity_months} months after the completion date.` : ''}</p>
+  `;
+  const buttons = [{ label: 'Cancel', class: 'btn-ghost' }];
+  if (hasRecord) {
+    buttons.push({ label: 'Update this record', class: 'btn-ghost', action: () => saveTrainingRecord('update') });
+  }
+  buttons.push({ label: 'Log new completion', class: 'btn-primary', action: () => saveTrainingRecord('new') });
+  Wren.modal('Training record', body, buttons);
+
+  async function saveTrainingRecord(mode) {
+    const date = document.getElementById('tm-date').value;
+    const provider = document.getElementById('tm-provider').value;
+    const notesEl = document.getElementById('tm-notes');
+    const notes = notesEl ? notesEl.value : '';
+    if (!date) { toastErr('Completion date required'); return; }
+    const expiry = course.validity_months ? addMonthsIso(date, course.validity_months) : null;
+    try {
+      if (mode === 'update') {
+        if (fromMandatory) {
+          await Wren.api('/api/cpd/mandatory/' + existing.record_id, { method: 'PUT',
+            body: { completed_date: date, expiry_date: expiry, provider: provider || null, certificate_url: existing.certificate_url || null } });
+        } else {
+          const b = { completion_date: date, provider, notes };
+          if (expiry) b.expiry_date = expiry; // the PUT keeps the old expiry when none is sent — it must follow the new date
+          await Wren.api('/api/cpd/' + existing.record_id, { method: 'PUT', body: b });
+        }
+      } else {
+        // one code path for "new completion": the server works the expiry out, de-dupes and audits it
+        const r = await Wren.api('/api/cpd/bulk-record', { method: 'POST',
+          body: { staff_ids: [staffId], course_key: course.key, completion_date: date, provider, notes } });
+        const row = (r.results || [])[0] || {};
+        if (!row.ok) throw { error: row.error || 'not saved' };
+        if (row.skipped) { Wren.toast('Already recorded for that date — nothing added', 'info'); loadTraining(); return; }
+      }
+      Wren.toast('Saved', 'success');
+      loadTraining();
+    } catch (err) {
+      toastErr('Could not save — ' + ((err && (err.detail || err.error)) || 'unknown error'));
+    }
+  }
+}
+
+function populateTBulkCourseSelect() {
+  const sel = document.getElementById('t-bulk-course');
+  sel.innerHTML = T_DATA.courses.map(c => `<option value="${esc(c.key)}">${esc(c.name)}</option>`).join('');
+}
+
+function setupTrainingBulkBar() {
+  document.getElementById('t-bulk-clear').onclick = () => {
+    document.querySelectorAll('#t-table .t-row-check:checked').forEach(cb => cb.checked = false);
+    document.getElementById('t-check-all').checked = false;
+    updateTBulkbar();
+  };
+  document.getElementById('t-bulk-apply').onclick = () => {
+    const ids = selectedTrainingIds();
+    if (!ids.length) return;
+    const courseKey = document.getElementById('t-bulk-course').value;
+    const course = T_DATA.courses.find(c => c.key === courseKey);
+    const date = document.getElementById('t-bulk-date').value || todayIso();
+    const provider = document.getElementById('t-bulk-provider').value;
+    if (date > todayIso()) { toastErr('The completion date cannot be in the future'); return; }
+    const expiry = course.validity_months ? addMonthsIso(date, course.validity_months) : null;
+    const names = ids.map(id => (T_DATA.staff.find(s => s.staff_id === id) || {}).name || id);
+    const body = document.createElement('div');
+    body.innerHTML = `<div class="sr-preview-list">${names.map(n => `<div class="sr-preview-row"><span>${esc(n)}</span><span>${esc(course.name)} — ${esc(fmtDateUK(date))}</span></div>`).join('')}</div>
+      <p style="color:var(--c-muted);font-size:.8rem;margin:0">${expiry ? `Expires ${esc(fmtDateUK(expiry))} (${course.validity_months} months). ` : 'No expiry. '}A new record is added for each person — existing training history is kept.</p>`;
+    Wren.modal(`Record training for ${ids.length} people`, body, [
+      { label: 'Cancel', class: 'btn-ghost' },
+      { label: 'Apply', class: 'btn-primary', action: async () => {
+        const r = await Wren.api('/api/cpd/bulk-record', { method: 'POST',
+          body: { staff_ids: ids, course_key: courseKey, completion_date: date, provider } }).catch(err => ({ __err: err }));
+        if (r && r.__err) { toastErr('Failed — ' + ((r.__err && r.__err.error) || 'unknown error')); return; }
+        const results = r.results || [];
+        const failed = results.filter(x => !x.ok);
+        const already = results.filter(x => x.ok && x.skipped).length;
+        const added = results.length - failed.length - already;
+        const msg = `Recorded for ${added} ${added === 1 ? 'person' : 'people'}` + (already ? `, ${already} already had it for that date` : '') + (failed.length ? `, ${failed.length} failed` : '');
+        if (failed.length) toastErr(msg + ' — ' + failed[0].error, 6000); else Wren.toast(esc(msg), 'success');
+        loadTraining();
+      } },
+    ]);
+  };
+}
+
+function openManageCourses() {
+  const body = document.createElement('div');
+  body.innerHTML = T_DATA.courses.map((c, i) => `
+    <div class="sr-course-admin-row" data-crow="${i}">
+      <input class="mc-name" aria-label="Course name" style="flex:1;min-width:160px" value="${esc(c.name)}">
+      <input class="mc-validity" aria-label="Valid for (months)" type="number" min="1" max="240" placeholder="months" style="width:80px" value="${c.validity_months || ''}">
+      <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" class="mc-mandatory" ${c.mandatory ? 'checked' : ''}> mandatory</label>
+      <input class="mc-patterns" aria-label="Match patterns" style="flex:2;min-width:180px" placeholder="match patterns, comma-separated" value="${esc((c.patterns || []).join(', '))}">
+    </div>`).join('') +
+    '<p style="font-size:.76rem;color:var(--c-muted);margin:8px 0 0">Leave “months” blank for a course that never expires. Patterns are matched inside existing course names; if several match, the longest wins.</p>';
+  const ov = Wren.modal('Manage courses', body, [
+    { label: 'Cancel', class: 'btn-ghost' },
+    { label: 'Save', class: 'btn-primary', close: false, action: async () => {
+      const rows = body.querySelectorAll('.sr-course-admin-row');
+      const courses = [];
+      for (let i = 0; i < T_DATA.courses.length; i++) {
+        const c = T_DATA.courses[i], row = rows[i];
+        const vRaw = row.querySelector('.mc-validity').value.trim();
+        if (vRaw !== '' && !/^\d+$/.test(vRaw)) { toastErr(`${c.name}: months must be a whole number`); return; }
+        courses.push({
+          ...c,
+          name: row.querySelector('.mc-name').value.trim() || c.name,
+          validity_months: vRaw === '' ? null : parseInt(vRaw, 10),
+          mandatory: row.querySelector('.mc-mandatory').checked,
+          patterns: row.querySelector('.mc-patterns').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean),
+        });
+      }
+      const r = await Wren.api('/api/cpd/training-matrix/courses', { method: 'PUT', body: { courses } }).catch(err => ({ __err: err }));
+      if (r && r.__err) { toastErr('Not saved — ' + ((r.__err && r.__err.error) || 'unknown error')); return; } // modal stays open, edits kept
+      Wren.toast('Saved', 'success');
+      ov.querySelector('.modal-close').click();
+      loadTraining();
+    } },
+  ]);
+}
+
+async function loadTraining() {
+  document.getElementById('t-status').textContent = 'Loading…';
+  const includeInactive = document.getElementById('t-show-leavers').checked ? 1 : 0;
+  try {
+    T_DATA = await Wren.api('/api/cpd/training-matrix?include_inactive=' + includeInactive);
+    renderTrainingTable();
+    populateTBulkCourseSelect();
+    document.getElementById('t-status').textContent = T_DATA.staff.length + ' staff · ' + T_DATA.courses.length + ' courses';
+  } catch (e) {
+    document.getElementById('t-table-wrap').innerHTML = '<div style="color:var(--c-danger);padding:20px">Could not load the training matrix.</div>';
+    document.getElementById('t-status').textContent = '';
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// INIT
+// ═════════════════════════════════════════════════════════════════════════
+function init() {
+  document.querySelectorAll('.sr-tabbar button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sr-tabbar button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.sr-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'training' && !T_DATA) loadTraining();
+    });
+  });
+  document.getElementById('d-show-leavers').addEventListener('change', loadDetails);
+  document.getElementById('d-show-problems').addEventListener('change', applyProblemsFilter);
+  document.getElementById('t-show-leavers').addEventListener('change', loadTraining);
+  document.getElementById('t-manage-courses').addEventListener('click', () => { if (T_DATA) openManageCourses(); });
+  setupDetailsBulkBar();
+  setupTrainingBulkBar();
+  loadDetails();
+}
+document.addEventListener('wren:ready', init);
+</script>
+</body>
+</html>

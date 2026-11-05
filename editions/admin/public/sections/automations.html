@@ -1,0 +1,126 @@
+<div class="wren-section" id="section-automations">
+  <div style="margin-bottom:16px">
+    <h1 class="page-title" style="font-size:1.2rem;margin:0">🔁 Automations</h1>
+    <p style="font-size:.82rem;color:#94a3b8;margin:6px 0 0">Simple “if this, then that” for the jobs you do every week or month. Turn one on and Wren does it on schedule — reminders to parents, nudges to staff, monthly prompts. Most actions are safe in-app reminders and tasks (nothing charged without you) — the survey-send automations are the exception: those genuinely email parents on schedule, so check the recipient logic before switching one on.</p>
+  </div>
+
+  <div class="wren-tabs" role="tablist" style="margin-bottom:16px">
+    <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="recipes" id="tab-auto-recipes" aria-controls="panel-auto-recipes">Recipes</button>
+    <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="active"  id="tab-auto-active"  aria-controls="panel-auto-active">Active <span id="auto-active-count" style="opacity:.6"></span></button>
+  </div>
+
+  <div class="wren-tab-panel" role="tabpanel" id="panel-auto-recipes" data-tab="recipes" aria-labelledby="tab-auto-recipes">
+    <div id="auto-recipes-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+      <div style="color:#64748b;padding:16px">Loading…</div>
+    </div>
+  </div>
+
+  <div class="wren-tab-panel" role="tabpanel" id="panel-auto-active" data-tab="active" aria-labelledby="tab-auto-active" hidden>
+    <div id="auto-active-list"><div style="color:#64748b;padding:16px">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const FREQ_LABEL = { daily: 'Every day', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MONTH = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function schedLabel(s){
+    s = s || {};
+    if (s.freq === 'weekly')    return `Weekly · ${DOW[s.dow] || 'Mon'} · ${s.time || '09:00'}`;
+    if (s.freq === 'daily')     return `Every day · ${s.time || '09:00'}`;
+    if (s.freq === 'quarterly') return `Quarterly · day ${s.dom || 1} of Jan/Apr/Jul/Oct · ${s.time || '09:00'}`;
+    if (s.freq === 'yearly')    return `Yearly · ${MONTH[s.month] || 'Jan'} ${s.dom || 1} · ${s.time || '09:00'}`;
+    return `Monthly · day ${s.dom || 1} · ${s.time || '09:00'}`;
+  }
+  const KIND_LABEL = { notify: 'notifies', task: 'creates a task for', survey_send: 'emails a survey to' };
+  let recipes = [], active = [];
+
+  async function load() {
+    [recipes, active] = await Promise.all([
+      Wren.api('/api/automations/recipes').catch(() => []),
+      Wren.api('/api/automations').catch(() => []),
+    ]);
+    const c = document.getElementById('auto-active-count');
+    if (c) c.textContent = active.length ? `(${active.filter(a => a.enabled).length})` : '';
+    renderRecipes(); renderActive();
+  }
+
+  function activeForRecipe(key){ return active.find(a => a.recipe_key === key); }
+
+  function renderRecipes() {
+    const el = document.getElementById('auto-recipes-grid');
+    if (!el) return;
+    el.innerHTML = recipes.map(r => {
+      const on = activeForRecipe(r.key);
+      return `<div style="background:#1e293b;border:1px solid ${on && on.enabled ? '#22c55e55' : '#2d3748'};border-radius:12px;padding:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:1.2rem">${r.icon || '🔁'}</span>
+          <span style="font-weight:700;color:#f1f5f9;font-size:.92rem">${esc(r.name)}</span>
+        </div>
+        <p style="font-size:.78rem;color:#94a3b8;margin:0 0 10px;line-height:1.5">${esc(r.desc)}</p>
+        <div style="font-size:.72rem;color:#64748b;margin-bottom:10px">${schedLabel(r.schedule)} · to ${esc(r.audience)}</div>
+        ${on
+          ? `<div style="display:flex;gap:6px;align-items:center">
+               <span style="font-size:.72rem;color:${on.enabled?'#22c55e':'#64748b'}">${on.enabled?'● On':'○ Paused'}</span>
+               <button class="btn btn-sm btn-ghost" data-auto-toggle="${on.id}" data-on="${on.enabled?1:0}" style="margin-left:auto">${on.enabled?'Pause':'Resume'}</button>
+             </div>`
+          : `<button class="btn btn-sm btn-primary" data-auto-add="${r.key}">Turn on</button>`}
+      </div>`;
+    }).join('');
+  }
+
+  function renderActive() {
+    const el = document.getElementById('auto-active-list');
+    if (!el) return;
+    if (!active.length) { el.innerHTML = '<div style="color:#64748b;padding:16px">Nothing active yet — turn on a recipe.</div>'; return; }
+    el.innerHTML = '<div style="display:grid;gap:8px">' + active.map(a => `
+      <div style="background:#1e293b;border:1px solid #2d3748;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-weight:700;color:#f1f5f9;font-size:.9rem">${esc(a.name)}</div>
+          <div style="font-size:.72rem;color:#64748b;margin-top:2px">${schedLabel(a.schedule)} · ${esc(KIND_LABEL[a.kind] || a.kind)} ${esc(a.audience)}${a.next_run_at ? ' · next ' + new Date(a.next_run_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : ''}${a.last_result ? ' · last: ' + esc(a.last_result) : ''}</div>
+        </div>
+        <span style="font-size:.72rem;color:${a.enabled?'#22c55e':'#64748b'}">${a.enabled?'● On':'○ Paused'}</span>
+        <button class="btn btn-sm btn-ghost" data-auto-run="${a.id}">Run now</button>
+        <button class="btn btn-sm btn-ghost" data-auto-history="${a.id}" data-name="${esc(a.name)}">History</button>
+        <button class="btn btn-sm btn-ghost" data-auto-toggle="${a.id}" data-on="${a.enabled?1:0}">${a.enabled?'Pause':'Resume'}</button>
+        <button class="btn btn-sm btn-ghost" data-auto-del="${a.id}" style="color:#ef4444">Remove</button>
+      </div>`).join('') + '</div>';
+  }
+
+  async function showHistory(id, name) {
+    let runs = [];
+    try { runs = await Wren.api('/api/automations/' + id + '/runs'); } catch (e) {}
+    const body = runs.length
+      ? '<div style="display:grid;gap:8px">' + runs.map(r => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2d3748">
+            <span style="color:${r.ok ? '#22c55e' : '#ef4444'};font-size:1rem">${r.ok ? '✓' : '✕'}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:.82rem;color:#f1f5f9">${esc(r.result || '—')}</div>
+              <div style="font-size:.72rem;color:#64748b">${new Date(r.ran_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+            </div>
+          </div>`).join('') + '</div>'
+      : '<div style="color:#64748b;padding:8px 0">No runs recorded yet — runs are logged from now on (past runs before this build only kept a single last-result summary).</div>';
+    Wren.modal(`Run history — ${esc(name)}`, body, [{ label: 'Close', class: 'btn-primary' }]);
+  }
+
+  document.getElementById('section-automations').addEventListener('click', async e => {
+    const add = e.target.closest('[data-auto-add]');
+    const tog = e.target.closest('[data-auto-toggle]');
+    const run = e.target.closest('[data-auto-run]');
+    const del = e.target.closest('[data-auto-del]');
+    const hist = e.target.closest('[data-auto-history]');
+    try {
+      if (add) { await Wren.api('/api/automations', { method: 'POST', body: { recipe_key: add.dataset.autoAdd } }); Wren.toast('Automation turned on ✓', 'success'); await load(); }
+      else if (tog) { await Wren.api('/api/automations/' + tog.dataset.autoToggle, { method: 'PUT', body: { enabled: tog.dataset.on !== '1' } }); await load(); }
+      else if (run) { const r = await Wren.api('/api/automations/' + run.dataset.autoRun + '/run', { method: 'POST', body: {} }); Wren.toast('Ran: ' + (r.result || 'done'), 'success'); await load(); }
+      else if (del) { if (!confirm('Remove this automation?')) return; await Wren.api('/api/automations/' + del.dataset.autoDel, { method: 'DELETE' }); await load(); }
+      else if (hist) { await showHistory(hist.dataset.autoHistory, hist.dataset.name); }
+    } catch (err) { Wren.toast('Failed: ' + (err.error || err.message), 'error'); }
+  });
+
+  window.wrenLoadTab_automations_recipes = function () { if (!recipes.length) load(); };
+  window.wrenLoadTab_automations_active  = function () { if (!active.length) load(); else renderActive(); };
+})();
+</script>

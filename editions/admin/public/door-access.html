@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"  content="ladn">
+  <meta name="wren-app-page" content="door-access">
+  <title>Door &amp; Access · Roost</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <style>
+    /* b199 — Roost Door & Access. Toby runs this from his phone stood at the reader,
+       so it is one column, thumb-height controls and no hover-only affordances.
+       Chrome comes from wren-shell; this page owns only its own layout. */
+    .da-wrap { max-width: 720px; margin: 0 auto; padding: 14px 14px calc(env(safe-area-inset-bottom, 16px) + 28px); }
+    .card { background: var(--c-navy-mid, #0f172a); border: 1px solid var(--c-border, #2d3748);
+            border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+    .card h2 { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em;
+               color: var(--c-muted, #94a3b8); margin: 0 0 10px; font-weight: 700; }
+    .tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
+    .tabs button { flex: 1 0 auto; background: var(--c-navy-mid, #0f172a); color: var(--c-muted, #94a3b8);
+                   border: 1px solid var(--c-border, #2d3748); border-radius: 999px;
+                   padding: 10px 16px; font-size: .88rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .tabs button[aria-selected="true"] { background: var(--c-blue, #4a9abf); color: #0f172a; border-color: transparent; }
+    .pane[hidden] { display: none; }
+
+    .pill { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 700;
+            border-radius: 999px; padding: 3px 9px; border: 1px solid var(--c-border, #2d3748);
+            background: rgba(148,163,184,.12); color: var(--c-muted, #94a3b8); }
+    .pill.ok    { background: rgba(34,197,94,.12);  border-color: rgba(34,197,94,.4);  color: #86efac; }
+    .pill.warn  { background: rgba(234,179,8,.14);  border-color: rgba(234,179,8,.45); color: #fde68a; }
+    .pill.bad   { background: rgba(239,68,68,.12);  border-color: rgba(239,68,68,.4);  color: #fca5a5; }
+
+    .banner { display: none; gap: 8px; font-size: .82rem; line-height: 1.45; border-radius: 10px;
+              padding: 10px 12px; margin-bottom: 14px; }
+    .banner.show { display: flex; }
+    .banner.warn { background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.4); color: #fde68a; }
+    .banner.bad  { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.4); color: #fca5a5; }
+
+    .fob { display: flex; gap: 10px; align-items: flex-start; padding: 12px 0;
+           border-bottom: 1px solid var(--c-border, #2d3748); }
+    .fob:last-child { border-bottom: 0; }
+    .fob .body { flex: 1; min-width: 0; }
+    .fob .name { font-weight: 700; font-size: .95rem; }
+    .fob .uid  { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem;
+                 color: var(--c-muted, #94a3b8); margin-top: 2px; overflow-wrap: anywhere; }
+    .fob .meta { font-size: .76rem; color: var(--c-muted, #94a3b8); margin-top: 4px; }
+    .fob .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .fob .acts button { background: none; border: 1px solid var(--c-border, #2d3748);
+                        color: var(--c-text, #f1f5f9); border-radius: 9px;
+                        padding: 8px 12px; font-size: .8rem; font-weight: 600; cursor: pointer; }
+    .fob .acts button.danger { border-color: rgba(239,68,68,.5); color: #fca5a5; }
+
+    label.f { display: block; font-size: .76rem; font-weight: 700; color: var(--c-muted, #94a3b8);
+              margin: 10px 0 5px; text-transform: uppercase; letter-spacing: .04em; }
+    input.f, select.f {
+      width: 100%; box-sizing: border-box; background: var(--c-navy, #0b1220); color: var(--c-text, #f1f5f9);
+      border: 1px solid var(--c-border, #2d3748); border-radius: 10px; padding: 12px; font-size: .95rem;
+    }
+    .btn { width: 100%; border: none; border-radius: 12px; padding: 14px; font-size: .95rem;
+           font-weight: 700; cursor: pointer; background: var(--c-blue, #4a9abf); color: #0f172a; margin-top: 12px; }
+    .btn.ghost { background: none; border: 1px solid var(--c-border, #2d3748); color: var(--c-muted, #94a3b8); }
+    .btn.danger { background: #ef4444; color: #fff; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .msg { font-size: .82rem; color: var(--c-muted, #94a3b8); margin-top: 10px; min-height: 18px; line-height: 1.45; }
+    .msg.err { color: #fca5a5; }
+    .msg.ok  { color: #86efac; }
+
+    /* Enrol */
+    #enrol-listen { font-size: 1rem; padding: 18px; }
+    #enrol-listen.armed { background: #22c55e; color: #06240f; }
+    #enrol-capture { display: none; margin-top: 14px; padding: 14px; border-radius: 12px;
+                     background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.4); }
+    #enrol-capture.show { display: block; }
+    #enrol-card-no { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     font-size: 1.5rem; font-weight: 700; letter-spacing: .06em; word-break: break-all; }
+
+    /* Door */
+    #cam-wrap { position: relative; background: #0b1220; border-radius: 12px; overflow: hidden;
+                aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
+    #cam-img { width: 100%; height: 100%; object-fit: cover; display: none; }
+    #cam-ph { color: var(--c-muted, #94a3b8); font-size: .86rem; text-align: center; padding: 20px; }
+    #cam-ph .ico { display: block; font-size: 2.2rem; margin-bottom: 8px; opacity: .8; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    #btn-open.is-armed { background: #ef4444; color: #fff; }
+
+    /* Log */
+    .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .filters button { background: none; border: 1px solid var(--c-border, #2d3748); color: var(--c-muted, #94a3b8);
+                      border-radius: 999px; padding: 7px 13px; font-size: .78rem; font-weight: 700; cursor: pointer; }
+    .filters button[aria-pressed="true"] { background: var(--c-blue, #4a9abf); color: #0f172a; border-color: transparent; }
+    #log { list-style: none; margin: 0; padding: 0; }
+    #log li { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--c-border, #2d3748); font-size: .85rem; }
+    #log li:last-child { border-bottom: 0; }
+    #log .what { flex: 1; min-width: 0; }
+    #log .what .sub { color: var(--c-muted, #94a3b8); font-size: .76rem; margin-top: 3px; overflow-wrap: anywhere; }
+    #log .when { color: var(--c-muted, #94a3b8); font-size: .74rem; white-space: nowrap; }
+    #log button.assign { margin-top: 7px; background: none; border: 1px solid var(--c-blue, #4a9abf);
+                         color: var(--c-blue, #4a9abf); border-radius: 9px; padding: 7px 11px;
+                         font-size: .78rem; font-weight: 700; cursor: pointer; }
+    .note { font-size: .74rem; color: var(--c-muted, #94a3b8); line-height: 1.5; margin-top: 10px; }
+
+    /* b250 — a fob that still opens the door after a failed revoke has to LOOK
+       different from a tidy row, not just read differently. Same tokens as the rest
+       of the page so it holds up in light and dark. */
+    .fob.danger { border-left: 3px solid var(--c-red, #ef4444); padding-left: 10px;
+                  background: rgba(239, 68, 68, .06); border-radius: 8px; margin: 6px 0; }
+    .fob .alarm { font-size: .78rem; line-height: 1.45; margin-top: 6px; color: #fca5a5; font-weight: 600; }
+    .fob .alarm .why { display: block; font-weight: 400; color: var(--c-muted, #94a3b8); margin-top: 3px; }
+    .stale { opacity: .55; }
+    .rec-group { margin-bottom: 16px; }
+    .rec-group h3 { font-size: .8rem; margin: 0 0 6px; color: var(--c-text, #f1f5f9); font-weight: 700; }
+    .rec-item { border-bottom: 1px solid var(--c-border, #2d3748); padding: 9px 0; font-size: .84rem; }
+    .rec-item:last-child { border-bottom: 0; }
+    .rec-item .uid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem;
+                     color: var(--c-muted, #94a3b8); overflow-wrap: anywhere; }
+    .rec-item .why { font-size: .76rem; color: var(--c-muted, #94a3b8); margin-top: 3px; }
+    .rec-ok { font-size: .84rem; color: #86efac; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="da-wrap">
+
+  <div class="banner warn" id="dry-banner"><span>🔧</span><span id="dry-text"></span></div>
+  <div class="banner bad"  id="dev-banner"><span>⚠️</span><span id="dev-text"></span></div>
+  <!-- b250 — the two states that must never be discovered by scrolling -->
+  <div class="banner bad"  id="pending-banner"><span>🚨</span><span id="pending-text"></span></div>
+  <div class="banner warn" id="offline-banner"><span>📡</span><span id="offline-text"></span></div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-fobs"  aria-selected="true"  aria-controls="pane-fobs">Fobs</button>
+    <button role="tab" id="tab-enrol" aria-selected="false" aria-controls="pane-enrol">Enrol</button>
+    <button role="tab" id="tab-recon" aria-selected="false" aria-controls="pane-recon">Reconcile</button>
+    <button role="tab" id="tab-door"  aria-selected="false" aria-controls="pane-door">Door</button>
+    <button role="tab" id="tab-log"   aria-selected="false" aria-controls="pane-log">Log</button>
+  </div>
+
+  <!-- ── FOBS ─────────────────────────────────────────────────────────────── -->
+  <section class="pane" id="pane-fobs" role="tabpanel" aria-labelledby="tab-fobs">
+    <div class="card">
+      <h2>Door device</h2>
+      <div class="row"><span id="dev-host">—</span><span class="pill" id="dev-pill">checking…</span></div>
+      <p class="note" id="dev-note"></p>
+    </div>
+
+    <div class="card">
+      <h2>Registered fobs</h2>
+      <div id="fob-list">Loading…</div>
+    </div>
+
+    <div class="card">
+      <h2>Add a fob</h2>
+      <label class="f" for="add-staff">Staff member</label>
+      <select class="f" id="add-staff"><option value="">Loading…</option></select>
+      <label class="f" for="add-uid">Card number</label>
+      <input class="f" id="add-uid" placeholder="e.g. A1B2C3D4" autocapitalize="characters" autocomplete="off" inputmode="latin">
+      <button class="btn ghost" id="add-use-swipe" type="button">📡 Use the last swipe instead of typing</button>
+      <label class="f" for="add-label">Label (optional)</label>
+      <input class="f" id="add-label" placeholder="e.g. blue keyring" autocomplete="off">
+      <button class="btn" id="add-save" type="button">Add fob</button>
+      <div class="msg" id="add-msg"></div>
+      <p class="note">
+        Adding writes the card to the door station, then <strong>reads it back to check it
+        is really there</strong> before Wren marks the fob active. If the device write fails
+        or cannot be confirmed, nothing is saved here either — you will never end up with a
+        fob that exists in one place and not the other.
+      </p>
+      <p class="note">
+        A fob shows as active once the door station confirms it holds the card. Whether it
+        actually opens the door is proved by the first swipe, which appears on the fob as
+        <em>last swipe</em>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── ENROL ────────────────────────────────────────────────────────────── -->
+  <section class="pane" id="pane-enrol" role="tabpanel" aria-labelledby="tab-enrol" hidden>
+    <div class="card">
+      <h2>Listen for the next swipe</h2>
+      <p class="note" style="margin-top:0">
+        Tap <strong>Listen</strong>, then hold the fob against the reader at the front door.
+        The card number appears here on its own — no typing it off a screen.
+      </p>
+      <button class="btn" id="enrol-listen" type="button">📡 Listen for the next swipe</button>
+      <div class="msg" id="enrol-msg"></div>
+
+      <div id="enrol-capture">
+        <div class="note" style="margin:0 0 6px">Card detected</div>
+        <div id="enrol-card-no">—</div>
+        <div class="msg" id="enrol-known"></div>
+        <label class="f" for="enrol-staff">Assign to</label>
+        <select class="f" id="enrol-staff"><option value="">Loading…</option></select>
+        <label class="f" for="enrol-label">Label (optional)</label>
+        <input class="f" id="enrol-label" placeholder="e.g. blue keyring" autocomplete="off">
+        <button class="btn" id="enrol-assign" type="button">Assign this fob</button>
+        <div class="msg" id="enrol-assign-msg"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── RECONCILE (b250) ─────────────────────────────────────────────────── -->
+  <!-- Wren is the register; the door station is what actually lets people in. This
+       tab is the only place that compares the two and names the consequence of each
+       disagreement, rather than leaving a manager to infer it from a pill. -->
+  <section class="pane" id="pane-recon" role="tabpanel" aria-labelledby="tab-recon" hidden>
+    <div class="card">
+      <h2>Wren vs the door station</h2>
+      <div class="row"><span id="rec-host">—</span><span class="pill" id="rec-pill">checking…</span></div>
+      <p class="note" id="rec-when"></p>
+      <button class="btn ghost" id="rec-refresh" type="button" style="margin-top:10px">↻ Check again</button>
+    </div>
+    <div class="card">
+      <h2>Differences</h2>
+      <div id="rec-body">Loading…</div>
+    </div>
+  </section>
+
+  <!-- ── DOOR ─────────────────────────────────────────────────────────────── -->
+  <section class="pane" id="pane-door" role="tabpanel" aria-labelledby="tab-door" hidden>
+    <div class="card">
+      <h2>Doorway camera</h2>
+      <div id="cam-wrap">
+        <img id="cam-img" alt="Front door camera">
+        <div id="cam-ph"><span class="ico">📷</span>Connecting to the door camera…</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Door</h2>
+      <div class="row"><span>Front entrance</span><span class="pill" id="lock-pill">checking…</span></div>
+    </div>
+    <div class="card">
+      <h2>Release</h2>
+      <button class="btn" id="btn-open" type="button">🔓 Open door</button>
+      <button class="btn ghost" id="btn-cancel" type="button" hidden>Cancel</button>
+      <div class="msg" id="open-msg"></div>
+    </div>
+  </section>
+
+  <!-- ── LOG ──────────────────────────────────────────────────────────────── -->
+  <section class="pane" id="pane-log" role="tabpanel" aria-labelledby="tab-log" hidden>
+    <div class="card">
+      <h2>Door activity</h2>
+      <div class="filters" id="log-filters">
+        <button data-type=""       aria-pressed="true">All</button>
+        <button data-type="ring"   aria-pressed="false">🔔 Rings</button>
+        <button data-type="open"   aria-pressed="false">🔓 Opens</button>
+        <button data-type="card"   aria-pressed="false">💳 Fobs</button>
+        <button data-type="denied" aria-pressed="false">⛔ Refused</button>
+        <button data-unassigned="1" aria-pressed="false">❓ Unassigned only</button>
+      </div>
+      <input class="f" id="log-q" placeholder="Search name, card number or reason" autocomplete="off">
+      <ul id="log" style="margin-top:12px"><li><span class="what">Loading…</span></li></ul>
+      <p class="note">
+        Doorway stills are CCTV and are held for 31 days under the <strong>cctv_footage</strong>
+        retention policy, then deleted automatically.
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/js/wren-shell.js"></script>
+<script>
+/* b199 — Roost Door & Access. Everything here is manager-only server-side; the UI just
+   avoids showing controls that would only ever 403. */
+(function () {
+  function boot() {
+    if (!window.Wren || !Wren.api) return setTimeout(boot, 200);
+
+    var STAFF = [];
+    var CFG = {};
+    var lastSwipe = null;   // remembered from the enrol listener for the Add form
+
+    function esc(x) {
+      return String(x == null ? '' : x).replace(/[<>&"]/g, function (c) {
+        return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c];
+      });
+    }
+    function token() { return (Wren.getToken && Wren.getToken()) || ''; }
+    function setMsg(el, text, kind) {
+      var n = document.getElementById(el);
+      n.textContent = text || '';
+      n.className = 'msg' + (kind ? ' ' + kind : '');
+    }
+    // Wren.api rejects with the server's parsed JSON body ({error, message}) on a
+    // non-2xx, and with a real Error on a network failure — both carry .message, so
+    // this shows the server's own sentence rather than a bare status code.
+    function errText(e) {
+      return (e && (e.message || e.error)) || 'Something went wrong.';
+    }
+    function when(iso) {
+      var d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
+      if (s < 90) return 'just now';
+      if (s < 3600) return Math.round(s / 60) + 'm ago';
+      if (s < 86400) return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    }
+
+    // ── Tabs ─────────────────────────────────────────────────────────────────
+    var TABS = ['fobs', 'enrol', 'recon', 'door', 'log'];
+    function showTab(t) {
+      if (TABS.indexOf(t) < 0) return;
+      TABS.forEach(function (o) {
+        document.getElementById('tab-' + o).setAttribute('aria-selected', String(o === t));
+        document.getElementById('pane-' + o).hidden = (o !== t);
+      });
+      if (t === 'door') { startSnaps(); pollStatus(); } else stopSnaps();
+      if (t === 'log')   loadLog();
+      if (t === 'fobs')  loadFobs();
+      if (t === 'recon') loadReconcile();
+    }
+    TABS.forEach(function (t) {
+      document.getElementById('tab-' + t).addEventListener('click', function () { showTab(t); });
+    });
+    // b250 — the Staff nav link points at #fobs, so honour a hash on load. Unknown
+    // hashes fall through to the default tab rather than blanking the page.
+    if (location.hash) showTab(location.hash.replace('#', ''));
+
+    // ── Staff pickers ────────────────────────────────────────────────────────
+    function fillStaff(sel) {
+      var el = document.getElementById(sel);
+      el.innerHTML = '<option value="">Choose a staff member…</option>' +
+        STAFF.map(function (s) {
+          return '<option value="' + s.id + '">' + esc(s.first_name + ' ' + s.last_name) + '</option>';
+        }).join('');
+    }
+    Wren.api('/api/staff').then(function (rows) {
+      STAFF = (rows || []).filter(function (s) { return s.is_active !== false; });
+      fillStaff('add-staff'); fillStaff('enrol-staff');
+    }).catch(function () {
+      document.getElementById('add-staff').innerHTML = '<option value="">Could not load staff</option>';
+      document.getElementById('enrol-staff').innerHTML = '<option value="">Could not load staff</option>';
+    });
+
+    // ── Fobs ─────────────────────────────────────────────────────────────────
+    function deviceBanner(d) {
+      var pill = document.getElementById('dev-pill');
+      document.getElementById('dev-host').textContent = d.host || 'door device';
+      pill.className = 'pill';
+      if (d.reachable === false) { pill.classList.add('bad'); pill.textContent = '⚠️ unreachable'; }
+      else if (d.reachable === null) { pill.textContent = 'not checked'; }
+      else { pill.classList.add('ok'); pill.textContent = '✅ ' + d.count + ' card' + (d.count === 1 ? '' : 's'); }
+
+      document.getElementById('dev-note').textContent = d.reachable === false
+        ? ('Wren cannot talk to the door device' + (d.reason ? ' (' + d.reason + ')' : '') +
+           '. Fob changes will be refused rather than half-applied.')
+        : 'Cards enrolled directly on the Dahua web interface show up here too.' +
+          (d.validity_dates_supported === false
+            ? ' This door station does not support card expiry dates — every card is permanent until it is removed.'
+            : '');
+
+      // b250 — out of contact is a state the screen must announce, not something a
+      // manager discovers by noticing the pills have gone quiet. The list underneath
+      // is dimmed at the same time so it cannot be read as current.
+      var off = document.getElementById('offline-banner');
+      var list = document.getElementById('fob-list');
+      if (d.reachable === false) {
+        off.classList.add('show');
+        document.getElementById('offline-text').textContent =
+          'Wren is NOT in contact with the door station' + (d.reason ? ' (' + d.reason + ')' : '') +
+          '. The fobs below are Wren\u2019s records only — nothing here has been checked against the ' +
+          'door, and issuing or revoking will be refused until contact is back.';
+        if (list) list.classList.add('stale');
+      } else {
+        off.classList.remove('show');
+        if (list) list.classList.remove('stale');
+      }
+
+      var b = document.getElementById('dry-banner');
+      if (d.dry_run) {
+        b.classList.add('show');
+        document.getElementById('dry-text').textContent =
+          'Card writes are switched off on this instance (DOOR_CARD_WRITE_ENABLED). ' +
+          'Fobs are saved in Wren but NOT written to the door device — they will not open the door yet.';
+      } else { b.classList.remove('show'); }
+    }
+
+    function loadFobs() {
+      Wren.api('/api/door/fobs').then(function (r) {
+        deviceBanner(r.device || {});
+        var el = document.getElementById('fob-list');
+        var fobs = r.fobs || [];
+        if (!fobs.length) {
+          el.innerHTML = '<p class="note" style="margin:0">No fobs registered yet. ' +
+                         'Use <strong>Enrol</strong> to capture one from the reader.</p>';
+        } else {
+          el.innerHTML = fobs.map(function (f) {
+            var pending = f.device_state === 'pending_removal';
+            var pills = '<span class="pill ' + (f.is_active ? 'ok' : '') + '">' +
+                        (f.is_active ? 'Active' : 'Revoked') + '</span>';
+            // b250 — the pill says what the DOOR says, not what Wren hopes. Only a
+            // read-back from the device produces 'on device'.
+            if (pending)
+              pills += ' <span class="pill bad" title="A revoke was asked for and the door station has not confirmed it">still opens the door</span>';
+            else if (f.device_state === 'on_device')
+              pills += ' <span class="pill ok" title="Confirmed on the door station by reading it back">on door</span>';
+            else if (f.device_state === 'not_on_device')
+              pills += ' <span class="pill warn" title="Checked, and the door station does not hold this card">not on door</span>';
+            else if (f.device_state === 'unverified')
+              pills += ' <span class="pill warn" title="Never confirmed against the door station">unverified</span>';
+            if (f.drift === 'missing_on_device')
+              pills += ' <span class="pill warn" title="Active in Wren but not enrolled on the door">drift</span>';
+            if (f.drift === 'still_on_device')
+              pills += ' <span class="pill bad" title="Revoked in Wren but STILL enrolled on the door">still on door</span>';
+
+            // The swipe is the only hard proof this fob opens the door — the device's
+            // own IsValid flag is not settable on this firmware, so it is never used
+            // as evidence here.
+            var swipe = f.last_swipe
+              ? 'last swipe ' + esc(when(f.last_swipe)) + ' · ' + f.swipes + ' total'
+              : 'never used at the reader yet';
+
+            var alarm = pending
+              ? '<div class="alarm">🚨 Revoke requested ' + esc(when(f.revoke_requested_at)) +
+                ' and NOT completed — this fob still opens the door.' +
+                '<span class="why">' + esc(f.revoke_last_error || f.device_last_result || '') +
+                ' · ' + (f.revoke_attempts || 0) + ' attempt(s). Wren keeps retrying on its own.</span></div>'
+              : '';
+
+            return '<div class="fob' + (pending ? ' danger' : '') + '" data-id="' + f.id + '">' +
+              '<div class="body">' +
+                '<div class="name">' + esc(f.staff_name || 'Unassigned') + ' ' + pills + '</div>' +
+                '<div class="uid">' + esc(f.fob_uid) + (f.label ? ' · ' + esc(f.label) : '') + '</div>' +
+                '<div class="meta">' + (f.staff_role ? esc(f.staff_role) + ' · ' : '') +
+                  'issued ' + esc(when(f.registered_at)) +
+                  (f.issued_by_name ? ' by ' + esc(f.issued_by_name) : '') +
+                  ' · ' + swipe +
+                  (f.is_active ? '' : ' · revoked ' + esc(when(f.deactivated_at))) + '</div>' +
+                alarm +
+                '<div class="acts">' +
+                  '<button data-act="rename">Rename</button>' +
+                  '<button data-act="reassign">Reassign</button>' +
+                  (pending ? '<button data-act="retry" class="danger">Retry removal</button>' : '') +
+                  (f.is_active && !pending ? '<button data-act="replace">Replace</button>' : '') +
+                  (f.is_active && !pending ? '<button data-act="revoke" class="danger">Revoke</button>' : '') +
+                '</div>' +
+              '</div></div>';
+          }).join('');
+          el.querySelectorAll('.fob .acts button').forEach(function (b) {
+            b.addEventListener('click', function () {
+              var id = b.closest('.fob').getAttribute('data-id');
+              var act = b.getAttribute('data-act');
+              if (act === 'rename')   return renameFob(id);
+              if (act === 'reassign') return reassignFob(id);
+              if (act === 'revoke')   return revokeFob(id, b);
+              if (act === 'retry')    return retryRemoval(id, b);
+              if (act === 'replace')  return replaceFob(id, b);
+            });
+          });
+        }
+
+        // b250 — pending removals get top billing. A lost fob that is still live is
+        // the one thing on this screen that cannot wait to be scrolled to.
+        var pb = document.getElementById('pending-banner');
+        if (r.pending_removals) {
+          pb.classList.add('show');
+          document.getElementById('pending-text').textContent =
+            r.pending_removals + ' fob' + (r.pending_removals === 1 ? '' : 's') +
+            ' could not be removed from the door station and still open the door. ' +
+            'They are marked in red below — use Retry, or remove the card on the Dahua UI.';
+        } else { pb.classList.remove('show'); }
+
+        // Cards on the door that Wren has never seen — worth flagging, they open the door.
+        if (r.orphan_cards && r.orphan_cards.length) {
+          el.insertAdjacentHTML('beforeend',
+            '<p class="note" style="color:#fde68a">⚠️ ' + r.orphan_cards.length +
+            ' card(s) are enrolled on the door device but unknown to Wren: ' +
+            r.orphan_cards.map(function (c) { return esc(c.card_no); }).join(', ') +
+            '. Add them here so they appear on the keyring.</p>');
+        }
+      }).catch(function (e) {
+        document.getElementById('fob-list').textContent = 'Could not load fobs — ' + errText(e);
+      });
+    }
+
+    function renameFob(id) {
+      var v = window.prompt('Label for this fob (e.g. "blue keyring")');
+      if (v === null) return;
+      Wren.api('/api/door/fobs/' + id, { method: 'PATCH', body: { label: v } })
+        .then(function () { loadFobs(); })
+        .catch(function (e) { window.alert('Could not rename: ' + errText(e)); });
+    }
+
+    function reassignFob(id) {
+      var names = STAFF.map(function (s, i) { return (i + 1) + '. ' + s.first_name + ' ' + s.last_name; }).join('\n');
+      var pick = window.prompt('Reassign this fob to:\n' + names + '\n\nType the number:');
+      if (pick === null) return;
+      var s = STAFF[parseInt(pick, 10) - 1];
+      if (!s) return window.alert('No staff member with that number.');
+      Wren.api('/api/door/fobs/' + id, { method: 'PATCH', body: { staff_id: s.id } })
+        .then(function (r) { if (r && r.device_relabel === false) window.alert(r.message); loadFobs(); })
+        .catch(function (e) { window.alert('Could not reassign: ' + errText(e)); });
+    }
+
+    function revokeFob(id, btn) {
+      if (!window.confirm('Revoke this fob? It will be removed from the door station and will no longer open the door.')) return;
+      btn.disabled = true;
+      Wren.api('/api/door/fobs/' + id + '/deactivate', { method: 'POST', body: {} })
+        .then(function (r) { if (r && r.message) window.alert(r.message); loadFobs(); })
+        // A failed revoke is not a dismissable blip — the fob is still live, and the
+        // server's own sentence says so. Reload so the row turns red either way.
+        .catch(function (e) { btn.disabled = false; window.alert(errText(e)); loadFobs(); });
+    }
+
+    // b250 — finish a revoke the door station would not confirm.
+    function retryRemoval(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Retrying…';
+      Wren.api('/api/door/fobs/' + id + '/retry-removal', { method: 'POST', body: {} })
+        .then(function (r) { window.alert((r && r.message) || 'Removal confirmed.'); loadFobs(); })
+        .catch(function (e) { window.alert(errText(e)); loadFobs(); });
+    }
+
+    // b250 — replace a lost or broken fob with a new card, same person.
+    // The server takes the old card off the door FIRST and refuses to issue the new
+    // one if it cannot confirm that, so a lost fob can never be quietly left live.
+    function replaceFob(id, btn) {
+      var uid = window.prompt(
+        'Replacement card number for this staff member.\n\n' +
+        'Tip: use the Enrol tab to capture it from the reader instead of typing it.\n\n' +
+        'The OLD fob is removed from the door station first — if that cannot be confirmed, ' +
+        'no new fob is issued.');
+      if (uid === null || !uid.trim()) return;
+      btn.disabled = true;
+      Wren.api('/api/door/fobs/' + id + '/replace', { method: 'POST', body: { fob_uid: uid.trim() } })
+        .then(function (r) { window.alert((r && r.message) || 'Replaced.'); loadFobs(); })
+        .catch(function (e) { btn.disabled = false; window.alert(errText(e)); loadFobs(); });
+    }
+
+    // ── Reconcile (b250) ─────────────────────────────────────────────────────
+    // Refuses to render a diff it could not compute. An unreachable door station
+    // shows as exactly that, never as "everything is in step".
+    function loadReconcile() {
+      var body = document.getElementById('rec-body');
+      var pill = document.getElementById('rec-pill');
+      body.textContent = 'Checking the door station…';
+      pill.className = 'pill'; pill.textContent = 'checking…';
+      Wren.api('/api/door/fobs/reconcile').then(function (r) {
+        document.getElementById('rec-host').textContent = r.host || 'door station';
+        document.getElementById('rec-when').textContent =
+          'Checked ' + when(r.checked_at) + ' · ' + r.wren_rows + ' fob record(s) in Wren' +
+          (r.reachable ? ' · ' + r.device_count + ' card(s) on the door' : '');
+
+        if (!r.reachable) {
+          pill.classList.add('bad'); pill.textContent = '⚠️ no contact';
+          body.innerHTML = '<p class="note" style="margin:0;color:#fca5a5">' + esc(r.message) +
+                           (r.reason ? '<br><br>Reason: ' + esc(r.reason) : '') + '</p>';
+          return;
+        }
+        if (r.in_step) {
+          pill.classList.add('ok'); pill.textContent = '✅ in step';
+          body.innerHTML = '<p class="rec-ok">Wren and the door station agree on every card.</p>';
+          return;
+        }
+        pill.classList.add('warn'); pill.textContent = '⚠️ out of step';
+
+        function group(title, items, render) {
+          if (!items || !items.length) return '';
+          return '<div class="rec-group"><h3>' + esc(title) + ' (' + items.length + ')</h3>' +
+                 items.map(render).join('') + '</div>';
+        }
+        body.innerHTML =
+          group('🚨 Revoked in Wren, still on the door', r.live_but_should_be_revoked, function (i) {
+            return '<div class="rec-item"><strong>' + esc(i.staff_name) + '</strong>' +
+              '<div class="uid">' + esc(i.fob_uid) + (i.label ? ' · ' + esc(i.label) : '') + '</div>' +
+              '<div class="why" style="color:#fca5a5">' + esc(i.consequence) + '</div>' +
+              (i.revoke_last_error ? '<div class="why">' + esc(i.revoke_last_error) + '</div>' : '') +
+              '<button class="assign" data-rec-retry="' + i.id + '" style="margin-top:6px">Retry removal</button>' +
+              '</div>';
+          }) +
+          group('⚠️ Active in Wren, not on the door', r.only_in_wren, function (i) {
+            return '<div class="rec-item"><strong>' + esc(i.staff_name) + '</strong>' +
+              '<div class="uid">' + esc(i.fob_uid) + (i.label ? ' · ' + esc(i.label) : '') + '</div>' +
+              '<div class="why">' + esc(i.consequence) + '</div></div>';
+          }) +
+          group('❓ On the door, unknown to Wren', r.only_on_device, function (i) {
+            return '<div class="rec-item"><strong>' + esc(i.card_no) + '</strong>' +
+              (i.card_name ? '<div class="uid">' + esc(i.card_name) + '</div>' : '') +
+              '<div class="why">' + esc(i.consequence) +
+              ' Add it on the Fobs tab so someone is accountable for it.</div></div>';
+          });
+
+        body.querySelectorAll('[data-rec-retry]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var id = b.getAttribute('data-rec-retry');
+            b.disabled = true; b.textContent = 'Retrying…';
+            Wren.api('/api/door/fobs/' + id + '/retry-removal', { method: 'POST', body: {} })
+              .then(function (r2) { window.alert((r2 && r2.message) || 'Removal confirmed.'); loadReconcile(); })
+              .catch(function (e) { window.alert(errText(e)); loadReconcile(); });
+          });
+        });
+      }).catch(function (e) {
+        pill.classList.add('bad'); pill.textContent = 'failed';
+        body.textContent = 'Could not reconcile — ' + errText(e);
+      });
+    }
+    document.getElementById('rec-refresh').addEventListener('click', loadReconcile);
+
+    document.getElementById('add-use-swipe').addEventListener('click', function () {
+      if (lastSwipe) { document.getElementById('add-uid').value = lastSwipe; setMsg('add-msg', 'Using the card from the last swipe.', 'ok'); return; }
+      Wren.api('/api/door/fobs/unassigned').then(function (rows) {
+        if (rows && rows.length) {
+          document.getElementById('add-uid').value = rows[0].card_no;
+          setMsg('add-msg', 'Using the most recent unassigned swipe (' + when(rows[0].last_seen) + ').', 'ok');
+        } else {
+          setMsg('add-msg', 'No unassigned swipes recorded yet — use the Enrol tab and tap the fob on the reader.', '');
+        }
+      }).catch(function (e) { setMsg('add-msg', errText(e), 'err'); });
+    });
+
+    document.getElementById('add-save').addEventListener('click', function () {
+      var btn = this;
+      var body = {
+        staff_id: document.getElementById('add-staff').value,
+        fob_uid:  document.getElementById('add-uid').value,
+        label:    document.getElementById('add-label').value || null,
+      };
+      if (!body.staff_id) return setMsg('add-msg', 'Choose a staff member first.', 'err');
+      if (!body.fob_uid)  return setMsg('add-msg', 'Enter or capture a card number first.', 'err');
+      btn.disabled = true;
+      setMsg('add-msg', 'Writing to the door device…');
+      Wren.api('/api/door/fobs', { method: 'POST', body: body }).then(function (r) {
+        setMsg('add-msg', (r && r.message) || 'Added.', 'ok');
+        document.getElementById('add-uid').value = '';
+        document.getElementById('add-label').value = '';
+        btn.disabled = false;
+        loadFobs();
+      }).catch(function (e) {
+        setMsg('add-msg', errText(e), 'err');
+        btn.disabled = false;
+      });
+    });
+
+    // ── Enrol: arm, poll, assign ─────────────────────────────────────────────
+    // Polling (not a socket) on purpose — this is a 2-minute interaction on one phone,
+    // and a poll cannot leave a listener wedged open if the page is closed mid-enrol.
+    var enrolTimer = null;
+    function stopEnrolPoll() { clearTimeout(enrolTimer); enrolTimer = null; }
+
+    function paintCapture(cap) {
+      lastSwipe = cap.card_no;
+      document.getElementById('enrol-capture').classList.add('show');
+      document.getElementById('enrol-card-no').textContent = cap.card_no;
+      var known = document.getElementById('enrol-known');
+      if (cap.known) {
+        known.className = 'msg err';
+        known.textContent = 'This fob is already registered to ' + (cap.staff_name || 'a staff member') +
+                            '. Assigning it again will move it — revoke it there first if that is not what you want.';
+      } else {
+        known.className = 'msg ok';
+        known.textContent = 'New card — not registered to anyone yet.';
+      }
+    }
+
+    function pollEnrol() {
+      Wren.api('/api/door/enrol/state').then(function (st) {
+        var btn = document.getElementById('enrol-listen');
+        if (!st.armed) {
+          btn.classList.remove('armed');
+          btn.textContent = '📡 Listen for the next swipe';
+          stopEnrolPoll();
+          return;
+        }
+        btn.classList.add('armed');
+        btn.textContent = '👂 Listening… ' + st.expires_in + 's (tap to stop)';
+        if (st.capture) { paintCapture(st.capture); setMsg('enrol-msg', 'Card captured.', 'ok'); }
+        enrolTimer = setTimeout(pollEnrol, 1500);
+      }).catch(function (e) { setMsg('enrol-msg', errText(e), 'err'); stopEnrolPoll(); });
+    }
+
+    document.getElementById('enrol-listen').addEventListener('click', function () {
+      var armed = this.classList.contains('armed');
+      var url = armed ? '/api/door/enrol/disarm' : '/api/door/enrol/arm';
+      Wren.api(url, { method: 'POST', body: {} }).then(function (st) {
+        if (armed) {
+          setMsg('enrol-msg', 'Stopped listening.');
+          document.getElementById('enrol-listen').classList.remove('armed');
+          document.getElementById('enrol-listen').textContent = '📡 Listen for the next swipe';
+          stopEnrolPoll();
+        } else {
+          setMsg('enrol-msg', 'Listening — hold the fob against the reader at the front door.');
+          document.getElementById('enrol-capture').classList.remove('show');
+          stopEnrolPoll();
+          pollEnrol();
+        }
+      }).catch(function (e) { setMsg('enrol-msg', errText(e), 'err'); });
+    });
+
+    document.getElementById('enrol-assign').addEventListener('click', function () {
+      var btn = this;
+      var body = {
+        staff_id: document.getElementById('enrol-staff').value,
+        fob_uid:  document.getElementById('enrol-card-no').textContent.trim(),
+        label:    document.getElementById('enrol-label').value || null,
+      };
+      if (!body.staff_id) return setMsg('enrol-assign-msg', 'Choose who this fob belongs to.', 'err');
+      btn.disabled = true;
+      setMsg('enrol-assign-msg', 'Writing to the door device…');
+      Wren.api('/api/door/fobs', { method: 'POST', body: body }).then(function (r) {
+        setMsg('enrol-assign-msg', (r && r.message) || 'Assigned.', 'ok');
+        btn.disabled = false;
+        Wren.api('/api/door/enrol/disarm', { method: 'POST', body: {} }).catch(function () {});
+        stopEnrolPoll();
+        document.getElementById('enrol-listen').classList.remove('armed');
+        document.getElementById('enrol-listen').textContent = '📡 Listen for the next swipe';
+        loadFobs();
+      }).catch(function (e) { setMsg('enrol-assign-msg', errText(e), 'err'); btn.disabled = false; });
+    });
+
+    // ── Door: snapshot / status / two-step release (b195 contract, unchanged) ──
+    var snapTimer = null, lastUrl = null, statusTimer = null;
+    function snap() {
+      if (document.hidden) return;
+      fetch('/api/door/snapshot?ts=' + Date.now(), { headers: { Authorization: 'Bearer ' + token() } })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then(function (b) {
+          if (lastUrl) URL.revokeObjectURL(lastUrl);
+          lastUrl = URL.createObjectURL(b);
+          var im = document.getElementById('cam-img');
+          im.src = lastUrl; im.style.display = 'block';
+          document.getElementById('cam-ph').style.display = 'none';
+        })
+        .catch(function () {
+          document.getElementById('cam-img').style.display = 'none';
+          var ph = document.getElementById('cam-ph');
+          ph.style.display = 'block';
+          ph.innerHTML = '<span class="ico">📷</span>Door camera unavailable.';
+        });
+    }
+    function startSnaps() {
+      if (snapTimer) return;
+      var tick = function () { snap(); snapTimer = setTimeout(tick, 2500); };
+      tick();
+    }
+    function stopSnaps() { clearTimeout(snapTimer); snapTimer = null; clearTimeout(statusTimer); statusTimer = null; }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stopSnaps();
+      else if (!document.getElementById('pane-door').hidden) { startSnaps(); pollStatus(); }
+    });
+
+    function pollStatus() {
+      var pill = document.getElementById('lock-pill');
+      Wren.api('/api/door/status').then(function (r) {
+        pill.className = 'pill';
+        if (!r || r.reachable === false) { pill.classList.add('bad'); pill.textContent = '⚠️ device unreachable'; }
+        else if (r.status === 'closed')  { pill.classList.add('ok');  pill.textContent = '🔒 Closed'; }
+        else if (r.status === 'open')    { pill.classList.add('warn'); pill.textContent = '🔓 Open'; }
+        else                             { pill.textContent = 'Unknown'; }
+      }).catch(function () { pill.className = 'pill bad'; pill.textContent = '⚠️ status unavailable'; });
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(pollStatus, 6000);
+    }
+
+    Wren.api('/api/door/config').then(function (cfg) {
+      CFG = cfg || {};
+      if (!CFG.can_open) {
+        var ob = document.getElementById('btn-open');
+        ob.disabled = true;
+        ob.textContent = CFG.on_site === false
+          ? '🔒 Off-site — the door can only be opened on the nursery network'
+          : '🔒 Your role cannot release the front door';
+      }
+      if (CFG.dry_run) {
+        var b = document.getElementById('dev-banner');
+        b.classList.add('show');
+        document.getElementById('dev-text').textContent = CFG.device_configured
+          ? 'Live door release is switched off (DOOR_OPEN_ENABLED). “Open door” is logged, nothing physically unlocks.'
+          : 'No door credentials on this instance. “Open door” is logged only.';
+      }
+    }).catch(function () {});
+
+    // Two-step release: one tap arms, a second within 5s releases, and the armed state
+    // expires by itself. Identical contract to the EY tablet page.
+    var armed = false, armTimer = null;
+    var openBtn = document.getElementById('btn-open'), cancelBtn = document.getElementById('btn-cancel');
+    function disarmOpen(m) {
+      armed = false; clearTimeout(armTimer);
+      openBtn.classList.remove('is-armed');
+      openBtn.textContent = '🔓 Open door';
+      cancelBtn.hidden = true;
+      if (m !== undefined) setMsg('open-msg', m);
+    }
+    cancelBtn.addEventListener('click', function () { disarmOpen('Cancelled — not opened.'); });
+    openBtn.addEventListener('click', function () {
+      if (!armed) {
+        armed = true;
+        openBtn.classList.add('is-armed');
+        openBtn.textContent = '⚠️ Tap again to open the door';
+        cancelBtn.hidden = false;
+        setMsg('open-msg', 'Confirm within 5 seconds — this unlocks the front door.');
+        clearTimeout(armTimer);
+        armTimer = setTimeout(function () { disarmOpen('Cancelled — not opened.'); }, 5000);
+        return;
+      }
+      disarmOpen('Opening…');
+      openBtn.disabled = true;
+      Wren.api('/api/door/open', { method: 'POST', body: { reason: 'opened from Roost Door & Access' } })
+        .then(function (r) {
+          setMsg('open-msg', (r && r.message) || 'Done.', r && r.success ? 'ok' : '');
+          pollStatus();
+          setTimeout(function () { openBtn.disabled = false; }, 1500);
+        })
+        .catch(function (e) { setMsg('open-msg', errText(e), 'err'); openBtn.disabled = false; });
+    });
+
+    // ── Log ──────────────────────────────────────────────────────────────────
+    var logType = '', logUnassigned = false, logQ = '';
+    var ICON  = { ring: '🔔', open: '🔓', denied: '⛔', card: '💳' };
+    var LABEL = { ring: 'Doorbell rang', open: 'Door released', denied: 'Refused', card: 'Fob presented' };
+
+    document.getElementById('log-filters').addEventListener('click', function (ev) {
+      var b = ev.target.closest('button'); if (!b) return;
+      if (b.hasAttribute('data-unassigned')) {
+        logUnassigned = !logUnassigned;
+        b.setAttribute('aria-pressed', String(logUnassigned));
+      } else {
+        logType = b.getAttribute('data-type') || '';
+        this.querySelectorAll('button[data-type]').forEach(function (o) {
+          o.setAttribute('aria-pressed', String(o === b));
+        });
+      }
+      loadLog();
+    });
+    var qTimer = null;
+    document.getElementById('log-q').addEventListener('input', function () {
+      logQ = this.value;
+      clearTimeout(qTimer);
+      qTimer = setTimeout(loadLog, 350);
+    });
+
+    function loadLog() {
+      var qs = ['limit=60'];
+      if (logType) qs.push('type=' + encodeURIComponent(logType));
+      if (logUnassigned) qs.push('unassigned=1');
+      if (logQ) qs.push('q=' + encodeURIComponent(logQ));
+      Wren.api('/api/door/events?' + qs.join('&')).then(function (rows) {
+        var ul = document.getElementById('log');
+        if (!rows || !rows.length) { ul.innerHTML = '<li><span class="what">Nothing matches.</span></li>'; return; }
+        ul.innerHTML = rows.map(function (r) {
+          var orphan = r.event_type === 'card' && r.card_no && r.card_assigned === false;
+          return '<li>' +
+            '<span>' + (ICON[r.event_type] || '•') + '</span>' +
+            '<span class="what"><strong>' + esc(LABEL[r.event_type] || r.event_type) + '</strong>' +
+              (r.staff_name ? ' · ' + esc(r.staff_name) : '') +
+              (r.card_no ? ' · <code>' + esc(r.card_no) + '</code>' : '') +
+              '<div class="sub">' + esc(r.reason || '') + '</div>' +
+              (orphan ? '<button class="assign" data-card="' + esc(r.card_no) + '">Assign this fob</button>' : '') +
+            '</span>' +
+            '<span class="when">' + esc(when(r.created_at)) + '</span>' +
+          '</li>';
+        }).join('');
+        ul.querySelectorAll('button.assign').forEach(function (b) {
+          b.addEventListener('click', function () {
+            // Jump to the Add form with the card already filled in — the whole point
+            // of logging an orphan swipe is that it is one tap from being assigned.
+            document.getElementById('add-uid').value = b.getAttribute('data-card');
+            document.getElementById('tab-fobs').click();
+            setMsg('add-msg', 'Card ' + b.getAttribute('data-card') + ' ready to assign — choose a staff member.', 'ok');
+            document.getElementById('add-staff').focus();
+          });
+        });
+      }).catch(function (e) {
+        document.getElementById('log').innerHTML =
+          '<li><span class="what">Could not load the log — ' + esc(errText(e)) + '</span></li>';
+      });
+    }
+
+    loadFobs();
+  }
+  boot();
+}());
+</script>
+</body>
+</html>

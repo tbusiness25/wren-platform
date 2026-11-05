@@ -1,0 +1,270 @@
+/* games.css — Wren Kids: the in-game shell and the shared game furniture.
+ * b507, 2026-10-18. Colours from tokens.css ONLY.
+ *
+ * Layout contract every game can rely on:
+ *   .k-game        the full-height game frame (flex column)
+ *     .k-ghead     fixed-height header: back, title, lives/level, stars
+ *     .k-gprompt   the instruction line + the "say it again" speaker button (ALWAYS visible as
+ *                  text as well as spoken — a deaf child, a muted tablet and a browser with no
+ *                  speechSynthesis all have to be playable)
+ *     .k-gstage    the play area the game owns. Sized to fill; never scrolls during a turn.
+ *     .k-gfoot     progress dots for the round
+ *   .k-fx          the canvas particle layer, pointer-events:none, above everything in the frame
+ */
+
+.k-game {
+  position: fixed; inset: 0;
+  /* ABOVE the hub's sticky top bar (z-index 30). Without this the two are both positioned with
+     z-index auto, the later-painted .k-top wins, and the game's own header — back button, level,
+     score — is covered by the hub chrome. Caught in the 1024x600 playtest screenshots. */
+  z-index: 60;
+  display: flex; flex-direction: column;
+  background: var(--c-bg);
+  --c-accent: var(--c-blue);
+}
+.k-fx { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
+
+/* ── header ──────────────────────────────────────────────────────────────── */
+.k-ghead {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px; padding-top: max(6px, env(safe-area-inset-top));
+  background: var(--c-accent); color: var(--c-on-fill);
+  min-height: 56px; flex: none;
+}
+.k-ghead h1 { font-size: 1.1rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-gback {
+  min-width: var(--tap-small); min-height: var(--tap-small);
+  display: grid; place-items: center; cursor: pointer;
+  background: color-mix(in srgb, var(--c-on-fill) 18%, transparent);
+  color: var(--c-on-fill); border: none; border-radius: 14px;
+}
+.k-gback:active { transform: scale(.92); }
+.k-gback svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.k-glevel {
+  font-size: .8rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  padding: 5px 11px; border-radius: 999px;
+  background: color-mix(in srgb, var(--c-on-fill) 20%, transparent);
+}
+.k-gscore { font-weight: 800; font-size: 1.05rem; min-width: 2.4em; text-align: right; }
+
+/* ── prompt line ─────────────────────────────────────────────────────────── */
+.k-gprompt {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; flex: none;
+  background: var(--c-surface); border-bottom: 1px solid var(--c-border);
+  min-height: 60px;
+}
+.k-gprompt p {
+  margin: 0; flex: 1; font-size: clamp(1.05rem, 3.4vw, 1.4rem); font-weight: 700;
+  font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', system-ui, Arial, sans-serif;
+}
+.k-gsay {
+  min-width: var(--tap-small); min-height: var(--tap-small); flex: none;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--c-accent); color: var(--c-on-fill);
+  border: none; border-radius: 50%;
+}
+.k-gsay:active { transform: scale(.9); }
+.k-gsay svg { width: 26px; height: 26px; fill: currentColor; }
+.k-gsay.speaking { animation: k-pulse .9s ease-in-out infinite; }
+@keyframes k-pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.1) } }
+
+/* ── stage ───────────────────────────────────────────────────────────────── */
+.k-gstage {
+  flex: 1; min-height: 0; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(10px, 2.4vh, 22px);
+  padding: clamp(8px, 2vh, 20px) 14px;
+}
+
+/* a row/grid of big answer tiles — the single most reused shape in the suite */
+.k-tiles { display: flex; flex-wrap: wrap; gap: clamp(8px, 2vw, 16px); justify-content: center; align-content: center; }
+.k-tiles.cols-2 { max-width: 560px; }
+.k-tiles.cols-3 { max-width: 760px; }
+.k-tile {
+  min-width: var(--tap); min-height: var(--tap);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  padding: 10px 14px; cursor: pointer;
+  background: var(--c-surface); color: var(--c-text);
+  border: 3px solid var(--c-border-strong); border-radius: var(--radius);
+  box-shadow: 0 3px 0 var(--c-border-strong);
+  font-weight: 800;
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
+}
+.k-tile:active { transform: translateY(3px); box-shadow: 0 0 0 var(--c-border-strong); }
+.k-tile.big   { font-size: clamp(2rem, 9vw, 3.4rem); min-width: 96px; min-height: 96px; }
+.k-tile.word  { font-size: clamp(1.3rem, 5vw, 2rem); letter-spacing: .01em; }
+.k-tile.pic   { padding: 8px; }
+.k-tile.pic img, .k-tile.pic svg { width: clamp(72px, 18vw, 132px); height: clamp(72px, 18vw, 132px); object-fit: contain; }
+.k-tile.pic .k-tile-cap { font-size: .95rem; font-weight: 700; color: var(--c-muted); }
+.k-tile[disabled] { cursor: default; }
+.k-tile.right { border-color: var(--c-ok); background: var(--c-ok-soft); animation: k-pop .4s ease; }
+.k-tile.wrong { border-color: var(--c-danger); background: var(--c-danger-soft); animation: k-shake .4s ease; }
+.k-tile.reveal { border-color: var(--c-ok); background: var(--c-ok-soft); }
+.k-tile .k-mark { position: absolute; top: -10px; right: -10px; font-size: 1.6rem; }
+.k-tile { position: relative; }
+
+@keyframes k-pop   { 0% { transform: scale(1) } 40% { transform: scale(1.14) } 100% { transform: scale(1) } }
+@keyframes k-shake { 0%,100% { transform: translateX(0) } 20% { transform: translateX(-7px) } 40% { transform: translateX(7px) } 60% { transform: translateX(-4px) } 80% { transform: translateX(4px) } }
+
+/* the thing being asked about, shown big in the middle */
+.k-focus {
+  display: flex; align-items: center; justify-content: center; gap: clamp(8px, 2vw, 18px);
+  flex-wrap: wrap; min-height: 0;
+}
+.k-focus-num {
+  font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', system-ui, Arial, sans-serif;
+  font-size: clamp(2.6rem, 12vw, 5rem); font-weight: 800; color: var(--c-accent);
+  line-height: 1;
+}
+.k-focus-pic { width: clamp(100px, 26vw, 190px); height: clamp(100px, 26vw, 190px); object-fit: contain; }
+.k-focus-card {
+  background: var(--c-surface); border: 3px solid var(--c-border); border-radius: var(--radius-lg);
+  padding: clamp(10px, 2.4vh, 22px) clamp(14px, 4vw, 34px);
+  box-shadow: 0 4px 14px var(--c-shadow);
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+}
+
+/* ── footer: progress dots ───────────────────────────────────────────────── */
+.k-gfoot {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 8px 12px; padding-bottom: max(8px, env(safe-area-inset-bottom));
+  flex: none; background: var(--c-surface); border-top: 1px solid var(--c-border);
+  min-height: 42px;
+}
+.k-dot {
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--c-surface-2); border: 2px solid var(--c-border-strong);
+  transition: background .2s ease, transform .2s ease;
+}
+.k-dot.hit  { background: var(--c-ok);   border-color: var(--c-ok);   transform: scale(1.14); }
+.k-dot.miss { background: var(--c-warn); border-color: var(--c-warn); }
+.k-dot.now  { border-color: var(--c-accent); transform: scale(1.2); }
+
+/* ── the round summary ───────────────────────────────────────────────────── */
+.k-sum {
+  position: absolute; inset: 0; z-index: 25;
+  display: grid; place-items: center; padding: var(--gutter);
+  background: var(--c-scrim);
+}
+.k-sum-card {
+  background: var(--c-surface-solid); border-radius: var(--radius-lg);
+  padding: clamp(18px, 4vh, 30px) 24px; text-align: center; max-width: 440px; width: 100%;
+  box-shadow: 0 16px 48px var(--c-shadow-strong);
+  animation: k-rise .35s cubic-bezier(.2,.9,.3,1.2) both;
+}
+@keyframes k-rise { from { transform: translateY(24px) scale(.95); opacity: 0 } to { transform: none; opacity: 1 } }
+.k-sum-stars { font-size: 2.8rem; letter-spacing: 6px; color: var(--c-orange); }
+.k-sum-card h2 { font-size: 1.5rem; margin: 6px 0; }
+.k-sum-card .k-sum-line { color: var(--c-muted); margin: 0 0 6px; }
+.k-sum-card .k-sum-learn {
+  margin: 14px 0 18px; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--c-surface-2); color: var(--c-text); font-size: .92rem; text-align: left;
+}
+.k-sum-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+/* ── the "how to play" card, shown before the first round ───────────────── */
+.k-howto { max-width: 480px; text-align: center; }
+.k-howto .k-howto-emoji { font-size: 3.2rem; }
+.k-howto h2 { font-size: 1.45rem; margin: 6px 0 8px; }
+.k-howto p { color: var(--c-muted); margin: 0 0 8px; }
+.k-howto .k-howto-cur { font-size: .86rem; color: var(--c-muted); margin-top: 14px; }
+
+/* ── game-specific furniture ─────────────────────────────────────────────── */
+
+/* Subitise Snap: the flashing dot plate */
+.k-plate {
+  width: clamp(180px, 46vw, 300px); height: clamp(180px, 46vw, 300px);
+  border-radius: 28px; background: var(--c-surface);
+  border: 4px solid var(--c-border); box-shadow: 0 4px 16px var(--c-shadow);
+  position: relative;
+}
+.k-plate.flash { animation: k-flashin .18s ease both; }
+@keyframes k-flashin { from { transform: scale(.9); opacity: 0 } to { transform: none; opacity: 1 } }
+.k-plate .k-spot { position: absolute; border-radius: 50%; background: var(--c-accent); }
+.k-plate.hidden-plate { background: var(--c-surface-2); }
+.k-plate.hidden-plate .k-spot { display: none; }
+.k-plate-q {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: clamp(3rem, 14vw, 5rem); color: var(--c-muted); font-weight: 800;
+}
+
+/* Ten Town Train: carriages you fill */
+.k-train { display: flex; align-items: flex-end; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.k-carriage {
+  width: clamp(44px, 11vw, 64px); height: clamp(44px, 11vw, 64px);
+  border-radius: 12px; border: 3px solid var(--c-border-strong);
+  background: var(--c-surface-2); display: grid; place-items: center;
+  font-size: 1.4rem;
+}
+.k-carriage.full { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-fill); }
+.k-carriage.full::after { content: '●'; font-size: 1.5rem; }
+.k-engine { font-size: clamp(2rem, 8vw, 3rem); }
+
+/* Pattern Path: stepping stones */
+.k-path { display: flex; align-items: center; gap: clamp(4px, 1.4vw, 12px); flex-wrap: wrap; justify-content: center; }
+.k-step {
+  width: clamp(52px, 13vw, 84px); height: clamp(52px, 13vw, 84px);
+  border-radius: 50%; display: grid; place-items: center;
+  background: var(--c-surface-2); border: 3px solid var(--c-border);
+  font-size: clamp(1.6rem, 6vw, 2.4rem);
+}
+.k-step.gap { border-style: dashed; border-color: var(--c-accent); background: color-mix(in srgb, var(--c-accent) 10%, transparent); animation: k-breathe 1.6s ease-in-out infinite; }
+@keyframes k-breathe { 0%,100% { transform: scale(1) } 50% { transform: scale(1.07) } }
+
+/* Bond Rally / Tables Launch: the number pad */
+.k-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(6px, 1.6vw, 12px); width: min(320px, 86vw); }
+.k-pad .k-tile { min-height: clamp(52px, 9vh, 72px); font-size: clamp(1.4rem, 5vw, 2rem); }
+.k-pad .k-tile.wide { grid-column: span 2; }
+.k-answer-box {
+  min-width: clamp(90px, 24vw, 150px); min-height: clamp(54px, 9vh, 78px);
+  border-radius: 16px; border: 4px dashed var(--c-accent);
+  background: var(--c-surface); display: grid; place-items: center;
+  font-size: clamp(1.8rem, 7vw, 2.8rem); font-weight: 800; color: var(--c-accent);
+  font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', system-ui, Arial, sans-serif;
+}
+.k-sum-eq { font-size: clamp(1.8rem, 7vw, 3rem); font-weight: 800; font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', system-ui, Arial, sans-serif; }
+
+/* Fraction Forest: bars and pies */
+.k-fracbar { display: flex; width: min(420px, 88vw); height: clamp(46px, 8vh, 66px); border: 4px solid var(--c-text); border-radius: 12px; overflow: hidden; }
+.k-fracbar > i { flex: 1; border-right: 3px solid var(--c-text); }
+.k-fracbar > i:last-child { border-right: none; }
+.k-fracbar > i.on { background: var(--c-accent); }
+.k-frac { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; font-weight: 800; }
+.k-frac .num { border-bottom: 3px solid currentColor; padding: 0 .25em 2px; }
+.k-frac .den { padding-top: 2px; }
+.k-tile .k-frac { font-size: clamp(1.4rem, 5.4vw, 2.1rem); }
+
+/* Spell Spotter: the signpost */
+.k-sentence {
+  font-size: clamp(1.1rem, 4.2vw, 1.6rem); text-align: center; max-width: 24ch;
+  color: var(--c-text); font-weight: 600;
+}
+.k-sentence .blank { color: var(--c-accent); border-bottom: 4px solid var(--c-accent); padding: 0 .9em; }
+
+/* Rhyme Time: the word being matched */
+.k-rhyme-word { font-size: clamp(1.8rem, 8vw, 3rem); font-weight: 800; color: var(--c-accent); font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', system-ui, Arial, sans-serif; }
+
+/* ── a big screen ────────────────────────────────────────────────────────────
+   The sizes above are clamped against vw, which is right for a phone and a 10"
+   tablet but leaves a laptop looking sparse: a two-word question floating in the
+   middle of 1280x800. On a viewport that is both wide AND tall, scale the thing
+   being asked about up to fill the space it has — the answer is easier to read
+   from across a table, which is exactly where a grown-up and a child sit. */
+@media (min-width: 900px) and (min-height: 700px) {
+  .k-tile.big      { font-size: 3.6rem; min-width: 118px; min-height: 118px; }
+  .k-tile.word     { font-size: 2.3rem; padding: 14px 22px; }
+  .k-tile.pic img,
+  .k-tile.pic svg  { width: 150px; height: 150px; }
+  .k-focus-num     { font-size: 5.4rem; }
+  .k-focus-pic     { width: 210px; height: 210px; }
+  .k-sentence      { font-size: 1.9rem; max-width: 20ch; }
+  .k-sum-eq        { font-size: 3.2rem; }
+  .k-answer-box    { min-width: 160px; min-height: 86px; font-size: 3rem; }
+  .k-rhyme-word    { font-size: 3.2rem; }
+  .k-plate         { width: 330px; height: 330px; }
+  .k-step          { width: 92px; height: 92px; font-size: 2.6rem; }
+  .k-carriage      { width: 70px; height: 70px; }
+  .k-fracbar       { height: 72px; width: 460px; }
+  .k-gprompt p     { font-size: 1.5rem; }
+}

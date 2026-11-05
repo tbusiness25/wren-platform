@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#080f1e">
+  <meta name="wren-app-title" content="Teaching Toolbox">
+  <meta name="wren-app-page" content="toolbox">
+  <meta name="wren-app-portal" content="ey">
+  <title>Teaching Toolbox · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260727">
+  <!-- Chromeless (?fullscreen=1) — set before shell paints so no chrome flashes. -->
+  <script>
+    (function () {
+      try {
+        var p = new URLSearchParams(location.search);
+        if (p.get('fullscreen') === '1') document.documentElement.classList.add('tb-chromeless','tb-forced-fs');
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    /* ── Teaching Toolbox (b109) — original LADN utilities, no SMART assets ───── */
+    :root {
+      --tb-gap: 16px;
+    }
+    #wren-app-content { padding-bottom: 90px; }
+
+    /* Chromeless mode: hide shell chrome, full-bleed content. */
+    html.tb-chromeless #wren-app-topbar,
+    html.tb-chromeless #wren-app-bottom { display: none !important; }
+    html.tb-chromeless #wren-app-content { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+    html.tb-chromeless body { padding: 0 !important; }
+
+    .tb-wrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px 40px; }
+    .tb-hero { display:flex; align-items:center; gap:14px; margin: 4px 0 18px; }
+    .tb-hero h1 { font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif; font-size: clamp(1.4rem,4vw,2rem); margin:0; }
+    .tb-hero p { margin: 2px 0 0; color: var(--c-muted,#8a9bbf); font-size:.95rem; }
+    .tb-hero .tb-mark { font-size: 2.2rem; line-height:1; }
+
+    .tb-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: var(--tb-gap); }
+    .tb-card {
+      background: var(--c-navy-mid,#0d1528); border:1px solid var(--c-border,rgba(255,255,255,.08));
+      border-radius: 18px; padding: 18px 14px; cursor:pointer; text-align:center;
+      display:flex; flex-direction:column; align-items:center; gap:10px; min-height: 132px;
+      justify-content:center; transition: transform .12s ease, border-color .12s ease, background .12s ease;
+      color: var(--c-text,#eaf0ff);
+    }
+    .tb-card:hover, .tb-card:focus-visible { transform: translateY(-3px); border-color: var(--c-orange,#f0c34a); background:#111b33; outline:none; }
+    .tb-card:active { transform: translateY(0); }
+    .tb-card .ic { font-size: 2.6rem; line-height:1; }
+    .tb-card .nm { font-weight:700; font-size: 1.02rem; }
+    .tb-card .ds { font-size:.78rem; color: var(--c-muted,#8a9bbf); line-height:1.25; }
+
+    /* ── Stage: full-screen host for an open tool ────────────────────────────── */
+    #tb-stage {
+      position: fixed; inset: 0; z-index: 99999; background: var(--c-navy,#080f1e);
+      display: none; flex-direction: column;
+    }
+    #tb-stage.open { display: flex; }
+    .tb-bar {
+      display:flex; align-items:center; gap:10px; padding: 8px 12px;
+      background: var(--c-navy-mid,#0d1528); border-bottom:1px solid var(--c-border,rgba(255,255,255,.08));
+      flex: 0 0 auto; min-height: 52px;
+    }
+    .tb-bar h2 { margin:0; font-size:1.05rem; font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif; flex:1; }
+    .tb-bar .tb-bar-icon { font-size:1.4rem; }
+    .tb-btn {
+      appearance:none; border:1px solid var(--c-border,rgba(255,255,255,.12)); background:#16223f; color:var(--c-text,#eaf0ff);
+      border-radius: 12px; padding: 10px 16px; font-size:1rem; font-weight:600; cursor:pointer; min-height:44px;
+      display:inline-flex; align-items:center; gap:6px; transition: background .12s ease, transform .1s ease;
+    }
+    .tb-btn:hover { background:#1e2d52; }
+    .tb-btn:active { transform: scale(.97); }
+    .tb-btn.primary { background: var(--c-orange,#f0c34a); color:#1a1300; border-color:transparent; }
+    .tb-btn.primary:hover { background: var(--c-orange-dark,#d4a830); }
+    .tb-btn.blue { background: var(--c-blue,#5b8fff); color:#031028; border-color:transparent; }
+    .tb-btn.ghost { background:transparent; }
+    .tb-btn.danger { background:#7a1f1f; }
+    .tb-btn.sq { padding:10px; width:44px; justify-content:center; }
+    .tb-body { flex:1 1 auto; position:relative; overflow:hidden; display:flex; }
+    .tb-body.pad { padding: 18px; overflow:auto; }
+    .tb-center { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; text-align:center; }
+
+    .tb-chips { display:flex; flex-wrap:wrap; gap:8px; }
+    .tb-chip { border:1px solid var(--c-border,rgba(255,255,255,.12)); background:#16223f; color:var(--c-text); border-radius:999px; padding:8px 14px; cursor:pointer; font-weight:600; font-size:.9rem; min-height:40px; }
+    .tb-chip.on { background: var(--c-blue,#5b8fff); color:#031028; border-color:transparent; }
+
+    .tb-huge { font-variant-numeric: tabular-nums; font-weight:800; line-height:1; letter-spacing:.02em; }
+    input.tb-input, textarea.tb-input, select.tb-input {
+      background:#0b1428; color:var(--c-text,#eaf0ff); border:1px solid var(--c-border,rgba(255,255,255,.14));
+      border-radius:12px; padding:10px 12px; font-size:1rem; font-family:inherit; min-height:44px;
+    }
+    textarea.tb-input { min-height:120px; resize:vertical; width:100%; }
+    .tb-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:center; }
+    .tb-hint { color: var(--c-muted,#8a9bbf); font-size:.85rem; }
+    canvas { touch-action: none; display:block; }
+    .tb-flash { animation: tbflash .5s ease-in-out 6; }
+    @keyframes tbflash { 0%,100%{ background: var(--c-navy,#080f1e);} 50%{ background:#2b1f00;} }
+  </style>
+</head>
+<body data-portal="ey">
+
+  <div class="tb-wrap" id="tb-launcher">
+    <div class="tb-hero">
+      <span class="tb-mark" aria-hidden="true">🧰</span>
+      <div>
+        <h1>Teaching Toolbox</h1>
+        <p>Big-screen classroom tools — tap one to go full screen.</p>
+      </div>
+    </div>
+    <div class="tb-grid" id="tb-grid" role="list"></div>
+    <p class="tb-hint" style="margin-top:22px">
+      Works offline for most tools. Tip: add <code>?fullscreen=1</code> to the address for a chromeless
+      whiteboard/interactive-screen mode. Room names come from your live register (names only).
+    </p>
+  </div>
+
+  <!-- Full-screen host for the active tool -->
+  <div id="tb-stage" role="dialog" aria-modal="true" aria-label="Toolbox tool">
+    <div class="tb-bar">
+      <span class="tb-bar-icon" id="tb-stage-icon" aria-hidden="true">🧰</span>
+      <h2 id="tb-stage-title">Tool</h2>
+      <button class="tb-btn ghost sq" id="tb-fs" title="Toggle device full screen" aria-label="Toggle full screen">⛶</button>
+      <button class="tb-btn sq" id="tb-close" title="Close tool" aria-label="Close tool">✕</button>
+    </div>
+    <div class="tb-body" id="tb-stage-body"></div>
+  </div>
+
+  <script src="/js/wren-core.js?v=20260704" defer></script>
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-app-shell.js?v=20260717" defer></script>
+  <script>
+  /* =====================================================================
+     Teaching Toolbox (b109) — self-contained module registry, no build step.
+     Each tool: { id, icon, name, desc, render(bodyEl) -> cleanupFn|void }.
+     ===================================================================== */
+  (function () {
+    'use strict';
+
+    // ── tiny helpers ──────────────────────────────────────────────────────
+    const $  = (s, r) => (r || document).querySelector(s);
+    const ce = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const PALETTE = ['#f0c34a','#5b8fff','#4ade80','#f87171','#c084fc','#fb923c','#22d3ee','#f472b6'];
+
+    // Shared WebAudio beep (created lazily; safe if blocked).
+    let _actx = null;
+    function audioCtx() { try { if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)(); if (_actx.state === 'suspended') _actx.resume(); return _actx; } catch (e) { return null; } }
+    function beep(freq, ms, when) {
+      const ac = audioCtx(); if (!ac) return;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = freq || 660;
+      const t0 = ac.currentTime + (when || 0);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + (ms || 200) / 1000);
+      o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0 + (ms || 200) / 1000 + 0.02);
+    }
+    function chime() { [880, 660, 990].forEach((f, i) => beep(f, 220, i * 0.24)); }
+
+    function speak(text) {
+      try {
+        if (!('speechSynthesis' in window)) return;
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(String(text));
+        u.lang = 'en-GB'; u.rate = 0.9; u.pitch = 1.05;
+        speechSynthesis.speak(u);
+      } catch (e) {}
+    }
+
+    // ── Reusable spin wheel (names + spinner) ─────────────────────────────
+    function makeWheel(host, opts) {
+      // opts: { getLabels: ()=>[], onWinner: (label,idx)=>{}, removeOnPick: ()=>bool, onRemove:(idx)=>{} }
+      const wrap = ce('div', 'tb-center');
+      const size = Math.min(window.innerWidth, window.innerHeight) - 220;
+      const cv = ce('canvas'); const D = clamp(size, 220, 520);
+      cv.width = cv.height = D; cv.style.width = cv.style.height = D + 'px';
+      cv.style.maxWidth = '80vmin'; cv.style.maxHeight = '80vmin';
+      const holder = ce('div'); holder.style.position = 'relative';
+      const ptr = ce('div', null, '▼');
+      ptr.style.cssText = 'position:absolute;top:-6px;left:50%;transform:translateX(-50%);font-size:2rem;color:var(--c-orange,#f0c34a);z-index:2;filter:drop-shadow(0 2px 2px #000)';
+      holder.appendChild(cv); holder.appendChild(ptr);
+      const result = ce('div', 'tb-huge', ''); result.style.cssText = 'font-size:clamp(1.6rem,6vw,3rem);min-height:1.2em;color:var(--c-orange,#f0c34a)';
+      const spinBtn = ce('button', 'tb-btn primary', '🎡 Spin'); spinBtn.style.fontSize = '1.3rem'; spinBtn.style.padding = '14px 30px';
+      wrap.appendChild(holder); wrap.appendChild(result); wrap.appendChild(spinBtn);
+      host.appendChild(wrap);
+
+      let rot = 0, spinning = false;
+      const ctx = cv.getContext('2d');
+      function draw() {
+        const labels = opts.getLabels();
+        const n = Math.max(labels.length, 1);
+        const seg = (Math.PI * 2) / n;
+        const cx = D / 2, cy = D / 2, r = D / 2 - 4;
+        ctx.clearRect(0, 0, D, D);
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
+        for (let i = 0; i < n; i++) {
+          ctx.beginPath(); ctx.moveTo(0, 0);
+          ctx.arc(0, 0, r, i * seg, (i + 1) * seg); ctx.closePath();
+          ctx.fillStyle = PALETTE[i % PALETTE.length]; ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2; ctx.stroke();
+          // label
+          ctx.save(); ctx.rotate(i * seg + seg / 2);
+          ctx.textAlign = 'right'; ctx.fillStyle = '#0a1020';
+          ctx.font = '700 ' + clamp(Math.floor(240 / n) + 8, 12, 30) + 'px Nunito, Arial, sans-serif';
+          const txt = (labels[i] || '').slice(0, 14);
+          ctx.fillText(txt, r - 14, 6); ctx.restore();
+        }
+        ctx.restore();
+        // hub
+        ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI * 2); ctx.fillStyle = 'var(--c-navy)'; ctx.fillStyle = '#080f1e'; ctx.fill();
+        ctx.strokeStyle = '#f0c34a'; ctx.lineWidth = 3; ctx.stroke();
+      }
+      function winnerIndex() {
+        const labels = opts.getLabels(); const n = Math.max(labels.length, 1);
+        const seg = (Math.PI * 2) / n; const pointer = 3 * Math.PI / 2;
+        let a = (pointer - rot) % (Math.PI * 2); if (a < 0) a += Math.PI * 2;
+        return Math.floor(a / seg) % n;
+      }
+      function spin() {
+        const labels = opts.getLabels();
+        if (spinning || labels.length === 0) return;
+        spinning = true; result.textContent = ''; spinBtn.disabled = true;
+        const start = rot;
+        const target = start + (Math.PI * 2) * (4 + Math.random() * 3) + Math.random() * Math.PI * 2;
+        const dur = 3600 + Math.random() * 800; const t0 = performance.now();
+        (function frame(now) {
+          const p = clamp((now - t0) / dur, 0, 1);
+          const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
+          rot = start + (target - start) * e; draw();
+          if (p < 1) { requestAnimationFrame(frame); }
+          else {
+            spinning = false; spinBtn.disabled = false;
+            const idx = winnerIndex(); const win = labels[idx];
+            result.textContent = '🎉 ' + win; speak(win); chime();
+            if (opts.onWinner) opts.onWinner(win, idx);
+            if (opts.removeOnPick && opts.removeOnPick() && opts.onRemove) { opts.onRemove(idx); draw(); }
+          }
+        })(t0);
+      }
+      spinBtn.addEventListener('click', spin);
+      draw();
+      return { draw, spin };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  TOOL MODULES
+    // ═══════════════════════════════════════════════════════════════════════
+    const TOOLS = [];
+
+    // ── 1. Timer / Stopwatch / Sand timer ─────────────────────────────────
+    TOOLS.push({ id: 'timer', icon: '⏱️', name: 'Timer & Stopwatch', desc: 'Countdown, stopwatch, sand-timer', render(body) {
+      body.classList.add('pad');
+      body.innerHTML =
+        '<div class="tb-center">' +
+        '<div class="tb-chips" id="tm-mode"><button class="tb-chip on" data-m="down">Countdown</button><button class="tb-chip" data-m="up">Stopwatch</button></div>' +
+        '<div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center">' +
+          '<div id="tm-sand" style="width:70px;height:220px;border:3px solid #f0c34a;border-radius:10px;position:relative;overflow:hidden;background:#0b1428"><div id="tm-sand-fill" style="position:absolute;bottom:0;left:0;right:0;height:100%;background:linear-gradient(#f0c34a,#d4a830)"></div></div>' +
+          '<div class="tb-huge" id="tm-disp" style="font-size:clamp(3.5rem,20vw,13rem)">05:00</div>' +
+        '</div>' +
+        '<div class="tb-chips" id="tm-presets"><button class="tb-chip" data-s="60">1m</button><button class="tb-chip" data-s="120">2m</button><button class="tb-chip" data-s="300">5m</button><button class="tb-chip" data-s="600">10m</button><button class="tb-chip" data-s="900">15m</button></div>' +
+        '<div class="tb-row"><button class="tb-btn ghost sq" id="tm-minus">−</button><span class="tb-hint">adjust</span><button class="tb-btn ghost sq" id="tm-plus">+</button>' +
+          '<button class="tb-btn ghost sq" id="tm-sound" title="Sound">🔊</button></div>' +
+        '<div class="tb-row"><button class="tb-btn primary" id="tm-start" style="font-size:1.2rem;padding:14px 34px">▶ Start</button>' +
+          '<button class="tb-btn" id="tm-reset">↺ Reset</button></div>' +
+        '</div>';
+      let mode = 'down', total = 300, remaining = 300, elapsed = 0, running = false, sound = true, tick = null;
+      const disp = $('#tm-disp', body), sandFill = $('#tm-sand-fill', body), startBtn = $('#tm-start', body);
+      const fmt = (s) => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60), ss = s % 60; return (m < 100 ? String(m).padStart(2, '0') : m) + ':' + String(ss).padStart(2, '0'); };
+      function paint() {
+        if (mode === 'down') { disp.textContent = fmt(remaining); const p = total > 0 ? remaining / total : 0; sandFill.style.height = (p * 100) + '%'; }
+        else { disp.textContent = fmt(elapsed); sandFill.style.height = '100%'; }
+      }
+      function stop() { running = false; startBtn.innerHTML = '▶ Start'; if (tick) { clearInterval(tick); tick = null; } }
+      function start() {
+        if (running) { stop(); return; }
+        running = true; startBtn.innerHTML = '⏸ Pause';
+        let last = performance.now();
+        tick = setInterval(() => {
+          const now = performance.now(), dt = (now - last) / 1000; last = now;
+          if (mode === 'down') {
+            remaining -= dt;
+            if (remaining <= 0) { remaining = 0; paint(); stop(); if (sound) chime(); body.parentElement.classList.add('tb-flash'); setTimeout(() => body.parentElement.classList.remove('tb-flash'), 3000); return; }
+          } else { elapsed += dt; }
+          paint();
+        }, 100);
+      }
+      body.querySelectorAll('#tm-mode .tb-chip').forEach(c => c.addEventListener('click', () => {
+        stop(); body.querySelectorAll('#tm-mode .tb-chip').forEach(x => x.classList.remove('on')); c.classList.add('on');
+        mode = c.dataset.m; remaining = total; elapsed = 0; $('#tm-presets', body).style.visibility = mode === 'down' ? 'visible' : 'hidden'; paint();
+      }));
+      body.querySelectorAll('#tm-presets .tb-chip').forEach(c => c.addEventListener('click', () => { stop(); total = remaining = +c.dataset.s; paint(); }));
+      $('#tm-minus', body).addEventListener('click', () => { stop(); total = remaining = Math.max(15, total - 30); paint(); });
+      $('#tm-plus', body).addEventListener('click', () => { stop(); total = remaining = Math.min(5999, total + 30); paint(); });
+      $('#tm-sound', body).addEventListener('click', (e) => { sound = !sound; e.target.textContent = sound ? '🔊' : '🔈'; });
+      startBtn.addEventListener('click', start);
+      $('#tm-reset', body).addEventListener('click', () => { stop(); remaining = total; elapsed = 0; paint(); });
+      paint();
+      return () => stop();
+    }});
+
+    // ── 2. Random name picker ─────────────────────────────────────────────
+    TOOLS.push({ id: 'names', icon: '🎡', name: 'Name Picker', desc: 'Spin the wheel to choose a child', render(body) {
+      body.classList.add('pad');
+      body.innerHTML =
+        '<div style="display:flex;flex-direction:column;gap:12px;height:100%">' +
+        '<div class="tb-row">' +
+          '<div class="tb-chips" id="np-src"><button class="tb-chip on" data-s="room">Room children</button><button class="tb-chip" data-s="custom">Custom list</button></div>' +
+          '<select class="tb-input" id="np-room" style="display:none"></select>' +
+          '<label class="tb-hint" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="np-remove"> remove after pick</label>' +
+          '<button class="tb-btn" id="np-reset">↺ Refill</button>' +
+        '</div>' +
+        '<textarea class="tb-input" id="np-custom" placeholder="One name per line…" style="display:none">Red\nBlue\nGreen\nYellow</textarea>' +
+        '<div id="np-wheel" style="flex:1;min-height:0"></div>' +
+        '</div>';
+      let allChildren = [], names = [], src = 'room', roomFilter = '';
+      const wheelHost = $('#np-wheel', body);
+      const roomSel = $('#np-room', body), custom = $('#np-custom', body), removeCb = $('#np-remove', body);
+      function computeNames() {
+        if (src === 'custom') { names = custom.value.split('\n').map(s => s.trim()).filter(Boolean); }
+        else {
+          let list = allChildren;
+          if (roomFilter) list = list.filter(c => (c.room_name || '') === roomFilter);
+          names = list.map(c => c.first_name).filter(Boolean);
+        }
+        return names;
+      }
+      const wheel = makeWheel(wheelHost, {
+        getLabels: () => names.length ? names : ['—'],
+        removeOnPick: () => removeCb.checked,
+        onRemove: (idx) => { if (names[idx]) { const nm = names[idx]; if (src === 'custom') { custom.value = custom.value.split('\n').filter(s => s.trim() !== nm).join('\n'); } else { const i = allChildren.findIndex(c => c.first_name === nm); if (i >= 0) allChildren.splice(i, 1); } computeNames(); } }
+      });
+      function refresh() { computeNames(); wheel.draw(); }
+      body.querySelectorAll('#np-src .tb-chip').forEach(c => c.addEventListener('click', () => {
+        body.querySelectorAll('#np-src .tb-chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); src = c.dataset.s;
+        roomSel.style.display = src === 'room' ? '' : 'none'; custom.style.display = src === 'custom' ? '' : 'none'; refresh();
+      }));
+      roomSel.addEventListener('change', () => { roomFilter = roomSel.value; refresh(); });
+      custom.addEventListener('input', refresh);
+      $('#np-reset', body).addEventListener('click', () => loadChildren());
+      function loadChildren() {
+        const api = (window.Wren && Wren.api) ? Wren.api('/api/children') : fetch('/api/children', { headers: authHdr() }).then(r => r.json());
+        Promise.resolve(api).then(rows => {
+          allChildren = Array.isArray(rows) ? rows : [];
+          const rooms = [...new Set(allChildren.map(c => c.room_name).filter(Boolean))].sort();
+          roomSel.innerHTML = '<option value="">All rooms (' + allChildren.length + ')</option>' + rooms.map(r => '<option value="' + esc(r) + '">' + esc(r) + '</option>').join('');
+          refresh();
+        }).catch(() => { allChildren = []; refresh(); if (window.Wren) Wren.toast('Could not load register — use Custom list', 'warning'); });
+      }
+      loadChildren();
+      return () => {};
+    }});
+
+    // ── 3. Calculator ─────────────────────────────────────────────────────
+    TOOLS.push({ id: 'calc', icon: '🧮', name: 'Calculator', desc: 'Big-button calculator', render(body) {
+      body.classList.add('pad');
+      const keys = ['C','←','%','÷','7','8','9','×','4','5','6','−','1','2','3','+','±','0','.','='];
+      body.innerHTML =
+        '<div class="tb-center" style="justify-content:flex-start;padding-top:8px">' +
+        '<div class="tb-huge" id="cl-disp" style="font-size:clamp(2.4rem,10vw,5rem);min-height:1.2em;width:100%;max-width:520px;text-align:right;overflow:hidden;background:#0b1428;border-radius:14px;padding:14px 20px">0</div>' +
+        '<div id="cl-keys" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;width:100%;max-width:520px">' +
+          keys.map(k => '<button class="tb-btn ' + (['÷','×','−','+','='].includes(k) ? 'blue' : (k === 'C' ? 'danger' : '')) + '" data-k="' + k + '" style="font-size:1.6rem;height:64px">' + k + '</button>').join('') +
+        '</div></div>';
+      const disp = $('#cl-disp', body);
+      let cur = '0', prev = null, op = null, fresh = true;
+      const show = () => { disp.textContent = cur.length > 12 ? (+cur).toPrecision(10).replace(/\.?0+$/, '') : cur; };
+      const apply = (a, b, o) => { a = +a; b = +b; return o === '+' ? a + b : o === '−' ? a - b : o === '×' ? a * b : o === '÷' ? (b === 0 ? NaN : a / b) : b; };
+      function press(k) {
+        if (/[0-9]/.test(k)) { cur = (fresh || cur === '0') ? k : cur + k; fresh = false; }
+        else if (k === '.') { if (fresh) { cur = '0.'; fresh = false; } else if (!cur.includes('.')) cur += '.'; }
+        else if (k === 'C') { cur = '0'; prev = null; op = null; fresh = true; }
+        else if (k === '←') { cur = cur.length > 1 ? cur.slice(0, -1) : '0'; }
+        else if (k === '±') { cur = cur.startsWith('-') ? cur.slice(1) : (cur === '0' ? '0' : '-' + cur); }
+        else if (k === '%') { cur = String((+cur) / 100); }
+        else if (['+','−','×','÷'].includes(k)) { if (op && !fresh) { cur = String(apply(prev, cur, op)); } prev = cur; op = k; fresh = true; }
+        else if (k === '=') { if (op) { const r = apply(prev, cur, op); cur = Number.isFinite(r) ? String(r) : 'Error'; op = null; prev = null; fresh = true; } }
+        show();
+      }
+      $('#cl-keys', body).addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) press(b.dataset.k); });
+      const kh = (e) => { const m = { '/': '÷','*': '×','-': '−','+': '+','Enter': '=','=': '=','Backspace': '←','Escape': 'C','%': '%' }; let k = e.key; if (/[0-9.]/.test(k) || m[k]) { e.preventDefault(); press(m[k] || k); } };
+      document.addEventListener('keydown', kh); show();
+      return () => document.removeEventListener('keydown', kh);
+    }});
+
+    // ── 4. Number tools (line / tens-frame / hundred square) ──────────────
+    TOOLS.push({ id: 'numbers', icon: '🔢', name: 'Number Tools', desc: 'Number line, tens-frame, 100-square', render(body) {
+      body.classList.add('pad');
+      body.innerHTML =
+        '<div class="tb-center" style="justify-content:flex-start;gap:16px;width:100%">' +
+        '<div class="tb-chips" id="nu-tab"><button class="tb-chip on" data-t="line">Number line</button><button class="tb-chip" data-t="frame">Tens-frame</button><button class="tb-chip" data-t="hundred">100-square</button></div>' +
+        '<div id="nu-view" style="width:100%;flex:1"></div></div>';
+      const view = $('#nu-view', body);
+      function line() {
+        let max = 20;
+        const render = () => {
+          view.innerHTML = '<div class="tb-row" style="margin-bottom:14px"><span class="tb-hint">Range:</span>' +
+            [10,20,30,100].map(m => '<button class="tb-chip ' + (m === max ? 'on' : '') + '" data-m="' + m + '">0–' + m + '</button>').join('') + '</div>' +
+            '<div id="nl" style="display:flex;align-items:flex-end;overflow-x:auto;padding:20px 6px;gap:0"></div>';
+          const nl = $('#nl', view);
+          for (let i = 0; i <= max; i++) {
+            const step = ce('div'); step.style.cssText = 'flex:0 0 auto;text-align:center;min-width:' + (max > 30 ? 34 : 46) + 'px;cursor:pointer';
+            step.innerHTML = '<div class="nl-dot" style="width:16px;height:16px;border-radius:50%;background:#1e2a4a;border:2px solid #5b8fff;margin:0 auto 6px"></div><div style="height:2px;background:#2d3b5e;position:relative"></div><div style="margin-top:6px;font-weight:700;font-size:' + (max > 30 ? '.8rem' : '1.05rem') + '">' + i + '</div>';
+            step.addEventListener('click', () => { const d = step.querySelector('.nl-dot'); const on = d.style.background === 'rgb(240, 195, 74)'; d.style.background = on ? '#1e2a4a' : '#f0c34a'; });
+            nl.appendChild(step);
+          }
+          view.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', () => { max = +b.dataset.m; render(); }));
+        };
+        render();
+      }
+      function frame() {
+        let count = 0;
+        view.innerHTML = '<div class="tb-center" style="gap:18px"><div class="tb-huge" id="tf-n" style="font-size:4rem;color:#f0c34a">0</div>' +
+          '<div id="tf-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:520px;margin:0 auto"></div>' +
+          '<div class="tb-row"><button class="tb-btn" id="tf-clear">Clear</button><span class="tb-hint">Tap the frames to add counters (0–20)</span></div></div>';
+        const grid = $('#tf-grid', view);
+        for (let i = 0; i < 20; i++) { const c = ce('div'); c.dataset.i = i; c.style.cssText = 'aspect-ratio:1;border:3px solid #5b8fff;border-radius:12px;background:#0b1428;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.8rem' + (i === 9 ? ';margin-right:14px' : ''); c.textContent = ''; grid.appendChild(c); }
+        function repaint() { let n = 0; grid.querySelectorAll('[data-i]').forEach(c => { if (c.dataset.on) { c.textContent = '🔴'; n++; } else c.textContent = ''; }); $('#tf-n', view).textContent = n; }
+        grid.addEventListener('click', e => { const c = e.target.closest('[data-i]'); if (!c) return; if (c.dataset.on) delete c.dataset.on; else c.dataset.on = '1'; repaint(); });
+        $('#tf-clear', view).addEventListener('click', () => { grid.querySelectorAll('[data-i]').forEach(c => delete c.dataset.on); repaint(); });
+      }
+      function hundred() {
+        view.innerHTML = '<div class="tb-row" style="margin-bottom:12px;justify-content:center"><button class="tb-chip" data-mult="2">Highlight 2s</button><button class="tb-chip" data-mult="5">5s</button><button class="tb-chip" data-mult="10">10s</button><button class="tb-chip" data-mult="0">Clear</button></div>' +
+          '<div id="hs" style="display:grid;grid-template-columns:repeat(10,1fr);gap:4px;max-width:560px;margin:0 auto"></div>';
+        const hs = $('#hs', view);
+        for (let i = 1; i <= 100; i++) { const c = ce('div'); c.dataset.n = i; c.style.cssText = 'aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#12203c;border-radius:7px;font-weight:700;font-size:clamp(.6rem,1.6vw,1rem);cursor:pointer'; c.textContent = i; c.addEventListener('click', () => { c.style.background = c.dataset.on ? '#12203c' : '#f0c34a'; c.style.color = c.dataset.on ? '' : '#1a1300'; if (c.dataset.on) delete c.dataset.on; else c.dataset.on = '1'; }); hs.appendChild(c); }
+        view.querySelectorAll('[data-mult]').forEach(b => b.addEventListener('click', () => { const m = +b.dataset.mult; hs.querySelectorAll('[data-n]').forEach(c => { const on = m && (+c.dataset.n % m === 0); c.style.background = on ? '#5b8fff' : '#12203c'; c.style.color = on ? '#031028' : ''; if (on) c.dataset.on = '1'; else delete c.dataset.on; }); }));
+      }
+      const views = { line, frame, hundred };
+      body.querySelectorAll('#nu-tab .tb-chip').forEach(c => c.addEventListener('click', () => { body.querySelectorAll('#nu-tab .tb-chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); views[c.dataset.t](); }));
+      line();
+      return () => {};
+    }});
+
+    // ── 5. Whiteboard (draw + ruler + protractor) ─────────────────────────
+    TOOLS.push({ id: 'draw', icon: '✏️', name: 'Whiteboard', desc: 'Draw, shapes, ruler & protractor', render(body) {
+      body.innerHTML =
+        '<div style="display:flex;flex-direction:column;width:100%;height:100%">' +
+        '<div class="tb-bar" style="flex-wrap:wrap;border-bottom:1px solid var(--c-border,rgba(255,255,255,.08));border-top:0">' +
+          '<span id="dw-colors" style="display:flex;gap:6px"></span>' +
+          '<span id="dw-sizes" style="display:flex;gap:6px"></span>' +
+          '<button class="tb-btn sq" data-shape="pen" title="Pen">✎</button>' +
+          '<button class="tb-btn sq" data-shape="line" title="Line">╱</button>' +
+          '<button class="tb-btn sq" data-shape="rect" title="Rectangle">▭</button>' +
+          '<button class="tb-btn sq" data-shape="ellipse" title="Ellipse">◯</button>' +
+          '<button class="tb-btn sq" data-shape="erase" title="Eraser">🧽</button>' +
+          '<button class="tb-btn sq" id="dw-undo" title="Undo">↶</button>' +
+          '<button class="tb-btn sq" id="dw-bg" title="Background">▧</button>' +
+          '<button class="tb-btn sq" id="dw-ruler" title="Ruler">📏</button>' +
+          '<button class="tb-btn sq" id="dw-prot" title="Protractor">📐</button>' +
+          '<button class="tb-btn danger sq" id="dw-clear" title="Clear">🗑</button>' +
+        '</div>' +
+        '<div id="dw-stage" style="position:relative;flex:1;overflow:hidden;background:#0b1428">' +
+          '<canvas id="dw-base"></canvas><canvas id="dw-prev" style="position:absolute;inset:0"></canvas>' +
+        '</div></div>';
+      const stage = $('#dw-stage', body), base = $('#dw-base', body), prev = $('#dw-prev', body);
+      const bctx = base.getContext('2d'), pctx = prev.getContext('2d');
+      let color = '#f0c34a', width = 6, shape = 'pen', bg = 0;
+      const bgs = ['#0b1428', '#ffffff', 'grid', 'lined'];
+      const undoStack = [];
+      function resize() {
+        const r = stage.getBoundingClientRect();
+        [base, prev].forEach(c => { c.width = r.width; c.height = r.height; c.style.width = r.width + 'px'; c.style.height = r.height + 'px'; });
+        paintBg(); }
+      function paintBg() {
+        const b = bgs[bg]; bctx.save();
+        if (b === 'grid' || b === 'lined') { bctx.fillStyle = '#0b1428'; bctx.fillRect(0, 0, base.width, base.height); bctx.strokeStyle = 'rgba(255,255,255,.1)'; bctx.lineWidth = 1; for (let y = 40; y < base.height; y += 40) { bctx.beginPath(); bctx.moveTo(0, y); bctx.lineTo(base.width, y); bctx.stroke(); } if (b === 'grid') for (let x = 40; x < base.width; x += 40) { bctx.beginPath(); bctx.moveTo(x, 0); bctx.lineTo(x, base.height); bctx.stroke(); } }
+        else { bctx.fillStyle = b; bctx.fillRect(0, 0, base.width, base.height); }
+        bctx.restore();
+      }
+      // colour + size pickers
+      const cwrap = $('#dw-colors', body);
+      ['#f0c34a','#5b8fff','#4ade80','#f87171','#ffffff','#c084fc'].forEach((col, i) => { const b = ce('button', 'tb-btn sq'); b.style.background = col; b.style.width = '34px'; b.dataset.col = col; if (i === 0) b.style.outline = '2px solid #fff'; b.addEventListener('click', () => { color = col; shape = shape === 'erase' ? 'pen' : shape; cwrap.querySelectorAll('button').forEach(x => x.style.outline = ''); b.style.outline = '2px solid #fff'; }); cwrap.appendChild(b); });
+      const swrap = $('#dw-sizes', body);
+      [3,6,14].forEach((w, i) => { const b = ce('button', 'tb-btn sq', '●'); b.style.fontSize = (8 + i * 6) + 'px'; b.dataset.w = w; if (w === 6) b.style.borderColor = '#f0c34a'; b.addEventListener('click', () => { width = w; swrap.querySelectorAll('button').forEach(x => x.style.borderColor = ''); b.style.borderColor = '#f0c34a'; }); swrap.appendChild(b); });
+      body.querySelectorAll('[data-shape]').forEach(b => b.addEventListener('click', () => { shape = b.dataset.shape; body.querySelectorAll('[data-shape]').forEach(x => x.style.borderColor = ''); b.style.borderColor = '#f0c34a'; }));
+      function pushUndo() { try { if (undoStack.length > 15) undoStack.shift(); undoStack.push(bctx.getImageData(0, 0, base.width, base.height)); } catch (e) {} }
+      $('#dw-undo', body).addEventListener('click', () => { const d = undoStack.pop(); if (d) bctx.putImageData(d, 0, 0); else paintBg(); });
+      $('#dw-clear', body).addEventListener('click', () => { pushUndo(); paintBg(); });
+      $('#dw-bg', body).addEventListener('click', () => { pushUndo(); bg = (bg + 1) % bgs.length; paintBg(); });
+      // drawing
+      let drawing = false, sx = 0, sy = 0;
+      const pos = (e) => { const r = base.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+      function down(e) { drawing = true; const p = pos(e); sx = p.x; sy = p.y; pushUndo(); if (shape === 'pen' || shape === 'erase') { bctx.beginPath(); bctx.moveTo(sx, sy); } base.setPointerCapture && base.setPointerCapture(e.pointerId); }
+      function move(e) {
+        if (!drawing) return; const p = pos(e);
+        if (shape === 'pen' || shape === 'erase') {
+          bctx.strokeStyle = shape === 'erase' ? (bgs[bg] === '#ffffff' ? '#ffffff' : '#0b1428') : color;
+          bctx.lineWidth = shape === 'erase' ? width * 4 : width; bctx.lineCap = 'round'; bctx.lineJoin = 'round';
+          bctx.lineTo(p.x, p.y); bctx.stroke();
+        } else {
+          pctx.clearRect(0, 0, prev.width, prev.height); pctx.strokeStyle = color; pctx.lineWidth = width; pctx.lineCap = 'round';
+          pctx.beginPath();
+          if (shape === 'line') { pctx.moveTo(sx, sy); pctx.lineTo(p.x, p.y); }
+          else if (shape === 'rect') { pctx.rect(Math.min(sx, p.x), Math.min(sy, p.y), Math.abs(p.x - sx), Math.abs(p.y - sy)); }
+          else if (shape === 'ellipse') { pctx.ellipse((sx + p.x) / 2, (sy + p.y) / 2, Math.abs(p.x - sx) / 2, Math.abs(p.y - sy) / 2, 0, 0, Math.PI * 2); }
+          pctx.stroke();
+        }
+      }
+      function up(e) {
+        if (!drawing) return; drawing = false;
+        if (shape !== 'pen' && shape !== 'erase') { bctx.drawImage(prev, 0, 0); pctx.clearRect(0, 0, prev.width, prev.height); }
+      }
+      prev.addEventListener('pointerdown', down); prev.addEventListener('pointermove', move);
+      prev.addEventListener('pointerup', up); prev.addEventListener('pointercancel', up); prev.addEventListener('pointerleave', up);
+      // ── Ruler / protractor draggable overlays ─────────────────────────────
+      function makeOverlay(kind) {
+        const el = ce('div'); el.style.cssText = 'position:absolute;left:60px;top:60px;touch-action:none;z-index:5;user-select:none';
+        let angle = 0, ox = 60, oy = 60;
+        if (kind === 'ruler') {
+          el.innerHTML = '<svg width="440" height="70" viewBox="0 0 440 70"><rect x="0" y="0" width="440" height="54" rx="6" fill="rgba(240,195,74,.86)" stroke="#7a5a00"/>' +
+            Array.from({ length: 45 }, (_, i) => { const x = 10 + i * 9.4; const h = i % 5 === 0 ? 18 : 10; return '<line x1="' + x + '" y1="0" x2="' + x + '" y2="' + h + '" stroke="#3a2c00" stroke-width="1.5"/>' + (i % 5 === 0 ? '<text x="' + x + '" y="34" font-size="10" fill="#3a2c00" text-anchor="middle">' + (i / 5) + '</text>' : ''); }).join('') +
+            '<circle cx="420" cy="62" r="8" fill="#5b8fff" stroke="#fff" class="rot"/></svg>';
+        } else {
+          el.innerHTML = '<svg width="320" height="180" viewBox="0 0 320 180"><path d="M10 170 A150 150 0 0 1 310 170 Z" fill="rgba(91,143,255,.82)" stroke="#26407a"/>' +
+            Array.from({ length: 19 }, (_, i) => { const a = Math.PI - i * Math.PI / 18; const x1 = 160 + 150 * Math.cos(a), y1 = 170 - 150 * Math.sin(a); const x2 = 160 + (i % 2 === 0 ? 132 : 140) * Math.cos(a), y2 = 170 - (i % 2 === 0 ? 132 : 140) * Math.sin(a); return '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="#12244a" stroke-width="1.3"/>' + (i % 2 === 0 ? '<text x="' + (160 + 118 * Math.cos(a)) + '" y="' + (170 - 118 * Math.sin(a) + 4) + '" font-size="10" fill="#0a1730" text-anchor="middle">' + (i * 10) + '</text>' : ''); }).join('') +
+            '<circle cx="160" cy="170" r="5" fill="#0a1730"/><circle cx="300" cy="12" r="8" fill="#f0c34a" stroke="#fff" class="rot"/></svg>';
+        }
+        function apply() { el.style.transform = 'rotate(' + angle + 'deg)'; el.style.left = ox + 'px'; el.style.top = oy + 'px'; }
+        apply(); stage.appendChild(el);
+        let mode = null, px = 0, py = 0, cx = 0, cy = 0;
+        el.addEventListener('pointerdown', e => { e.stopPropagation(); const rot = e.target.closest('.rot'); mode = rot ? 'rot' : 'move'; px = e.clientX; py = e.clientY; const r = el.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; el.setPointerCapture(e.pointerId); });
+        el.addEventListener('pointermove', e => { if (!mode) return; if (mode === 'move') { ox += e.clientX - px; oy += e.clientY - py; px = e.clientX; py = e.clientY; } else { angle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI; } apply(); });
+        el.addEventListener('pointerup', () => { mode = null; });
+        return el;
+      }
+      let ruler = null, prot = null;
+      $('#dw-ruler', body).addEventListener('click', () => { if (ruler) { ruler.remove(); ruler = null; } else ruler = makeOverlay('ruler'); });
+      $('#dw-prot', body).addEventListener('click', () => { if (prot) { prot.remove(); prot = null; } else prot = makeOverlay('protractor'); });
+      const ro = new ResizeObserver(() => { const img = base.width ? bctx.getImageData(0, 0, base.width, base.height) : null; resize(); if (img && img.width === base.width) bctx.putImageData(img, 0, 0); });
+      ro.observe(stage);
+      requestAnimationFrame(resize);
+      return () => ro.disconnect();
+    }});
+
+    // ── 6. Phonics quick-flash ────────────────────────────────────────────
+    TOOLS.push({ id: 'phonics', icon: '🔤', name: 'Phonics Flash', desc: 'Grapheme & tricky-word cards', render(body) {
+      body.classList.add('pad');
+      // Little Wandle Letters & Sounds Revised progression (default scheme 'b')
+      const SETS = [
+        { k: 'Set 1', items: [['s','snake'],['a','apple'],['t','tap'],['p','pig']] },
+        { k: 'Set 2', items: [['i','insect'],['n','net'],['m','mouse'],['d','dog']] },
+        { k: 'Set 3', items: [['g','goat'],['o','orange'],['c','cat'],['k','kite']] },
+        { k: 'Set 4', items: [['ck','duck'],['e','egg'],['u','umbrella'],['r','rabbit']] },
+        { k: 'Set 5', items: [['h','hat'],['b','bus'],['f','fish'],['l','leg']] },
+        { k: 'Ph3 consonants', items: [['j','jam'],['v','van'],['w','wind'],['x','box'],['y','yes'],['z','zip'],['zz','buzz'],['qu','queen'],['ch','chin'],['sh','ship'],['th','thumb'],['ng','ring'],['nk','pink']] },
+        { k: 'Ph3 vowels', items: [['ai','rain'],['ee','feet'],['igh','night'],['oa','boat'],['oo','moon'],['ar','farm'],['or','fork'],['ur','fur'],['ow','cow'],['oi','coin'],['ear','hear'],['air','fair'],['er','letter']] },
+        { k: 'Tricky words', tricky: true, items: [['is'],['I'],['the'],['put'],['pull'],['full'],['as'],['and'],['has'],['his'],['her'],['go'],['no'],['to'],['into'],['she'],['push'],['he'],['of'],['we'],['me'],['be'],['was'],['you'],['they'],['all'],['are'],['my'],['by'],['sure'],['said'],['have'],['like'],['some'],['come'],['love'],['do'],['were'],['here'],['little'],['says'],['there'],['when'],['what'],['one'],['out'],['today']] }
+      ];
+      body.innerHTML =
+        '<div style="display:flex;flex-direction:column;height:100%;gap:12px">' +
+        '<div class="tb-row"><span class="tb-hint" id="ph-scheme">scheme…</span><div class="tb-chips" id="ph-sets"></div>' +
+          '<label class="tb-hint" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="ph-shuffle"> shuffle</label></div>' +
+        '<div id="ph-card" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0b1428;border-radius:16px;cursor:pointer;user-select:none">' +
+          '<div id="ph-graph" class="tb-huge" style="font-size:clamp(5rem,32vw,20rem);color:#f0c34a">s</div>' +
+          '<div id="ph-word" class="tb-hint" style="font-size:clamp(1rem,4vw,2rem)">snake</div></div>' +
+        '<div class="tb-row"><button class="tb-btn" id="ph-prev">← Prev</button><span id="ph-count" class="tb-hint"></span>' +
+          '<button class="tb-btn" id="ph-say">🔊 Say</button><button class="tb-btn primary" id="ph-next">Next →</button></div>' +
+        '</div>';
+      let setIdx = 0, cardIdx = 0, order = [];
+      const chips = $('#ph-sets', body), graph = $('#ph-graph', body), word = $('#ph-word', body), count = $('#ph-count', body);
+      SETS.forEach((s, i) => { const c = ce('button', 'tb-chip' + (i === 0 ? ' on' : ''), s.k); c.addEventListener('click', () => { setIdx = i; cardIdx = 0; buildOrder(); chips.querySelectorAll('.tb-chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); paint(); }); chips.appendChild(c); });
+      function buildOrder() { const items = SETS[setIdx].items; order = $('#ph-shuffle', body).checked ? shuffle(items) : items.slice(); }
+      function paint() {
+        const set = SETS[setIdx]; const item = order[cardIdx] || order[0]; if (!item) return;
+        graph.textContent = item[0]; graph.style.fontSize = set.tricky ? 'clamp(3rem,16vw,9rem)' : 'clamp(5rem,32vw,20rem)';
+        word.textContent = set.tricky ? 'tricky word' : (item[1] || '');
+        count.textContent = (cardIdx + 1) + ' / ' + order.length;
+      }
+      const nav = (d) => { cardIdx = (cardIdx + d + order.length) % order.length; paint(); };
+      $('#ph-next', body).addEventListener('click', () => nav(1));
+      $('#ph-prev', body).addEventListener('click', () => nav(-1));
+      $('#ph-card', body).addEventListener('click', () => nav(1));
+      $('#ph-say', body).addEventListener('click', () => { const set = SETS[setIdx]; const item = order[cardIdx]; speak(set.tricky ? item[0] : (item[1] ? item[0] + '. ' + item[1] : item[0])); });
+      $('#ph-shuffle', body).addEventListener('change', () => { buildOrder(); cardIdx = 0; paint(); });
+      const kh = (e) => { if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nav(1); } else if (e.key === 'ArrowLeft') nav(-1); };
+      document.addEventListener('keydown', kh);
+      // scheme label (default little_wandle)
+      const setScheme = (s) => { const map = { little_wandle: 'Little Wandle (default)' }; $('#ph-scheme', body).textContent = '📚 ' + (map[s] || s || 'Little Wandle (default)'); };
+      const p = (window.Wren && Wren.api) ? Wren.api('/api/phonics/scheme') : fetch('/api/phonics/scheme', { headers: authHdr() }).then(r => r.json());
+      Promise.resolve(p).then(d => setScheme(d && d.scheme)).catch(() => setScheme(null));
+      buildOrder(); paint();
+      return () => document.removeEventListener('keydown', kh);
+    }});
+
+    // ── 7. Dice ───────────────────────────────────────────────────────────
+    TOOLS.push({ id: 'dice', icon: '🎲', name: 'Dice', desc: 'Roll 1–3 dice', render(body) {
+      body.classList.add('pad');
+      body.innerHTML =
+        '<div class="tb-center">' +
+        '<div class="tb-chips" id="dc-n"><button class="tb-chip on" data-n="1">1 die</button><button class="tb-chip" data-n="2">2 dice</button><button class="tb-chip" data-n="3">3 dice</button></div>' +
+        '<div id="dc-faces" style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center"></div>' +
+        '<div class="tb-huge" id="dc-sum" style="font-size:2rem;color:#f0c34a">—</div>' +
+        '<button class="tb-btn primary" id="dc-roll" style="font-size:1.4rem;padding:16px 40px">🎲 Roll</button></div>';
+      let n = 1, rolling = false;
+      const PIPS = { 1: [4], 2: [0,8], 3: [0,4,8], 4: [0,2,6,8], 5: [0,2,4,6,8], 6: [0,2,3,5,6,8] };
+      const facesEl = $('#dc-faces', body), sumEl = $('#dc-sum', body);
+      function faceHTML(v) { let cells = ''; for (let i = 0; i < 9; i++) cells += '<span style="width:14px;height:14px;border-radius:50%;background:' + (PIPS[v].includes(i) ? '#0b1428' : 'transparent') + '"></span>'; return '<div style="width:104px;height:104px;background:#f0f4ff;border-radius:16px;display:grid;grid-template-columns:repeat(3,1fr);place-items:center;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,.4)">' + cells + '</div>'; }
+      function render(vals) { facesEl.innerHTML = vals.map(faceHTML).join(''); sumEl.textContent = n > 1 ? 'Total: ' + vals.reduce((a, b) => a + b, 0) : ''; }
+      function roll() {
+        if (rolling) return; rolling = true; const t0 = performance.now();
+        (function frame(now) {
+          if (now - t0 < 650) { render(Array.from({ length: n }, () => 1 + Math.floor(Math.random() * 6))); requestAnimationFrame(frame); }
+          else { const finalV = Array.from({ length: n }, () => 1 + Math.floor(Math.random() * 6)); render(finalV); rolling = false; beep(520, 120); }
+        })(t0);
+      }
+      body.querySelectorAll('#dc-n .tb-chip').forEach(c => c.addEventListener('click', () => { body.querySelectorAll('#dc-n .tb-chip').forEach(x => x.classList.remove('on')); c.classList.add('on'); n = +c.dataset.n; render(Array.from({ length: n }, () => 1)); }));
+      $('#dc-roll', body).addEventListener('click', roll);
+      render([1]);
+      return () => {};
+    }});
+
+    // ── 8. Decision spinner (custom segments) ─────────────────────────────
+    TOOLS.push({ id: 'spinner', icon: '🌀', name: 'Spinner', desc: 'Custom-segment decision wheel', render(body) {
+      body.classList.add('pad');
+      body.innerHTML =
+        '<div style="display:flex;flex-direction:column;gap:12px;height:100%">' +
+        '<div class="tb-row"><textarea class="tb-input" id="sp-list" style="min-height:64px;max-width:520px">Yes\nNo\nMaybe\nAsk a friend\nTry again</textarea></div>' +
+        '<div id="sp-wheel" style="flex:1;min-height:0"></div></div>';
+      let labels = [];
+      const ta = $('#sp-list', body);
+      const recompute = () => { labels = ta.value.split('\n').map(s => s.trim()).filter(Boolean); };
+      recompute();
+      const wheel = makeWheel($('#sp-wheel', body), { getLabels: () => labels.length ? labels : ['—'] });
+      ta.addEventListener('input', () => { recompute(); wheel.draw(); });
+      return () => {};
+    }});
+
+    // ── 9. Noise meter (traffic light) ────────────────────────────────────
+    TOOLS.push({ id: 'noise', icon: '🚦', name: 'Noise Meter', desc: 'Traffic-light volume monitor', render(body) {
+      body.classList.add('pad');
+      body.innerHTML =
+        '<div class="tb-center">' +
+        '<div id="nm-lights" style="display:flex;flex-direction:column;gap:16px;background:#111;padding:22px;border-radius:20px">' +
+          '<div class="nm-l" data-c="red" style="width:110px;height:110px;border-radius:50%;background:#3a0d0d"></div>' +
+          '<div class="nm-l" data-c="amber" style="width:110px;height:110px;border-radius:50%;background:#3a2a08"></div>' +
+          '<div class="nm-l" data-c="green" style="width:110px;height:110px;border-radius:50%;background:#0d3a1a"></div>' +
+        '</div>' +
+        '<div style="width:100%;max-width:420px;height:26px;background:#0b1428;border-radius:14px;overflow:hidden"><div id="nm-bar" style="height:100%;width:0;background:#4ade80;transition:width .1s"></div></div>' +
+        '<div class="tb-row"><span class="tb-hint">Sensitivity</span><input type="range" id="nm-sens" min="1" max="8" value="4"></div>' +
+        '<div id="nm-status" class="tb-hint">Tap “Start” and allow microphone access.</div>' +
+        '<button class="tb-btn primary" id="nm-start">🎤 Start</button></div>';
+      const bar = $('#nm-bar', body), status = $('#nm-status', body), startBtn = $('#nm-start', body), sens = $('#nm-sens', body);
+      const lights = { red: body.querySelector('[data-c=red]'), amber: body.querySelector('[data-c=amber]'), green: body.querySelector('[data-c=green]') };
+      let stream = null, ac = null, raf = null, running = false;
+      function setLight(which) {
+        lights.red.style.background = which === 'red' ? '#ff3b30' : '#3a0d0d';
+        lights.amber.style.background = which === 'amber' ? '#ffb020' : '#3a2a08';
+        lights.green.style.background = which === 'green' ? '#33d17a' : '#0d3a1a';
+      }
+      async function start() {
+        if (running) { stop(); return; }
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) { status.textContent = '⚠ Microphone blocked — noise meter needs mic permission. (Everything else in the toolbox still works.)'; return; }
+        running = true; startBtn.textContent = '⏹ Stop'; status.textContent = 'Listening…';
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        const src = ac.createMediaStreamSource(stream); const an = ac.createAnalyser(); an.fftSize = 512; src.connect(an);
+        const data = new Uint8Array(an.fftSize);
+        (function loop() {
+          an.getByteTimeDomainData(data);
+          let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+          const rms = Math.sqrt(sum / data.length);
+          const level = clamp(rms * 100 * (+sens.value), 0, 100);
+          bar.style.width = level + '%';
+          bar.style.background = level > 66 ? '#ff3b30' : level > 33 ? '#ffb020' : '#33d17a';
+          setLight(level > 66 ? 'red' : level > 33 ? 'amber' : 'green');
+          raf = requestAnimationFrame(loop);
+        })();
+      }
+      function stop() { running = false; startBtn.textContent = '🎤 Start'; status.textContent = 'Stopped.'; if (raf) cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(t => t.stop()); if (ac) ac.close(); stream = ac = null; setLight(null); bar.style.width = '0'; }
+      startBtn.addEventListener('click', start);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { status.textContent = 'ℹ Microphone not available on this device — noise meter is display-only here.'; startBtn.disabled = true; }
+      return () => stop();
+    }});
+
+    // ── 10. On-screen keyboard ────────────────────────────────────────────
+    TOOLS.push({ id: 'keyboard', icon: '⌨️', name: 'Keyboard', desc: 'Big on-screen keyboard', render(body) {
+      body.classList.add('pad');
+      body.innerHTML =
+        '<div style="display:flex;flex-direction:column;height:100%;gap:14px">' +
+        '<textarea id="kb-out" class="tb-input" style="flex:0 0 auto;min-height:120px;font-size:clamp(1.4rem,5vw,3rem);text-align:center" placeholder="Type here…"></textarea>' +
+        '<div class="tb-row"><button class="tb-btn" id="kb-case">ABC / abc</button><button class="tb-btn" id="kb-num">123 / abc</button><button class="tb-btn" id="kb-say">🔊 Say</button><button class="tb-btn danger" id="kb-clear">Clear</button></div>' +
+        '<div id="kb-keys" style="flex:1;display:flex;flex-direction:column;gap:8px;justify-content:center"></div></div>';
+      const out = $('#kb-out', body), keysEl = $('#kb-keys', body);
+      let upper = false, nums = false;
+      const rowsAlpha = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+      const rowsNum = ['1234567890', '-/:;()£&@', '.,?!\'"+='];
+      function build() {
+        const rows = nums ? rowsNum : rowsAlpha; keysEl.innerHTML = '';
+        rows.forEach(r => { const rd = ce('div'); rd.style.cssText = 'display:flex;gap:6px;justify-content:center'; r.split('').forEach(ch => { const k = upper && !nums ? ch.toUpperCase() : ch; const b = ce('button', 'tb-btn', k); b.style.cssText = 'flex:1;max-width:76px;height:56px;font-size:1.5rem'; b.addEventListener('click', () => ins(k)); rd.appendChild(b); }); keysEl.appendChild(rd); });
+        const last = ce('div'); last.style.cssText = 'display:flex;gap:6px;justify-content:center';
+        const space = ce('button', 'tb-btn', 'space'); space.style.cssText = 'flex:4;height:56px;font-size:1.2rem'; space.addEventListener('click', () => ins(' '));
+        const bs = ce('button', 'tb-btn', '⌫'); bs.style.cssText = 'flex:1;height:56px;font-size:1.5rem'; bs.addEventListener('click', () => { out.value = out.value.slice(0, -1); });
+        const ent = ce('button', 'tb-btn blue', '⏎'); ent.style.cssText = 'flex:1;height:56px;font-size:1.5rem'; ent.addEventListener('click', () => ins('\n'));
+        last.appendChild(space); last.appendChild(bs); last.appendChild(ent); keysEl.appendChild(last);
+      }
+      const ins = (c) => { out.value += c; };
+      $('#kb-case', body).addEventListener('click', () => { upper = !upper; build(); });
+      $('#kb-num', body).addEventListener('click', () => { nums = !nums; build(); });
+      $('#kb-say', body).addEventListener('click', () => speak(out.value || 'nothing typed yet'));
+      $('#kb-clear', body).addEventListener('click', () => { out.value = ''; });
+      build();
+      return () => {};
+    }});
+
+    // ── 11. Ambient / screensaver ─────────────────────────────────────────
+    TOOLS.push({ id: 'ambient', icon: '🌙', name: 'Ambient Mode', desc: 'Calm scene, clock & timetable', render(body) {
+      body.innerHTML =
+        '<div style="position:relative;width:100%;height:100%;overflow:hidden">' +
+        '<canvas id="am-cv" style="position:absolute;inset:0"></canvas>' +
+        '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;pointer-events:none">' +
+          '<div id="am-clock" class="tb-huge" style="font-size:clamp(3rem,14vw,10rem);text-shadow:0 4px 24px rgba(0,0,0,.6)">--:--</div>' +
+          '<div id="am-date" class="tb-hint" style="font-size:clamp(1rem,4vw,1.8rem)"></div>' +
+        '</div>' +
+        '<div id="am-tt" style="position:absolute;left:0;right:0;bottom:0;display:flex;gap:10px;overflow-x:auto;padding:14px;background:linear-gradient(transparent,rgba(0,0,0,.4))"></div>' +
+        '</div>';
+      const cv = $('#am-cv', body), ctx = cv.getContext('2d');
+      let raf = null, blobs = [];
+      function resize() { const r = body.getBoundingClientRect(); cv.width = r.width; cv.height = r.height; }
+      function init() { resize(); blobs = Array.from({ length: 7 }, () => ({ x: Math.random() * cv.width, y: Math.random() * cv.height, r: 60 + Math.random() * 120, dx: (Math.random() - .5) * .3, dy: (Math.random() - .5) * .3, c: PALETTE[Math.floor(Math.random() * PALETTE.length)] })); }
+      function frame() {
+        const g = ctx.createLinearGradient(0, 0, 0, cv.height); g.addColorStop(0, '#0a1330'); g.addColorStop(1, '#05203a'); ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+        blobs.forEach(b => { b.x += b.dx; b.y += b.dy; if (b.x < -b.r || b.x > cv.width + b.r) b.dx *= -1; if (b.y < -b.r || b.y > cv.height + b.r) b.dy *= -1; const rg = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r); rg.addColorStop(0, b.c + '55'); rg.addColorStop(1, b.c + '00'); ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); });
+        raf = requestAnimationFrame(frame);
+      }
+      const clockEl = $('#am-clock', body), dateEl = $('#am-date', body);
+      function tick() { const d = new Date(); clockEl.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); dateEl.textContent = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }); }
+      const ci = setInterval(tick, 1000); tick();
+      // Optional visual timetable (read-only reuse of visual-schedules)
+      const tt = $('#am-tt', body);
+      const vp = (window.Wren && Wren.api) ? Wren.api('/api/visual-schedules') : fetch('/api/visual-schedules', { headers: authHdr() }).then(r => r.json());
+      Promise.resolve(vp).then(rows => {
+        if (!Array.isArray(rows) || !rows.length) { tt.style.display = 'none'; return; }
+        const sched = rows.find(r => (r.kind || '').includes('timetable')) || rows.find(r => Array.isArray(r.items) && r.items.length) || rows[0];
+        const items = (sched && Array.isArray(sched.items)) ? sched.items : [];
+        if (!items.length) { tt.style.display = 'none'; return; }
+        tt.innerHTML = items.slice(0, 12).map(it => '<div style="flex:0 0 auto;min-width:96px;background:rgba(13,21,40,.85);border:1px solid var(--c-border,rgba(255,255,255,.1));border-radius:14px;padding:12px;text-align:center"><div style="font-size:2rem">' + esc(String(it.symbol || '🕐').slice(0, 2)) + '</div><div style="font-size:.8rem;font-weight:700">' + esc(it.label || '') + '</div>' + (it.time ? '<div class="tb-hint" style="font-size:.7rem">' + esc(it.time) + '</div>' : '') + '</div>').join('');
+      }).catch(() => { tt.style.display = 'none'; });
+      const ro = new ResizeObserver(() => resize()); ro.observe(body);
+      init(); frame();
+      return () => { if (raf) cancelAnimationFrame(raf); clearInterval(ci); ro.disconnect(); };
+    }});
+
+    // ── shared: esc + auth header fallback ────────────────────────────────
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;','<': '&lt;','>': '&gt;','"': '&quot;',"'": '&#39;' }[c])); }
+    function authHdr() { const t = sessionStorage.getItem('wrenToken'); return t ? { Authorization: 'Bearer ' + t } : {}; }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Launcher + stage plumbing
+    // ═══════════════════════════════════════════════════════════════════════
+    let activeCleanup = null;
+    const stage = $('#tb-stage'), stageBody = $('#tb-stage-body'), stageTitle = $('#tb-stage-title'), stageIcon = $('#tb-stage-icon');
+    const forcedFs = document.documentElement.classList.contains('tb-forced-fs');
+
+    function openTool(id) {
+      const tool = TOOLS.find(t => t.id === id); if (!tool) return;
+      closeTool(true);
+      stageTitle.textContent = tool.name; stageIcon.textContent = tool.icon;
+      stageBody.className = 'tb-body'; stageBody.innerHTML = '';
+      document.documentElement.classList.add('tb-chromeless');
+      stage.classList.add('open');
+      try { activeCleanup = tool.render(stageBody) || null; } catch (e) { stageBody.innerHTML = '<div class="tb-center"><p>Sorry — this tool hit an error.</p><pre class="tb-hint">' + esc(e.message) + '</pre></div>'; }
+      history.replaceState(null, '', location.pathname + '?tool=' + id + (forcedFs ? '&fullscreen=1' : ''));
+    }
+    function closeTool(silent) {
+      if (activeCleanup) { try { activeCleanup(); } catch (e) {} activeCleanup = null; }
+      stage.classList.remove('open'); stageBody.innerHTML = '';
+      if (!forcedFs) document.documentElement.classList.remove('tb-chromeless');
+      if (!silent) history.replaceState(null, '', location.pathname + (forcedFs ? '?fullscreen=1' : ''));
+    }
+    $('#tb-close').addEventListener('click', () => closeTool());
+    $('#tb-fs').addEventListener('click', () => { try { if (!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); } catch (e) {} });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && stage.classList.contains('open')) closeTool(); });
+
+    function buildLauncher() {
+      const grid = $('#tb-grid');
+      grid.innerHTML = '';
+      TOOLS.forEach(t => {
+        const card = ce('div', 'tb-card'); card.setAttribute('role', 'listitem'); card.tabIndex = 0;
+        card.innerHTML = '<span class="ic" aria-hidden="true">' + t.icon + '</span><span class="nm">' + t.name + '</span><span class="ds">' + t.desc + '</span>';
+        card.addEventListener('click', () => openTool(t.id));
+        card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTool(t.id); } });
+        grid.appendChild(card);
+      });
+    }
+
+    function boot() {
+      buildLauncher();
+      const params = new URLSearchParams(location.search);
+      const t = params.get('tool');
+      if (t && TOOLS.some(x => x.id === t)) openTool(t);
+    }
+    // Wait for the shell (auth gate) before wiring — same idiom as other EY pages.
+    if (window.Wren && Wren.getToken && Wren.getToken()) { document.addEventListener('wren:ready', boot); }
+    else { document.addEventListener('wren:ready', boot); }
+    // Fallback: if wren:ready never fires (shell already ran), boot after load.
+    window.addEventListener('load', () => { if (!$('#tb-grid').children.length) boot(); });
+  })();
+  </script>
+</body>
+</html>

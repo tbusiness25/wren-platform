@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"           content="eyfs">
+  <meta name="wren-app-page"          content="termly-update">
+  <meta name="wren-app-title"         content="Termly Updates">
+  <meta name="wren-app-chat"          content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>Termly Update — review &amp; send · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* Same shape as the b243 review screen so the two feel like one product.
+       Tokens only — no bare hex — so both themes work. */
+    #tu-wrap { padding:16px; max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:14px;
+               padding-bottom:calc(env(safe-area-inset-bottom,0px) + 90px); }
+    .tu-card { background:var(--c-surface); border:1px solid var(--c-border); border-radius:14px; padding:14px; }
+    .tu-h { font-size:1rem; margin:0 0 4px; color:var(--c-text); }
+    .tu-muted { color:var(--c-muted); font-size:.85rem; }
+    .tu-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .tu-row + .tu-row { border-top:1px solid var(--c-border); margin-top:10px; padding-top:12px; }
+    .tu-row b { color:var(--c-text); }
+    .tu-row small { display:block; color:var(--c-muted); font-size:.8rem; }
+    .tu-btn { border:1px solid var(--c-border); background:transparent; color:var(--c-text);
+              border-radius:10px; padding:9px 12px; font-size:.86rem; font-weight:600; cursor:pointer;
+              min-height:40px; font-family:inherit; }
+    .tu-btn.primary { background:var(--c-blue); color:#fff; border-color:var(--c-blue); }
+    .tu-btn.accent  { background:var(--c-orange); color:var(--c-navy); border-color:var(--c-orange-dark); font-weight:700; }
+    .tu-btn.small   { min-height:32px; padding:5px 10px; font-size:.78rem; }
+    .tu-btn:disabled { opacity:.5; cursor:default; }
+    .tu-pill { display:inline-block; border-radius:999px; padding:3px 10px; font-size:.74rem; font-weight:700;
+               border:1px solid var(--c-border); color:var(--c-muted); }
+    /* wren.css's own badge convention (.badge-orange et al): a LIGHT tint behind
+       DARK ink of the same hue. White-on-accent is unreadable in the default EY
+       palette, where --c-orange is #f0c34a, and wren-theme.js lets a setting
+       repaint all of these — so the pair has to stay same-hue rather than
+       hard-coding a colour that survives one theme and not the other. */
+    .tu-pill.overdue     { background:var(--c-red-light);    border-color:var(--c-red);    color:var(--c-red); }
+    .tu-pill.due         { background:var(--c-orange-light); border-color:var(--c-orange); color:var(--c-orange-dark); }
+    .tu-pill.in_progress { background:var(--c-blue-light);   border-color:var(--c-blue);   color:var(--c-blue-dark); }
+    .tu-pill.done,
+    .tu-pill.sent        { background:var(--c-green-light);  border-color:var(--c-green);  color:var(--c-green); }
+    .tu-counts { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .tu-count { flex:1 1 74px; border:1px solid var(--c-border); border-radius:12px; padding:8px 6px; text-align:center; }
+    .tu-count b { display:block; font-size:1.25rem; color:var(--c-text); }
+    .tu-count span { font-size:.72rem; color:var(--c-muted); }
+    .tu-field { display:flex; flex-direction:column; gap:6px; }
+    .tu-field > label { font-size:.82rem; font-weight:700; color:var(--c-muted); }
+    .tu-field textarea, .tu-field input, .tu-field select {
+      width:100%; background:var(--c-bg,var(--c-surface)); border:1px solid var(--c-border); border-radius:12px;
+      color:var(--c-text); padding:12px 14px; font-size:1rem; font-family:inherit; outline:none; line-height:1.5; }
+    .tu-field textarea:focus, .tu-field input:focus { border-color:var(--c-blue); }
+    .tu-ev { margin-top:8px; font-size:.78rem; color:var(--c-muted); }
+    .tu-ev summary { cursor:pointer; font-weight:600; }
+    .tu-ev ul { margin:6px 0 0 16px; padding:0; }
+    .tu-note { background:var(--c-bg,transparent); border-left:3px solid var(--c-orange);
+               padding:8px 12px; border-radius:0 8px 8px 0; font-size:.85rem; color:var(--c-text); }
+    .tu-note.info { border-left-color:var(--c-blue); }
+    .tu-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .tu-hidden { display:none !important; }
+    .tu-step { border:1px solid var(--c-border); border-radius:12px; padding:10px 12px; margin-top:8px; }
+    .tu-step b { color:var(--c-text); font-weight:600; }
+    .tu-chip { display:inline-flex; align-items:center; gap:5px; font-size:.76rem; font-weight:600;
+               padding:4px 10px; border:1px solid var(--c-border); border-radius:20px; color:var(--c-muted);
+               background:var(--c-bg,transparent); margin:6px 6px 0 0; }
+    .tu-track { border-collapse:collapse; width:100%; font-size:.82rem; margin-top:8px; }
+    .tu-track th, .tu-track td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--c-border); color:var(--c-text); }
+    .tu-track th { color:var(--c-muted); font-weight:700; font-size:.74rem; }
+    .tu-track td.n { text-align:right; font-variant-numeric:tabular-nums; }
+    #tu-empty { color:var(--c-muted); text-align:center; padding:14px 0; }
+    #tu-problems { color:var(--c-orange-dark); font-size:.85rem; }
+    #tu-problems ul { margin:6px 0 0 18px; }
+    .tu-scroll { overflow-x:auto; }
+  </style>
+</head>
+<body>
+<div id="tu-wrap">
+
+  <!-- ── QUEUE ────────────────────────────────────────────────────────────── -->
+  <div id="tu-list-view">
+    <div class="tu-card">
+      <h2 class="tu-h">Termly updates</h2>
+      <p class="tu-muted">One per half-term, on Ealing's school dates — so the whole room lands together
+        and the breaks fall where ours do. Every update says what went well last term, what we're working
+        on this term, the next steps (with the cards and activities you choose), things families can try
+        at home, and where the child is in the tracker.</p>
+      <div id="tu-cycle" class="tu-note info tu-hidden" style="margin-top:10px"></div>
+      <div id="tu-calendar" class="tu-note tu-hidden" style="margin-top:10px"></div>
+      <div id="tu-counts" class="tu-counts"></div>
+      <div id="tu-list" style="margin-top:12px"></div>
+      <div id="tu-empty" class="tu-hidden">No key children to show.</div>
+      <p class="tu-muted" style="margin-top:12px">Chasing rather than writing?
+        <a href="/ey/reports-due?format=termly_update">Reports due</a> has every format in one place.</p>
+    </div>
+  </div>
+
+  <!-- ── ONE UPDATE ───────────────────────────────────────────────────────── -->
+  <div id="tu-form-view" class="tu-hidden">
+    <div class="tu-card">
+      <div id="tu-childline"></div>
+      <div id="tu-routing"  class="tu-note tu-hidden" style="margin-top:10px"></div>
+      <div id="tu-drafterr" class="tu-note tu-hidden" style="margin-top:10px"></div>
+      <div id="tu-sovereign" class="tu-note info tu-hidden" style="margin-top:10px"></div>
+    </div>
+
+    <div id="tu-sections"></div>
+
+    <!-- Next steps: the one section that is a list, not a paragraph. -->
+    <div class="tu-card" id="tu-steps-card">
+      <h2 class="tu-h">Next steps</h2>
+      <p class="tu-muted">These are real next steps on the child's record — the room works from them and
+        they show on the child's profile, not just in this document. Add a resource card or an activity to
+        any of them: the same two libraries the planner uses.</p>
+      <div id="tu-steps"></div>
+      <div class="tu-field" style="margin-top:12px">
+        <label for="tu-new-step">Add a next step</label>
+        <input id="tu-new-step" type="text" placeholder="e.g. Join in with the actions to familiar songs">
+      </div>
+      <div class="tu-actions" style="margin-top:8px">
+        <button id="tu-add-step" class="tu-btn primary">Add</button>
+      </div>
+    </div>
+
+    <!-- Tracking data, read-only: the tracker is edited in Trackers. -->
+    <div class="tu-card" id="tu-tracking-card">
+      <h2 class="tu-h">Tracking data</h2>
+      <p class="tu-muted">Straight from the framework tracker. To change any of it, assess the statement in
+        Trackers — this is a picture of the record, not a second copy of it.</p>
+      <div id="tu-tracking" class="tu-scroll"></div>
+    </div>
+
+    <div class="tu-card">
+      <h2 class="tu-h">Approve it</h2>
+      <p class="tu-muted">No update reaches a family until a practitioner has read it and put their name to
+        it. A section still saying "we do not have enough recorded" must be written or removed first.</p>
+      <div class="tu-field" style="margin-top:10px">
+        <label for="tu-kp-name">Your name</label>
+        <input id="tu-kp-name" type="text" autocomplete="name" placeholder="e.g. Demo Deputy">
+      </div>
+      <div class="tu-field" style="margin-top:10px">
+        <label for="tu-kp-role">Your role</label>
+        <input id="tu-kp-role" type="text" placeholder="e.g. Key Person / Deputy Manager">
+      </div>
+    </div>
+
+    <div id="tu-problems" class="tu-hidden"></div>
+
+    <div class="tu-card">
+      <div class="tu-actions">
+        <button id="tu-save"    class="tu-btn">Save draft</button>
+        <button id="tu-preview" class="tu-btn">Preview PDF</button>
+        <button id="tu-redraft" class="tu-btn">Draft again</button>
+        <button id="tu-send"    class="tu-btn accent">Approve &amp; send</button>
+      </div>
+      <p class="tu-muted" style="margin-top:10px">Sending shares the PDF with the family in their app and
+        tells them it is there. Nothing reaches a parent until you press it.</p>
+    </div>
+    <button id="tu-back-list" class="tu-btn" style="min-height:46px">← Back to the list</button>
+  </div>
+</div>
+
+<!-- Resource card / activity picker -->
+<div id="tu-picker" class="tu-hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;
+     display:flex;align-items:flex-end;justify-content:center">
+  <div class="tu-card" style="width:100%;max-width:640px;max-height:80vh;overflow:auto;border-radius:16px 16px 0 0">
+    <div class="tu-row">
+      <h2 class="tu-h" id="tu-picker-title">Choose a resource card</h2>
+      <button id="tu-picker-close" class="tu-btn small">Close</button>
+    </div>
+    <div class="tu-field" style="margin-top:10px">
+      <input id="tu-picker-q" type="search" placeholder="Search cards and activities…">
+    </div>
+    <div id="tu-picker-list" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  var esc = function (s) { return String(s == null ? '' : s)
+    .replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+  var STATE = { queue: null, current: null, libraries: null, pickerFor: null, pickerKind: 'card' };
+
+  function niceDate(v) { if (!v) return ''; var d = new Date(v);
+    return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }); }
+  function nl2br(s) { return esc(s).replace(/\n/g, '<br>'); }
+
+  function showList() {
+    document.getElementById('tu-list-view').classList.remove('tu-hidden');
+    document.getElementById('tu-form-view').classList.add('tu-hidden');
+    window.scrollTo(0, 0);
+  }
+  function showForm() {
+    document.getElementById('tu-list-view').classList.add('tu-hidden');
+    document.getElementById('tu-form-view').classList.remove('tu-hidden');
+    window.scrollTo(0, 0);
+  }
+
+  // ── Queue ─────────────────────────────────────────────────────────────────
+  var STATE_LABEL = { overdue:'Overdue', due:'Due now', in_progress:'Draft started',
+                      upcoming:'Not due yet', done:'Done', not_applicable:'Not this cycle' };
+
+  function renderCycle(data) {
+    var box = document.getElementById('tu-cycle');
+    if (!data.cycle) { box.classList.add('tu-hidden'); return; }
+    box.classList.remove('tu-hidden');
+    var c = data.cycle;
+    box.innerHTML = '<b>' + esc(c.label) + '</b> — term runs ' + esc(niceDate(c.term_start)) + ' to '
+      + esc(niceDate(c.term_end)) + '. Updates due ' + esc(niceDate(c.due_on))
+      + ', overdue from ' + esc(niceDate(c.overdue_on)) + '.'
+      + (c.reviews ? ' Looks back at ' + esc(c.reviews.name) + '.' : '');
+    // A calendar problem is the one thing that makes an empty board a lie, so it
+    // is shown as a warning rather than left in a log.
+    var warn = document.getElementById('tu-calendar');
+    if (data.calendar && data.calendar.message) {
+      warn.classList.remove('tu-hidden');
+      warn.textContent = data.calendar.message;
+    } else { warn.classList.add('tu-hidden'); }
+  }
+
+  function renderQueue(data) {
+    STATE.queue = data;
+    renderCycle(data);
+    var c = data.counts || {};
+    document.getElementById('tu-counts').innerHTML =
+      [['overdue','Overdue'],['due','Due now'],['in_progress','Started'],['done','Done']]
+      .map(function (x) {
+        return '<div class="tu-count"><b>' + (c[x[0]] || 0) + '</b><span>' + x[1] + '</span></div>';
+      }).join('');
+
+    var host = document.getElementById('tu-list');
+    var kids = (data.children || []).filter(function (k) { return k.state !== 'not_applicable' || k.report_id; });
+    document.getElementById('tu-empty').classList.toggle('tu-hidden', kids.length > 0);
+    host.innerHTML = kids.map(function (k) {
+      var acted = k.state === 'overdue' || k.state === 'due' || k.state === 'in_progress';
+      return '<div class="tu-row">'
+        + '<div><b>' + esc(k.name) + '</b>'
+        +   '<small>' + (k.room_name ? esc(k.room_name) + ' · ' : '')
+        +     (k.key_person_name ? esc(k.key_person_name) : '<i>no key person</i>')
+        +     (k.last_update ? ' · last update ' + esc(niceDate(k.last_update)) : ' · no update on record')
+        +   '</small>'
+        +   '<div style="margin-top:6px"><span class="tu-pill ' + esc(k.state) + '">'
+        +     esc(STATE_LABEL[k.state] || k.state) + '</span>'
+        +     (k.report_status === 'sent' ? ' <span class="tu-pill sent">Sent ' + esc(niceDate(k.report_sent_on)) + '</span>' : '')
+        +   '</div>'
+        +   (k.reason ? '<small style="margin-top:4px">' + esc(k.reason) + '</small>' : '')
+        + '</div>'
+        + '<div>' + (k.report_id
+            ? '<button class="tu-btn primary" data-open="' + k.report_id + '">'
+              + (k.report_status === 'sent' ? 'View' : 'Open') + '</button>'
+            : '<button class="tu-btn' + (acted ? ' primary' : '') + '" data-start="' + k.child_id + '">Start</button>')
+        + '</div></div>';
+    }).join('');
+    host.querySelectorAll('[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () { openUpdate(b.dataset.open); });
+    });
+    host.querySelectorAll('[data-start]').forEach(function (b) {
+      b.addEventListener('click', function () { startFor(b.dataset.start, b); });
+    });
+  }
+
+  function loadQueue() {
+    return Wren.api('/api/termly-update/queue').then(renderQueue).catch(function (e) {
+      document.getElementById('tu-list').innerHTML =
+        '<p class="tu-muted">Could not load the termly updates: ' + esc(e && (e.error || e.message)) + '</p>';
+    });
+  }
+
+  function startFor(childId, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+    Wren.api('/api/termly-update/child/' + childId + '/start', { method: 'POST', body: {} })
+      .then(function (r) {
+        if (r.created) Wren.toast('Wren is drafting it from ' + 'the child’s records — this takes a minute.', 'info');
+        openUpdate(r.id);
+      })
+      .catch(function (e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Start'; }
+        Wren.toast((e && (e.error || e.message)) || 'Could not start the update', 'error');
+      });
+  }
+
+  // ── One update ────────────────────────────────────────────────────────────
+  function renderSections(u) {
+    var content = u.content || {};
+    var idx = content.evidence_index || {};
+    var host = document.getElementById('tu-sections');
+    host.innerHTML = '';
+    var readOnly = u.status === 'sent';
+
+    // Rendered from the array the drafter produced, in its order, so the page
+    // cannot silently drop a section the library added.
+    (content.sections || []).forEach(function (s) {
+      // The two structured sections have their own cards further down the page.
+      if (s.key === 'next_steps' || s.key === 'tracking') return;
+      var card = document.createElement('div');
+      card.className = 'tu-card';
+      var flags = [];
+      if (s.sufficient === false) flags.push('<span class="tu-pill due">Not enough recorded yet</span>');
+      if (s.generated) flags.push('<span class="tu-pill">Drafted by Wren</span>');
+      if (s.edited_by_practitioner) flags.push('<span class="tu-pill done">Edited</span>');
+      if (s.invalid_citations && s.invalid_citations.length) {
+        flags.push('<span class="tu-pill due">' + s.invalid_citations.length + ' bad reference</span>');
+      }
+      var refs = (s.evidence || []).map(function (r) {
+        var e = idx[r]; if (!e) return null;
+        return '<li>' + esc(r) + ' — ' + esc(e.label || e.type) + (e.date ? ' (' + esc(niceDate(e.date)) + ')' : '') + '</li>';
+      }).filter(Boolean);
+
+      card.innerHTML =
+        '<div class="tu-row"><h2 class="tu-h">' + esc(s.heading) + '</h2></div>'
+        + (flags.length ? '<div style="margin:4px 0 8px">' + flags.join(' ') + '</div>' : '')
+        + '<div class="tu-field"><textarea data-section="' + esc(s.key) + '" rows="7"'
+        + (readOnly ? ' readonly' : '') + '></textarea></div>'
+        + (refs.length ? '<details class="tu-ev"><summary>What this was written from ('
+            + refs.length + ')</summary><ul>' + refs.join('') + '</ul></details>' : '');
+      host.appendChild(card);
+      // Set via .value, never innerHTML — a practitioner's own words must never
+      // be parsed as markup on the way back onto the screen.
+      card.querySelector('textarea').value = s.body || '';
+    });
+  }
+
+  function renderSteps(u) {
+    var content = u.content || {};
+    var items = (content.next_steps && content.next_steps.items) || [];
+    var host = document.getElementById('tu-steps');
+    var readOnly = u.status === 'sent';
+    if (!items.length) {
+      host.innerHTML = '<p class="tu-muted">No open next steps for this child yet. Add one below — it goes on '
+        + 'their record, not just in this document.</p>';
+      return;
+    }
+    host.innerHTML = items.map(function (n) {
+      var chips = [];
+      if (n.resource_card_title) chips.push('<span class="tu-chip">🃏 ' + esc(n.resource_card_title) + '</span>');
+      if (n.library_activity_name) chips.push('<span class="tu-chip">🧩 ' + esc(n.library_activity_name) + '</span>');
+      return '<div class="tu-step"><b>' + esc(n.description) + '</b>'
+        + (n.area_label ? ' <span class="tu-muted">· ' + esc(n.area_label) + '</span>' : '')
+        + '<div>' + chips.join('') + '</div>'
+        + (readOnly ? '' :
+            '<div class="tu-actions" style="margin-top:8px">'
+            + '<button class="tu-btn small" data-card="' + n.next_step_id + '">'
+            + (n.resource_card_title ? 'Change card' : 'Add a resource card') + '</button>'
+            + '<button class="tu-btn small" data-act="' + n.next_step_id + '">'
+            + (n.library_activity_name ? 'Change activity' : 'Add an activity') + '</button>'
+            + ((n.resource_card_title || n.library_activity_name)
+                ? '<button class="tu-btn small" data-clear="' + n.next_step_id + '">Remove both</button>' : '')
+            + '</div>')
+        + '</div>';
+    }).join('');
+    host.querySelectorAll('[data-card]').forEach(function (b) {
+      b.addEventListener('click', function () { openPicker(b.dataset.card, 'card'); });
+    });
+    host.querySelectorAll('[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () { openPicker(b.dataset.act, 'activity'); });
+    });
+    host.querySelectorAll('[data-clear]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        patchStep(b.dataset.clear, { resource_card_slug: null, library_activity_id: null });
+      });
+    });
+    document.getElementById('tu-new-step').disabled = readOnly;
+    document.getElementById('tu-add-step').disabled = readOnly;
+  }
+
+  function renderTracking(u) {
+    var t = (u.content || {}).tracking || {};
+    var host = document.getElementById('tu-tracking');
+    if (!t.total) {
+      host.innerHTML = '<p class="tu-muted">Nothing assessed in the tracker for this child yet.</p>';
+      return;
+    }
+    var rows = (t.areas || []).filter(function (a) { return a.key !== 'other' || (t.areas || []).length === 1; })
+      .map(function (a) {
+        return '<tr><td>' + esc(a.heading) + '</td>'
+          + '<td class="n">' + a.secure + '</td><td class="n">' + a.developing + '</td>'
+          + '<td class="n">' + (a.total - a.secure - a.developing - a.observed - a.emerging) + '</td>'
+          + '<td class="n">' + a.total + '</td></tr>';
+      }).join('');
+    var moved = (t.moved || []).slice(0, 10).map(function (m) {
+      return '<li>' + esc(m.statement) + ' — <b>' + esc(m.status.replace('_', ' ')) + '</b>'
+        + (m.area_label ? ' <span class="tu-muted">· ' + esc(m.area_label) + '</span>' : '') + '</li>';
+    }).join('');
+    host.innerHTML =
+      '<table class="tu-track"><thead><tr><th>Area</th><th class="n">Secure</th>'
+      + '<th class="n">Developing</th><th class="n">Not yet</th><th class="n">Total</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table>'
+      + (moved
+          ? '<p class="tu-muted" style="margin-top:10px">Moved on recently:</p><ul class="tu-muted">' + moved + '</ul>'
+          : '<p class="tu-muted" style="margin-top:10px">Nothing new assessed since last term.</p>');
+  }
+
+  function renderProblems(problems) {
+    var box = document.getElementById('tu-problems');
+    if (!problems || !problems.length) { box.classList.add('tu-hidden'); box.innerHTML = ''; return; }
+    box.classList.remove('tu-hidden');
+    box.innerHTML = '<b>Before this can be sent:</b><ul>'
+      + problems.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>';
+  }
+
+  function openUpdate(id) {
+    Wren.api('/api/termly-update/' + id).then(function (u) {
+      STATE.current = u;
+      var content = u.content || {};
+      var cyc = content.cycle || {};
+      document.getElementById('tu-childline').innerHTML =
+        '<h2 class="tu-h">' + esc(u.child_name) + '</h2>'
+        + '<p class="tu-muted">' + esc(cyc.label || u.cycle_key || '')
+        + (u.room_name ? ' · ' + esc(u.room_name) : '')
+        + (content.windows && content.windows.last_term
+            ? ' · looks back at ' + esc(content.windows.last_term.label) : '')
+        + (u.status === 'sent' ? ' · sent ' + esc(niceDate(u.sent_at)) : '')
+        + '</p>';
+
+      var routing = document.getElementById('tu-routing');
+      var r = content.routing;
+      if (r && r.reason) { routing.classList.remove('tu-hidden'); routing.textContent = r.reason; }
+      else routing.classList.add('tu-hidden');
+
+      var err = document.getElementById('tu-drafterr');
+      var modelErrors = (content.model && content.model.errors) || null;
+      if (content.draft_error || modelErrors) {
+        err.classList.remove('tu-hidden');
+        err.textContent = 'Wren could not draft part of this: '
+          + (content.draft_error || modelErrors.join('; '))
+          + '. The records are still here — write those sections yourself.';
+      } else err.classList.add('tu-hidden');
+
+      var sov = document.getElementById('tu-sovereign');
+      if (content.model && content.model.note) {
+        sov.classList.remove('tu-hidden'); sov.textContent = content.model.note;
+      } else sov.classList.add('tu-hidden');
+
+      renderSections(u); renderSteps(u); renderTracking(u); renderProblems(u.problems);
+
+      var signed = content.approved_by || {};
+      document.getElementById('tu-kp-name').value = signed.name || '';
+      document.getElementById('tu-kp-role').value = signed.role || '';
+      var ro = u.status === 'sent';
+      ['tu-kp-name','tu-kp-role'].forEach(function (i) { document.getElementById(i).readOnly = ro; });
+      ['tu-save','tu-redraft','tu-send'].forEach(function (i) { document.getElementById(i).disabled = ro; });
+
+      // The draft is written in the background, so a freshly-started update
+      // arrives with nothing in it. Poll until it lands rather than showing an
+      // empty form and leaving the practitioner to guess.
+      if (u.status === 'drafting') {
+        document.getElementById('tu-childline').innerHTML +=
+          '<p class="tu-muted">Wren is reading this child’s records and drafting the update…</p>';
+        setTimeout(function () { openUpdate(id); }, 4000);
+      }
+      showForm();
+    }).catch(function (e) {
+      Wren.toast((e && (e.error || e.message)) || 'Could not open that update', 'error');
+    });
+  }
+
+  function collect() {
+    var sections = {};
+    document.querySelectorAll('#tu-sections textarea[data-section]').forEach(function (t) {
+      sections[t.dataset.section] = t.value;
+    });
+    return {
+      sections: sections,
+      approved_by: {
+        name: document.getElementById('tu-kp-name').value,
+        role: document.getElementById('tu-kp-role').value,
+      },
+    };
+  }
+
+  function save(quiet) {
+    if (!STATE.current) return Promise.resolve();
+    return Wren.api('/api/termly-update/' + STATE.current.id, { method: 'PUT', body: collect() })
+      .then(function (r) {
+        STATE.current.content = r.content;
+        renderProblems(r.problems);
+        if (!quiet) Wren.toast('Saved', 'success');
+        return r;
+      })
+      .catch(function (e) { Wren.toast((e && (e.error || e.message)) || 'Could not save', 'error'); throw e; });
+  }
+
+  // ── Next steps ────────────────────────────────────────────────────────────
+  function afterSteps(r) {
+    STATE.current.content.next_steps = r.next_steps;
+    if (r.section) {
+      var secs = STATE.current.content.sections || [];
+      STATE.current.content.sections = secs.map(function (s) { return s.key === 'next_steps' ? r.section : s; });
+    }
+    renderSteps(STATE.current);
+  }
+  function addStep() {
+    var input = document.getElementById('tu-new-step');
+    var text = input.value.trim();
+    if (!text) return;
+    Wren.api('/api/termly-update/' + STATE.current.id + '/next-step',
+      { method: 'POST', body: { description: text } })
+      .then(function (r) { input.value = ''; afterSteps(r); })
+      .catch(function (e) { Wren.toast((e && (e.error || e.message)) || 'Could not add it', 'error'); });
+  }
+  function patchStep(nsId, body) {
+    Wren.api('/api/termly-update/' + STATE.current.id + '/next-step/' + nsId,
+      { method: 'PATCH', body: body })
+      .then(afterSteps)
+      .catch(function (e) { Wren.toast((e && (e.error || e.message)) || 'Could not change it', 'error'); });
+  }
+
+  // ── The card / activity picker ────────────────────────────────────────────
+  // Reuses /api/next-steps/libraries — the SAME two libraries the room planner
+  // offers (src/content/resource-cards/*.json and curriculum_activities
+  // WHERE is_library), so a card chosen for one child is a card the room knows.
+  function openPicker(nsId, kind) {
+    STATE.pickerFor = nsId; STATE.pickerKind = kind;
+    document.getElementById('tu-picker-title').textContent =
+      kind === 'card' ? 'Choose a resource card' : 'Choose an activity';
+    document.getElementById('tu-picker-q').value = '';
+    document.getElementById('tu-picker').classList.remove('tu-hidden');
+    if (STATE.libraries) return renderPicker('');
+    document.getElementById('tu-picker-list').innerHTML = '<p class="tu-muted">Loading…</p>';
+    Wren.api('/api/next-steps/libraries').then(function (l) {
+      STATE.libraries = l; renderPicker('');
+    }).catch(function (e) {
+      document.getElementById('tu-picker-list').innerHTML =
+        '<p class="tu-muted">Could not load the libraries: ' + esc(e && (e.error || e.message)) + '</p>';
+    });
+  }
+  function renderPicker(q) {
+    var l = STATE.libraries || { cards: [], activities: [] };
+    var needle = String(q || '').toLowerCase();
+    var host = document.getElementById('tu-picker-list');
+    var items;
+    if (STATE.pickerKind === 'card') {
+      items = (l.cards || []).filter(function (c) {
+        return !needle || String(c.title || '').toLowerCase().indexOf(needle) >= 0
+                       || String(c.strapline || '').toLowerCase().indexOf(needle) >= 0;
+      }).slice(0, 120).map(function (c) {
+        return '<div class="tu-row"><div><b>' + esc(c.title) + '</b>'
+          + (c.strapline ? '<small>' + esc(c.strapline) + '</small>' : '') + '</div>'
+          + '<button class="tu-btn small primary" data-pick-card="' + esc(c.slug) + '" '
+          + 'data-title="' + esc(c.title) + '">Use</button></div>';
+      });
+    } else {
+      items = (l.activities || []).filter(function (a) {
+        return !needle || String(a.name || '').toLowerCase().indexOf(needle) >= 0;
+      }).slice(0, 120).map(function (a) {
+        return '<div class="tu-row"><div><b>' + esc(a.name) + '</b>'
+          + (a.description ? '<small>' + esc(String(a.description).slice(0, 140)) + '</small>' : '') + '</div>'
+          + '<button class="tu-btn small primary" data-pick-act="' + a.id + '">Use</button></div>';
+      });
+    }
+    // Say when the list is capped rather than letting a silent slice read as
+    // "that is all there is".
+    host.innerHTML = items.length
+      ? items.join('') + (items.length >= 120 ? '<p class="tu-muted" style="margin-top:8px">Showing the first 120 — search to narrow it.</p>' : '')
+      : '<p class="tu-muted">Nothing matches.</p>';
+    host.querySelectorAll('[data-pick-card]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        patchStep(STATE.pickerFor, { resource_card_slug: b.dataset.pickCard, resource_card_title: b.dataset.title });
+        closePicker();
+      });
+    });
+    host.querySelectorAll('[data-pick-act]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        patchStep(STATE.pickerFor, { library_activity_id: parseInt(b.dataset.pickAct, 10) });
+        closePicker();
+      });
+    });
+  }
+  function closePicker() { document.getElementById('tu-picker').classList.add('tu-hidden'); }
+
+  // ── Send ──────────────────────────────────────────────────────────────────
+  function send() {
+    save(true).then(function () {
+      return Wren.api('/api/termly-update/' + STATE.current.id + '/send', { method: 'POST', body: {} });
+    }).then(function (r) {
+      Wren.toast('Sent to the family', 'success');
+      openUpdate(r.id);
+      loadQueue();
+    }).catch(function (e) {
+      if (e && e.problems) { renderProblems(e.problems); Wren.toast('Not ready to send yet', 'error'); }
+      else if (e) Wren.toast((e.error || e.message) || 'Could not send', 'error');
+    });
+  }
+
+  function boot() {
+    document.getElementById('tu-save').addEventListener('click', function () { save(false); });
+    document.getElementById('tu-send').addEventListener('click', send);
+    document.getElementById('tu-add-step').addEventListener('click', addStep);
+    document.getElementById('tu-new-step').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addStep(); }
+    });
+    document.getElementById('tu-preview').addEventListener('click', function () {
+      save(true).then(function () {
+        window.open('/api/termly-update/' + STATE.current.id + '/pdf', '_blank', 'noopener');
+      });
+    });
+    document.getElementById('tu-redraft').addEventListener('click', function () {
+      if (!confirm('Draft it again from the records? Anything you have typed will be replaced.')) return;
+      Wren.api('/api/termly-update/' + STATE.current.id + '/redraft', { method: 'POST', body: {} })
+        .then(function () { openUpdate(STATE.current.id); })
+        .catch(function (e) { Wren.toast((e && (e.error || e.message)) || 'Could not redraft', 'error'); });
+    });
+    document.getElementById('tu-back-list').addEventListener('click', function () { showList(); loadQueue(); });
+    document.getElementById('tu-picker-close').addEventListener('click', closePicker);
+    document.getElementById('tu-picker').addEventListener('click', function (e) {
+      if (e.target.id === 'tu-picker') closePicker();
+    });
+    document.getElementById('tu-picker-q').addEventListener('input', function (e) { renderPicker(e.target.value); });
+
+    var params = new URLSearchParams(window.location.search);
+    loadQueue().then(function () {
+      if (params.get('id')) openUpdate(params.get('id'));
+      else if (params.get('child')) {
+        // The deep link the reminder uses: /ey/termly-update?child=12
+        var kid = (STATE.queue && STATE.queue.children || []).filter(function (k) {
+          return String(k.child_id) === params.get('child');
+        })[0];
+        if (kid && kid.report_id) openUpdate(kid.report_id);
+        else if (kid) startFor(kid.child_id, null);
+      }
+    });
+  }
+
+  document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

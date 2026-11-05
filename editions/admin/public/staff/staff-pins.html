@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Staff PINs — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    /* b362 — every colour is a --c-* token or a color-mix of one. No bare hex.
+       Checked in light and dark. */
+    .pin-stats { display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px; }
+    .pin-stat { background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:14px;text-align:center; }
+    .pin-stat-val { font-size:1.6rem;font-weight:800;color:var(--c-text);line-height:1; }
+    .pin-stat-lbl { font-size:10px;color:var(--c-muted);margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:.04em; }
+    .pin-stat.warn .pin-stat-val { color:var(--c-amber); }
+
+    .banner { border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.87rem;line-height:1.6; }
+    .banner-info { background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted); }
+    .banner-info b { color:var(--c-text); }
+
+    .toolbar { display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px; }
+    .toolbar input[type=search] {
+      background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-border);
+      border-radius:8px;padding:8px 11px;font:inherit;font-size:.85rem;min-height:40px;min-width:200px;
+    }
+    .toolbar label { font-size:.8rem;color:var(--c-muted);display:flex;align-items:center;gap:6px; }
+
+    .pin-row {
+      background:var(--c-card);border:1px solid var(--c-border);border-radius:11px;
+      padding:12px 15px;margin-bottom:8px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    }
+    .pin-row.nopin  { border-color:color-mix(in srgb, var(--c-amber) 50%, transparent);border-style:dashed; }
+    .pin-row.locked { opacity:.9;border-color:color-mix(in srgb, var(--c-blue) 45%, transparent); }
+    .pin-row.inactive { opacity:.65; }
+    .pin-who { flex:1;min-width:190px; }
+    .pin-name { font-weight:700;color:var(--c-text);font-size:.95rem; }
+    .pin-sub  { color:var(--c-muted);font-size:.76rem;margin-top:3px;line-height:1.45; }
+    .pin-state { min-width:150px; }
+    .pin-actions { display:flex;gap:7px;flex-wrap:wrap; }
+
+    .pill { font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap; }
+    .pill-ok   { background:var(--c-green-light);color:var(--c-green); }
+    .pill-warn { background:var(--c-amber-light);color:var(--c-amber); }
+    .pill-info { background:var(--c-blue-light);color:var(--c-blue-dark); }
+    .pill-mut  { background:color-mix(in srgb, var(--c-muted) 22%, transparent);color:var(--c-muted); }
+
+    .btn-min { min-height:40px; }
+
+    /* The set/reset dialog. A PIN is a credential, so the field is masked with an
+       explicit reveal rather than a plain prompt() that puts it on screen in an
+       office where anyone can be standing behind you. */
+    .pin-modal { position:fixed;inset:0;background:color-mix(in srgb, var(--c-bg) 80%, transparent);
+                 display:none;align-items:center;justify-content:center;z-index:1200;padding:18px; }
+    .pin-modal.open { display:flex; }
+    .pin-modal-box { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;
+                     max-width:440px;width:100%;padding:22px 24px; }
+    .pin-modal-box h3 { margin:0 0 6px;color:var(--c-text);font-size:1.05rem; }
+    .pin-modal-box p  { margin:0 0 16px;color:var(--c-muted);font-size:.83rem;line-height:1.6; }
+    .pin-field { margin-bottom:12px; }
+    .pin-field label { display:block;font-size:.72rem;font-weight:700;color:var(--c-muted);
+                       text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px; }
+    .pin-field input {
+      width:100%;background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-border);
+      border-radius:8px;padding:10px 12px;font:inherit;font-size:1.15rem;letter-spacing:.35em;
+      font-variant-numeric:tabular-nums;min-height:44px;
+    }
+    .pin-reveal { display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--c-muted);margin-top:7px; }
+    .pin-err { color:var(--c-red);font-size:.8rem;min-height:1.2em;margin-bottom:10px;line-height:1.4; }
+    .pin-modal-actions { display:flex;gap:9px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px; }
+
+    @media (max-width:640px) {
+      .pin-row { align-items:flex-start; }
+      .pin-state, .pin-actions { width:100%; }
+      .pin-actions .btn { flex:1; }
+    }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Staff PINs</div>
+      <div class="page-subtitle">Who can sign in on the PIN pad — set, reset or remove a PIN without opening a profile</div>
+    </div>
+    <a href="/admin/staff/staff.html" class="btn btn-secondary btn-sm">← Staff</a>
+  </div>
+
+  <div class="banner banner-info">
+    <b>Wren never shows a PIN.</b> A PIN is stored as a one-way hash, so it cannot be read back —
+    not by this page, not by a manager, not by Wren. It can only be replaced. What you see here is
+    whether someone has one, how many digits it is, and when it was last changed.
+    <br>
+    Removing a PIN <b>locks that person out of the PIN pad immediately</b>. That is the point of it:
+    deactivating a leaver's record takes them off the rota but does not, on its own, stop them signing in.
+  </div>
+
+  <div class="pin-stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Search by name…" aria-label="Search staff by name">
+    <label><input type="checkbox" id="only-nopin"> Only people without a PIN</label>
+    <label><input type="checkbox" id="inc-inactive"> Include inactive staff</label>
+    <span style="flex:1"></span>
+    <button class="btn btn-ghost btn-sm btn-min" id="btn-refresh">Refresh</button>
+  </div>
+
+  <div id="rows"><div style="color:var(--c-muted);padding:24px;text-align:center">Loading…</div></div>
+
+  <p style="color:var(--c-muted);font-size:.78rem;line-height:1.6;margin-top:18px" id="footnote"></p>
+</div>
+
+<!-- Set / reset -->
+<div class="pin-modal" id="pin-modal" role="dialog" aria-modal="true" aria-labelledby="pin-modal-title">
+  <div class="pin-modal-box">
+    <h3 id="pin-modal-title">Set a PIN</h3>
+    <p id="pin-modal-sub">
+      4 or 6 digits. The person can change it themselves afterwards. Nobody — including you — can read
+      it back once it is saved, so if it is forgotten it is reset, not recovered.
+    </p>
+    <div class="pin-field">
+      <label for="pin-a">New PIN</label>
+      <input type="password" id="pin-a" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+    </div>
+    <div class="pin-field">
+      <label for="pin-b">Type it again</label>
+      <input type="password" id="pin-b" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+    </div>
+    <label class="pin-reveal"><input type="checkbox" id="pin-show"> Show what I am typing</label>
+    <div class="pin-err" id="pin-err"></div>
+    <div class="pin-modal-actions">
+      <button class="btn btn-ghost btn-sm btn-min" id="pin-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm btn-min" id="pin-save">Save PIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+(function () {
+  var _staff = [];
+  var _rule  = {};
+  var _target = null;   // the staff member the modal is about
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function errText(e) { return (e && (e.message || e.error)) || 'Something went wrong'; }
+  function when(iso) {
+    if (!iso) return null;
+    return new Date(iso).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+
+  function rowHtml(s) {
+    var cls = ['pin-row'];
+    if (s.protected) cls.push('locked');
+    else if (!s.has_pin) cls.push('nopin');
+    if (!s.is_active) cls.push('inactive');
+
+    var state, actions;
+    if (s.protected) {
+      // The owner account. Listed so the page is a complete picture, but never
+      // editable here — POST /api/staff/:id/set-pin and DELETE /api/staff/:id/pin
+      // both refuse id=1 server-side, so this is a label on a rule, not the rule.
+      state = '<span class="pill pill-info">Owner — protected</span>';
+      actions = '<a class="btn btn-ghost btn-sm btn-min" href="/admin/system/settings">Settings → Update PIN</a>';
+    } else if (s.has_pin) {
+      state = '<span class="pill pill-ok">PIN set</span> '
+            + '<span class="pill pill-mut">' + (s.pin_length || 4) + ' digits</span>';
+      actions = '<button class="btn btn-secondary btn-sm btn-min" data-set="' + s.id + '">Reset</button>'
+              + '<button class="btn btn-ghost btn-sm btn-min" data-del="' + s.id + '">Remove</button>';
+    } else {
+      state = '<span class="pill pill-warn">No PIN</span>';
+      actions = '<button class="btn btn-primary btn-sm btn-min" data-set="' + s.id + '">Set a PIN</button>';
+    }
+
+    var sub = [];
+    if (s.role) sub.push(esc(String(s.role).replace(/_/g,' ')));
+    if (s.room_name) sub.push(esc(s.room_name));
+    if (!s.is_active) sub.push('inactive');
+    // The date has to agree with the badge. Someone with a PIN gets "last set";
+    // someone without one gets "removed on …" if that is what the log records,
+    // and otherwise nothing but the badge — never "last set" against NO PIN.
+    if (s.protected) {
+      sub.push('Change it in Settings → Update PIN');
+    } else if (s.has_pin) {
+      sub.push(s.last_set_at ? 'Last set ' + esc(when(s.last_set_at)) : 'Set before PIN changes were logged');
+    } else if (s.last_cleared_at) {
+      sub.push('PIN removed ' + esc(when(s.last_cleared_at)));
+    } else {
+      sub.push('Never had a PIN on record');
+    }
+
+    return '<div class="' + cls.join(' ') + '">'
+      + '<div class="pin-who">'
+      +   '<div class="pin-name">' + esc(s.preferred_name || s.name) + '</div>'
+      +   '<div class="pin-sub">' + sub.join(' · ') + '</div>'
+      + '</div>'
+      + '<div class="pin-state">' + state + '</div>'
+      + '<div class="pin-actions">' + actions + '</div>'
+      + '</div>';
+  }
+
+  function render() {
+    var q = document.getElementById('q').value.trim().toLowerCase();
+    var onlyNo = document.getElementById('only-nopin').checked;
+    var list = _staff.filter(function (s) {
+      if (q && String(s.name + ' ' + (s.preferred_name || '')).toLowerCase().indexOf(q) === -1) return false;
+      if (onlyNo && (s.has_pin || s.protected)) return false;
+      return true;
+    });
+    document.getElementById('rows').innerHTML = list.length
+      ? list.map(rowHtml).join('')
+      : '<div style="color:var(--c-muted);padding:24px;text-align:center">Nobody matches that.</div>';
+  }
+
+  function renderStats(c) {
+    var s = [
+      ['Staff listed', c.total, false],
+      ['With a PIN', c.with_pin, false],
+      ['Without a PIN', c.without_pin, c.without_pin > 0],
+      ['Still 4-digit', c.four_digit, false]
+    ];
+    document.getElementById('stats').innerHTML = s.map(function (x) {
+      return '<div class="pin-stat' + (x[2] ? ' warn' : '') + '">'
+        + '<div class="pin-stat-val">' + x[1] + '</div>'
+        + '<div class="pin-stat-lbl">' + esc(x[0]) + '</div></div>';
+    }).join('');
+  }
+
+  function load() {
+    var inc = document.getElementById('inc-inactive').checked ? '?include_inactive=1' : '';
+    return Wren.api('/api/staff/pins' + inc).then(function (d) {
+      _staff = (d && d.staff) || [];
+      _rule  = (d && d.rule) || {};
+      renderStats((d && d.counts) || { total:0, with_pin:0, without_pin:0, four_digit:0 });
+      render();
+      document.getElementById('footnote').textContent =
+        (_rule.never_shown || '') + ' ' + (_rule.last_set_source || '');
+    }).catch(function (e) {
+      document.getElementById('rows').innerHTML =
+        '<div style="color:var(--c-red);padding:24px;text-align:center">' + esc(errText(e)) + '</div>';
+    });
+  }
+
+  // ── The set/reset dialog ──────────────────────────────────────────────────
+  function openModal(id) {
+    var s = _staff.filter(function (x) { return x.id === id; })[0];
+    if (!s || s.protected) return;
+    _target = s;
+    document.getElementById('pin-modal-title').textContent =
+      (s.has_pin ? 'Reset the PIN for ' : 'Set a PIN for ') + (s.preferred_name || s.name);
+    document.getElementById('pin-a').value = '';
+    document.getElementById('pin-b').value = '';
+    document.getElementById('pin-err').textContent = '';
+    document.getElementById('pin-show').checked = false;
+    setReveal(false);
+    document.getElementById('pin-modal').classList.add('open');
+    document.getElementById('pin-a').focus();
+  }
+  function closeModal() {
+    // Clear the fields on the way out so a PIN is not left sitting in the DOM.
+    document.getElementById('pin-a').value = '';
+    document.getElementById('pin-b').value = '';
+    document.getElementById('pin-modal').classList.remove('open');
+    _target = null;
+  }
+  function setReveal(on) {
+    document.getElementById('pin-a').type = on ? 'text' : 'password';
+    document.getElementById('pin-b').type = on ? 'text' : 'password';
+  }
+
+  function save() {
+    if (!_target) return;
+    var a = document.getElementById('pin-a').value.trim();
+    var b = document.getElementById('pin-b').value.trim();
+    var err = document.getElementById('pin-err');
+    if (!/^\d+$/.test(a) || (a.length !== 4 && a.length !== 6)) {
+      err.textContent = 'A PIN is 4 or 6 digits, numbers only.'; return;
+    }
+    if (a !== b) { err.textContent = 'The two PINs do not match.'; return; }
+    err.textContent = '';
+    var btn = document.getElementById('pin-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    var name = _target.preferred_name || _target.name;
+    Wren.api('/api/staff/' + _target.id + '/set-pin', { method:'POST', body:{ pin: a } })
+      .then(function () {
+        Wren.toast(name + '’s PIN is set (' + a.length + ' digits).', 'success');
+        closeModal(); load();
+      })
+      .catch(function (e) { err.textContent = errText(e); })
+      .then(function () { btn.disabled = false; btn.textContent = 'Save PIN'; });
+  }
+
+  function removePin(id) {
+    var s = _staff.filter(function (x) { return x.id === id; })[0];
+    if (!s || s.protected) return;
+    var name = s.preferred_name || s.name;
+    if (!window.confirm('Remove ' + name + '’s PIN?\n\nThey will not be able to sign in on the PIN pad '
+        + 'until a new one is set. This does not delete their record or their history.')) return;
+    Wren.api('/api/staff/' + id + '/pin', { method:'DELETE' })
+      .then(function () { Wren.toast(name + '’s PIN removed — they can no longer sign in.', 'success'); load(); })
+      .catch(function (e) { Wren.toast(errText(e), 'error'); });
+  }
+
+  // ── Wiring ────────────────────────────────────────────────────────────────
+  document.getElementById('rows').addEventListener('click', function (ev) {
+    var set = ev.target.closest('[data-set]');
+    if (set) { ev.preventDefault(); return openModal(parseInt(set.getAttribute('data-set'), 10)); }
+    var del = ev.target.closest('[data-del]');
+    if (del) { ev.preventDefault(); return removePin(parseInt(del.getAttribute('data-del'), 10)); }
+  });
+  document.getElementById('q').addEventListener('input', render);
+  document.getElementById('only-nopin').addEventListener('change', render);
+  document.getElementById('inc-inactive').addEventListener('change', load);
+  document.getElementById('btn-refresh').addEventListener('click', load);
+  document.getElementById('pin-cancel').addEventListener('click', function (e) { e.preventDefault(); closeModal(); });
+  document.getElementById('pin-save').addEventListener('click', function (e) { e.preventDefault(); save(); });
+  document.getElementById('pin-show').addEventListener('change', function (e) { setReveal(e.target.checked); });
+  document.getElementById('pin-modal').addEventListener('click', function (e) {
+    if (e.target === e.currentTarget) closeModal();
+  });
+  document.getElementById('pin-b').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.getElementById('pin-modal').classList.contains('open')) closeModal();
+  });
+
+  // The shell dispatches wren:ready at the end of buildShell(); a page that calls
+  // an API before it fires never loads (CLAUDE.md rule 7). _wrenReady covers the
+  // case where the shell got there first.
+  if (window._wrenReady) load();
+  else document.addEventListener('wren:ready', load);
+})();
+</script>
+</body>
+</html>

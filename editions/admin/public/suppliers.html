@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Suppliers &amp; Contracts — Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .sup-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 18px; border-bottom:1px solid #2d3748; }
+    .sup-tab { background:none; border:none; color:#94a3b8; font-size:14px; font-weight:600;
+      padding:10px 14px; cursor:pointer; border-bottom:2px solid transparent; }
+    .sup-tab.active { color:#f1f5f9; border-bottom-color:#6366f1; }
+    .sup-tab .cnt { font-size:11px; color:#64748b; }
+    .sup-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+    table.sup { width:100%; border-collapse:collapse; background:#1e293b; border:1px solid #2d3748; border-radius:12px; overflow:hidden; }
+    table.sup th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8;
+      padding:10px 12px; border-bottom:1px solid #2d3748; cursor:pointer; white-space:nowrap; }
+    table.sup th:hover { color:#e2e8f0; }
+    table.sup td { padding:10px 12px; border-bottom:1px solid #23304a; color:#e2e8f0; font-size:13px; vertical-align:top; }
+    table.sup tr:last-child td { border-bottom:none; }
+    .cat-pill, .badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:.04em; }
+    .cat-pill { background:rgba(99,102,241,.15); color:#a5b4fc; }
+    .badge.critical { background:rgba(239,68,68,.18); color:#f87171; }
+    .badge.warn     { background:rgba(245,158,11,.18); color:#fbbf24; }
+    .badge.info     { background:rgba(148,163,184,.15); color:#94a3b8; }
+    .badge.ok       { background:rgba(34,197,94,.15); color:#4ade80; }
+    .muted { color:#64748b; }
+    .sup-empty { color:#64748b; padding:30px; text-align:center; }
+    .row-act { color:#818cf8; cursor:pointer; font-size:12px; margin-right:10px; }
+    .row-act.del { color:#f87171; }
+    /* modal */
+    .modal-back { position:fixed; inset:0; background:rgba(2,6,23,.72); display:none; align-items:flex-start; justify-content:center; z-index:200; overflow:auto; padding:40px 16px; }
+    .modal-back.show { display:flex; }
+    .modal { background:#1e293b; border:1px solid #334155; border-radius:14px; width:min(560px,100%); padding:20px 22px; }
+    .modal h3 { margin:0 0 14px; color:#f1f5f9; }
+    .fld { margin-bottom:12px; }
+    .fld label { display:block; font-size:12px; color:#94a3b8; margin-bottom:4px; }
+    .fld input, .fld select, .fld textarea {
+      width:100%; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#e2e8f0; padding:8px 10px; font-size:13px; font-family:inherit; }
+    .fld textarea { min-height:60px; resize:vertical; }
+    .fld-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+    .discover-card { background:#1e293b; border:1px solid #2d3748; border-radius:10px; padding:12px 14px; margin-bottom:10px; display:flex; align-items:center; gap:12px; }
+    .discover-card .body { flex:1; min-width:0; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Suppliers &amp; Contracts</div>
+      <div class="page-subtitle" style="color:#94a3b8">Vendor directory · utility &amp; service contracts · registrations &amp; licences</div>
+    </div>
+    <div class="sup-toolbar">
+      <button class="btn btn-ghost btn-sm" id="btn-refresh">↻ Refresh</button>
+      <a class="btn btn-primary btn-sm" href="/supplier-register.html" style="text-decoration:none">📇 Register — what recurs, and what would stop us</a>
+    </div>
+  </div>
+
+  <div class="sup-tabs" id="tabs">
+    <button class="sup-tab active" data-tab="suppliers">Suppliers <span class="cnt" id="cnt-suppliers"></span></button>
+    <button class="sup-tab" data-tab="contracts">Contracts &amp; Utilities <span class="cnt" id="cnt-contracts"></span></button>
+    <button class="sup-tab" data-tab="registrations">Registrations &amp; Licences <span class="cnt" id="cnt-registrations"></span></button>
+    <button class="sup-tab" data-tab="renewals">Upcoming Renewals <span class="cnt" id="cnt-renewals"></span></button>
+  </div>
+
+  <div class="sup-toolbar" id="panel-actions"></div>
+  <div id="panel"><div class="sup-empty">Loading…</div></div>
+</div>
+
+<!-- modal host -->
+<div class="modal-back" id="modal-back"><div class="modal" id="modal"></div></div>
+
+<script>
+const CATS = ['cleaning','refuse','utilities','food','maintenance','insurance','software','other'];
+const CONTRACT_TYPES = ['utility','service','subscription','lease','insurance'];
+let state = { tab:'suppliers', sort:{}, suppliers:[], contracts:[], registrations:[] };
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function money(p){ return p==null?'<span class="muted">—</span>':'£'+(Number(p)/100).toFixed(2); }
+function dt(d){ return d?new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'<span class="muted">—</span>'; }
+function urgencyBadge(daysLeft){
+  if(daysLeft==null) return '';
+  const cls = daysLeft<0?'critical':(daysLeft<=14?'critical':(daysLeft<=30?'warn':(daysLeft<=90?'info':'ok')));
+  const txt = daysLeft<0?`${-daysLeft}d overdue`:`${daysLeft}d`;
+  return `<span class="badge ${cls}">${txt}</span>`;
+}
+
+// ── tab switching ─────────────────────────────────────────────────────────────
+function setTab(t){
+  state.tab = t;
+  document.querySelectorAll('.sup-tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
+  render();
+}
+
+// ── data loads ────────────────────────────────────────────────────────────────
+async function loadAll(){
+  try {
+    const [sup, con, reg, ren] = await Promise.all([
+      Wren.api('/api/suppliers'),
+      Wren.api('/api/suppliers/contracts'),
+      Wren.api('/api/suppliers/registrations'),
+      Wren.api('/api/suppliers/renewals?within_days=90'),
+    ]);
+    state.suppliers=sup; state.contracts=con; state.registrations=reg; state.renewals=ren;
+    document.getElementById('cnt-suppliers').textContent=sup.length;
+    document.getElementById('cnt-contracts').textContent=con.length;
+    document.getElementById('cnt-registrations').textContent=reg.length;
+    const rc=(ren.contracts.length+ren.registrations.length);
+    document.getElementById('cnt-renewals').textContent=rc;
+    render();
+  } catch(e){ document.getElementById('panel').innerHTML=`<div class="sup-empty">Failed to load: ${esc(e&&e.error||e)}</div>`; }
+}
+
+function sortRows(rows, key){
+  const s = state.sort[state.tab];
+  if(!s) return rows;
+  return [...rows].sort((a,b)=>{
+    let x=a[s.col], y=b[s.col];
+    if(x==null) return 1; if(y==null) return -1;
+    if(typeof x==='string') x=x.toLowerCase(), y=String(y).toLowerCase();
+    return (x>y?1:x<y?-1:0)*(s.dir==='desc'?-1:1);
+  });
+}
+function th(tab,col,label){
+  const s=state.sort[tab]; const arrow=s&&s.col===col?(s.dir==='desc'?' ▾':' ▴'):'';
+  return `<th data-tab="${tab}" data-col="${col}">${label}${arrow}</th>`;
+}
+
+// ── renderers ─────────────────────────────────────────────────────────────────
+function render(){
+  const panel=document.getElementById('panel');
+  const actions=document.getElementById('panel-actions');
+  if(state.tab==='suppliers'){
+    actions.innerHTML=`<button class="btn btn-primary btn-sm" id="add-sup">+ Add supplier</button>
+      <button class="btn btn-ghost btn-sm" id="btn-discover">✨ Discover from email</button>`;
+    const rows=sortRows(state.suppliers);
+    panel.innerHTML = rows.length ? `<table class="sup"><thead><tr>
+      ${th('suppliers','name','Name')}${th('suppliers','category','Category')}<th>Contact</th><th>Account ref</th>
+      ${th('suppliers','contract_count','Contracts')}${th('suppliers','status','Status')}<th></th></tr></thead><tbody>`+
+      rows.map(s=>`<tr>
+        <td><strong>${esc(s.name)}</strong>${s.website?`<br><a href="${esc(s.website)}" target="_blank" class="muted" style="font-size:11px">${esc(s.website)}</a>`:''}</td>
+        <td><span class="cat-pill">${esc(s.category||'other')}</span></td>
+        <td>${esc(s.contact_name||'')}${s.email?`<br><span class="muted" style="font-size:11px">${esc(s.email)}</span>`:''}${s.phone?`<br><span class="muted" style="font-size:11px">${esc(s.phone)}</span>`:''}</td>
+        <td>${esc(s.account_ref||'')}</td>
+        <td>${s.contract_count||0}</td>
+        <td><span class="badge ${s.status==='active'?'ok':'info'}">${esc(s.status)}</span></td>
+        <td><span class="row-act" data-edit-sup="${s.id}">Edit</span><span class="row-act del" data-del-sup="${s.id}">Delete</span></td>
+      </tr>`).join('')+`</tbody></table>` : `<div class="sup-empty">No suppliers yet. Add one, or Discover from email.</div>`;
+  }
+  else if(state.tab==='contracts'){
+    actions.innerHTML=`<button class="btn btn-primary btn-sm" id="add-con">+ Add contract</button>`;
+    const rows=sortRows(state.contracts);
+    panel.innerHTML = rows.length ? `<table class="sup"><thead><tr>
+      ${th('contracts','title','Title')}<th>Supplier</th>${th('contracts','contract_type','Type')}
+      ${th('contracts','renewal_date','Renewal')}${th('contracts','annual_cost_pence','Annual')}${th('contracts','monthly_cost_pence','Monthly')}
+      <th>Auto-renew</th>${th('contracts','status','Status')}<th></th></tr></thead><tbody>`+
+      rows.map(c=>{ const dl=c.renewal_date?Math.round((new Date(c.renewal_date)-Date.now())/864e5):null; return `<tr>
+        <td><strong>${esc(c.title)}</strong>${c.account_number?`<br><span class="muted" style="font-size:11px">A/C ${esc(c.account_number)}</span>`:''}</td>
+        <td>${esc(c.supplier_name||'—')}</td>
+        <td><span class="cat-pill">${esc(c.contract_type||'service')}</span></td>
+        <td>${dt(c.renewal_date)} ${urgencyBadge(dl)}</td>
+        <td>${money(c.annual_cost_pence)}</td>
+        <td>${money(c.monthly_cost_pence)}</td>
+        <td>${c.auto_renew?'✓':'—'}</td>
+        <td><span class="badge ${c.status==='active'?'ok':'info'}">${esc(c.status)}</span></td>
+        <td><span class="row-act" data-edit-con="${c.id}">Edit</span><span class="row-act del" data-del-con="${c.id}">Delete</span></td>
+      </tr>`;}).join('')+`</tbody></table>` : `<div class="sup-empty">No contracts yet.</div>`;
+  }
+  else if(state.tab==='registrations'){
+    actions.innerHTML=`<button class="btn btn-primary btn-sm" id="add-reg">+ Add registration</button>`;
+    const rows=sortRows(state.registrations);
+    panel.innerHTML = rows.length ? `<table class="sup"><thead><tr>
+      ${th('registrations','name','Name')}${th('registrations','provider','Provider')}<th>Reference</th>
+      ${th('registrations','expiry_date','Expiry')}<th>Cost</th><th>Responsible</th>${th('registrations','status','Status')}<th></th></tr></thead><tbody>`+
+      rows.map(r=>{ const dl=r.expiry_date?Math.round((new Date(r.expiry_date)-Date.now())/864e5):null; return `<tr>
+        <td><strong>${esc(r.name)}</strong></td>
+        <td>${esc(r.provider||'')}</td>
+        <td>${esc(r.reference_number||'')}</td>
+        <td>${dt(r.expiry_date)} ${urgencyBadge(dl)}</td>
+        <td>${money(r.renewal_cost_pence)}</td>
+        <td>${esc(r.responsible_person||'')}</td>
+        <td><span class="badge ${r.status==='active'?'ok':'info'}">${esc(r.status)}</span></td>
+        <td><span class="row-act" data-edit-reg="${r.id}">Edit</span><span class="row-act del" data-del-reg="${r.id}">Delete</span></td>
+      </tr>`;}).join('')+`</tbody></table>` : `<div class="sup-empty">No registrations yet.</div>`;
+  }
+  else if(state.tab==='renewals'){
+    actions.innerHTML='';
+    const r=state.renewals||{contracts:[],registrations:[]};
+    const all=[...r.contracts.map(x=>({...x,_label:x.title,_sub:x.supplier_name||x.contract_type})),
+               ...r.registrations.map(x=>({...x,_label:x.name,_sub:x.provider||'registration'}))]
+              .sort((a,b)=>(a.days_left??9e9)-(b.days_left??9e9));
+    panel.innerHTML = all.length ? `<table class="sup"><thead><tr><th>Due</th><th>Item</th><th>Kind</th><th>Due date</th><th>Auto-renew</th></tr></thead><tbody>`+
+      all.map(x=>`<tr>
+        <td>${urgencyBadge(x.days_left)}</td>
+        <td><strong>${esc(x._label)}</strong><br><span class="muted" style="font-size:11px">${esc(x._sub)}</span></td>
+        <td><span class="cat-pill">${esc(x.kind)}</span></td>
+        <td>${dt(x.due_date)}</td>
+        <td>${x.auto_renew?'✓':'—'}</td>
+      </tr>`).join('')+`</tbody></table>` : `<div class="sup-empty">✅ Nothing due within 90 days.</div>`;
+  }
+  wirePanel();
+}
+
+// ── modal / forms ─────────────────────────────────────────────────────────────
+function field(name,label,val,opts){
+  opts=opts||{};
+  if(opts.type==='select'){
+    return `<div class="fld"><label>${label}</label><select name="${name}">`+
+      (opts.options||[]).map(o=>`<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('')+`</select></div>`;
+  }
+  if(opts.type==='checkbox'){
+    return `<div class="fld"><label><input type="checkbox" name="${name}" ${val?'checked':''} style="width:auto"> ${label}</label></div>`;
+  }
+  if(opts.type==='textarea'){
+    return `<div class="fld"><label>${label}</label><textarea name="${name}">${esc(val||'')}</textarea></div>`;
+  }
+  return `<div class="fld"><label>${label}</label><input type="${opts.type||'text'}" name="${name}" value="${esc(val==null?'':val)}"></div>`;
+}
+function openModal(html){ document.getElementById('modal').innerHTML=html; document.getElementById('modal-back').classList.add('show'); }
+function closeModal(){ document.getElementById('modal-back').classList.remove('show'); }
+function readForm(){ const f={}; document.querySelectorAll('#modal [name]').forEach(el=>{ f[el.name]= el.type==='checkbox'?el.checked:el.value; }); return f; }
+
+function supplierForm(s){ s=s||{};
+  openModal(`<h3>${s.id?'Edit':'Add'} supplier</h3>
+    ${field('name','Name *',s.name)}
+    <div class="fld-grid">${field('category','Category',s.category||'other',{type:'select',options:CATS})}
+      ${field('status','Status',s.status||'active',{type:'select',options:['active','inactive']})}</div>
+    <div class="fld-grid">${field('contact_name','Contact name',s.contact_name)}${field('phone','Phone',s.phone)}</div>
+    <div class="fld-grid">${field('email','Email',s.email)}${field('account_ref','Account ref',s.account_ref)}</div>
+    ${field('website','Website',s.website)}
+    ${field('notes','Notes',s.notes,{type:'textarea'})}
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+      <button class="btn btn-primary btn-sm" data-save-sup="${s.id||''}">Save</button></div>`);
+}
+function contractForm(c){ c=c||{};
+  const supOpts=state.suppliers.map(s=>`<option value="${s.id}" ${s.id===c.supplier_id?'selected':''}>${esc(s.name)}</option>`).join('');
+  openModal(`<h3>${c.id?'Edit':'Add'} contract</h3>
+    ${field('title','Title *',c.title)}
+    <div class="fld-grid"><div class="fld"><label>Supplier</label><select name="supplier_id"><option value="">—</option>${supOpts}</select></div>
+      ${field('contract_type','Type',c.contract_type||'service',{type:'select',options:CONTRACT_TYPES})}</div>
+    ${field('account_number','Account number',c.account_number)}
+    <div class="fld-grid">${field('start_date','Start date',c.start_date&&c.start_date.slice(0,10),{type:'date'})}
+      ${field('renewal_date','Renewal date',c.renewal_date&&c.renewal_date.slice(0,10),{type:'date'})}</div>
+    ${field('end_date','End date',c.end_date&&c.end_date.slice(0,10),{type:'date'})}
+    <div class="fld-grid">${field('monthly_cost_pence','Monthly cost (pence)',c.monthly_cost_pence,{type:'number'})}
+      ${field('annual_cost_pence','Annual cost (pence)',c.annual_cost_pence,{type:'number'})}</div>
+    <div class="fld-grid">${field('notice_period_days','Notice period (days)',c.notice_period_days,{type:'number'})}
+      ${field('status','Status',c.status||'active',{type:'select',options:['active','inactive','ended']})}</div>
+    ${field('auto_renew','Auto-renews',c.auto_renew,{type:'checkbox'})}
+    ${field('document_url','Document URL',c.document_url)}
+    ${field('notes','Notes',c.notes,{type:'textarea'})}
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+      <button class="btn btn-primary btn-sm" data-save-con="${c.id||''}">Save</button></div>`);
+}
+function regForm(r){ r=r||{};
+  openModal(`<h3>${r.id?'Edit':'Add'} registration / licence</h3>
+    ${field('name','Name *',r.name)}
+    <div class="fld-grid">${field('provider','Provider',r.provider)}${field('reference_number','Reference number',r.reference_number)}</div>
+    <div class="fld-grid">${field('issued_date','Issued date',r.issued_date&&r.issued_date.slice(0,10),{type:'date'})}
+      ${field('expiry_date','Expiry date',r.expiry_date&&r.expiry_date.slice(0,10),{type:'date'})}</div>
+    <div class="fld-grid">${field('renewal_cost_pence','Renewal cost (pence)',r.renewal_cost_pence,{type:'number'})}
+      ${field('responsible_person','Responsible person',r.responsible_person)}</div>
+    <div class="fld-grid">${field('status','Status',r.status||'active',{type:'select',options:['active','inactive','lapsed']})}
+      ${field('auto_renew','Auto-renews',r.auto_renew,{type:'checkbox'})}</div>
+    ${field('document_url','Document URL',r.document_url)}
+    ${field('notes','Notes',r.notes,{type:'textarea'})}
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" data-close>Cancel</button>
+      <button class="btn btn-primary btn-sm" data-save-reg="${r.id||''}">Save</button></div>`);
+}
+
+async function save(endpoint, id, form){
+  try {
+    await Wren.api(endpoint+(id?('/'+id):''), { method: id?'PUT':'POST', body: JSON.stringify(form) });
+    closeModal(); await loadAll();
+  } catch(e){ alert('Save failed: '+(e&&e.error||e)); }
+}
+async function del(endpoint, id){
+  if(!confirm('Delete / deactivate this item?')) return;
+  try { await Wren.api(endpoint+'/'+id, { method:'DELETE' }); await loadAll(); }
+  catch(e){ alert('Delete failed: '+(e&&e.error||e)); }
+}
+
+async function runDiscover(){
+  openModal(`<h3>✨ Discover suppliers from email</h3><div id="disc-body" class="muted">Scanning office mailbox…</div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" data-close>Close</button></div>`);
+  try {
+    const r = await Wren.api('/api/suppliers/discover', { method:'POST', body: JSON.stringify({ days:60 }) });
+    const body=document.getElementById('disc-body');
+    if(!r.available){ body.innerHTML=`<div class="badge warn">Unavailable</div><p class="muted">${esc(r.reason||'Mailbox scan not available')}</p>`; return; }
+    if(!r.suggestions.length){ body.innerHTML=`<p class="muted">Scanned ${r.scanned} messages — no new supplier-like senders found.</p>`; return; }
+    body.innerHTML=`<p class="muted">Scanned ${r.scanned} messages (${r.window_days}d). ${r.suggestions.length} suggestion(s):</p>`+
+      r.suggestions.map((s,i)=>`<div class="discover-card"><div class="body">
+        <strong>${esc(s.suggested_name)}</strong> <span class="muted">${esc(s.email_domain)}</span><br>
+        <span class="muted" style="font-size:11px">${s.message_count} msg · ${esc(s.sample_subject||'')}</span></div>
+        <button class="btn btn-primary btn-sm" data-add-sugg="${i}">Add</button></div>`).join('');
+    body.querySelectorAll('[data-add-sugg]').forEach(btn=>btn.addEventListener('click',()=>{
+      const s=r.suggestions[+btn.dataset.addSugg];
+      supplierForm({ name:s.suggested_name, email:'', website:'https://'+s.domain, category:'other', notes:'Discovered from email ('+s.message_count+' messages)' });
+    }));
+  } catch(e){ document.getElementById('disc-body').innerHTML=`<span class="badge critical">Error</span> ${esc(e&&e.error||e)}`; }
+}
+
+// ── wiring ────────────────────────────────────────────────────────────────────
+function wirePanel(){
+  const byId=(m,arr)=>arr.find(x=>x.id==m);
+  document.getElementById('add-sup')?.addEventListener('click',()=>supplierForm());
+  document.getElementById('add-con')?.addEventListener('click',()=>contractForm());
+  document.getElementById('add-reg')?.addEventListener('click',()=>regForm());
+  document.getElementById('btn-discover')?.addEventListener('click',runDiscover);
+  document.querySelectorAll('th[data-col]').forEach(th=>th.addEventListener('click',()=>{
+    const tab=th.dataset.tab, col=th.dataset.col; const cur=state.sort[tab];
+    state.sort[tab]=(cur&&cur.col===col)?{col,dir:cur.dir==='asc'?'desc':'asc'}:{col,dir:'asc'}; render();
+  }));
+  document.querySelectorAll('[data-edit-sup]').forEach(el=>el.addEventListener('click',()=>supplierForm(byId(el.dataset.editSup,state.suppliers))));
+  document.querySelectorAll('[data-del-sup]').forEach(el=>el.addEventListener('click',()=>del('/api/suppliers',el.dataset.delSup)));
+  document.querySelectorAll('[data-edit-con]').forEach(el=>el.addEventListener('click',()=>contractForm(byId(el.dataset.editCon,state.contracts))));
+  document.querySelectorAll('[data-del-con]').forEach(el=>el.addEventListener('click',()=>del('/api/suppliers/contracts',el.dataset.delCon)));
+  document.querySelectorAll('[data-edit-reg]').forEach(el=>el.addEventListener('click',()=>regForm(byId(el.dataset.editReg,state.registrations))));
+  document.querySelectorAll('[data-del-reg]').forEach(el=>el.addEventListener('click',()=>del('/api/suppliers/registrations',el.dataset.delReg)));
+}
+
+document.addEventListener('click',e=>{
+  if(e.target.matches('[data-close]')) closeModal();
+  const ss=e.target.getAttribute('data-save-sup'); if(ss!==null&&e.target.hasAttribute('data-save-sup')) return save('/api/suppliers',ss,readForm());
+  const sc=e.target.getAttribute('data-save-con'); if(sc!==null&&e.target.hasAttribute('data-save-con')) return save('/api/suppliers/contracts',sc,readForm());
+  const sr=e.target.getAttribute('data-save-reg'); if(sr!==null&&e.target.hasAttribute('data-save-reg')) return save('/api/suppliers/registrations',sr,readForm());
+  if(e.target.id==='modal-back') closeModal();
+});
+
+document.addEventListener('wren:ready',()=>{
+  document.querySelectorAll('.sup-tab').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
+  document.getElementById('btn-refresh').addEventListener('click',loadAll);
+  loadAll();
+});
+</script>
+</body>
+</html>

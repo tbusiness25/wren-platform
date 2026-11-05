@@ -1,0 +1,1231 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Occupancy Planner · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:var(--c-bg);--card:var(--c-surface);--bd:var(--c-border);--txt:var(--c-text);--mut:var(--c-muted);
+   --ok:var(--c-ok);--warn:var(--c-warn);--bad:var(--c-danger);--blue:var(--c-blue);--orange:var(--c-orange)}
+ .ov-wrap{padding:18px;max-width:1600px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px;font-family:'Arial Rounded MT Bold','Nunito',Arial,sans-serif}
+ .sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--bd);
+   border-radius:12px;padding:10px 12px;margin-bottom:14px}
+ .bar select,.bar input[type=text]{background:var(--c-surface-2);border:1px solid var(--bd);color:var(--txt);
+   border-radius:8px;padding:7px 9px;font-size:.82rem;min-height:34px}
+ .bar .grow{flex:1}
+ button{background:var(--blue);border:none;color:#06121f;border-radius:12px;padding:8px 14px;font-size:.82rem;
+   font-weight:700;cursor:pointer;transition:opacity .2s ease;min-height:34px}
+ button:hover{opacity:.88}
+ button.ghost{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600}
+ button.danger{background:transparent;border:1px solid var(--bad);color:var(--bad);font-weight:600}
+ .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:14px}
+ .panel h3{margin:0 0 8px;font-size:.95rem}
+ .panel .hint{color:var(--mut);font-size:.76rem;margin-bottom:8px}
+ .msg{font-size:.8rem;color:var(--warn);min-height:1.1em;margin:6px 0}
+ /* forecast grid: metric rows × month columns */
+ .fwrap{overflow-x:auto}
+ table.fx{border-collapse:collapse;font-size:.78rem;min-width:100%}
+ table.fx th,table.fx td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);text-align:center;white-space:nowrap}
+ table.fx th.rowlab,table.fx td.rowlab{position:sticky;left:0;background:var(--card);text-align:left;font-weight:600;
+   color:var(--mut);z-index:2;border-right:1px solid var(--bd);min-width:150px}
+ table.fx thead th{color:var(--txt);font-weight:700;border-bottom:1px solid var(--bd)}
+ table.fx thead th.now{color:var(--orange)}
+ td.heat-ok{color:var(--ok)} td.heat-warn{color:var(--warn);font-weight:700} td.heat-bad{color:var(--bad);font-weight:800}
+ td.cell b{font-size:.84rem}
+ td .delta{display:block;font-size:.64rem;color:var(--orange)}
+ td .capline{display:block;font-size:.62rem;color:var(--mut)}
+ tr.staffrow td{background:rgba(74,154,191,.05)}
+ tr.totalrow td{border-top:1px solid var(--bd);background:rgba(255,255,255,.03)}
+ td.overtarget{background:rgba(239,68,68,.18)!important;color:var(--bad);font-weight:800}
+ /* adjustments */
+ .adjlist{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+ .adj{display:flex;align-items:center;gap:8px;background:var(--c-surface-2);border:1px solid var(--bd);border-radius:8px;
+   padding:6px 10px;font-size:.78rem}
+ .adj .k{color:var(--blue);font-weight:700;min-width:88px}
+ .adj .grow{flex:1}
+ .rmv{background:transparent;border:none;color:var(--bad);font-size:1rem;cursor:pointer;padding:0 4px;min-height:0}
+ .forms{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+ .aform{background:var(--c-surface-2);border:1px solid var(--bd);border-radius:10px;padding:10px}
+ .aform h4{margin:0 0 6px;font-size:.8rem;color:var(--txt)}
+ .aform .row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+ .aform label{font-size:.68rem;color:var(--mut);display:flex;flex-direction:column;gap:2px}
+ .aform input,.aform select{background:var(--c-surface-2);border:1px solid var(--bd);color:var(--txt);border-radius:6px;
+   padding:5px 7px;font-size:.76rem;min-height:30px}
+ .aform input[type=number]{width:64px}
+ .aform button{padding:6px 11px;font-size:.76rem;min-height:30px}
+ .legend{font-size:.72rem;color:var(--mut);margin-top:8px;line-height:1.6}
+ .pill{display:inline-block;font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px}
+ .pill.bad{background:rgba(239,68,68,.15);color:var(--bad)}
+ .pill.ok{background:rgba(34,197,94,.15);color:var(--ok)}
+ /* b98: week-by-week view */
+ table.wx{border-collapse:collapse;font-size:.78rem;min-width:100%}
+ table.wx th,table.wx td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);text-align:center;white-space:nowrap}
+ table.wx thead th{color:var(--txt);font-weight:700;border-bottom:1px solid var(--bd)}
+ table.wx td.rowlab,table.wx th.rowlab{text-align:left;font-weight:600;color:var(--mut);min-width:96px}
+ tr.wkrow{cursor:pointer} tr.wkrow:hover td{background:rgba(74,154,191,.07)}
+ td.daycell b{font-size:.86rem} td.daycell .st{display:block;font-size:.64rem;color:var(--mut)}
+ td.daycell.overtarget .st{color:var(--bad)}
+ td.daycell.capover{outline:1px solid var(--warn);outline-offset:-2px}
+ tr.wkdetail td{background:var(--c-surface-2);text-align:left;padding:8px 12px}
+ .wkgrid{display:grid;grid-template-columns:110px repeat(5,1fr);gap:2px 10px;font-size:.72rem}
+ .wkgrid .h{color:var(--mut);font-weight:700}
+ .wkgrid .lab{color:var(--mut)}
+ .daychk{display:flex;gap:6px;align-items:center}
+ .daychk label{flex-direction:row!important;align-items:center;gap:3px!important;font-size:.72rem!important;color:var(--txt)!important}
+ /* b101: clickable cells + drilldown modal */
+ table.fx thead th:not(.rowlab){cursor:pointer} table.fx thead th:not(.rowlab):hover{color:var(--orange)}
+ table.fx tbody td.cell{cursor:pointer}
+ td.daycell{cursor:pointer}
+ .drill-mask{position:fixed;inset:0;background:rgba(2,6,20,.72);z-index:50;display:none;align-items:flex-start;justify-content:center;padding:40px 14px;overflow:auto}
+ .drill-mask.open{display:flex}
+ .drill{background:var(--card);border:1px solid var(--bd);border-radius:14px;max-width:720px;width:100%;padding:16px 18px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+ .drill h2{font-size:1.05rem;margin:0 0 2px} .drill .dsub{color:var(--mut);font-size:.78rem;margin-bottom:12px}
+ .drill .dclose{float:right;background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:700;min-height:0;padding:4px 10px}
+ .droom{margin-bottom:12px} .droom h4{margin:0 0 6px;font-size:.85rem;color:var(--blue);border-bottom:1px solid var(--bd);padding-bottom:4px}
+ .drchild{background:var(--c-surface-2);border:1px solid var(--bd);border-radius:9px;padding:8px 10px;margin-bottom:6px}
+ .drchild .drtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+ .drchild .drname{font-weight:700;font-size:.85rem;flex:1}
+ .drtag{font-size:.66rem;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(148,163,184,.15);color:var(--mut)}
+ .drtag.override{background:rgba(224,120,32,.18);color:var(--orange)}
+ .drtag.age{background:rgba(74,154,191,.15);color:var(--blue)}
+ .drchild .drbtn{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600;font-size:.7rem;padding:4px 9px;min-height:0}
+ /* b105: search-first panel */
+ #searchPanel h3{font-size:1.05rem}
+ .searchbox{position:relative;margin-bottom:12px}
+ #personSearch{width:100%;background:var(--c-surface-2);border:1px solid var(--bd);color:var(--txt);border-radius:10px;
+   padding:11px 13px;font-size:.95rem;min-height:44px}
+ #personSearch:focus{outline:none;border-color:var(--blue)}
+ .sresults{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--card);border:1px solid var(--bd);
+   border-radius:10px;max-height:360px;overflow:auto;z-index:30;box-shadow:0 14px 40px rgba(0,0,0,.5);display:none}
+ .sresults.open{display:block}
+ .sgroup{font-size:.66rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);padding:8px 12px 3px}
+ .sitem{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-top:1px solid rgba(255,255,255,.04)}
+ .sitem:hover,.sitem.active{background:rgba(74,154,191,.12)}
+ .sitem .sav{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:800;flex:0 0 auto}
+ .sav.child{background:rgba(74,154,191,.2);color:var(--blue)} .sav.staff{background:rgba(224,120,32,.2);color:var(--orange)}
+ .sitem .snm{font-weight:700;font-size:.86rem;flex:1}
+ .chip{display:inline-block;font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(148,163,184,.16);color:var(--mut);margin-left:4px}
+ .chip.blue{background:rgba(74,154,191,.16);color:var(--blue)} .chip.orange{background:rgba(224,120,32,.16);color:var(--orange)}
+ .chip.green{background:rgba(34,197,94,.16);color:var(--ok)} .chip.amber{background:rgba(245,158,11,.16);color:var(--warn)}
+ /* person card */
+ .pcard{background:var(--c-surface-2);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+ .pcard .phd{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+ .pcard .pnm{font-size:1.05rem;font-weight:800}
+ .pcard .pclose{margin-left:auto;background:transparent;border:1px solid var(--bd);color:var(--mut);min-height:0;padding:3px 9px;font-weight:700}
+ .pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px}
+ .pcell{background:var(--card);border:1px solid var(--bd);border-radius:9px;padding:8px 10px}
+ .pcell .pl{font-size:.64rem;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+ .pcell .pv{font-size:.92rem;font-weight:700;margin-top:2px}
+ .pcell .pv small{font-weight:400;color:var(--mut);font-size:.72rem}
+ .pactions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+ .pactions button{font-size:.74rem;padding:6px 11px;min-height:32px}
+ .pform{margin-top:10px;padding-top:10px;border-top:1px dashed var(--bd);display:none;gap:8px;flex-wrap:wrap;align-items:flex-end}
+ .pform.open{display:flex}
+ .pform label{font-size:.66rem;color:var(--mut);display:flex;flex-direction:column;gap:2px}
+ .pform input,.pform select{background:var(--c-surface-2);border:1px solid var(--bd);color:var(--txt);border-radius:6px;padding:5px 7px;font-size:.78rem;min-height:32px}
+ .pform .daychk label{flex-direction:row!important;align-items:center;gap:3px!important;color:var(--txt)!important}
+ .psaved{font-size:.72rem;align-self:center}
+ /* b122: staff-by-room panel */
+ .roomstaff{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px}
+ .rsroom{background:var(--c-surface-2);border:1px solid var(--bd);border-radius:10px;padding:10px}
+ .rsroom h4{margin:0 0 8px;font-size:.84rem;color:var(--blue);display:flex;align-items:center;gap:6px}
+ .rsroom h4 .rscount{color:var(--mut);font-weight:400;font-size:.72rem}
+ .rsstaff{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:8px;margin-bottom:5px;
+   background:var(--card);border:1px solid var(--bd);cursor:pointer;transition:border-color .15s ease}
+ .rsstaff:hover{border-color:var(--blue)}
+ .rsstaff .rsnm{font-weight:700;font-size:.8rem}
+ .rsstaff .rsmeta{color:var(--mut);font-size:.66rem;flex:1}
+ .rsstaff.removed{opacity:.55}
+ .rsstaff.removed .rsnm{text-decoration:line-through}
+ .rstag{font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:999px;white-space:nowrap}
+ .rstag.moved{background:rgba(224,120,32,.2);color:var(--orange)}
+ .rstag.removed{background:rgba(239,68,68,.18);color:var(--bad)}
+ .rstag.changed{background:rgba(245,158,11,.18);color:var(--warn)}
+ .rsempty{color:var(--mut);font-size:.76rem;padding:4px 2px}
+ /* tray */
+ .tray{background:var(--c-surface-2);border:1px dashed var(--bd);border-radius:12px;padding:10px 12px;margin-bottom:12px}
+ .trayhd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+ .tclear{margin-left:auto;font-size:.7rem;padding:3px 9px;min-height:0}
+ .traylist{display:flex;flex-direction:column;gap:5px;margin-bottom:6px}
+ /* generate bar + rota output */
+ .genbar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+ .genbar .glab{font-size:.7rem;color:var(--mut);display:flex;flex-direction:column;gap:3px}
+ .genbar input[type=date]{background:var(--c-surface-2);border:1px solid var(--bd);color:var(--txt);border-radius:8px;padding:7px 9px;min-height:38px}
+ #btnGenRota{background:var(--orange);color:#160a02;font-weight:800}
+ .hypoforms{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:12px}
+ .rstrip{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:12px 0}
+ .rstat{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:9px 11px;text-align:center}
+ .rstat .rv{font-size:1.15rem;font-weight:800} .rstat .rl{font-size:.64rem;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+ .rstat.bad{border-color:var(--bad)} .rstat.bad .rv{color:var(--bad)} .rstat.good .rv{color:var(--ok)}
+ .rstat .rv.pos{color:var(--ok)} .rstat .rv.neg{color:var(--bad)}
+ table.rt{border-collapse:collapse;font-size:.76rem;width:100%;margin-bottom:10px}
+ table.rt th,table.rt td{border:1px solid var(--bd);padding:6px 8px;text-align:left;vertical-align:top}
+ table.rt thead th{background:rgba(74,154,191,.08);text-align:center;font-weight:700}
+ table.rt td.rl{font-weight:700;color:var(--mut);white-space:nowrap;background:rgba(255,255,255,.02)}
+ table.rt td.breach{background:rgba(239,68,68,.16)}
+ table.rt .sname{display:block;font-size:.72rem}
+ table.rt .reqline{font-size:.66rem;color:var(--mut)}
+ /* b115: staff AM/PM half-day session tags + per-session ratio counts */
+ .stag{font-size:.56rem;font-weight:800;letter-spacing:.03em;padding:0 3px;border-radius:3px;vertical-align:middle;text-transform:uppercase}
+ .stag.am{background:rgba(245,158,11,.20);color:var(--warn)}
+ .stag.pm{background:rgba(74,154,191,.22);color:var(--brand)}
+ .stag.full{background:rgba(34,197,94,.16);color:var(--ok)}
+ .sessline{display:block;margin-top:2px}
+ .sessline .seg{font-weight:700;padding:0 3px;border-radius:3px}
+ .sessline .seg.ok{color:var(--mut)}
+ .sessline .seg.bad{color:var(--bad);background:rgba(239,68,68,.14)}
+ .fulldaynote{font-size:.72rem;color:var(--mut);margin:0 0 8px}
+ .rtitle{font-size:.92rem;font-weight:800;margin:10px 0 6px}
+ .detailsec{border:1px solid var(--bd);border-radius:12px;margin-bottom:14px;background:rgba(255,255,255,.015)}
+ .detailsec>summary{cursor:pointer;padding:12px 14px;font-weight:700;font-size:.9rem;color:var(--txt);list-style:none}
+ .detailsec>summary::-webkit-details-marker{display:none}
+ .detailsec>summary::before{content:'▸ ';color:var(--mut)}
+ .detailsec[open]>summary::before{content:'▾ '}
+ .detailsec[open]>summary{border-bottom:1px solid var(--bd);margin-bottom:10px}
+ .detailsec .panel{margin:0 12px 12px}
+ @media print{
+   body{background:#fff!important;color:#000!important}
+   .bar,.tray,.genbar,.hypoforms,.searchbox,.detailsec,#personCard .pactions,.pcard .pclose,.sub a,.drill-mask{display:none!important}
+   .ov-wrap{max-width:100%;padding:0;color:#000}
+   .panel,.rstat,.pcard,.pcell,table.rt th,table.rt td{background:#fff!important;color:#000!important;border-color:#999!important}
+   table.rt thead th{background:#eee!important}
+   table.rt td.breach{background:#fdd!important;outline:2px solid #c00}
+   h1,.rtitle,.rstat .rv{color:#000!important}
+   .rstat .rv.neg{color:#900!important} .rstat .rv.pos{color:#060!important}
+ }
+ .drform{margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);display:none;gap:8px;flex-wrap:wrap;align-items:flex-end}
+ .drform.open{display:flex}
+ .drform label{font-size:.66rem;color:var(--mut);display:flex;flex-direction:column;gap:2px}
+ .drform input,.drform select{background:var(--c-surface-2);border:1px solid var(--bd);color:var(--txt);border-radius:6px;padding:5px 7px;font-size:.75rem;min-height:30px}
+ .drform button{font-size:.72rem;padding:5px 10px;min-height:30px}
+ .drsaved{font-size:.7rem;color:var(--ok);align-self:center}
+ .drempty{color:var(--mut);font-size:.82rem}
+</style>
+</head>
+<body>
+<div class="ov-wrap">
+  <h1>Occupancy Planner <span style="color:var(--mut);font-size:.8rem;font-weight:400">v2 · 18-month age-mix forecast</span></h1>
+  <div class="sub">Month-by-month age mix from real enrolment (age at each month, start/leave windows, baby&rarr;pre-school at 2nd birthday) with EYFS staff requirements. Scenarios layer hypothetical changes on top — <b>nothing here changes real data.</b> <a href="/occupancy-sandbox.html" style="color:var(--blue)">Weekly ratio sandbox &rarr;</a></div>
+
+  <div class="bar">
+    <select id="scenarioSel"><option value="">Baseline (real enrolment)</option></select>
+    <button class="ghost" id="btnNew">New scenario</button>
+    <span class="grow"></span>
+    <input type="text" id="scenName" placeholder="Scenario name" style="width:210px">
+    <button id="btnSave">Save</button>
+    <button class="danger" id="btnDelete">Delete</button>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <!-- b105: search-first default panel -->
+  <div class="panel" id="searchPanel">
+    <h3>Find a child or staff member</h3>
+    <div class="hint">Search someone, review their card, stack sandbox changes in the tray, then generate a rota + register for any week. Nothing here changes real data until you save a scenario.</div>
+    <div class="searchbox">
+      <input type="text" id="personSearch" placeholder="🔍 Search children or staff — name or room…" autocomplete="off" spellcheck="false">
+      <div class="sresults" id="searchResults"></div>
+    </div>
+    <div class="pcard" id="personCard" style="display:none"></div>
+
+    <div class="tray">
+      <div class="trayhd"><b>Pending changes</b> <span id="trayCount" class="hint">(0)</span>
+        <button class="ghost tclear" id="btnClearTray">Clear all</button></div>
+      <div class="traylist" id="trayList"></div>
+      <div class="hint" style="margin:0">Sandbox adjustments — the rota/register below and the detail forecast apply them live. Save as a scenario (top bar) to keep them.</div>
+    </div>
+
+    <!-- b122: staff layer per room — browse without searching a name first -->
+    <div class="panel" id="roomStaffPanel" style="margin-bottom:12px">
+      <h3 style="margin:0 0 4px">Staff by room</h3>
+      <div class="hint">Real rota (contracted days/hours) — click anyone to remove them, move them to the other room, or change their days/hours in this scenario. Tags show pending changes; nothing here touches the real staff record.</div>
+      <div class="roomstaff" id="roomStaffOut"><div class="rsempty">Loading staff…</div></div>
+    </div>
+
+    <div class="genbar">
+      <label class="glab">Week beginning<input type="date" id="rotaWeek"></label>
+      <button id="btnGenRota">Generate rota + register</button>
+      <button class="ghost" id="btnAddHypo">＋ Add hypothetical</button>
+      <button class="ghost" id="btnPrintRota" style="display:none">🖨 Print</button>
+    </div>
+    <div class="hypoforms" id="hypoForms" style="display:none">
+      <div class="aform">
+        <h4>+ Hypothetical child</h4>
+        <div class="row"><label>Name<input type="text" id="hcName" placeholder="e.g. Sibling T." style="width:120px"></label>
+          <label>DOB<input type="date" id="hcDob"></label></div>
+        <div class="row"><label>Starts<input type="date" id="hcStart"></label>
+          <label>Days<span class="daychk" id="hcDays" style="display:flex;gap:4px">
+            <label><input type="checkbox" value="1">M</label><label><input type="checkbox" value="2">T</label><label><input type="checkbox" value="3">W</label><label><input type="checkbox" value="4">T</label><label><input type="checkbox" value="5">F</label>
+          </span></label></div>
+        <button id="btnHypoChild">Add to plan</button>
+      </div>
+      <div class="aform">
+        <h4>+ Hypothetical staff</h4>
+        <div class="row"><label>Name<input type="text" id="hsName" placeholder="e.g. Bank staff" style="width:120px"></label>
+          <label>Room<select id="hsRoom"><option value="preschool">Pre-school</option><option value="baby">Baby Room</option></select></label>
+          <label>Session<select id="hsSession"><option value="full">Full day</option><option value="am">Morning (AM)</option><option value="pm">Afternoon (PM)</option></select></label></div>
+        <div class="row"><label>Days<span class="daychk" id="hsDays" style="display:flex;gap:4px">
+            <label><input type="checkbox" value="1" checked>M</label><label><input type="checkbox" value="2" checked>T</label><label><input type="checkbox" value="3" checked>W</label><label><input type="checkbox" value="4" checked>T</label><label><input type="checkbox" value="5" checked>F</label>
+          </span></label></div>
+        <button id="btnHypoStaff">Add to plan</button>
+      </div>
+    </div>
+
+    <div class="rotaout" id="rotaOut"></div>
+  </div>
+
+  <!-- b105: detail views (monthly forecast, week grid, scenario editor) collapsed by default -->
+  <details class="detailsec" id="detailWrap">
+    <summary class="detsum">Detailed forecast, week-by-week grid &amp; scenario editor</summary>
+
+  <div class="panel">
+    <h3>Forecast <span id="fcTag" class="hint"></span></h3>
+    <div class="fwrap"><table class="fx"><thead id="fxHead"></thead><tbody id="fxBody"></tbody></table></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <!-- b98: day-level week-by-week view (monthly table above untouched) -->
+  <div class="panel" id="wkPanel">
+    <h3>Week by week <span id="wkTag" class="hint"></span>
+      <select id="wkWeeks" style="float:right;background:var(--c-surface-2);border:1px solid var(--bd);color:var(--txt);border-radius:8px;padding:4px 7px;font-size:.76rem">
+        <option value="12">12 weeks</option><option value="26" selected>26 weeks</option>
+        <option value="39">39 weeks</option><option value="52">52 weeks</option>
+      </select></h3>
+    <div class="hint">Per-day headcount from each child's booked weekdays (derived from the register; Tues/Thurs and Mon/Wed/Fri children don't overlap). Click a week for room detail.</div>
+    <div class="msg" id="wkWarn" style="margin:0 0 6px"></div>
+    <div class="fwrap"><table class="wx"><thead id="wxHead"></thead><tbody id="wxBody"></tbody></table></div>
+    <div class="legend" id="wkLegend"></div>
+  </div>
+
+  <div class="panel" id="adjPanel">
+    <h3>Scenario adjustments <span id="adjCount" class="hint"></span></h3>
+    <div class="hint">Layer changes on top of real enrolment. The forecast above updates live; hit Save to persist.</div>
+    <div class="adjlist" id="adjList"></div>
+    <div class="forms">
+      <div class="aform">
+        <h4>+ Add a child</h4>
+        <div class="row">
+          <label>Name<input type="text" id="acName" placeholder="e.g. Sibling T." style="width:110px"></label>
+          <label>DOB<input type="date" id="acDob"></label>
+        </div>
+        <div class="row">
+          <label>Starts<input type="date" id="acStart"></label>
+          <label>Leaves (opt.)<input type="date" id="acLeave"></label>
+          <button id="btnAddChild">Add</button>
+        </div>
+      </div>
+      <div class="aform">
+        <h4>&minus; Remove / end a child early</h4>
+        <div class="row">
+          <label>Child<select id="rcChild"></select></label>
+          <label>Leaves on (blank = never here)<input type="date" id="rcFrom"></label>
+          <button id="btnRemoveChild">Apply</button>
+        </div>
+      </div>
+      <div class="aform">
+        <h4>+ Intake (N new starters in a month)</h4>
+        <div class="row">
+          <label>Month<input type="month" id="inMonth"></label>
+          <label>How many<input type="number" id="inCount" min="1" max="30" value="2"></label>
+          <label>Age at start<select id="inAge"><option value="0">Under 1</option><option value="1">1yo</option><option value="2" selected>2yo</option><option value="3">3yo</option></select></label>
+          <button id="btnIntake">Add</button>
+        </div>
+      </div>
+      <div class="aform">
+        <h4>&#128197; Booked days override (week view)</h4>
+        <div class="row">
+          <label>Child<select id="ptChild"></select></label>
+        </div>
+        <div class="row daychk" id="ptDays">
+          <label><input type="checkbox" value="1">Mon</label>
+          <label><input type="checkbox" value="2">Tue</label>
+          <label><input type="checkbox" value="3">Wed</label>
+          <label><input type="checkbox" value="4">Thu</label>
+          <label><input type="checkbox" value="5">Fri</label>
+          <button id="btnPattern">Set</button>
+        </div>
+        <div class="hint" id="ptHint" style="margin:0"></div>
+      </div>
+      <div class="aform">
+        <h4>&#9881; Pre-school cap</h4>
+        <div class="row">
+          <label>Room<select id="capRoom"><option value="preschool">Pre-school</option><option value="baby">Baby Room</option></select></label>
+          <label>Capacity<input type="number" id="capVal" min="1" max="60"></label>
+          <button id="btnCap">Set</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </details><!-- /detailWrap -->
+
+  <!-- b101: child-level drilldown modal (click a month/day cell) -->
+  <div class="drill-mask" id="drillMask">
+    <div class="drill">
+      <button class="dclose" id="drillClose">Close</button>
+      <h2 id="drillTitle">Children</h2>
+      <div class="dsub" id="drillSub"></div>
+      <div id="drillBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var TOKEN = function(){ return sessionStorage.getItem('wrenToken'); };
+  var API = '/api/occupancy-v2';
+  var adjustments = [];          // working adjustment list
+  var scenarioId = null;
+  var childrenList = [];
+  var staffRosterList = [];      // b122: real per-room staff (seed for the room-staff panel)
+  var fcTimer = null;
+  var MONTHS = 18;
+
+  function api(path, opts){
+    opts = opts || {};
+    return fetch(API + path, {
+      method: opts.method || 'GET',
+      headers: { 'Authorization': 'Bearer ' + TOKEN(), 'Content-Type': 'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function(r){ return r.json().then(function(j){ return { ok:r.ok, status:r.status, j:j }; }); });
+  }
+  function el(id){ return document.getElementById(id); }
+  function msg(t, cls){ var m=el('msg'); m.textContent=t||''; m.style.color = cls==='ok' ? 'var(--ok)' : cls==='bad' ? 'var(--bad)' : 'var(--warn)'; }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+  // b134: Pre-school 2yo/3yo/4yo+ mini stacked bar — makes the Sept school-leaver
+  // cliff (4s leave, 2s dominate → ratio jumps) obvious at a glance. Visibility
+  // only; the ratio/ceil numbers elsewhere are untouched.
+  function ageMixBar(mix){
+    var two=mix.two||0, three=mix.three||0, four=mix.four||0, total=two+three+four;
+    if(!total) return '<span style="color:var(--mut)">—</span>';
+    var w2=Math.round(two/total*100), w3=Math.round(three/total*100), w4=100-w2-w3;
+    return '<div style="display:flex;height:13px;border-radius:4px;overflow:hidden;min-width:56px" '+
+      'title="2yo '+two+' · 3yo '+three+' · 4yo+ '+four+'">'+
+      (w2?'<span style="width:'+w2+'%;background:var(--blue)"></span>':'')+
+      (w3?'<span style="width:'+w3+'%;background:var(--orange)"></span>':'')+
+      (w4?'<span style="width:'+w4+'%;background:var(--warn)"></span>':'')+
+      '</div><span style="font-size:.6rem;color:var(--mut)">'+two+'·'+three+'·'+four+'</span>';
+  }
+
+  // ── forecast rendering ──
+  function monthLabel(ym){
+    var p=ym.split('-'); var names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return names[+p[1]-1]+' '+p[0].slice(2);
+  }
+  function deltaSub(cur, base){
+    if(base==null) return '';
+    var d = cur - base;
+    if(!d) return '';
+    return '<span class="delta">'+(d>0?'+':'')+d+' vs base</span>';
+  }
+  function renderForecast(data){
+    var s = data.series, base = data.baseline;
+    var bmap = {}; (base||[]).forEach(function(b){ bmap[b.month]=b; });
+    var nowYm = new Date().toISOString().slice(0,7);
+    el('fxHead').innerHTML = '<tr><th class="rowlab">Month</th>'+ s.map(function(x){
+      return '<th'+(x.month===nowYm?' class="now"':'')+'>'+monthLabel(x.month)+'</th>'; }).join('')+'</tr>';
+
+    function row(label, cells, cls){
+      return '<tr'+(cls?' class="'+cls+'"':'')+'><td class="rowlab">'+label+'</td>'+cells.join('')+'</tr>';
+    }
+    var rows = [];
+    rows.push(row('Baby Room (under 2)', s.map(function(x){
+      var b=bmap[x.month];
+      var heat = x.baby_over?'heat-bad':(x.baby_headroom<=1?'heat-warn':'');
+      return '<td class="cell '+heat+'"><b>'+x.baby+'</b><span class="capline">/'+x.baby_capacity+'</span>'+deltaSub(x.baby, b&&b.baby)+'</td>';
+    })));
+    rows.push(row('Pre-school 2yo', s.map(function(x){
+      var b=bmap[x.month];
+      return '<td class="cell"><b>'+x.two+'</b>'+deltaSub(x.two, b&&b.two)+'</td>';
+    })));
+    rows.push(row('Pre-school 3+', s.map(function(x){
+      var b=bmap[x.month];
+      return '<td class="cell"><b>'+x.three_plus+'</b>'+deltaSub(x.three_plus, b&&b.three_plus)+'</td>';
+    })));
+    // b134: 2yo/3yo/4yo+ mix — visual + breakdown so the Sept school-leaver
+    // cliff (4s leave, 2s dominate → ratio requirement jumps) is obvious.
+    rows.push(row('2 · 3 · 4 mix', s.map(function(x){
+      return '<td>'+ageMixBar({two:x.two, three:x.age_mix_preschool.three, four:x.age_mix_preschool.four})+'</td>';
+    })));
+    rows.push(row('　└ 3yo', s.map(function(x){ return '<td class="cell" style="color:var(--mut)">'+x.age_mix_preschool.three+'</td>'; })));
+    rows.push(row('　└ 4yo+ (Sept leavers)', s.map(function(x){ return '<td class="cell" style="color:var(--mut)">'+x.age_mix_preschool.four+'</td>'; })));
+    rows.push(row('Pre-school total', s.map(function(x){
+      var heat = x.preschool_over?'heat-bad':(x.preschool_headroom<=2?'heat-warn':'');
+      return '<td class="cell '+heat+'"><b>'+x.preschool_total+'</b><span class="capline">/'+x.preschool_capacity+'</span></td>';
+    })));
+    rows.push(row('Headroom (baby · pre)', s.map(function(x){
+      var cls = (x.baby_headroom<0||x.preschool_headroom<0)?'heat-bad':(Math.min(x.baby_headroom,x.preschool_headroom)<=1?'heat-warn':'heat-ok');
+      return '<td class="'+cls+'">'+x.baby_headroom+' · '+x.preschool_headroom+'</td>';
+    })));
+    rows.push(row('Staff — Baby (1:3)', s.map(function(x){ return '<td>'+x.staff_baby+'</td>'; }), 'staffrow'));
+    rows.push(row('Staff — Pre-school (1:5 + 1:8)', s.map(function(x){ return '<td>'+x.staff_preschool+'</td>'; }), 'staffrow'));
+    // b134: RAW fractional need (never the compliance number — that's the ceil
+    // above) — makes over/under-provision slack visible, e.g. "3.7 exact vs 5 rostered".
+    rows.push(row('　└ exact need (2s + 3+s)', s.map(function(x){
+      var e=x.staff_exact_preschool;
+      return '<td class="cell" style="color:var(--mut)" title="2s '+e.two.toFixed(2)+' + 3+s '+e.three_plus.toFixed(2)+'">'+e.total.toFixed(2)+'</td>';
+    })));
+    rows.push(row('Staff TOTAL (target ≤ '+data.staff_target+')', s.map(function(x){
+      var b=bmap[x.month];
+      return '<td class="cell'+(x.over_staff_target?' overtarget':'')+'"><b>'+x.staff_total+'</b>'+deltaSub(x.staff_total, b&&b.staff_total)+'</td>';
+    }), 'totalrow'));
+    rows.push(row('Moves baby→pre this month', s.map(function(x){
+      var t=x.transitions.map(function(c){return esc(c.name);}).join(', ');
+      return '<td title="'+t+'" style="color:var(--mut)">'+(x.transitions.length||'·')+'</td>';
+    })));
+    el('fxBody').innerHTML = rows.join('');
+
+    var over = data.summary.months_over_staff_target;
+    el('fcTag').innerHTML = (data.scenario? 'scenario: <b>'+esc(data.scenario.name)+'</b> · ':'') +
+      (over.length ? '<span class="pill bad">'+over.length+' month'+(over.length>1?'s':'')+' need &gt;'+data.staff_target+' staff</span>'
+                   : '<span class="pill ok">never over '+data.staff_target+' staff</span>');
+    var aged = s.reduce(function(n,x){ return Math.max(n, x.aged_out_no_leave.length); }, 0);
+    el('legend').innerHTML = data.model_notes.map(function(n){ return '• '+esc(n); }).join('<br>') +
+      (aged? '<br>• <span style="color:var(--warn)">Up to '+aged+' child(ren) hit age 5 with no leave date inside this window and are excluded from later months — add real leave dates to tighten the forecast.</span>':'');
+  }
+
+  var lastForecast = null;   // b101: cache for the drilldown
+  function refreshForecast(){
+    clearTimeout(fcTimer);
+    fcTimer = setTimeout(function(){
+      var body = { months: MONTHS, adjustments: adjustments, detail: 1 };
+      api('/forecast', { method:'POST', body: body }).then(function(res){
+        if(!res.ok){ msg(res.j&&res.j.error||'Forecast failed','bad'); return; }
+        if(scenarioId) res.j.scenario = res.j.scenario || { id: scenarioId, name: el('scenName').value };
+        lastForecast = res.j;
+        renderForecast(res.j);
+        if(pendingReopen && pendingReopen.type==='month'){
+          var e = (lastForecast.series||[]).filter(function(x){return x.month===pendingReopen.key;})[0];
+          pendingReopen = null; if(e) openMonthDrill(e);
+        }
+      }).catch(function(e){ msg('Error: '+e.message,'bad'); });
+      refreshWeekForecast(); // b98: keep the week view in step
+    }, 250);
+  }
+
+  // ── b98: week-by-week view ──
+  var DOWS = {1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri'};
+  var lastPatterns = [];   // resolved per-child patterns from the API (for the override form)
+  var openWeeks = {};      // week_start → expanded?
+
+  function dayShort(iso){ var p=iso.split('-'); return p[2]+'/'+p[1]; }
+  function renderWeeks(data){
+    var s = data.series;
+    lastPatterns = data.patterns || [];
+    el('wxHead').innerHTML = '<tr><th class="rowlab">Week</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Peak</th></tr>';
+    var html = s.map(function(w,i){
+      var cells = w.days.map(function(d){
+        var cls = 'daycell'+(d.over_staff_target?' overtarget':'')+((d.baby_over||d.preschool_over)?' capover':'');
+        return '<td class="'+cls+'" data-date="'+d.date+'" title="'+d.date+' — baby '+d.baby+', 2yo '+d.two+', 3+ '+d.three_plus+', staff '+d.staff_total+' · click for children">'+
+          '<b>'+d.total_children+'</b><span class="st">'+d.staff_total+' staff</span></td>';
+      }).join('');
+      var out = '<tr class="wkrow" data-wi="'+i+'"><td class="rowlab">w/c '+dayShort(w.week_start)+'</td>'+cells+
+        '<td>'+w.peak_day.dow_name+' · '+w.staff_at_peak+' staff'+(w.over_staff_target?' <span class="pill bad">&gt;'+data.staff_target+'</span>':'')+'</td></tr>';
+      if(openWeeks[w.week_start]){
+        var g = '<div class="wkgrid"><span class="h"></span>'+w.days.map(function(d){return '<span class="h">'+d.dow_name+' '+dayShort(d.date)+'</span>';}).join('');
+        g += '<span class="lab">Baby (u2)</span>'+w.days.map(function(d){return '<span>'+d.baby+' → '+d.staff_baby+' staff</span>';}).join('');
+        g += '<span class="lab">Pre 2yo</span>'+w.days.map(function(d){return '<span>'+d.two+'</span>';}).join('');
+        g += '<span class="lab">Pre 3+</span>'+w.days.map(function(d){return '<span>'+d.three_plus+'</span>';}).join('');
+        g += '<span class="lab">　└ 3yo·4yo+</span>'+w.days.map(function(d){return '<span style="color:var(--mut)">'+d.age_mix_preschool.three+'·'+d.age_mix_preschool.four+'</span>';}).join('');
+        g += '<span class="lab">Pre-school</span>'+w.days.map(function(d){return '<span>'+d.preschool_total+' → '+d.staff_preschool+' staff</span>';}).join('');
+        g += '<span class="lab">　└ exact need</span>'+w.days.map(function(d){return '<span style="color:var(--mut)">'+d.staff_exact_preschool.total.toFixed(2)+'</span>';}).join('');
+        g += '<span class="lab">Staff total</span>'+w.days.map(function(d){return '<span'+(d.over_staff_target?' style="color:var(--bad);font-weight:800"':'')+'>'+d.staff_total+'</span>';}).join('');
+        g += '</div>';
+        out += '<tr class="wkdetail"><td colspan="7">'+g+'</td></tr>';
+      }
+      return out;
+    }).join('');
+    el('wxBody').innerHTML = html;
+
+    var over = data.summary.weeks_over_staff_target;
+    el('wkTag').innerHTML = (data.scenario? 'scenario: <b>'+esc(data.scenario.name)+'</b> · ':'') +
+      (over.length ? '<span class="pill bad">'+over.length+' week'+(over.length>1?'s':'')+' peak &gt;'+data.staff_target+' staff</span>'
+                   : '<span class="pill ok">no day needs &gt;'+data.staff_target+' staff</span>');
+    var np = data.warnings && data.warnings.no_pattern;
+    el('wkWarn').textContent = (np && np.message) ? '⚠ '+np.message : '';
+    el('wkLegend').innerHTML = (data.model_notes||[]).map(function(n){ return '• '+esc(n); }).join('<br>');
+    showPatternHint();
+  }
+
+  var wkTimer = null;
+  function refreshWeekForecast(){
+    clearTimeout(wkTimer);
+    wkTimer = setTimeout(function(){
+      var body = { weeks: Number(el('wkWeeks').value)||26, adjustments: adjustments, detail: 1 };
+      api('/week-forecast', { method:'POST', body: body }).then(function(res){
+        if(!res.ok){ el('wkWarn').textContent = (res.j&&res.j.error)||'Week forecast failed'; return; }
+        if(scenarioId) res.j.scenario = res.j.scenario || { id: scenarioId, name: el('scenName').value };
+        renderWeeks(res.j);
+        if(pendingReopen && pendingReopen.type==='day'){
+          var d = findDay(lastWeekData, pendingReopen.key);
+          pendingReopen = null; if(d) openDayDrill(d);
+        }
+      }).catch(function(e){ el('wkWarn').textContent = 'Error: '+e.message; });
+    }, 250);
+  }
+  el('wkWeeks').addEventListener('change', refreshWeekForecast);
+  el('wxBody').addEventListener('click', function(e){
+    // b101: clicking a specific day cell opens that day's child list; clicking
+    // elsewhere on the week row toggles the room-detail grid (existing behaviour).
+    var dayCell = e.target.closest ? e.target.closest('td.daycell') : null;
+    if(dayCell && dayCell.getAttribute('data-date')){
+      var d = findDay(lastWeekData, dayCell.getAttribute('data-date'));
+      if(d){ openDayDrill(d); return; }
+    }
+    var tr = e.target.closest ? e.target.closest('tr.wkrow') : null;
+    if(!tr) return;
+    var i = +tr.getAttribute('data-wi');
+    // re-render from cache is overkill — just toggle and refetch-free re-render
+    refreshWeekToggle(i);
+  });
+  var lastWeekData = null;
+  var _renderWeeks = renderWeeks;
+  renderWeeks = function(d){ lastWeekData = d; _renderWeeks(d); };
+  function refreshWeekToggle(i){
+    if(!lastWeekData || !lastWeekData.series[i]) return;
+    var ws = lastWeekData.series[i].week_start;
+    openWeeks[ws] = !openWeeks[ws];
+    _renderWeeks(lastWeekData);
+  }
+
+  // pattern override form
+  function showPatternHint(){
+    var id = el('ptChild').value;
+    if(!id){ el('ptHint').textContent=''; return; }
+    var p = lastPatterns.find(function(x){ return String(x.id)===String(id); });
+    if(!p){ el('ptHint').textContent=''; return; }
+    var src = p.source==='register' ? 'from register' : p.source==='override' ? 'scenario override' : 'DEFAULT full week — no history';
+    el('ptHint').textContent = 'Current: '+p.days.map(function(d){return DOWS[d];}).join('/')+' ('+src+')';
+  }
+  el('ptChild').addEventListener('change', showPatternHint);
+  el('btnPattern').addEventListener('click', function(){
+    var id = el('ptChild').value; if(!id){ msg('Pick a child first.','bad'); return; }
+    var days = Array.prototype.slice.call(document.querySelectorAll('#ptDays input:checked')).map(function(c){ return Number(c.value); });
+    if(!days.length){ msg('Tick at least one day.','bad'); return; }
+    adjustments.push({ type:'set_pattern', child_id: Number(id), days: days });
+    document.querySelectorAll('#ptDays input').forEach(function(c){ c.checked=false; });
+    msg(''); renderAdjustments(); refreshForecast();
+  });
+
+  // ── adjustments UI ──
+  function adjLabel(a){
+    if(a.type==='add_child') return ['Add child', esc(a.label||'New child')+' · DOB '+esc(a.dob)+(a.start_date?' · starts '+esc(a.start_date):'')+(a.leave_date?' · leaves '+esc(a.leave_date):'')];
+    if(a.type==='remove_child'){ var c = childrenList.find(function(x){return x.id===Number(a.child_id);});
+      return [a.from?'End early':'Remove', esc(c?c.name:('child #'+a.child_id))+(a.from?' · leaves '+esc(a.from):' · never enrolled')]; }
+    if(a.type==='intake') return ['Intake', a.count+' × '+(a.age_years==0?'under-1':a.age_years+'yo')+' starting '+esc(a.month)];
+    if(a.type==='set_capacity') return ['Capacity', (a.room==='baby'?'Baby Room':'Pre-school')+' → '+a.capacity];
+    if(a.type==='set_pattern'){ var pc = childrenList.find(function(x){return String(x.id)===String(a.child_id);});
+      return ['Booked days', esc(pc?pc.name:('child #'+a.child_id))+' → '+(a.days||[]).map(function(d){return DOWS[d];}).join('/')]; }
+    if(a.type==='add_staff') return ['Add staff', esc(a.label||'New staff')+' · '+(a.room==='baby'?'Baby Room':'Pre-school')+(a.session==='am'?' · AM':a.session==='pm'?' · PM':'')+' · '+(a.days||[]).map(function(d){return DOWS[d];}).join('/')];
+    if(a.type==='remove_staff') return ['Staff absent', esc(a.staff_name||('staff #'+a.staff_id))+' · '+(a.days&&a.days.length?a.days.map(function(d){return DOWS[d];}).join('/'):'all week')];
+    if(a.type==='set_staff_pattern') return ['Staff days', esc(a.staff_name||('staff #'+a.staff_id))+' → '+(a.days||[]).map(function(d){return DOWS[d];}).join('/')+(a.room?' · '+(a.room==='baby'?'Baby':'Pre'):'')+(a.session?' · '+a.session.toUpperCase():'')];
+    return [a.type, ''];
+  }
+  function renderAdjustments(){
+    var box = el('adjList');
+    if(!adjustments.length){ box.innerHTML = '<div class="hint" style="margin:0">No adjustments — showing the real enrolment baseline.</div>'; }
+    else box.innerHTML = adjustments.map(function(a,i){
+      var lab = adjLabel(a);
+      return '<div class="adj"><span class="k">'+lab[0]+'</span><span class="grow">'+lab[1]+'</span>'+
+        '<button class="rmv" data-ai="'+i+'" title="Remove adjustment">✕</button></div>';
+    }).join('');
+    el('adjCount').textContent = '('+adjustments.length+')';
+    renderTray();   // b105: keep the search-panel tray in sync
+    renderRoomStaff();   // b122: keep the room-staff panel in sync
+  }
+  el('adjList').addEventListener('click', function(e){
+    var i = e.target.getAttribute && e.target.getAttribute('data-ai');
+    if(i===null||i===undefined) return;
+    adjustments.splice(+i,1); renderAdjustments(); refreshForecast();
+  });
+
+  el('btnAddChild').addEventListener('click', function(){
+    var dob=el('acDob').value; if(!dob){ msg('DOB required to add a child.','bad'); return; }
+    adjustments.push({ type:'add_child', label: el('acName').value.trim()||undefined, dob: dob,
+      start_date: el('acStart').value||undefined, leave_date: el('acLeave').value||undefined });
+    el('acName').value=''; el('acDob').value=''; el('acStart').value=''; el('acLeave').value='';
+    msg(''); renderAdjustments(); refreshForecast();
+  });
+  el('btnRemoveChild').addEventListener('click', function(){
+    var id=el('rcChild').value; if(!id){ msg('Pick a child first.','bad'); return; }
+    var a={ type:'remove_child', child_id: Number(id) };
+    if(el('rcFrom').value) a.from = el('rcFrom').value;
+    adjustments.push(a); el('rcFrom').value='';
+    msg(''); renderAdjustments(); refreshForecast();
+  });
+  el('btnIntake').addEventListener('click', function(){
+    var m=el('inMonth').value; if(!m){ msg('Pick an intake month.','bad'); return; }
+    adjustments.push({ type:'intake', month:m, count: Number(el('inCount').value)||1, age_years: Number(el('inAge').value) });
+    msg(''); renderAdjustments(); refreshForecast();
+  });
+  el('btnCap').addEventListener('click', function(){
+    var v=Number(el('capVal').value); if(!v){ msg('Enter a capacity.','bad'); return; }
+    adjustments.push({ type:'set_capacity', room: el('capRoom').value, capacity: v });
+    el('capVal').value='';
+    msg(''); renderAdjustments(); refreshForecast();
+  });
+
+  // ── scenarios ──
+  function loadScenarios(sel){
+    api('/scenarios').then(function(res){
+      if(!res.ok) return;
+      var s='<option value="">Baseline (real enrolment)</option>';
+      res.j.forEach(function(x){ s+='<option value="'+x.id+'"'+(String(sel)===String(x.id)?' selected':'')+'>'+esc(x.name)+' ('+x.adjustment_count+')</option>'; });
+      el('scenarioSel').innerHTML=s;
+    });
+  }
+  el('scenarioSel').addEventListener('change', function(){
+    var id=this.value;
+    if(!id){ scenarioId=null; adjustments=[]; el('scenName').value=''; renderAdjustments(); refreshForecast(); return; }
+    api('/scenarios/'+id).then(function(res){
+      if(!res.ok){ msg('Load failed','bad'); return; }
+      scenarioId=res.j.id; adjustments=res.j.adjustments||[]; el('scenName').value=res.j.name;
+      renderAdjustments(); refreshForecast();
+    });
+  });
+  el('btnNew').addEventListener('click', function(){
+    scenarioId=null; adjustments=[]; el('scenarioSel').value=''; el('scenName').value='';
+    renderAdjustments(); refreshForecast(); msg('New scenario — add adjustments below, then Save.');
+  });
+  el('btnSave').addEventListener('click', function(){
+    var name=el('scenName').value.trim(); if(!name){ msg('Give the scenario a name first.','bad'); return; }
+    var body={ name:name, adjustments:adjustments };
+    var p = scenarioId ? api('/scenarios/'+scenarioId,{method:'PUT',body:body}) : api('/scenarios',{method:'POST',body:body});
+    p.then(function(res){
+      if(!res.ok){ msg(res.j&&res.j.error||'Save failed','bad'); return; }
+      scenarioId=res.j.id; msg('Saved.','ok'); loadScenarios(scenarioId);
+    });
+  });
+  el('btnDelete').addEventListener('click', function(){
+    if(!scenarioId){ msg('Baseline can’t be deleted.'); return; }
+    if(!confirm('Delete this scenario?')) return;
+    api('/scenarios/'+scenarioId,{method:'DELETE'}).then(function(res){
+      if(!res.ok){ msg('Delete failed','bad'); return; }
+      scenarioId=null; adjustments=[]; el('scenName').value=''; el('scenarioSel').value='';
+      loadScenarios(); renderAdjustments(); refreshForecast(); msg('Deleted.','ok');
+    });
+  });
+
+  // ── b101: child-level drilldown + in-place record fixes ──────────────────
+  var roomsList = [];              // {id,name,klass}
+  var pendingReopen = null;        // {type:'month'|'day', key} — reopen after a refresh
+  var drillCtx = null;             // current open drill context
+
+  function apiAbs(path, opts){
+    opts = opts || {};
+    return fetch(path, {
+      method: opts.method || 'GET',
+      headers: { 'Authorization': 'Bearer ' + TOKEN(), 'Content-Type': 'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function(r){ return r.json().then(function(j){ return { ok:r.ok, status:r.status, j:j }; }).catch(function(){ return { ok:r.ok, status:r.status, j:{} }; }); });
+  }
+  function findDay(data, date){
+    if(!data) return null;
+    for(var i=0;i<data.series.length;i++){ var ds=data.series[i].days;
+      for(var k=0;k<ds.length;k++) if(ds[k].date===date) return ds[k]; }
+    return null;
+  }
+  function bandLabel(b){ return b==='u2'?'under 2':b==='two'?'2yo':(b==='threePlus'?'3+':b); }
+  function roomLabel(r){ return r==='baby'?'Baby Room':'Pre-school'; }
+  function fmtDate(iso){ if(!iso) return ''; var p=String(iso).slice(0,10).split('-'); return p[2]+'/'+p[1]+'/'+p[0].slice(2); }
+
+  function closeDrill(){ el('drillMask').classList.remove('open'); drillCtx=null; }
+  el('drillClose').addEventListener('click', closeDrill);
+  el('drillMask').addEventListener('click', function(e){ if(e.target===el('drillMask')) closeDrill(); });
+
+  function openMonthDrill(entry){
+    drillCtx = { type:'month', key: entry.month, moveDefault: entry.month+'-01' };
+    var sub = 'Baby '+entry.baby+' · Pre-school '+entry.preschool_total+
+      (entry.preschool_early_u2? ' (incl. '+entry.preschool_early_u2+' early-move under-2)':'')+
+      ' · '+entry.total_children+' children · '+entry.staff_total+' staff';
+    renderDrill('Children in '+monthLabel(entry.month), sub, entry.children);
+  }
+  function openDayDrill(day){
+    drillCtx = { type:'day', key: day.date, moveDefault: day.date };
+    var sub = day.dow_name+' '+fmtDate(day.date)+' · Baby '+day.baby+' · Pre-school '+day.preschool_total+
+      (day.preschool_early_u2? ' (incl. '+day.preschool_early_u2+' early-move under-2)':'')+
+      ' · '+day.total_children+' children · '+day.staff_total+' staff';
+    renderDrill('Children on '+day.dow_name+' '+fmtDate(day.date), sub, day.children);
+  }
+
+  function renderDrill(title, sub, children){
+    el('drillTitle').textContent = title;
+    el('drillSub').textContent = sub;
+    var body = el('drillBody');
+    if(!children){
+      body.innerHTML = '<div class="drempty">Child-level detail is available to managers and deputy managers only.</div>';
+      el('drillMask').classList.add('open'); return;
+    }
+    if(!children.length){
+      body.innerHTML = '<div class="drempty">No children counted here.</div>';
+      el('drillMask').classList.add('open'); return;
+    }
+    var groups = { baby: [], preschool: [] };
+    children.forEach(function(c){ (groups[c.room]||(groups[c.room]=[])).push(c); });
+    var html = '';
+    ['baby','preschool'].forEach(function(room){
+      var list = groups[room]; if(!list || !list.length) return;
+      html += '<div class="droom"><h4>'+roomLabel(room)+' ('+list.length+')</h4>';
+      list.forEach(function(c){
+        var src = c.room_source==='override'?'override':'age';
+        html += '<div class="drchild" data-cid="'+c.id+'">'+
+          '<div class="drtop">'+
+            '<span class="drname">'+esc(c.name)+'</span>'+
+            '<span class="drtag">age '+c.age+' · '+bandLabel(c.band)+'</span>'+
+            '<span class="drtag '+src+'">room: '+src+'</span>'+
+            (c.pattern_source && c.pattern_source!=='register' ? '<span class="drtag">days: '+esc(c.pattern_source)+'</span>' : '')+
+            '<button class="drbtn" data-act="dates" data-id="'+c.id+'">Start/leave</button>'+
+            '<button class="drbtn" data-act="move" data-id="'+c.id+'">Room move</button>'+
+          '</div>'+
+          '<div class="drform" id="df-'+c.id+'"></div>'+
+        '</div>';
+      });
+      html += '</div>';
+    });
+    body.innerHTML = html;
+    el('drillMask').classList.add('open');
+  }
+
+  // edit-shortcut forms (delegated)
+  el('drillBody').addEventListener('click', function(e){
+    var btn = e.target.closest ? e.target.closest('[data-act]') : null;
+    if(!btn) return;
+    var id = btn.getAttribute('data-id');
+    var act = btn.getAttribute('data-act');
+    var form = el('df-'+id);
+    if(!form) return;
+    if(form.classList.contains('open') && form.getAttribute('data-act')===act){ form.classList.remove('open'); return; }
+    form.setAttribute('data-act', act);
+    if(act==='dates'){
+      form.innerHTML = '<span class="drsaved" style="color:var(--mut)">loading…</span>';
+      form.classList.add('open');
+      apiAbs('/api/children/'+id).then(function(res){
+        var c = res.ok ? res.j : {};
+        var s = c.start_date ? String(c.start_date).slice(0,10) : '';
+        var lv = c.leave_date ? String(c.leave_date).slice(0,10) : '';
+        form.innerHTML =
+          '<label>Start date<input type="date" data-f="start_date" value="'+s+'"></label>'+
+          '<label>Leave date<input type="date" data-f="leave_date" value="'+lv+'"></label>'+
+          '<button data-save="dates" data-id="'+id+'">Save dates</button>'+
+          '<span class="drsaved" data-saved="'+id+'"></span>';
+      });
+    } else if(act==='move'){
+      var opts = roomsList.map(function(r){ return '<option value="'+r.id+'">'+esc(r.name)+'</option>'; }).join('');
+      form.innerHTML =
+        '<label>Move to<select data-f="to_room_id">'+opts+'</select></label>'+
+        '<label>On<input type="date" data-f="moved_on" value="'+(drillCtx?drillCtx.moveDefault:'')+'"></label>'+
+        '<button data-save="move" data-id="'+id+'">Record move</button>'+
+        '<span class="drsaved" data-saved="'+id+'"></span>';
+      form.classList.add('open');
+    }
+  });
+  el('drillBody').addEventListener('click', function(e){
+    var btn = e.target.closest ? e.target.closest('[data-save]') : null;
+    if(!btn) return;
+    var id = btn.getAttribute('data-id');
+    var kind = btn.getAttribute('data-save');
+    var form = el('df-'+id);
+    var savedEl = form.querySelector('[data-saved="'+id+'"]');
+    btn.disabled = true;
+    if(kind==='dates'){
+      var sd = form.querySelector('[data-f="start_date"]').value || null;
+      var lv = form.querySelector('[data-f="leave_date"]').value || null;
+      apiAbs('/api/children/'+id, { method:'PUT', body:{ start_date: sd, leave_date: lv } }).then(function(res){
+        btn.disabled=false;
+        if(!res.ok){ savedEl.style.color='var(--bad)'; savedEl.textContent=(res.j&&res.j.error)||'Save failed'; return; }
+        savedEl.style.color='var(--ok)'; savedEl.textContent='Saved ✓';
+        pendingReopen = drillCtx ? { type:drillCtx.type, key:drillCtx.key } : null;
+        refreshForecast();
+      });
+    } else if(kind==='move'){
+      var toRoom = Number(form.querySelector('[data-f="to_room_id"]').value);
+      var on = form.querySelector('[data-f="moved_on"]').value || undefined;
+      api('/room-move', { method:'POST', body:{ child_id: Number(id), to_room_id: toRoom, moved_on: on } }).then(function(res){
+        btn.disabled=false;
+        if(!res.ok){ savedEl.style.color='var(--bad)'; savedEl.textContent=(res.j&&res.j.error)||'Save failed'; return; }
+        savedEl.style.color='var(--ok)'; savedEl.textContent='Move recorded ✓';
+        pendingReopen = drillCtx ? { type:drillCtx.type, key:drillCtx.key } : null;
+        refreshForecast();
+      });
+    }
+  });
+
+  // clicking any month header/cell opens that month's drilldown
+  function monthColIndex(cell){ var i=-1, n=cell; while(n){ i++; n=n.previousElementSibling; } return i; }
+  function onForecastCellClick(e){
+    var cell = e.target.closest ? e.target.closest('td,th') : null;
+    if(!cell || cell.classList.contains('rowlab')) return;
+    var idx = monthColIndex(cell) - 1;  // col 0 = row label
+    if(!lastForecast || idx<0 || !lastForecast.series[idx]) return;
+    openMonthDrill(lastForecast.series[idx]);
+  }
+  el('fxHead').addEventListener('click', onForecastCellClick);
+  el('fxBody').addEventListener('click', onForecastCellClick);
+
+  // ── b105: search-first panel ────────────────────────────────────────────
+  var searchTimer=null, searchSel=-1, searchItems=[], curPerson=null;
+  function money(n){ return (Math.round(Number(n)*100)/100).toFixed(2); }
+  function rotaShown(){ return el('rotaOut').getAttribute('data-shown')==='1'; }
+
+  // tray = a view of the shared adjustments array (same JSONB as scenarios)
+  function renderTray(){
+    var box=el('trayList'); if(!box) return;
+    if(!adjustments.length){ box.innerHTML='<div class="hint" style="margin:0">No pending changes — showing the real baseline.</div>'; }
+    else box.innerHTML=adjustments.map(function(a,i){ var lab=adjLabel(a);
+      return '<div class="adj"><span class="k">'+lab[0]+'</span><span class="grow">'+lab[1]+'</span><button class="rmv" data-ti="'+i+'" title="Remove">✕</button></div>'; }).join('');
+    var tc=el('trayCount'); if(tc) tc.textContent='('+adjustments.length+')';
+  }
+  el('trayList').addEventListener('click', function(e){
+    var i=e.target.getAttribute&&e.target.getAttribute('data-ti');
+    if(i===null||i===undefined) return;
+    adjustments.splice(+i,1); renderAdjustments(); refreshForecast();
+  });
+  el('btnClearTray').addEventListener('click', function(){
+    if(!adjustments.length) return;
+    if(!confirm('Clear all pending changes?')) return;
+    adjustments=[]; scenarioId=null; el('scenName').value=''; if(el('scenarioSel')) el('scenarioSel').value='';
+    renderAdjustments(); refreshForecast();
+  });
+
+  // ── b122: staff-by-room panel — real roster + live scenario overlay ──────
+  function loadStaffRoster(){
+    api('/staff-roster').then(function(res){
+      staffRosterList = res.ok ? res.j : [];
+      renderRoomStaff();
+    });
+  }
+  function staffAdjFor(id){
+    var out = { removedAll:false, removedDays:null, moveRoom:null, days:null, session:null };
+    adjustments.forEach(function(a){
+      if(!a || Number(a.staff_id)!==Number(id)) return;
+      if(a.type==='remove_staff'){ if(a.days && a.days.length) out.removedDays=a.days; else out.removedAll=true; }
+      else if(a.type==='set_staff_pattern'){
+        if(a.room) out.moveRoom=a.room;
+        if(a.days && a.days.length) out.days=a.days;
+        if(a.session) out.session=a.session;
+      }
+    });
+    return out;
+  }
+  function rsRow(s){
+    var ov = staffAdjFor(s.id);
+    var tags = '';
+    if(ov.removedAll) tags += '<span class="rstag removed">removed</span>';
+    else if(ov.removedDays) tags += '<span class="rstag removed">off '+ov.removedDays.map(function(d){return DOWS[d];}).join('/')+'</span>';
+    if(ov.moveRoom && ov.moveRoom!==s.klass) tags += '<span class="rstag moved">&rarr; '+(ov.moveRoom==='baby'?'Baby':'Pre-school')+'</span>';
+    if(ov.days) tags += '<span class="rstag changed">days: '+ov.days.map(function(d){return DOWS[d];}).join('/')+'</span>';
+    if(ov.session) tags += '<span class="rstag changed">'+ov.session.toUpperCase()+'</span>';
+    var meta = (s.role?esc(String(s.role).replace(/_/g,' ')):'')+
+      (s.work_days&&s.work_days.length?' · '+s.work_days.map(function(d){return DOWS[d].charAt(0);}).join(''):' · &mdash;')+
+      (s.contracted_hours!=null?' · '+s.contracted_hours+'h/wk':(s.hours_per_week!=null?' · '+s.hours_per_week+'h/wk':''));
+    return '<div class="rsstaff'+(ov.removedAll?' removed':'')+'" data-sid="'+s.id+'" data-nm="'+esc(s.name)+'">'+
+      '<span class="rsnm">'+esc(s.name)+'</span><span class="rsmeta">'+meta+'</span>'+tags+'</div>';
+  }
+  function rsHypoRow(a, idx){
+    var sess = a.session==='am'?' · AM':a.session==='pm'?' · PM':'';
+    var days = (a.days||[]).map(function(d){return DOWS[d].charAt(0);}).join('');
+    return '<div class="rsstaff" data-hypo="'+idx+'" title="Click to remove from plan">'+
+      '<span class="rsnm">'+esc(a.label||'New staff')+'</span><span class="rsmeta">'+days+sess+'</span>'+
+      '<span class="rstag moved">new</span></div>';
+  }
+  function renderRoomStaff(){
+    var box = el('roomStaffOut'); if(!box) return;
+    if(!staffRosterList.length){ box.innerHTML = '<div class="rsempty">Loading staff…</div>'; return; }
+    var groups = { baby:[], preschool:[], other:[] };
+    staffRosterList.forEach(function(s){ (groups[s.klass]||groups.other).push(s); });
+    var hypo = { baby:[], preschool:[] };
+    adjustments.forEach(function(a,i){ if(a && a.type==='add_staff'){ (hypo[a.room]||hypo.preschool).push({a:a,i:i}); } });
+    function roomBlock(label, klass){
+      var list = groups[klass]||[];
+      var body = list.map(rsRow).join('') + (hypo[klass]||[]).map(function(h){ return rsHypoRow(h.a, h.i); }).join('');
+      if(!body) body = '<div class="rsempty">No staff assigned.</div>';
+      return '<div class="rsroom"><h4>'+label+' <span class="rscount">('+list.length+(hypo[klass]&&hypo[klass].length?' +'+hypo[klass].length+' planned':'')+')</span></h4>'+body+'</div>';
+    }
+    var html = roomBlock('Baby Room','baby') + roomBlock('Pre-school','preschool');
+    if(groups.other.length) html += roomBlock('Other / unassigned','other');
+    box.innerHTML = html;
+  }
+  el('roomStaffOut').addEventListener('click', function(e){
+    var hypo = e.target.closest?e.target.closest('[data-hypo]'):null;
+    if(hypo){ var idx=+hypo.getAttribute('data-hypo'); if(confirm('Remove this hypothetical staff member from the plan?')){ adjustments.splice(idx,1); renderAdjustments(); refreshForecast(); } return; }
+    var row = e.target.closest?e.target.closest('[data-sid]'):null;
+    if(!row) return;
+    selectPerson({ kind:'staff', id:+row.getAttribute('data-sid'), name: row.getAttribute('data-nm') });
+    el('personCard').scrollIntoView({ behavior:'smooth', block:'center' });
+  });
+
+  // keep the rota in step with any adjustment change (once it has been generated)
+  var _refreshForecast=refreshForecast;
+  refreshForecast=function(){ _refreshForecast(); if(rotaShown()) generateRota(); };
+
+  // ── typeahead ──
+  el('personSearch').addEventListener('input', function(){
+    var q=this.value.trim(); clearTimeout(searchTimer);
+    if(q.length<1){ closeResults(); return; }
+    searchTimer=setTimeout(function(){ doSearch(q); }, 180);
+  });
+  el('personSearch').addEventListener('focus', function(){ if(searchItems.length && this.value.trim()) el('searchResults').classList.add('open'); });
+  function doSearch(q){
+    api('/search?q='+encodeURIComponent(q)).then(function(res){
+      if(!res.ok){ closeResults(); return; }
+      var d=res.j; searchItems=[]; var html='';
+      if(d.children&&d.children.length){ html+='<div class="sgroup">Children</div>';
+        d.children.forEach(function(c){ searchItems.push(c); html+=sitemHTML(c, searchItems.length-1); }); }
+      if(d.staff&&d.staff.length){ html+='<div class="sgroup">Staff</div>';
+        d.staff.forEach(function(s){ searchItems.push(s); html+=sitemHTML(s, searchItems.length-1); }); }
+      if(!searchItems.length) html='<div class="sgroup">No matches</div>';
+      el('searchResults').innerHTML=html; el('searchResults').classList.add('open'); searchSel=-1;
+    });
+  }
+  function sitemHTML(it, idx){
+    var chips='';
+    if(it.kind==='child'){
+      chips+=it.room?'<span class="chip blue">'+esc(it.room)+'</span>':'';
+      chips+='<span class="chip '+(it.status==='attending'?'green':(it.status==='confirmed'?'amber':''))+'">'+esc(it.status)+'</span>';
+      chips+=it.funded?'<span class="chip">funded</span>':'';
+    } else {
+      chips+=it.role?'<span class="chip orange">'+esc(String(it.role).replace(/_/g,' '))+'</span>':'';
+      chips+=it.room?'<span class="chip">'+esc(it.room)+'</span>':'';
+    }
+    return '<div class="sitem" data-idx="'+idx+'"><span class="sav '+it.kind+'">'+(it.kind==='child'?'C':'S')+'</span><span class="snm">'+esc(it.name)+'</span>'+chips+'</div>';
+  }
+  el('searchResults').addEventListener('click', function(e){
+    var it=e.target.closest?e.target.closest('.sitem'):null; if(!it||!it.getAttribute('data-idx')&&it.getAttribute('data-idx')!=='0') return;
+    selectPerson(searchItems[+it.getAttribute('data-idx')]);
+  });
+  el('personSearch').addEventListener('keydown', function(e){
+    var res=el('searchResults'); if(!res.classList.contains('open')) return;
+    var items=res.querySelectorAll('.sitem');
+    if(e.key==='ArrowDown'){ e.preventDefault(); searchSel=Math.min(searchSel+1,items.length-1); paintSel(items); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); searchSel=Math.max(searchSel-1,0); paintSel(items); }
+    else if(e.key==='Enter'){ if(searchSel>=0&&items[searchSel]){ e.preventDefault(); selectPerson(searchItems[+items[searchSel].getAttribute('data-idx')]); } }
+    else if(e.key==='Escape'){ closeResults(); }
+  });
+  function paintSel(items){ items.forEach(function(x,i){ x.classList.toggle('active', i===searchSel); if(i===searchSel&&x.scrollIntoView) x.scrollIntoView({block:'nearest'}); }); }
+  function closeResults(){ el('searchResults').classList.remove('open'); }
+  document.addEventListener('click', function(e){ if(!e.target.closest||!e.target.closest('.searchbox')) closeResults(); });
+
+  // ── person card ──
+  function selectPerson(it){
+    if(!it) return; closeResults(); el('personSearch').value=it.name;
+    el('personCard').style.display='block'; el('personCard').innerHTML='<div class="hint">Loading…</div>';
+    api('/person/'+it.kind+'/'+it.id).then(function(res){
+      if(!res.ok){ el('personCard').innerHTML='<div class="msg">'+esc((res.j&&res.j.error)||'Load failed')+'</div>'; return; }
+      curPerson=res.j; curPerson.kind=it.kind; if(it.kind==='child') renderChildCard(res.j); else renderStaffCard(res.j);
+    });
+  }
+  function reloadPerson(){ if(curPerson) selectPerson({kind:curPerson.kind,id:curPerson.id,name:curPerson.name}); }
+  function pcell(l,v){ return '<div class="pcell"><div class="pl">'+l+'</div><div class="pv">'+v+'</div></div>'; }
+  function renderChildCard(c){
+    var days=(c.booked_days||[]).map(function(d){return DOWS[d];}).join('/')||'—';
+    var f=c.fee||{};
+    var fundTxt=c.funding?(c.funding.total_hours_week+'h '+esc(c.funding.type)+(c.funding.stretched?' (stretched)':'')):'none';
+    var pend=c.pending_move?('→ '+esc(c.pending_move.to_room)+' on '+fmtDate(c.pending_move.moved_on)):'—';
+    el('personCard').innerHTML=
+      '<div class="phd"><span class="sav child">C</span><span class="pnm">'+esc(c.name)+'</span>'+
+        '<span class="chip blue">'+esc(c.room||'—')+'</span><span class="chip">age '+(c.age==null?'—':c.age)+'</span>'+
+        '<span class="chip '+(c.status==='attending'?'green':'amber')+'">'+esc(c.status)+'</span>'+
+        '<button class="pclose" data-close="1">✕</button></div>'+
+      '<div class="pgrid">'+
+        pcell('Booked days', days+' <small>('+esc(c.day_source)+')</small>')+
+        pcell('Funded hours/wk', fundTxt)+
+        pcell('Paid hours/wk', (f.paid_hours!=null?f.paid_hours+'h':'—')+' <small>of '+(f.booked_hours||0)+'h</small>')+
+        pcell('Est. weekly fee', '£'+(f.weekly_fee!=null?money(f.weekly_fee):'—')+' <small>@£'+(f.rate||0)+'/h</small>')+
+        pcell('Start', c.start_date?fmtDate(c.start_date):'—')+
+        pcell('Leaves', c.leave_date?fmtDate(c.leave_date):'—')+
+        pcell('Pending room move', pend)+
+      '</div>'+
+      '<div class="pactions">'+
+        '<button data-pa="days">Change booked days</button>'+
+        '<button class="ghost" data-pa="endearly">End early</button>'+
+        '<button class="ghost" data-pa="remove">Remove from plan</button>'+
+        '<button class="ghost" data-pa="move">Room move (record)</button>'+
+        '<button class="ghost" data-pa="dates">Start/leave (record)</button>'+
+      '</div>'+
+      '<div class="pform" id="pform"></div>';
+  }
+  function renderStaffCard(s){
+    var patCells=s.pattern.map(function(p){ var st=(p.off||!p.session||p.session==='full')?'':' <small class="stag '+p.session+'">'+p.session+'</small>'; return '<div class="pcell"><div class="pl">'+DOWS[p.dow]+'</div><div class="pv">'+(p.off?'<small>off</small>':(p.start+'–'+(p.end||'?')+st+(p.room?' <small>'+(p.room==='baby'?'Baby':'Pre')+'</small>':'')))+'</div></div>'; }).join('');
+    el('personCard').innerHTML=
+      '<div class="phd"><span class="sav staff">S</span><span class="pnm">'+esc(s.name)+'</span>'+
+        '<span class="chip orange">'+esc(String(s.role||'').replace(/_/g,' '))+'</span>'+
+        (s.room?'<span class="chip">'+esc(s.room)+'</span>':'')+
+        (s.counts_to_ratio?'':'<span class="chip amber">off-ratio</span>')+
+        '<button class="pclose" data-close="1">✕</button></div>'+
+      '<div class="pgrid">'+
+        pcell('Contracted h/wk', s.contracted_hours!=null?s.contracted_hours+'h':'—')+
+        pcell('Hourly cost', s.hourly_rate!=null?'£'+money(s.hourly_rate):'—')+
+        pcell('Qualification', s.qualification_level!=null?('L'+s.qualification_level):'—')+
+        pcell('Employment', esc(s.employment_type||'—'))+
+        pcell('Works', (s.work_days||[]).map(function(d){return DOWS[d];}).join('/')||'—')+
+      '</div>'+
+      '<div class="rtitle" style="margin:4px 0 6px">This week&rsquo;s pattern</div>'+
+      '<div class="pgrid">'+patCells+'</div>'+
+      '<div class="pactions">'+
+        '<button data-pa="absent">Mark absent (sandbox)</button>'+
+        '<button class="ghost" data-pa="staffdays">Change work days (sandbox)</button>'+
+      '</div>'+
+      '<div class="pform" id="pform"></div>';
+  }
+  function dayChecks(id, prefill){ prefill=prefill||[];
+    return '<span class="daychk" id="'+id+'" style="display:flex;gap:5px">'+[1,2,3,4,5].map(function(d){ return '<label><input type="checkbox" value="'+d+'"'+(prefill.indexOf(d)>=0?' checked':'')+'>'+DOWS[d].charAt(0)+'</label>'; }).join('')+'</span>';
+  }
+  function readDays(id){ return Array.prototype.slice.call(document.querySelectorAll('#'+id+' input:checked')).map(function(c){return Number(c.value);}); }
+  function closePForm(){ var f=el('pform'); if(f){ f.classList.remove('open'); f.innerHTML=''; } }
+  function afterAdj(txt){ renderAdjustments(); refreshForecast(); msg(txt||'Added to pending changes.','ok'); }
+
+  el('personCard').addEventListener('click', function(e){
+    if(e.target.getAttribute&&e.target.getAttribute('data-close')){ el('personCard').style.display='none'; curPerson=null; el('personSearch').value=''; return; }
+    var pa=e.target.closest?e.target.closest('[data-pa]'):null;
+    if(pa&&curPerson){ openPForm(pa.getAttribute('data-pa')); return; }
+    var doBtn=e.target.closest?e.target.closest('[data-do]'):null;
+    if(doBtn&&curPerson){ doPAction(doBtn.getAttribute('data-do')); }
+  });
+  function openPForm(act){
+    var f=el('pform'); if(!f) return; var p=curPerson;
+    if(act==='days'){ f.innerHTML='<label>Booked weekdays'+dayChecks('pfDays',p.booked_days)+'</label><button data-do="days">Apply</button>'; }
+    else if(act==='endearly'){ f.innerHTML='<label>Leaves on<input type="date" data-f="from"></label><button data-do="endearly">Apply</button>'; }
+    else if(act==='remove'){ f.innerHTML='<span class="hint" style="margin:0 8px 0 0">Remove '+esc(p.name)+' from the plan entirely?</span><button data-do="remove">Confirm remove</button>'; }
+    else if(act==='move'){ var opts=roomsList.map(function(r){return '<option value="'+r.id+'">'+esc(r.name)+'</option>';}).join('');
+      f.innerHTML='<label>Move to<select data-f="to_room_id">'+opts+'</select></label><label>On<input type="date" data-f="moved_on"></label><button data-do="move">Record move</button><span class="psaved" style="color:var(--mut)">updates the record</span>'; }
+    else if(act==='dates'){ f.innerHTML='<label>Start<input type="date" data-f="start_date" value="'+(p.start_date||'')+'"></label><label>Leave<input type="date" data-f="leave_date" value="'+(p.leave_date||'')+'"></label><button data-do="dates">Save dates</button><span class="psaved" style="color:var(--mut)">updates the record</span>'; }
+    else if(act==='absent'){ f.innerHTML='<label>Absent on (none = whole week)'+dayChecks('pfAbs',[])+'</label><button data-do="absent">Add absence</button>'; }
+    else if(act==='staffdays'){ f.innerHTML='<label>Working weekdays'+dayChecks('pfSd',p.work_days)+'</label><label>Room<select data-f="room"><option value="">(keep)</option><option value="preschool">Pre-school</option><option value="baby">Baby Room</option></select></label><label>Hours<select data-f="session"><option value="">(keep real hours)</option><option value="full">Full day</option><option value="am">Morning (AM)</option><option value="pm">Afternoon (PM)</option></select></label><button data-do="staffdays">Apply</button>'; }
+    f.classList.add('open');
+  }
+  function doPAction(act){
+    var p=curPerson; if(!p) return;
+    if(act==='days'){ var days=readDays('pfDays'); if(!days.length){msg('Pick at least one day.','bad');return;}
+      adjustments.push({type:'set_pattern',child_id:p.id,days:days}); closePForm(); afterAdj('Booked-days change queued.'); }
+    else if(act==='endearly'){ var frm=document.querySelector('[data-f="from"]').value; if(!frm){msg('Pick a leave date.','bad');return;}
+      adjustments.push({type:'remove_child',child_id:p.id,from:frm}); closePForm(); afterAdj('End-early queued.'); }
+    else if(act==='remove'){ adjustments.push({type:'remove_child',child_id:p.id}); closePForm(); afterAdj('Removed in plan.'); }
+    else if(act==='absent'){ var ad=readDays('pfAbs'); var a={type:'remove_staff',staff_id:p.id,staff_name:p.name}; if(ad.length)a.days=ad;
+      adjustments.push(a); closePForm(); afterAdj('Staff absence queued.'); }
+    else if(act==='staffdays'){ var sd=readDays('pfSd'); if(!sd.length){msg('Pick at least one day.','bad');return;}
+      var a2={type:'set_staff_pattern',staff_id:p.id,staff_name:p.name,days:sd}; var rm=document.querySelector('[data-f="room"]').value; if(rm)a2.room=rm;
+      var ss=document.querySelector('[data-f="session"]'); if(ss&&ss.value)a2.session=ss.value;
+      adjustments.push(a2); closePForm(); afterAdj('Staff work-days queued.'); }
+    else if(act==='move'){ var to=Number(document.querySelector('[data-f="to_room_id"]').value); var on=document.querySelector('[data-f="moved_on"]').value||undefined;
+      api('/room-move',{method:'POST',body:{child_id:p.id,to_room_id:to,moved_on:on}}).then(function(res){
+        if(!res.ok){msg((res.j&&res.j.error)||'Move failed','bad');return;} msg('Room move recorded.','ok'); closePForm(); reloadPerson(); refreshForecast(); }); }
+    else if(act==='dates'){ var s2=document.querySelector('[data-f="start_date"]').value||null; var lv=document.querySelector('[data-f="leave_date"]').value||null;
+      apiAbs('/api/children/'+p.id,{method:'PUT',body:{start_date:s2,leave_date:lv}}).then(function(res){
+        if(!res.ok){msg((res.j&&res.j.error)||'Save failed','bad');return;} msg('Dates saved.','ok'); closePForm(); reloadPerson(); refreshForecast(); }); }
+  }
+
+  // ── add hypothetical child / staff ──
+  el('btnAddHypo').addEventListener('click', function(){ var h=el('hypoForms'); h.style.display=(h.style.display==='none'||!h.style.display)?'grid':'none'; });
+  el('btnHypoChild').addEventListener('click', function(){
+    var dob=el('hcDob').value; if(!dob){msg('DOB required to add a child.','bad');return;}
+    var days=readDays('hcDays');
+    var a={type:'add_child',label:el('hcName').value.trim()||undefined,dob:dob,start_date:el('hcStart').value||undefined};
+    if(days.length)a.days=days;
+    adjustments.push(a); el('hcName').value='';el('hcDob').value='';el('hcStart').value='';
+    document.querySelectorAll('#hcDays input').forEach(function(c){c.checked=false;});
+    afterAdj('Hypothetical child added to plan.');
+  });
+  el('btnHypoStaff').addEventListener('click', function(){
+    var days=readDays('hsDays'); if(!days.length){msg('Pick at least one day for the staff member.','bad');return;}
+    var a={type:'add_staff',label:el('hsName').value.trim()||undefined,room:el('hsRoom').value,days:days};
+    var sess=el('hsSession')?el('hsSession').value:'full'; if(sess==='am'||sess==='pm')a.session=sess; // b115
+    adjustments.push(a);
+    el('hsName').value=''; if(el('hsSession'))el('hsSession').value='full'; afterAdj('Hypothetical staff added to plan.');
+  });
+
+  // ── generate rota + register ──
+  el('btnGenRota').addEventListener('click', generateRota);
+  el('rotaWeek').addEventListener('change', function(){ if(rotaShown()) generateRota(); });
+  el('btnPrintRota').addEventListener('click', function(){ window.print(); });
+  function generateRota(){
+    var body={ adjustments: adjustments }; var week=el('rotaWeek').value; if(week) body.week=week;
+    el('rotaOut').innerHTML='<div class="hint">Generating rota + register…</div>';
+    api('/rota',{method:'POST',body:body}).then(function(res){
+      if(!res.ok){ el('rotaOut').innerHTML='<div class="msg">'+esc((res.j&&res.j.error)||'Rota failed')+'</div>'; return; }
+      renderRota(res.j); el('rotaOut').setAttribute('data-shown','1'); el('btnPrintRota').style.display='';
+    }).catch(function(e){ el('rotaOut').innerHTML='<div class="msg">Error: '+esc(e.message)+'</div>'; });
+  }
+  function rstat(v,l,cls){ return '<div class="rstat '+(cls||'')+'"><div class="rv">'+v+'</div><div class="rl">'+l+'</div></div>'; }
+  function renderRota(d){
+    var r=d.results, wd=d.week_dates, feeD=r.weekly_fee.delta;
+    var head='<div class="rtitle">Week beginning '+fmtDate(d.week_start)+(d.scenario?' · scenario: '+esc(d.scenario.name):(adjustments.length?' · '+adjustments.length+' pending change'+(adjustments.length>1?'s':''):' · baseline'))+'</div>';
+    // b134: exact vs statutory vs rostered, for the Pre-school PEAK day this
+    // week — the real comparison Toby's over-provision example needs.
+    var peakIdx=0, peakN=-1;
+    d.register.days.forEach(function(day,i){ if(day.preschool.count>peakN){peakN=day.preschool.count; peakIdx=i;} });
+    var peakReg=d.register.days[peakIdx], peakRota=d.rota.days[peakIdx];
+    var exactVsRostered=peakReg?peakReg.staff_exact_preschool.total.toFixed(2)+' exact · '+peakReg.staff_required.preschool+' statutory · '+(peakRota?peakRota.preschool.scheduled:'—')+' rostered':'—';
+    var strip='<div class="rstrip">'+
+      rstat(r.peak_children+' <small style="font-size:.6rem;color:var(--mut)">'+r.peak_day+'</small>','Peak children')+
+      rstat(r.occupancy_pct.preschool==null?'—':r.occupancy_pct.preschool+'%','Pre-school occ.')+
+      rstat(r.occupancy_pct.baby==null?'—':r.occupancy_pct.baby+'%','Baby occ.')+
+      rstat(r.staff_scheduled_total+' / '+r.staff_required_total,'Staff sched / req', r.staff_scheduled_total<r.staff_required_total?'bad':'good')+
+      rstat(r.ratio_breach_count,'Ratio breaches', r.ratio_breach_count?'bad':'good')+
+      rstat('£'+money(r.weekly_fee.scenario),'Weekly fee (est.)')+
+      (feeD? rstat('<span class="rv '+(feeD>0?'pos':'neg')+'">'+(feeD>0?'+':'−')+'£'+money(Math.abs(feeD))+'</span>','Fee vs baseline') : '')+
+      rstat('<span style="font-size:.86rem">'+exactVsRostered+'</span>','Pre-school '+(peakReg?DOWS[peakReg.dow]:'')+': exact · statutory · rostered')+
+      '</div>';
+    // register table
+    var regHead='<table class="rt"><thead><tr><th class="rl">Room</th>'+wd.map(function(dt,i){return '<th>'+DOWS[i+1]+'<br><small>'+fmtDate(dt)+'</small></th>';}).join('')+'</tr></thead><tbody>';
+    function regRow(label,key){ return '<tr><td class="rl">'+label+'</td>'+d.register.days.map(function(day){ var rm=day[key]; var over=(key==='baby'?day.baby_over:day.preschool_over);
+      return '<td style="text-align:center"'+(over?' class="breach"':'')+'><b>'+rm.count+'</b></td>'; }).join('')+'</tr>'; }
+    // b134: pre-school 2/3/4 mix (visual) + RAW fractional exact need, alongside
+    // the existing per-room counts and statutory ceil below — never replaces them.
+    var ageMixRow='<tr><td class="rl">Pre-school 2·3·4 mix</td>'+d.register.days.map(function(day){
+      return '<td style="text-align:center">'+ageMixBar(day.age_mix_preschool)+'</td>'; }).join('')+'</tr>';
+    var exactRow='<tr><td class="rl">Exact need (pre-school)</td>'+d.register.days.map(function(day){
+      return '<td style="text-align:center" class="reqline">'+day.staff_exact_preschool.total.toFixed(2)+' <small>vs '+day.staff_required.preschool+'</small></td>'; }).join('')+'</tr>';
+    var regTable='<div class="rtitle">Register — children per room per day</div><div class="fulldaynote">Children attend full days only (Mon–Fri) — no AM/PM child sessions.</div>'+regHead+regRow('Baby Room','baby')+regRow('Pre-school','preschool')+ageMixRow+exactRow+
+      '<tr><td class="rl">Total</td>'+d.register.days.map(function(day){return '<td style="text-align:center"><b>'+day.total+'</b></td>';}).join('')+'</tr>'+
+      '<tr><td class="rl">Staff needed</td>'+d.register.days.map(function(day){return '<td style="text-align:center" class="reqline">'+day.staff_required.total+'</td>';}).join('')+'</tr></tbody></table>';
+    // rota table
+    var rotaHead='<table class="rt"><thead><tr><th class="rl">Room</th>'+wd.map(function(dt,i){return '<th>'+DOWS[i+1]+'<br><small>'+fmtDate(dt)+'</small></th>';}).join('')+'</tr></thead><tbody>';
+    function stag(s){ var sess=s.session||(s.am&&s.pm?'full':s.am?'am':s.pm?'pm':''); if(!sess||sess==='full'||sess==='none') return ''; return ' <small class="stag '+sess+'">'+sess+'</small>'; }
+    function sessLine(rm,exact){ // b115: AM/PM units vs required, red where short
+      function seg(lbl,n){ return '<span class="seg '+(n<rm.required?'bad':'ok')+'">'+lbl+' '+n+'/'+rm.required+'</span>'; }
+      // b134: RAW fractional need alongside the AM/PM ceil check — visibility only.
+      return '<span class="reqline sessline">'+seg('AM',rm.scheduled_am)+' · '+seg('PM',rm.scheduled_pm)+
+        (exact!=null?' · <span style="color:var(--mut)">exact '+exact.toFixed(2)+'</span>':'')+'</span>'; }
+    function rotaRow(label,key){ return '<tr><td class="rl">'+label+'</td>'+d.rota.days.map(function(day,idx){ var rm=day[key];
+      var reg=d.register.days[idx];
+      var exact = reg ? (key==='preschool'?reg.staff_exact_preschool.total:reg.staff_exact_baby) : null;
+      var names=rm.staff.map(function(s){return '<span class="sname">'+esc(s.name)+stag(s)+(s.virtual?' <span class="chip orange">new</span>':'')+'</span>';}).join('');
+      return '<td'+(rm.breach?' class="breach"':'')+'>'+(names||'<small>—</small>')+sessLine(rm,exact)+'</td>'; }).join('')+'</tr>'; }
+    var otherRow='<tr><td class="rl">Other<br><small>off-ratio</small></td>'+d.rota.days.map(function(day){return '<td>'+(day.other.length?day.other.map(function(s){return '<span class="sname">'+esc(s.name)+'</span>';}).join(''):'<small>—</small>')+'</td>';}).join('')+'</tr>';
+    var amc=(d.staff_sessions&&d.staff_sessions.am_cutoff)||'13:00', pmc=(d.staff_sessions&&d.staff_sessions.pm_cutoff)||'13:00';
+    var rotaTable='<div class="rtitle">Rota — staff per room per day</div><div class="fulldaynote">Staff counted as AM/PM half-day units — <span class="stag am">am</span> starts before '+amc+' (morning), <span class="stag pm">pm</span> ends after '+pmc+' (afternoon), untagged = full day. Each room is checked for AM and PM separately; a cell is red if either session is short.</div>'+rotaHead+rotaRow('Baby Room','baby')+rotaRow('Pre-school','preschool')+otherRow+'</tbody></table>';
+    var breachTxt = r.ratio_breaches.length ? '<div class="legend" style="color:var(--bad)">⚠ Ratio breaches: '+r.ratio_breaches.map(function(b){return b.dow_name+' '+b.room+(b.session?' '+b.session:'')+' ('+b.scheduled+'/'+b.required+')';}).join(', ')+'</div>' : '';
+    var notes='<div class="legend">'+(d.notes||[]).map(function(n){return '• '+esc(n);}).join('<br>')+'</div>';
+    el('rotaOut').innerHTML=head+strip+regTable+rotaTable+breachTxt+notes;
+  }
+  function initSearchFirst(){
+    var t=new Date(); var dow=(t.getUTCDay()+6)%7; // 0=Mon
+    var mon=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth(),t.getUTCDate()-dow));
+    if(!el('rotaWeek').value) el('rotaWeek').value=mon.toISOString().slice(0,10);
+    renderTray();
+  }
+
+  function init(){
+    api('/rooms').then(function(res){ roomsList = res.ok ? res.j : []; });
+    api('/children').then(function(res){
+      childrenList = res.ok ? res.j : [];
+      el('rcChild').innerHTML = '<option value="">— pick child —</option>' +
+        childrenList.map(function(c){ return '<option value="'+c.id+'">'+esc(c.name)+' ('+esc(c.dob)+')</option>'; }).join('');
+      el('ptChild').innerHTML = el('rcChild').innerHTML; // b98: pattern-override picker
+    });
+    loadStaffRoster();   // b122
+    renderAdjustments();
+    loadScenarios();
+    refreshForecast();
+    initSearchFirst();   // b105
+  }
+  document.addEventListener('wren:ready', init);
+  if(window.Wren && Wren._ready) init();
+})();
+</script>
+</body></html>

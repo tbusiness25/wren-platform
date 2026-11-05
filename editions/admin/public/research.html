@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Deep Research — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b290 — tokens only, no bare hex. Checked in light and dark. */
+.dr-intro{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:13px 15px;
+          font-size:.83rem;color:var(--c-muted);line-height:1.6;margin-bottom:14px;max-width:900px}
+.dr-intro b{color:var(--c-text)}
+
+.dr-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.dr-bar input[type=search]{flex:1;min-width:200px;background:var(--c-bg);border:1px solid var(--c-border);
+  color:var(--c-text);border-radius:9px;padding:9px 12px;font-size:.86rem;font-family:inherit;min-height:42px}
+.dr-chip{border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-muted);
+  border-radius:999px;padding:6px 13px;font-size:.78rem;cursor:pointer;font-family:inherit;min-height:36px}
+.dr-chip.on{border-color:var(--c-blue);color:var(--c-text);background:color-mix(in srgb,var(--c-blue) 16%,transparent)}
+.dr-chip .n{opacity:.7;margin-left:6px}
+
+.dr-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;
+  padding:14px 16px;margin-bottom:11px;border-left:4px solid var(--c-border)}
+.dr-card.band-now{border-left-color:var(--c-red)}
+.dr-card.band-soon{border-left-color:var(--c-amber)}
+.dr-card.band-watch{border-left-color:var(--c-blue)}
+.dr-card.band-ref{border-left-color:var(--c-border)}
+.dr-card.is-read{opacity:.72}
+.dr-head{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.dr-rank{font-size:.72rem;font-weight:800;color:var(--c-muted);min-width:2ch;padding-top:3px}
+.dr-title{font-weight:700;color:var(--c-text);font-size:.98rem;line-height:1.35;flex:1 1 260px}
+.dr-band{font-size:.64rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  border-radius:999px;padding:3px 10px;white-space:nowrap;border:1px solid currentColor}
+.dr-band.now{color:var(--c-red)}.dr-band.soon{color:var(--c-amber)}
+.dr-band.watch{color:var(--c-blue)}.dr-band.ref{color:var(--c-muted)}
+.dr-meta{font-size:.76rem;color:var(--c-muted);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap}
+.dr-sum{font-size:.85rem;color:var(--c-text);line-height:1.6;margin-top:9px}
+.dr-why{margin-top:10px;border:1px solid var(--c-border);border-radius:9px;padding:9px 12px;
+  background:var(--c-bg);font-size:.79rem;line-height:1.6;color:var(--c-muted)}
+.dr-why b{color:var(--c-text)}
+.dr-why q{color:var(--c-text);font-style:italic}
+.dr-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.dr-btn{background:transparent;border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;
+  padding:7px 13px;font-size:.79rem;cursor:pointer;font-family:inherit;min-height:38px}
+.dr-btn:hover{border-color:var(--c-blue)}
+.dr-btn.primary{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-navy)}
+.dr-body{display:none;margin-top:12px;border-top:1px solid var(--c-border);padding-top:12px}
+.dr-body.on{display:block}
+.dr-body .doc{max-height:60vh;overflow:auto;font-size:.85rem;line-height:1.65;color:var(--c-text);
+  white-space:pre-wrap;word-break:break-word;font-family:inherit}
+.dr-body .doc h3{font-size:.95rem;margin:14px 0 5px;color:var(--c-text)}
+.dr-body .doc h4{font-size:.86rem;margin:12px 0 4px;color:var(--c-muted);text-transform:uppercase;letter-spacing:.04em}
+.dr-body .doc code{background:var(--c-bg);border-radius:5px;padding:1px 5px;font-size:.82em}
+.muted{color:var(--c-muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="v2-page">
+  <h1 class="page-title">📚 Deep Research</h1>
+
+  <div class="dr-intro">
+    Every report and analysis written for you, filed in one place and
+    <b>ordered by how urgent it is, not by when it was written</b>. The order comes from the
+    documents themselves — a stated deadline, a statutory obligation, or the largest sum a
+    report puts at stake — and every item shows the sentence that put it where it is, so you can
+    disagree with the ranking on the evidence. Nothing here goes to parents or to the room tablets.
+  </div>
+
+  <div class="dr-bar">
+    <input type="search" id="dr-q" placeholder="Search these reports by title or summary…">
+    <button class="dr-chip" id="dr-unread">Unread only</button>
+  </div>
+  <div class="dr-bar" id="dr-folders"></div>
+
+  <div id="dr-list"><p class="muted">Loading…</p></div>
+</div>
+
+<script>
+const api = (u, o) => Wren.api(u, o);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+let DOCS = [], FOLDER = '', UNREAD_ONLY = false;
+
+/* The score is a number; a person reads a word. Four bands, and the boundaries
+   are the rule boundaries in scripts/b290-deep-research.js — 'Now' is the range
+   only a live deadline can reach, 'Soon' is where a compliance obligation or a
+   large sum lands, and 'Reference' is the score given to a document with no
+   deadline, no obligation and no money in it at all. */
+function band(score) {
+  if (score >= 75) return { key: 'now',   label: 'Now' };
+  if (score >= 50) return { key: 'soon',  label: 'Soon' };
+  if (score >= 20) return { key: 'watch', label: 'Worth reading' };
+  return { key: 'ref', label: 'Reference' };
+}
+const KIND_LABEL = { deadline: 'a deadline', compliance: 'a legal duty', money: 'money at stake', reference: 'background' };
+
+function fmtDate(d) {
+  if (!d) return '';
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00Z');
+  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/* Just enough markdown for a report to read like one. Escaped FIRST, so nothing
+   in a document can inject markup into this page. */
+function mdish(text) {
+  let h = esc(text);
+  h = h.replace(/^######?\s+(.+)$/gm, '<h4>$1</h4>')
+       .replace(/^####\s+(.+)$/gm, '<h4>$1</h4>')
+       .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
+       .replace(/^##\s+(.+)$/gm, '<h3>$1</h3>')
+       .replace(/^#\s+(.+)$/gm, '<h3>$1</h3>')
+       .replace(/`([^`\n]{1,120})`/g, '<code>$1</code>')
+       .replace(/\*\*([^*\n]{1,200})\*\*/g, '<strong>$1</strong>');
+  return h;
+}
+
+function card(d, i) {
+  const b = band(d.urgency_score == null ? 0 : d.urgency_score);
+  const basis = d.urgency_basis || {};
+  return `<div class="dr-card band-${b.key}${d.read_by_me ? ' is-read' : ''}" data-id="${d.id}">
+    <div class="dr-head">
+      <span class="dr-rank">${i + 1}</span>
+      <span class="dr-title">${esc(d.title || d.filename)}</span>
+      <span class="dr-band ${b.key}">${b.label}</span>
+    </div>
+    <div class="dr-meta">
+      <span>${esc(d.subfolder || 'Unfiled')}</span>
+      ${d.document_date ? `<span>${esc(fmtDate(d.document_date))}</span>` : ''}
+      <span>ranked on ${esc(KIND_LABEL[basis.kind] || 'no signal')}</span>
+      ${d.read_by_me ? '<span>✓ read</span>' : '<span><b>unread</b></span>'}
+    </div>
+    ${d.summary ? `<div class="dr-sum">${esc(d.summary)}</div>` : ''}
+    <div class="dr-why"><b>Why it sits here:</b> ${esc(d.urgency_reason || 'No reason recorded.')}</div>
+    <div class="dr-acts">
+      <button class="dr-btn primary" data-open="${d.id}">Read it</button>
+      <button class="dr-btn" data-read="${d.id}">${d.read_by_me ? 'Mark unread' : 'Mark read'}</button>
+      <a class="dr-btn" href="/api/paperwork/${d.id}/file?download=1" style="text-decoration:none;display:inline-flex;align-items:center">Download</a>
+    </div>
+    <div class="dr-body" id="dr-body-${d.id}"></div>
+  </div>`;
+}
+
+function render() {
+  const q = (document.getElementById('dr-q').value || '').trim().toLowerCase();
+  const list = DOCS.filter(d => {
+    if (UNREAD_ONLY && d.read_by_me) return false;
+    if (FOLDER && d.subfolder !== FOLDER) return false;
+    if (q && !`${d.title} ${d.summary || ''} ${d.subfolder || ''}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  document.getElementById('dr-list').innerHTML = list.length
+    ? list.map(card).join('')
+    : '<p class="muted">Nothing matches that.</p>';
+
+  document.querySelectorAll('[data-open]').forEach(b =>
+    b.addEventListener('click', () => openDoc(Number(b.dataset.open), b)));
+  document.querySelectorAll('[data-read]').forEach(b =>
+    b.addEventListener('click', () => toggleRead(Number(b.dataset.read))));
+}
+
+function renderFolders(folders) {
+  const total = folders.reduce((a, f) => a + f.n, 0);
+  document.getElementById('dr-folders').innerHTML =
+    `<button class="dr-chip${FOLDER ? '' : ' on'}" data-f="">All<span class="n">${total}</span></button>` +
+    folders.map(f => `<button class="dr-chip${FOLDER === f.subfolder ? ' on' : ''}" data-f="${esc(f.subfolder || '')}">
+      ${esc(f.subfolder || 'Unfiled')}<span class="n">${f.n}</span></button>`).join('');
+  document.querySelectorAll('#dr-folders .dr-chip').forEach(b =>
+    b.addEventListener('click', () => { FOLDER = b.dataset.f; renderFolders(folders); render(); }));
+}
+
+/* Opening a report marks it read. That is what "unread" has to mean for the
+   Cockpit badge to be worth anything — a count you have to clear by hand is a
+   count people stop clearing. */
+async function openDoc(id, btn) {
+  const body = document.getElementById('dr-body-' + id);
+  if (body.classList.contains('on')) { body.classList.remove('on'); btn.textContent = 'Read it'; return; }
+  body.classList.add('on');
+  btn.textContent = 'Close';
+  body.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const t = await api(`/api/paperwork/${id}/text`);
+    body.innerHTML = `<div class="doc">${mdish(t.text || '(no text)')}</div>`;
+    const d = DOCS.find(x => x.id === id);
+    if (d && !d.read_by_me) {
+      await api(`/api/paperwork/${id}/read`, { method: 'POST', body: {} });
+      d.read_by_me = true;
+      document.querySelector(`.dr-card[data-id="${id}"]`)?.classList.add('is-read');
+      const rb = document.querySelector(`[data-read="${id}"]`);
+      if (rb) rb.textContent = 'Mark unread';
+    }
+  } catch (e) {
+    body.innerHTML = `<p class="muted">Could not open it: ${esc(e.message || e)}</p>`;
+  }
+}
+
+async function toggleRead(id) {
+  const d = DOCS.find(x => x.id === id);
+  if (!d) return;
+  const next = !d.read_by_me;
+  try {
+    await api(`/api/paperwork/${id}/read`, { method: 'POST', body: { unread: !next } });
+    d.read_by_me = next;
+    render();
+  } catch (e) { Wren.toast(e.message || 'Could not save that', 'warning'); }
+}
+
+async function load() {
+  try {
+    const d = await api('/api/paperwork/research');
+    DOCS = d.documents || [];
+    renderFolders(d.folders || []);
+    if (d.note) {
+      document.getElementById('dr-list').innerHTML = `<p class="muted">${esc(d.note)}</p>`;
+      return;
+    }
+    render();
+  } catch (e) {
+    document.getElementById('dr-list').innerHTML =
+      `<p class="muted">Could not load Deep Research: ${esc(e.message || e)}</p>`;
+  }
+}
+
+document.getElementById('dr-q').addEventListener('input', render);
+document.getElementById('dr-unread').addEventListener('click', function () {
+  UNREAD_ONLY = !UNREAD_ONLY;
+  this.classList.toggle('on', UNREAD_ONLY);
+  render();
+});
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

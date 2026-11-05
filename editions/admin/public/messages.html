@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Messages — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    body { background: var(--c-bg); color: var(--c-text); }
+    /* Tab bar */
+    .msg-tabs { display:flex; gap:4px; margin-bottom:20px; background:var(--c-surface); border-radius:10px; padding:4px; }
+    .msg-tab { flex:1; padding:9px 8px; border-radius:8px; border:none; background:transparent; color:var(--c-muted); font-size:13px; cursor:pointer; transition:.15s; font-family:inherit; font-weight:500; white-space:nowrap; }
+    .msg-tab.active { background:var(--c-blue); color:#fff; font-weight:700; }
+    .msg-pane { display:none; }
+    .msg-pane.active { display:block; }
+    /* Thread list */
+    .thread-row { display:flex; align-items:center; gap:12px; padding:12px; border-radius:8px; cursor:pointer; transition:.15s; border:1px solid var(--c-border); background:var(--c-surface); margin-bottom:8px; }
+    .thread-row:hover { border-color:var(--c-blue); }
+    .thread-row.unread { border-left:3px solid var(--c-danger); }
+    .thread-avatar { width:40px; height:40px; border-radius:50%; background:var(--c-blue-soft); display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--c-blue); flex-shrink:0; font-size:.85rem; }
+    .thread-body { flex:1; min-width:0; }
+    .thread-subject { font-weight:600; color:var(--c-text); font-size:.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .thread-meta { font-size:.75rem; color:var(--c-muted); margin-top:2px; }
+    .thread-preview { font-size:.78rem; color:var(--c-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+    .unread-badge { background:var(--c-danger); color:#fff; border-radius:999px; font-size:10px; font-weight:700; padding:1px 6px; min-width:18px; text-align:center; flex-shrink:0; }
+    /* Filters */
+    .filter-chips { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+    .chip { padding:5px 12px; border-radius:999px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--c-border); background:transparent; color:var(--c-muted); transition:.15s; font-family:inherit; }
+    .chip.active { background:var(--c-blue); color:#fff; border-color:var(--c-blue); }
+    .thread-arch-btn { flex-shrink:0; background:transparent; border:1px solid var(--c-border); color:var(--c-muted); border-radius:8px; font-size:11px; font-weight:600; padding:4px 9px; cursor:pointer; font-family:inherit; transition:.15s; }
+    .thread-arch-btn:hover { border-color:var(--c-blue); color:var(--c-blue); }
+    /* Thread detail modal */
+    .thread-detail { background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; padding:16px; margin-top:16px; }
+    .msg-bubble { padding:10px 14px; border-radius:10px; font-size:13px; max-width:80%; margin-bottom:10px; line-height:1.5; }
+    .msg-bubble.parent { background:var(--c-border); color:var(--c-text); margin-right:auto; border-radius:10px 10px 10px 2px; }
+    .msg-bubble.staff { background:var(--c-blue); color:#fff; margin-left:auto; border-radius:10px 10px 2px 10px; }
+    .msg-meta { font-size:11px; opacity:.7; margin-top:4px; }
+    /* Compose */
+    .compose-card { background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; padding:18px; }
+    .sent-item { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--c-border); font-size:13px; }
+    /* Compose modal (✏️ Compose) */
+    .cmpose-overlay { position:fixed; inset:0; background:rgba(2,6,23,.72); z-index:1000; display:none; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; }
+    .cmpose-overlay.open { display:flex; }
+    .cmpose-modal { background:var(--c-surface); border:1px solid var(--c-border); border-radius:14px; width:100%; max-width:540px; padding:20px; box-shadow:0 24px 60px rgba(0,0,0,.5); }
+    .cmpose-modal h3 { font-size:16px; font-weight:800; color:var(--c-text); margin:0 0 2px; }
+    .cmpose-mode { display:flex; gap:4px; margin:14px 0 16px; background:var(--c-bg); border-radius:9px; padding:4px; }
+    .cmpose-mode button { flex:1; padding:8px; border-radius:7px; border:none; background:transparent; color:var(--c-muted); font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+    .cmpose-mode button.active { background:var(--c-blue); color:#fff; font-weight:700; }
+    .cmpose-field { margin-bottom:12px; }
+    .cmpose-label { font-size:12px; color:var(--c-muted); margin-bottom:4px; }
+    .cmpose-input { width:100%; background:var(--c-bg); border:1px solid var(--c-border); color:var(--c-text); border-radius:8px; padding:9px 11px; font-size:13px; font-family:inherit; box-sizing:border-box; }
+    .cmpose-input:focus { outline:none; border-color:var(--c-blue); }
+    .cmpose-reciplist { max-height:210px; overflow-y:auto; border:1px solid var(--c-border); border-radius:8px; margin-top:6px; background:var(--c-bg); }
+    .cmpose-recip { display:flex; align-items:center; gap:8px; padding:9px 11px; cursor:pointer; font-size:13px; color:#e2e8f0; border-bottom:1px solid var(--c-surface); }
+    .cmpose-recip:hover { background:#2d374855; }
+    .cmpose-recip.selected { background:var(--c-blue-soft); color:#fff; }
+    .cmpose-recip .tag { font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--c-border); color:var(--c-muted); margin-left:auto; flex-shrink:0; }
+    .cmpose-grouphdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--c-muted); padding:8px 11px 4px; }
+    .cmpose-footer { display:flex; gap:10px; align-items:center; justify-content:flex-end; margin-top:16px; }
+    .cmpose-note { font-size:11px; color:var(--c-muted); margin-top:8px; line-height:1.5; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title" style="color:var(--c-text)">Messages</div>
+      <div class="page-subtitle" style="color:var(--c-muted)">Communications hub</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-primary" id="btn-compose-modal">✏️ Compose</button>
+      <button class="btn btn-ghost" id="btn-new-message" style="border-color:var(--c-border);color:var(--c-muted)">+ New Message</button>
+    </div>
+  </div>
+
+  <div class="msg-tabs">
+    <button class="msg-tab active" data-tab="parent-threads">Parent Messages</button>
+    <button class="msg-tab" data-tab="compose">Compose / Send</button>
+    <button class="msg-tab" data-tab="staff-chat">Staff Chat</button>
+  </div>
+
+  <!-- ─── PARENT MESSAGES ─── -->
+  <div class="msg-pane active" id="msg-pane-parent-threads">
+    <div class="filter-chips">
+      <button class="chip active" id="chip-all" data-filter="all">All</button>
+      <button class="chip" id="chip-unread" data-filter="unread">Unread</button>
+      <button class="chip" id="chip-mine" data-filter="mine">To Me</button>
+      <button class="chip" id="chip-archived" data-filter="archived">Archived</button>
+    </div>
+    <div style="margin-bottom:14px">
+      <input class="form-control" id="thread-search" placeholder="Search by child or subject..."
+        style="background:var(--c-surface);border-color:var(--c-border);color:var(--c-text);max-width:360px">
+    </div>
+    <!-- 2026-10-28: messages staff have sent to Toby to check before they go -->
+    <div id="wd-approvals" hidden style="border:1px solid var(--c-border);border-radius:12px;padding:14px;margin-bottom:14px;background:var(--c-surface)"></div>
+    <div id="thread-list"><div style="color:var(--c-muted);font-size:13px;padding:20px">Loading threads...</div></div>
+    <div id="thread-detail-wrap" style="display:none"></div>
+  </div>
+
+  <!-- ─── COMPOSE / SEND ─── -->
+  <div class="msg-pane" id="msg-pane-compose">
+    <div class="compose-card" style="max-width:600px;margin-bottom:20px">
+      <div style="font-size:14px;font-weight:700;color:var(--c-text);margin-bottom:16px">New Message</div>
+
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:var(--c-muted);margin-bottom:4px">Send to</div>
+        <select class="form-control" id="compose-to" style="background:var(--c-bg);border-color:var(--c-border);color:var(--c-text)">
+          <option value="">Select recipient...</option>
+          <option value="all_parents">All Parents</option>
+          <option value="all_staff">All Staff</option>
+          <optgroup label="── Specific Parent ──" id="parent-opts"></optgroup>
+          <optgroup label="── Specific Staff ──" id="staff-opts"></optgroup>
+        </select>
+      </div>
+      <div id="child-select-wrap" style="display:none;margin-bottom:10px">
+        <div style="font-size:12px;color:var(--c-muted);margin-bottom:4px">Child (for parent threads)</div>
+        <select class="form-control" id="compose-child" style="background:var(--c-bg);border-color:var(--c-border);color:var(--c-text)">
+          <option value="">Select child...</option>
+        </select>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:var(--c-muted);margin-bottom:4px">Subject</div>
+        <input class="form-control" id="compose-subject" placeholder="Message subject..." style="background:var(--c-bg);border-color:var(--c-border);color:var(--c-text)">
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;color:var(--c-muted);margin-bottom:4px">Message</div>
+        <textarea class="form-control" id="compose-body" rows="5" placeholder="Type your message..." style="background:var(--c-bg);border-color:var(--c-border);color:var(--c-text)"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary" id="btn-compose-send">Send</button>
+        <span id="compose-status" style="font-size:12px;color:var(--c-muted)"></span>
+      </div>
+    </div>
+
+    <div class="compose-card">
+      <div style="font-size:13px;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Sent Messages</div>
+      <div id="sent-list"><div style="color:var(--c-muted);font-size:13px">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- ─── STAFF CHAT AUDIT ─── -->
+  <div class="msg-pane" id="msg-pane-staff-chat">
+    <div style="margin-bottom:12px;padding:10px;background:rgba(74,154,191,.1);border:1px solid rgba(74,154,191,.2);border-radius:8px;font-size:12px;color:var(--c-muted)">
+      Manager audit view — read-only. Staff chat threads are shown below.
+    </div>
+    <div id="staff-thread-list"><div style="color:var(--c-muted);font-size:13px">Loading...</div></div>
+    <div id="staff-thread-detail-wrap"></div>
+  </div>
+</div>
+
+<!-- ─── COMPOSE MODAL ─── -->
+<div class="cmpose-overlay" id="cmpose-overlay">
+  <div class="cmpose-modal" role="dialog" aria-modal="true" aria-label="Compose new message">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div>
+        <h3>✏️ New Message</h3>
+        <div style="font-size:12px;color:var(--c-muted)">Start a new conversation or send an announcement</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="cmpose-close" style="border-color:var(--c-border);color:var(--c-muted)">✕</button>
+    </div>
+
+    <div class="cmpose-mode">
+      <button id="cmpose-mode-direct" class="active" data-mode="direct">Direct message</button>
+      <button id="cmpose-mode-broadcast" data-mode="broadcast">📢 Broadcast</button>
+    </div>
+
+    <!-- Direct mode: recipient picker -->
+    <div class="cmpose-field" id="cmpose-direct-wrap">
+      <div class="cmpose-label">To</div>
+      <input class="cmpose-input" id="cmpose-recip-search" placeholder="Search family or staff…" autocomplete="off">
+      <div class="cmpose-reciplist" id="cmpose-reciplist">
+        <div style="color:var(--c-muted);font-size:12px;padding:12px">Loading recipients…</div>
+      </div>
+      <div id="cmpose-selected" style="display:none;font-size:12px;color:var(--c-blue);margin-top:8px;font-weight:600"></div>
+    </div>
+
+    <!-- Broadcast mode: audience picker -->
+    <div class="cmpose-field" id="cmpose-broadcast-wrap" style="display:none">
+      <div class="cmpose-label">Send announcement to</div>
+      <select class="cmpose-input" id="cmpose-target">
+        <option value="all_parents">📢 All Parents (every active family)</option>
+        <option value="all_staff">📢 All Staff (staff group chat)</option>
+      </select>
+      <div class="cmpose-note">Broadcasts reach many people at once. You'll be asked to confirm before it sends.</div>
+    </div>
+
+    <div class="cmpose-field">
+      <div class="cmpose-label">Subject</div>
+      <input class="cmpose-input" id="cmpose-subject" placeholder="Message subject…">
+    </div>
+    <div class="cmpose-field">
+      <div class="cmpose-label">Message</div>
+      <textarea class="cmpose-input" id="cmpose-body" rows="5" placeholder="Type your message…"></textarea>
+    </div>
+
+    <div class="cmpose-footer">
+      <span id="cmpose-status" style="font-size:12px;color:var(--c-muted);margin-right:auto"></span>
+      <button class="btn btn-ghost btn-sm" id="cmpose-cancel" style="border-color:var(--c-border);color:var(--c-muted)">Cancel</button>
+      <button class="btn btn-primary" id="cmpose-send">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let allThreads = [], currentFilter = 'all', openThreadId = null;
+let children = [], staff = [];
+let showingArchived = false;
+
+function msgSetTab(tab, el) {
+  document.querySelectorAll('.msg-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.msg-pane').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById(`msg-pane-${tab}`)?.classList.add('active');
+  if (tab === 'parent-threads') loadParentThreads();
+  if (tab === 'compose') loadComposeData();
+  if (tab === 'staff-chat') loadStaffChat();
+}
+
+// ── Parent Threads ──────────────────────────────────────────────────────────
+async function loadParentThreads(archived) {
+  showingArchived = !!archived;
+  document.getElementById('thread-list').innerHTML = '<div style="color:var(--c-muted);font-size:13px;padding:20px">Loading...</div>';
+  try {
+    allThreads = await Wren.api('/api/messages/all-threads' + (archived ? '?archived=1' : ''));
+    renderThreads();
+  } catch(e) {
+    document.getElementById('thread-list').innerHTML = '<div style="color:var(--c-danger);font-size:13px;padding:20px">Failed to load threads: ' + (e.error||'') + '</div>';
+  }
+}
+
+function filterThreads(f, el) {
+  currentFilter = f;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  // 'Archived' needs a server round-trip (archived threads are excluded by default)
+  if (f === 'archived' && !showingArchived) return loadParentThreads(true);
+  if (f !== 'archived' && showingArchived) return loadParentThreads(false);
+  renderThreads();
+}
+
+async function toggleArchive(id, isArchived) {
+  try {
+    await Wren.api(`/api/messages/thread/${id}/${isArchived ? 'unarchive' : 'archive'}`, { method:'POST' });
+    Wren.toast(isArchived ? 'Thread unarchived' : 'Thread archived', 'success');
+    loadParentThreads(showingArchived);
+  } catch(e) { Wren.toast('Failed: ' + (e.error||''), 'error'); }
+}
+
+function renderThreads() {
+  const q = document.getElementById('thread-search').value.toLowerCase();
+  const user = Wren.user;
+  let filtered = allThreads.filter(t => {
+    if (q && !`${t.subject||''} ${t.child_name||''}`.toLowerCase().includes(q)) return false;
+    if (currentFilter === 'unread' && parseInt(t.unread_count||0) === 0) return false;
+    if (currentFilter === 'mine' && t.assigned_staff && !t.assigned_staff.toLowerCase().includes(user?.name?.toLowerCase()||'')) return false;
+    return true;
+  });
+
+  const el = document.getElementById('thread-list');
+  if (!filtered.length) {
+    el.innerHTML = '<div style="color:var(--c-muted);font-size:13px;padding:20px">No threads match this filter.</div>';
+    return;
+  }
+  el.innerHTML = filtered.map(t => {
+    const unread = parseInt(t.unread_count||0);
+    const initials = (t.child_name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    return `<div class="thread-row${unread>0?' unread':''}" data-action="open-thread" data-id="${t.id}">
+      <div class="thread-avatar">${initials}</div>
+      <div class="thread-body">
+        <div class="thread-subject">${t.subject||'(no subject)'}</div>
+        <div class="thread-meta">${t.child_name||'—'}${t.assigned_staff?' · '+t.assigned_staff:''} · ${t.last_message_at?new Date(t.last_message_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+        ${t.last_body?`<div class="thread-preview">${t.last_sender_type==='parent'?'Parent:':t.last_staff_reply||'Staff:'} ${String(t.last_body).substring(0,80)}</div>`:''}
+      </div>
+      ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ''}
+      <button class="thread-arch-btn" data-action="toggle-archive" data-id="${t.id}" data-archived="${t.archived?1:0}">${t.archived?'Unarchive':'Archive'}</button>
+    </div>`;
+  }).join('');
+}
+
+async function openThread(id) {
+  openThreadId = id;
+  const wrap = document.getElementById('thread-detail-wrap');
+  wrap.style.display = '';
+  wrap.innerHTML = '<div style="color:var(--c-muted);font-size:13px;padding:20px">Loading thread...</div>';
+  wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  try {
+    const data = await Wren.api(`/api/messages/thread/${id}`);
+    // Mark as read
+    Wren.api(`/api/messages/thread/${id}/read`, { method:'POST' }).catch(() => {});
+    const t = data.thread;
+    const msgs = data.messages || [];
+    wrap.innerHTML = `
+      <div class="thread-detail">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-weight:700;color:var(--c-text);font-size:1rem">${t.subject||'(no subject)'}</div>
+            <div style="font-size:12px;color:var(--c-muted);margin-top:2px">Child: ${allThreads.find(x=>x.id===id)?.child_name||'—'}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-action="close-thread-detail" style="border-color:var(--c-border);color:var(--c-muted)">Close ✕</button>
+        </div>
+        <div style="max-height:360px;overflow-y:auto;padding-bottom:10px">
+          ${msgs.map(m => {
+            const isParent = m.sender_type === 'parent';
+            const sender = isParent ? (m.parent_email||'Parent') : (m.staff_name||'Staff');
+            return `<div style="display:flex;flex-direction:column;align-items:${isParent?'flex-start':'flex-end'};margin-bottom:8px">
+              <div class="msg-bubble ${isParent?'parent':'staff'}">${_escMsg(m.body)}${m.attachment_path ? `<div style="margin-top:6px"><a href="#" data-att="${_escMsg(m.attachment_path)}" style="font-weight:700">📎 Open attachment</a>${m.pending_review && m.review_decision === 'pending' ? ' <span style="font-size:11px;opacity:.8">(waiting for a manager’s check)</span>' : ''}</div>` : ''}</div>
+              <div class="msg-meta" style="color:var(--c-muted);font-size:10px;${isParent?'':'text-align:right'}">${sender} · ${new Date(m.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="border-top:1px solid var(--c-border);padding-top:12px;margin-top:4px">
+          <textarea class="form-control" id="reply-body-${id}" rows="3" placeholder="Reply..." style="background:var(--c-bg);border-color:var(--c-border);color:var(--c-text);margin-bottom:10px"></textarea>
+          <button class="btn btn-primary" data-action="send-reply" data-thread-id="${id}">Send Reply</button>
+          <div id="wd-host-${id}"></div>
+        </div>
+      </div>`;
+    // 2026-10-28: attach (photo, PDF, Word, Excel), save a draft, or send it to Toby to check
+    if (window.WrenDrafts) WrenDrafts.mount({ threadId: id, textarea: document.getElementById(`reply-body-${id}`),
+      host: document.getElementById(`wd-host-${id}`), attach: true, onSent: () => openThread(id) });
+    // Mark unread as 0 in local state
+    const localThread = allThreads.find(x => x.id === id);
+    if (localThread) localThread.unread_count = 0;
+    renderThreads();
+  } catch(e) {
+    wrap.innerHTML = '<div style="color:var(--c-danger);padding:20px;font-size:13px">Failed to load thread.</div>';
+  }
+}
+
+async function sendReply(threadId) {
+  const body = document.getElementById(`reply-body-${threadId}`).value.trim();
+  if (!body) return Wren.toast('Enter a message', 'error');
+  try {
+    await Wren.api(`/api/messages/thread/${threadId}/reply`, { method:'POST', body: { body } });
+    Wren.toast('Reply sent', 'success');
+    openThread(threadId);
+  } catch(e) { Wren.toast('Failed to send: ' + (e.error||''), 'error'); }
+}
+
+// ── Compose / Send ──────────────────────────────────────────────────────────
+async function loadComposeData() {
+  try {
+    const data = await Wren.api('/api/messages/recipients').catch(() => null);
+    if (data) {
+      children = data.parents.map(p => ({ id: p.child_id, first_name: p.child_name.split(' ')[0], last_name: p.child_name.split(' ').slice(1).join(' ') }));
+      staff = data.staff;
+      const parentOpts = document.getElementById('parent-opts');
+      parentOpts.innerHTML = data.parents.map(p => `<option value="parent:${p.child_id}">${p.child_name}'s parent (${p.parent_name})</option>`).join('');
+      const staffOpts = document.getElementById('staff-opts');
+      staffOpts.innerHTML = data.staff.map(s => `<option value="staff:${s.id}">${s.name} (${s.role.replace('_',' ')})</option>`).join('');
+    } else {
+      // fallback to direct calls
+      const [ch, st] = await Promise.all([
+        Wren.api('/api/children').catch(() => []),
+        Wren.api('/api/staff').catch(() => [])
+      ]);
+      children = ch || [];
+      staff = (st || []).filter(s => s.is_active);
+      const parentOpts = document.getElementById('parent-opts');
+      parentOpts.innerHTML = children.map(c => `<option value="parent:${c.id}">${c.first_name} ${c.last_name}'s parent</option>`).join('');
+      const staffOpts = document.getElementById('staff-opts');
+      staffOpts.innerHTML = staff.map(s => `<option value="staff:${s.id}">${s.first_name} ${s.last_name}</option>`).join('');
+    }
+    const childSel = document.getElementById('compose-child');
+    if (childSel) {
+      childSel.innerHTML = '<option value="">Select child...</option>' +
+        children.map(c => `<option value="${c.id}">${c.first_name} ${c.last_name}</option>`).join('');
+    }
+    loadSentMessages();
+  } catch(e) { console.error('loadComposeData:', e); }
+}
+
+function composeToChanged() {
+  const val = document.getElementById('compose-to').value;
+  document.getElementById('child-select-wrap').style.display =
+    val.startsWith('parent:') ? '' : 'none';
+}
+
+async function composeSend() {
+  const to = document.getElementById('compose-to').value;
+  const subject = document.getElementById('compose-subject').value.trim();
+  const body = document.getElementById('compose-body').value.trim();
+  const status = document.getElementById('compose-status');
+  if (!to || !body) return Wren.toast('Select recipient and enter a message', 'error');
+  status.textContent = 'Sending...';
+  try {
+    if (to === 'all_parents' || to === 'all_staff') {
+      const r = await Wren.api('/api/messages/broadcast', { method:'POST', body: { subject:subject||'Message from manager', body, target:to } });
+      Wren.toast(`Sent to ${r.created} recipient${r.created!==1?'s':''}`, 'success');
+    } else if (to.startsWith('parent:')) {
+      const childId = parseInt(to.split(':')[1]);
+      const composedChildId = document.getElementById('compose-child').value || childId;
+      await Wren.api('/api/messages/thread', { method:'POST', body: { child_id:composedChildId, subject:subject||'Message from nursery', body, recipient_type:'nursery' } });
+      Wren.toast('Message sent', 'success');
+    } else if (to.startsWith('staff:')) {
+      // Staff group chat or direct — use staff_group thread
+      await Wren.api('/api/messages/staff-thread', { method:'POST', body: { subject:subject||'Message from manager', body } });
+      Wren.toast('Message sent to staff', 'success');
+    }
+    document.getElementById('compose-body').value = '';
+    document.getElementById('compose-subject').value = '';
+    document.getElementById('compose-to').value = '';
+    document.getElementById('child-select-wrap').style.display = 'none';
+    status.textContent = '';
+    loadSentMessages();
+  } catch(e) {
+    status.textContent = 'Failed: ' + (e.error||'error');
+    Wren.toast('Failed to send: ' + (e.error||''), 'error');
+  }
+}
+
+async function loadSentMessages() {
+  const el = document.getElementById('sent-list');
+  try {
+    const threads = await Wren.api('/api/messages/all-threads');
+    const sent = (threads || []).filter(t => {
+      // Show threads where last sender is staff
+      return t.last_sender_type === 'staff';
+    }).slice(0, 20);
+    if (!sent.length) {
+      el.innerHTML = '<div style="color:var(--c-muted);font-size:13px">No sent messages yet.</div>';
+      return;
+    }
+    el.innerHTML = sent.map(t => `
+      <div class="sent-item">
+        <div>
+          <div style="color:var(--c-text);font-size:13px;font-weight:600">${t.subject||'(no subject)'}</div>
+          <div style="font-size:11px;color:var(--c-muted)">${t.child_name||'—'} · ${t.last_message_at?new Date(t.last_message_at).toLocaleDateString('en-GB'):'—'}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-action="view-sent" data-id="${t.id}" style="border-color:var(--c-border);color:var(--c-muted);font-size:11px">View →</button>
+      </div>
+    `).join('');
+  } catch {
+    el.innerHTML = '<div style="color:var(--c-muted);font-size:13px">Could not load sent messages.</div>';
+  }
+}
+
+// ── Staff Chat Audit ─────────────────────────────────────────────────────────
+async function loadStaffChat() {
+  const el = document.getElementById('staff-thread-list');
+  try {
+    const threads = await Wren.api('/api/messages/staff-threads');
+    if (!(threads||[]).length) {
+      el.innerHTML = '<div style="color:var(--c-muted);font-size:13px">No staff group chat threads.</div>';
+      return;
+    }
+    el.innerHTML = threads.map(t => `
+      <div class="thread-row" data-action="open-staff-thread" data-id="${t.id}">
+        <div class="thread-avatar" style="background:#2d374850;color:var(--c-muted)">💬</div>
+        <div class="thread-body">
+          <div class="thread-subject">${t.subject}</div>
+          <div class="thread-meta">${t.last_message_at?new Date(t.last_message_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+          ${t.last_message?`<div class="thread-preview">${String(t.last_message).substring(0,100)}</div>`:''}
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--c-danger);font-size:13px">Failed to load staff chat: ' + (e.error||'') + '</div>';
+  }
+}
+
+async function openStaffThread(id) {
+  const wrap = document.getElementById('staff-thread-detail-wrap');
+  wrap.innerHTML = '<div style="color:var(--c-muted);font-size:13px;padding:20px">Loading...</div>';
+  wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  try {
+    const data = await Wren.api(`/api/messages/staff-thread/${id}`);
+    const t = data.thread;
+    const msgs = data.messages || [];
+    const isDM = t.recipient_type === 'staff_direct';
+    // A 1:1 DM (staff_direct) that this manager is part of is repliable; shared
+    // staff-group chat stays a read-only audit view.
+    Wren.api(`/api/messages/thread/${id}/read`, { method:'POST' }).catch(() => {});
+    wrap.innerHTML = `
+      <div class="thread-detail" style="margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="font-weight:700;color:var(--c-text)">${isDM ? '💬 ' : ''}${t.subject||'Staff chat'}</div>
+          <button class="btn btn-ghost btn-sm" data-action="close-staff-detail" style="border-color:var(--c-border);color:var(--c-muted)">Close ✕</button>
+        </div>
+        <div style="color:var(--c-muted);font-size:11px;margin-bottom:12px">${isDM ? 'Direct message' : 'Audit view — read only'}</div>
+        <div style="max-height:400px;overflow-y:auto">
+          ${msgs.map(m => `
+            <div style="padding:8px 0;border-bottom:1px solid var(--c-border);font-size:13px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="font-weight:600;color:var(--c-blue)">${m.staff_name||'Staff'}</span>
+                <span style="font-size:10px;color:var(--c-muted)">${new Date(m.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+              </div>
+              <div style="color:var(--c-text)">${m.body}</div>
+            </div>
+          `).join('')}
+        </div>
+        ${isDM ? `<div style="border-top:1px solid var(--c-border);padding-top:12px;margin-top:10px">
+          <textarea class="form-control" id="staff-reply-${id}" rows="2" placeholder="Reply…" style="background:var(--c-bg);border-color:var(--c-border);color:var(--c-text);margin-bottom:10px"></textarea>
+          <button class="btn btn-primary btn-sm" data-action="send-staff-reply" data-thread-id="${id}">Send Reply</button>
+        </div>` : ''}
+      </div>`;
+  } catch {
+    wrap.innerHTML = '<div style="color:var(--c-danger);font-size:13px;padding:12px">Failed to load thread.</div>';
+  }
+}
+
+// GET /api/messages/staff-thread/:id — need this endpoint (reuses existing logic)
+// Falls back gracefully if not available
+
+// Static button listeners
+document.getElementById('btn-new-message').addEventListener('click', () => {
+  msgSetTab('compose', document.querySelector('[data-tab=compose]'));
+});
+document.getElementById('btn-compose-send').addEventListener('click', composeSend);
+document.getElementById('thread-search').addEventListener('input', renderThreads);
+document.getElementById('compose-to').addEventListener('change', composeToChanged);
+
+// Tab bar delegation
+document.querySelector('.msg-tabs').addEventListener('click', function(e) {
+  const btn = e.target.closest('.msg-tab[data-tab]');
+  if (!btn) return;
+  msgSetTab(btn.dataset.tab, btn);
+});
+
+// Filter chip delegation
+document.querySelector('.filter-chips').addEventListener('click', function(e) {
+  const chip = e.target.closest('[data-filter]');
+  if (!chip) return;
+  filterThreads(chip.dataset.filter, chip);
+});
+
+// Delegated listener for dynamic content
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'toggle-archive') { e.stopPropagation(); toggleArchive(parseInt(el.dataset.id), el.dataset.archived === '1'); }
+  else if (action === 'open-thread') openThread(parseInt(el.dataset.id));
+  else if (action === 'close-thread-detail') document.getElementById('thread-detail-wrap').style.display = 'none';
+  else if (action === 'send-reply') sendReply(parseInt(el.dataset.threadId));
+  else if (action === 'view-sent') {
+    msgSetTab('parent-threads', document.querySelector('[data-tab=parent-threads]'));
+    openThread(parseInt(el.dataset.id));
+  }
+  else if (action === 'open-staff-thread') openStaffThread(parseInt(el.dataset.id));
+  else if (action === 'send-staff-reply') sendStaffReply(parseInt(el.dataset.threadId));
+  else if (action === 'close-staff-detail') el.closest('.thread-detail').remove();
+});
+
+async function sendStaffReply(threadId) {
+  const ta = document.getElementById(`staff-reply-${threadId}`);
+  const body = (ta && ta.value || '').trim();
+  if (!body) return Wren.toast('Enter a message', 'error');
+  try {
+    await Wren.api(`/api/messages/thread/${threadId}/reply`, { method:'POST', body: { body } });
+    Wren.toast('Reply sent', 'success');
+    openStaffThread(threadId);
+  } catch(e) { Wren.toast('Failed to send: ' + (e.error||''), 'error'); }
+}
+
+function _escMsg(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Attachments are behind the API's auth: fetch with the token and open the file.
+document.addEventListener('click', async (e) => {
+  const a = e.target.closest('a[data-att]'); if (!a) return;
+  e.preventDefault();
+  try {
+    const r = await fetch(a.dataset.att, { headers: Wren.authHeaders ? Wren.authHeaders() : { Authorization: 'Bearer ' + Wren.getToken() } });
+    if (!r.ok) throw new Error(r.status);
+    window.open(URL.createObjectURL(await r.blob()), '_blank');
+  } catch (_) { Wren.toast('Could not open the attachment', 'error'); }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  const _approvals = () => { if (window.WrenDrafts) WrenDrafts.mountApprovals(document.getElementById('wd-approvals'), { openThread: (tid) => openThread(tid) }); };
+  if (window.WrenDrafts) _approvals(); else setTimeout(_approvals, 800);
+  loadParentThreads().then(() => {
+    // b154 Timeline deep-link — ?thread=<id> opens that thread directly
+    const threadId = parseInt(new URLSearchParams(location.search).get('thread'), 10);
+    if (threadId) openThread(threadId);
+  });
+});
+
+// ── ✏️ Compose modal ──────────────────────────────────────────────────────────
+let cmposeRecipients = { parents: [], staff: [] };
+let cmposeMode = 'direct';       // 'direct' | 'broadcast'
+let cmposeSelected = null;       // { kind:'parent'|'staff', id, label }
+let cmposeLoaded = false;
+
+function cmposeOpen() {
+  cmposeMode = 'direct';
+  cmposeSelected = null;
+  document.getElementById('cmpose-subject').value = '';
+  document.getElementById('cmpose-body').value = '';
+  document.getElementById('cmpose-recip-search').value = '';
+  document.getElementById('cmpose-status').textContent = '';
+  cmposeSetMode('direct');
+  document.getElementById('cmpose-overlay').classList.add('open');
+  if (!cmposeLoaded) cmposeLoadRecipients();
+  else cmposeRenderRecipients('');
+  setTimeout(() => document.getElementById('cmpose-recip-search').focus(), 50);
+}
+function cmposeClose() { document.getElementById('cmpose-overlay').classList.remove('open'); }
+
+function cmposeSetMode(mode) {
+  cmposeMode = mode;
+  document.getElementById('cmpose-mode-direct').classList.toggle('active', mode === 'direct');
+  document.getElementById('cmpose-mode-broadcast').classList.toggle('active', mode === 'broadcast');
+  document.getElementById('cmpose-direct-wrap').style.display = mode === 'direct' ? '' : 'none';
+  document.getElementById('cmpose-broadcast-wrap').style.display = mode === 'broadcast' ? '' : 'none';
+  document.getElementById('cmpose-send').textContent = mode === 'broadcast' ? '📢 Broadcast' : 'Send';
+}
+
+async function cmposeLoadRecipients() {
+  try {
+    const data = await Wren.api('/api/messages/recipients');
+    cmposeRecipients = { parents: data.parents || [], staff: data.staff || [] };
+    cmposeLoaded = true;
+    cmposeRenderRecipients('');
+  } catch (e) {
+    document.getElementById('cmpose-reciplist').innerHTML =
+      '<div style="color:var(--c-danger);font-size:12px;padding:12px">Failed to load recipients: ' + (e.error||'') + '</div>';
+  }
+}
+
+function cmposeRenderRecipients(q) {
+  q = (q || '').toLowerCase();
+  const parents = cmposeRecipients.parents.filter(p =>
+    !q || `${p.child_name||''} ${p.parent_name||''}`.toLowerCase().includes(q));
+  const staff = cmposeRecipients.staff.filter(s =>
+    !q || `${s.name||''} ${s.role||''}`.toLowerCase().includes(q));
+  let html = '';
+  if (parents.length) {
+    html += '<div class="cmpose-grouphdr">Families / Parents</div>';
+    html += parents.map(p => {
+      const sel = cmposeSelected && cmposeSelected.kind === 'parent' && cmposeSelected.id === p.child_id;
+      return `<div class="cmpose-recip${sel?' selected':''}" data-action="cmpose-pick" data-kind="parent" data-id="${p.child_id}" data-label="${(p.child_name||'child').replace(/"/g,'&quot;')}'s family">
+        <span>${p.child_name||'—'}'s family</span><span class="tag">parent</span></div>`;
+    }).join('');
+  }
+  if (staff.length) {
+    html += '<div class="cmpose-grouphdr">Staff (1:1 direct message)</div>';
+    html += staff.map(s => {
+      const sel = cmposeSelected && cmposeSelected.kind === 'staff' && cmposeSelected.id === s.id;
+      return `<div class="cmpose-recip${sel?' selected':''}" data-action="cmpose-pick" data-kind="staff" data-id="${s.id}" data-label="${(s.name||'staff').replace(/"/g,'&quot;')}">
+        <span>${s.name||'—'}</span><span class="tag">${(s.role||'staff').replace(/_/g,' ')}</span></div>`;
+    }).join('');
+  }
+  if (!html) html = '<div style="color:var(--c-muted);font-size:12px;padding:12px">No matches.</div>';
+  document.getElementById('cmpose-reciplist').innerHTML = html;
+}
+
+function cmposePick(kind, id, label) {
+  cmposeSelected = { kind, id: kind === 'parent' ? parseInt(id) : parseInt(id), label };
+  const sel = document.getElementById('cmpose-selected');
+  sel.style.display = '';
+  sel.textContent = '✓ To: ' + label;
+  cmposeRenderRecipients(document.getElementById('cmpose-recip-search').value);
+}
+
+async function cmposeSend() {
+  const subject = document.getElementById('cmpose-subject').value.trim();
+  const body = document.getElementById('cmpose-body').value.trim();
+  const status = document.getElementById('cmpose-status');
+  if (!body) return Wren.toast('Enter a message', 'error');
+
+  try {
+    if (cmposeMode === 'broadcast') {
+      const target = document.getElementById('cmpose-target').value;
+      const audience = target === 'all_parents' ? 'ALL PARENTS' : 'ALL STAFF';
+      if (!confirm(`Broadcast this message to ${audience}? This cannot be undone.`)) return;
+      status.textContent = 'Broadcasting…';
+      const r = await Wren.api('/api/messages/broadcast', { method:'POST',
+        body: { subject: subject || 'Message from Your Nursery', body, target } });
+      Wren.toast(`Broadcast sent (${r.created} thread${r.created!==1?'s':''})`, 'success');
+      cmposeClose();
+      // Refresh whichever list is relevant
+      if (target === 'all_staff') { msgSetTab('staff-chat', document.querySelector('[data-tab=staff-chat]')); }
+      else { msgSetTab('parent-threads', document.querySelector('[data-tab=parent-threads]')); loadParentThreads(); }
+      return;
+    }
+
+    // Direct message
+    if (!cmposeSelected) return Wren.toast('Choose a recipient', 'error');
+    status.textContent = 'Sending…';
+    if (cmposeSelected.kind === 'parent') {
+      const thread = await Wren.api('/api/messages/thread', { method:'POST',
+        body: { child_id: cmposeSelected.id, subject: subject || 'Message from nursery', body, recipient_type: 'nursery' } });
+      Wren.toast('Message sent', 'success');
+      cmposeClose();
+      // Refresh thread list, then open the new thread
+      msgSetTab('parent-threads', document.querySelector('[data-tab=parent-threads]'));
+      await loadParentThreads();
+      if (thread && thread.id) openThread(thread.id);
+    } else { // staff → 1:1 direct message (colleague DM)
+      const r = await Wren.api('/api/messages/staff-dm', { method:'POST',
+        body: { recipient_staff_id: cmposeSelected.id, subject: subject || '', body } });
+      Wren.toast('Message sent to ' + cmposeSelected.label, 'success');
+      cmposeClose();
+      msgSetTab('staff-chat', document.querySelector('[data-tab=staff-chat]'));
+      await loadStaffChat();
+      if (r && r.thread_id) openStaffThread(r.thread_id);
+    }
+  } catch (e) {
+    status.textContent = 'Failed: ' + (e.error || 'error');
+    Wren.toast('Failed to send: ' + (e.error || ''), 'error');
+  }
+}
+
+// Wire compose-modal controls
+document.getElementById('btn-compose-modal').addEventListener('click', cmposeOpen);
+document.getElementById('cmpose-close').addEventListener('click', cmposeClose);
+document.getElementById('cmpose-cancel').addEventListener('click', cmposeClose);
+document.getElementById('cmpose-send').addEventListener('click', cmposeSend);
+document.getElementById('cmpose-mode-direct').addEventListener('click', () => cmposeSetMode('direct'));
+document.getElementById('cmpose-mode-broadcast').addEventListener('click', () => cmposeSetMode('broadcast'));
+document.getElementById('cmpose-recip-search').addEventListener('input', e => cmposeRenderRecipients(e.target.value));
+document.getElementById('cmpose-overlay').addEventListener('click', e => { if (e.target.id === 'cmpose-overlay') cmposeClose(); });
+document.getElementById('cmpose-reciplist').addEventListener('click', e => {
+  const el = e.target.closest('[data-action="cmpose-pick"]');
+  if (!el) return;
+  cmposePick(el.dataset.kind, el.dataset.id, el.dataset.label);
+});
+</script>
+<script src="/js/wren-message-drafts.js?v=1"></script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

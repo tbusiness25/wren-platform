@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Invoices — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+.inv-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-bottom:6px}
+.status-badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px}
+.s-draft{background:var(--c-muted-soft);color:var(--c-muted)}.s-sent{background:var(--c-blue-soft);color:var(--c-blue)}
+.s-paid{background:var(--c-ok-soft);color:var(--c-ok)}.s-overdue{background:var(--c-danger-soft);color:var(--c-danger)}
+.s-written_off{background:var(--c-muted-soft);color:var(--c-muted)}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.chip{padding:5px 13px;border-radius:6px;font-size:12px;background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted);cursor:pointer}
+.chip.active{background:var(--c-blue-soft);border-color:var(--c-blue);color:var(--c-blue)}
+/* Invoice detail drawer */
+.inv-modal{position:fixed;inset:0;background:rgba(2,6,23,.66);z-index:900;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:32px 12px}
+.inv-modal.open{display:flex}
+.inv-sheet{background:var(--c-bg);border:1px solid var(--c-border);border-radius:12px;max-width:640px;width:100%;padding:20px 22px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.inv-sheet h2{font-size:1.05rem;color:var(--c-text);margin:0 0 2px}
+.inv-sheet .sub{font-size:.78rem;color:var(--c-muted);margin-bottom:14px}
+.li-row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--c-surface);font-size:.86rem}
+.li-row .li-lbl{color:var(--c-muted);flex:1;min-width:0}
+.li-row .li-amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.li-amt.neg{color:var(--c-ok)}.li-amt.pos{color:var(--c-text)}
+.li-net{display:flex;justify-content:space-between;padding:12px 0 2px;font-size:1rem;font-weight:800;color:var(--c-text);border-top:2px solid var(--c-border);margin-top:4px}
+.li-fund-tag{display:inline-block;font-size:.64rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--c-ok);background:var(--c-ok-soft);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.calc-toggle{margin-top:14px;font-size:.8rem;color:var(--c-info);background:none;border:none;cursor:pointer;padding:6px 0}
+.calc-body{display:none;background:var(--c-surface-2);border:1px solid var(--c-surface);border-radius:8px;padding:12px 14px;margin-top:6px;font-size:.78rem;color:var(--c-muted);line-height:1.55}
+.calc-body.open{display:block}
+.calc-body p{margin:0 0 8px}.calc-body p:last-child{margin:0}
+.inv-close{float:right;background:none;border:none;color:var(--c-muted);font-size:1.3rem;cursor:pointer;line-height:1;margin:-4px -4px 0 0}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <div class="page-title">Invoices</div>
+    <button class="btn btn-ghost" id="btn-bulk-print">Print all</button>
+  </div>
+  <!-- b481 (2026-10-12) — Nathan (accountant): "invoice is in two sections". This page still
+       works, but Invoices & Payments is now where the Invoices tab is kept and linked from
+       the dashboard/child profile. Not removed — bulk print lives only here for now. -->
+  <div style="border:1px solid var(--c-warn);background:var(--c-surface);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:.8rem;color:var(--c-text)">
+    The kept Invoices page is now <a href="/money.html#invoices" style="color:var(--c-blue)">Invoices &amp; Payments → Invoices</a> — this older page is kept for bulk printing (linked from there).
+  </div>
+  <div class="filter-bar">
+    <span class="chip active" data-f="">All</span>
+    <span class="chip" data-f="overdue">Overdue</span>
+    <span class="chip" data-f="sent">Sent</span>
+    <span class="chip" data-f="draft">Draft</span>
+    <span class="chip" data-f="paid">Paid</span>
+    <select id="inv-period" style="margin-left:auto;padding:5px 10px;border-radius:6px;font-size:12px;background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted);cursor:pointer"></select>
+  </div>
+  <div id="inv-total" style="font-size:.8rem;color:var(--c-muted);margin:-8px 0 14px"></div>
+  <div id="inv-list"><div class="loading-state"><div class="spinner"></div></div></div>
+</div>
+<div class="inv-modal" id="inv-modal"><div class="inv-sheet" id="inv-sheet"></div></div>
+<script>
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtMoney(p){return'£'+((p||0)/100).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtDate(d){return d?new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'—';}
+let currentFilter='';
+function setFilter(el,f){
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');currentFilter=f;loadInvoices();
+}
+let _invById={};
+// 2026-09-24 — the EyMan import put eight years of invoices behind this page. Without a
+// period the list opened on March 2018 and the current month was 4,300 rows down, which is
+// what "I can't see the September invoices" actually was.
+function buildPeriodOptions(){
+  const sel=document.getElementById('inv-period');
+  if(!sel||sel.options.length) return;
+  const now=new Date();
+  // Default to the current calendar month. The run goes out on the 24th for the month ahead,
+  // but defaulting forward would open on an empty month whenever that run has not been done
+  // yet -- which is the same "there are no invoices" dead end this selector exists to fix.
+  const anchor=new Date(now.getFullYear(), now.getMonth(), 1);
+  let html='<option value="">All periods</option>';
+  for(let i=0;i<18;i++){
+    const d=new Date(anchor.getFullYear(), anchor.getMonth()-i, 1);
+    const label=d.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+    html+=`<option value="${d.getFullYear()}-${d.getMonth()+1}"${i===0?' selected':''}>${label}</option>`;
+  }
+  sel.innerHTML=html;
+  sel.addEventListener('change',loadInvoices);
+}
+async function loadInvoices(){
+  buildPeriodOptions();
+  const period=(document.getElementById('inv-period')||{}).value||'';
+  const qs=[];
+  if(currentFilter) qs.push('status='+encodeURIComponent(currentFilter));
+  if(period){ const [y,m]=period.split('-'); qs.push('year='+y); qs.push('month='+m); }
+  const url='/api/invoices'+(qs.length?'?'+qs.join('&'):'');
+  const invs=await Wren.api(url).catch(()=>[]);
+  const totEl=document.getElementById('inv-total');
+  if(totEl){
+    const sum=invs.reduce((a,b)=>a+(b.amount_pence||0),0);
+    const paid=invs.filter(x=>x.status==='paid').reduce((a,b)=>a+(b.amount_pence||0),0);
+    totEl.textContent=invs.length
+      ? `${invs.length} invoices · ${fmtMoney(sum)} billed · ${fmtMoney(paid)} paid · ${fmtMoney(sum-paid)} outstanding`
+      : '';
+  }
+  _invById={}; invs.forEach(i=>{_invById[i.id]=i;});
+  const el=document.getElementById('inv-list');
+  if(!invs.length){el.innerHTML='<div class="empty-state">No invoices found.</div>';return;}
+  el.innerHTML=invs.map(i=>`
+    <div class="inv-row">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.88rem;font-weight:600;color:var(--c-text)">${esc(i.child_name||'Unknown child')}</div>
+        <div style="font-size:.75rem;color:var(--c-muted)">Due: ${fmtDate(i.due_on)}${i.bill_payer_email?' · '+esc(i.bill_payer_email):''}</div>
+        ${i.days_overdue>0?`<div style="font-size:.72rem;color:var(--c-danger)">${i.days_overdue} days overdue</div>`:''}
+      </div>
+      <div style="font-size:1rem;font-weight:800;color:${i.status==='overdue'?'var(--c-danger)':i.status==='paid'?'var(--c-ok)':'var(--c-text)'}">${fmtMoney(i.amount_pence)}</div>
+      <span class="status-badge s-${i.status}">${(i.status||'').replace('_',' ').toUpperCase()}</span>
+      <button class="btn btn-secondary" style="font-size:.75rem;padding:5px 10px" data-action="view" data-id="${i.id}">View</button>
+      ${i.status==='overdue'||i.status==='sent'?`<button class="btn btn-secondary" style="font-size:.75rem;padding:5px 10px" data-action="send-reminder" data-id="${i.id}">Remind</button>`:''}
+    </div>`).join('');
+}
+// Render the itemised breakdown (booked childcare, funding deductions, extras, net) with a
+// "how this is calculated" note. Works for both new and legacy line_items shapes.
+function renderInvoiceDetail(inv){
+  const items=Array.isArray(inv.line_items)?inv.line_items:[];
+  const notes=items.filter(li=>li.note).map(li=>li.note);
+  const rows=items.length?items.map(li=>{
+    const amt=li.amount_pence||0; const neg=amt<0;
+    const tag=li.is_funded?'<span class="li-fund-tag">funding</span>':(li.is_credit?'<span class="li-fund-tag">credit</span>':'');
+    return `<div class="li-row"><div class="li-lbl">${esc(li.label||'—')}${tag}</div>`
+      +`<div class="li-amt ${neg?'neg':'pos'}">${neg?'−':''}${fmtMoney(Math.abs(amt))}</div></div>`;
+  }).join(''):'<div class="li-row"><div class="li-lbl" style="color:var(--c-muted)">No itemised breakdown stored for this invoice.</div></div>';
+  const calc=notes.length?`<button class="calc-toggle" id="calc-toggle">ⓘ How is this calculated?</button>`
+    +`<div class="calc-body" id="calc-body">${notes.map(n=>'<p>'+esc(n)+'</p>').join('')}`
+    +`<p style="color:var(--c-muted)">Funding is deducted at the local-authority hourly rate. Term-time funding is only deducted in months containing funded term weeks; stretched funding spreads the yearly entitlement evenly across every month.</p></div>`:'';
+  return `<button class="inv-close" id="inv-close">×</button>`
+    +`<h2>${esc(inv.child_name||'Invoice')} — ${esc(inv.invoice_number||('#'+inv.id))}</h2>`
+    +`<div class="sub">${esc(inv.period_label||'')}${inv.due_on?' · due '+fmtDate(inv.due_on):''}${inv.bill_payer_email?' · '+esc(inv.bill_payer_email):''}</div>`
+    +rows
+    +`<div class="li-net"><span>Total payable</span><span>${fmtMoney(inv.amount_pence)}</span></div>`
+    +calc;
+}
+function openDetail(id){
+  const inv=_invById[id]; if(!inv) return;
+  document.getElementById('inv-sheet').innerHTML=renderInvoiceDetail(inv);
+  document.getElementById('inv-modal').classList.add('open');
+  const t=document.getElementById('calc-toggle');
+  if(t) t.addEventListener('click',()=>document.getElementById('calc-body').classList.toggle('open'));
+  document.getElementById('inv-close').addEventListener('click',closeDetail);
+}
+function closeDetail(){document.getElementById('inv-modal').classList.remove('open');}
+async function sendReminder(id,btn){
+  btn.disabled=true;btn.textContent='…';
+  try{await Wren.api('/api/invoices/'+id+'/send-reminder',{method:'POST',body:'{}'});Wren.toast('Reminder sent');btn.textContent='Sent ✓';}
+  catch{btn.disabled=false;btn.textContent='Remind';}
+}
+document.addEventListener('wren:ready', function() {
+  // Filter chip delegation
+  document.querySelector('.filter-bar').addEventListener('click', function(e) {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    setFilter(chip, chip.dataset.f);
+  });
+  // Row action delegation (view breakdown + send reminder)
+  document.getElementById('inv-list').addEventListener('click', function(e) {
+    const view = e.target.closest('[data-action="view"]');
+    if (view) { openDetail(parseInt(view.dataset.id)); return; }
+    const btn = e.target.closest('[data-action="send-reminder"]');
+    if (btn) sendReminder(parseInt(btn.dataset.id), btn);
+  });
+  // Close detail when clicking the backdrop
+  document.getElementById('inv-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeDetail();
+  });
+  // Bulk print
+  document.getElementById('btn-bulk-print').addEventListener('click', function() {
+    const month = prompt('Month (YYYY-MM) or leave blank for all:');
+    let url = '/api/invoices/bulk-print?';
+    if (month) url += 'month=' + encodeURIComponent(month);
+    window.open(url, '_blank');
+  });
+  loadInvoices();
+});
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

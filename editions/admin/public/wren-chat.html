@@ -1,0 +1,607 @@
+<!DOCTYPE html><html lang="en-GB"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wren Chat · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ /* b348 — Wren Chat. Tokens only (var(--c-*)); the local names are aliases so the page follows
+    whatever palette Roost is wearing, light or dark. No bare colours anywhere in this file. */
+ :root{--bg:var(--c-bg);--card:var(--c-card);--bd:var(--c-border);--txt:var(--c-text);--mut:var(--c-muted);
+   --ok:var(--c-green);--warn:var(--c-amber);--bad:var(--c-red);--blue:var(--c-blue)}
+ .wcx-wrap{max-width:860px;margin:0 auto;padding:16px;color:var(--txt);font-size:.92rem}
+ .wcx-head{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+ .wcx-head h1{font-size:1.3rem;margin:0 0 2px}
+ .wcx-sub{color:var(--mut);font-size:.82rem;margin:0;max-width:52ch}
+ .wcx-chips{display:flex;flex-wrap:wrap;gap:6px}
+ .wcx-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bd);background:var(--card);color:var(--txt);
+   border-radius:999px;padding:4px 10px;font-size:.74rem;line-height:1.3}
+ .wcx-chip b{font-weight:700}
+ .wcx-chip.ok{border-color:var(--ok)}.wcx-chip.warn{border-color:var(--warn)}.wcx-chip.bad{border-color:var(--bad)}
+
+ .wcx-banner{border:1px solid var(--warn);border-left-width:4px;background:var(--card);border-radius:12px;padding:12px 14px;margin:0 0 12px}
+ .wcx-banner.bad{border-color:var(--bad)}.wcx-banner.ok{border-color:var(--ok)}
+ .wcx-banner h2{font-size:.92rem;margin:0 0 4px}
+ .wcx-banner p{margin:0;color:var(--txt);font-size:.84rem;line-height:1.5}
+ .wcx-banner .wcx-act{margin-top:8px}
+
+ .wcx-meter{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px 14px;margin:0 0 12px;font-size:.78rem;color:var(--mut)}
+ .wcx-meter .row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px}
+ .wcx-meter b{color:var(--txt)}
+ .wcx-bar{height:6px;border-radius:999px;background:var(--bg);border:1px solid var(--bd);margin:6px 0 2px;overflow:hidden}
+ .wcx-bar i{display:block;height:100%;width:0;background:var(--blue)}
+ .wcx-bar.hot i{background:var(--warn)}.wcx-bar.full i{background:var(--bad)}
+
+ .wcx-thread{display:flex;flex-direction:column;gap:12px;min-height:220px;padding:4px 0 12px}
+ .wcx-empty{color:var(--mut);text-align:center;padding:26px 8px}
+ .wcx-empty p{margin:0 0 12px}
+ .wcx-sugg{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+ .wcx-sugg button{min-height:44px}
+ .wcx-msg{max-width:92%;border-radius:14px;padding:10px 13px;line-height:1.55;word-break:break-word}
+ .wcx-msg.user{align-self:flex-end;background:var(--blue);color:var(--bg);font-weight:500;border-bottom-right-radius:4px}
+ .wcx-msg.bot{align-self:flex-start;background:var(--card);border:1px solid var(--bd);border-bottom-left-radius:4px}
+ .wcx-msg.note{align-self:stretch;max-width:100%;background:var(--card);border:1px solid var(--warn);border-left-width:4px}
+ .wcx-msg.note.bad{border-color:var(--bad)}
+ .wcx-msg p{margin:0 0 8px}.wcx-msg p:last-child{margin-bottom:0}
+ .wcx-msg ul{margin:4px 0 8px;padding-left:20px}
+ .wcx-msg .wcx-src{margin-top:8px;font-size:.74rem;color:var(--mut)}
+ .wcx-think{display:inline-flex;gap:5px;align-items:center;color:var(--mut)}
+ .wcx-think i{width:7px;height:7px;border-radius:50%;background:var(--mut);animation:wcxp 1s infinite ease-in-out}
+ .wcx-think i:nth-child(2){animation-delay:.15s}.wcx-think i:nth-child(3){animation-delay:.3s}
+ @keyframes wcxp{0%,80%,100%{opacity:.25}40%{opacity:1}}
+ @media (prefers-reduced-motion:reduce){.wcx-think i{animation:none;opacity:.7}.wcx-orb{animation:none!important}}
+
+ .wcx-sent{margin-top:8px;border-top:1px dashed var(--bd);padding-top:6px;font-size:.76rem;color:var(--mut)}
+ .wcx-sent summary{cursor:pointer;color:var(--txt);min-height:44px;display:flex;align-items:center}
+ .wcx-call{margin:8px 0;padding:8px 10px;background:var(--bg);border:1px solid var(--bd);border-radius:10px}
+ .wcx-call .k{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:4px}
+ .wcx-tag{display:inline-block;border:1px solid var(--bd);border-radius:6px;padding:1px 7px;margin:2px 4px 2px 0;font-size:.72rem;color:var(--txt)}
+ .wcx-tag.mask{border-color:var(--warn)}
+ .wcx-call pre{margin:6px 0 0;padding:8px;max-height:260px;overflow:auto;background:var(--card);border:1px solid var(--bd);border-radius:8px;
+   font-size:.72rem;line-height:1.45;white-space:pre-wrap;word-break:break-word;color:var(--txt)}
+
+ .wcx-composer{position:sticky;bottom:0;z-index:5;display:flex;gap:8px;align-items:flex-end;background:var(--bg);padding:10px 0 8px;border-top:1px solid var(--bd)}
+ .wcx-composer textarea{flex:1;min-width:0;resize:none;min-height:44px;max-height:140px;background:var(--card);border:1px solid var(--bd);
+   color:var(--txt);border-radius:12px;padding:11px 12px;font:inherit;font-size:.92rem;line-height:1.4;overflow:hidden}
+ .wcx-composer textarea::placeholder{color:var(--mut)}
+ .wcx-btn{min-height:44px;min-width:44px;border:1px solid var(--bd);background:var(--card);color:var(--txt);border-radius:12px;padding:0 14px;
+   font:inherit;font-size:.88rem;cursor:pointer;transition:border-color .2s ease}
+ .wcx-btn:hover{border-color:var(--blue)}
+ .wcx-btn:focus-visible,.wcx-composer textarea:focus-visible,.wcx-form input:focus-visible,.wcx-form select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+ .wcx-btn.primary{background:var(--blue);border-color:var(--blue);color:var(--bg);font-weight:700}
+ .wcx-btn.danger{border-color:var(--bad)}
+ .wcx-btn[aria-pressed=true]{border-color:var(--bad);border-width:2px}
+ .wcx-btn:disabled{opacity:.5;cursor:default}
+
+ .wcx-voice{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:6px 0 14px;color:var(--mut);font-size:.8rem}
+ .wcx-state{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--bd);border-radius:999px;padding:6px 12px;color:var(--txt);min-height:32px}
+ .wcx-orb{width:10px;height:10px;border-radius:50%;background:var(--mut)}
+ .wcx-state[data-state=listening] .wcx-orb{background:var(--ok);animation:wcxp 1.4s infinite}
+ .wcx-state[data-state=hearing] .wcx-orb{background:var(--blue)}
+ .wcx-state[data-state=transcribing] .wcx-orb,.wcx-state[data-state=thinking] .wcx-orb{background:var(--warn);animation:wcxp 1s infinite}
+ .wcx-state[data-state=speaking] .wcx-orb{background:var(--blue);animation:wcxp .8s infinite}
+ .wcx-inline{display:inline-flex;gap:8px;align-items:center;min-height:44px}
+ .wcx-inline input{width:20px;height:20px;accent-color:var(--blue)}
+ .wcx-voice small{flex-basis:100%}
+
+ details.wcx-panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;margin:0 0 10px}
+ details.wcx-panel>summary{cursor:pointer;padding:12px 14px;font-weight:600;min-height:44px;display:flex;align-items:center;gap:8px}
+ details.wcx-panel .in{padding:0 14px 14px;color:var(--mut);font-size:.82rem}
+ .wcx-form{display:grid;grid-template-columns:1fr;gap:10px;margin:8px 0 12px}
+ .wcx-form label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--mut)}
+ .wcx-form input[type=text],.wcx-form input[type=number],.wcx-form input[type=password],.wcx-form select{background:var(--bg);border:1px solid var(--bd);
+   color:var(--txt);border-radius:10px;padding:10px 12px;font:inherit;font-size:.86rem;min-height:44px}
+ .wcx-form .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+ .wcx-form .chk{flex-direction:row;align-items:flex-start;gap:10px;color:var(--txt);font-size:.82rem;line-height:1.45}
+ .wcx-form .chk input{margin-top:3px;width:18px;height:18px;accent-color:var(--blue)}
+ .wcx-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:6px 0 10px;font-size:.8rem}
+ .wcx-kv dt{color:var(--mut)}.wcx-kv dd{margin:0;color:var(--txt);word-break:break-word}
+ .wcx-tbl{width:100%;border-collapse:collapse;font-size:.76rem}
+ .wcx-tbl th,.wcx-tbl td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);vertical-align:top}
+ .wcx-tbl th{color:var(--mut);font-weight:600}
+ .wcx-st{display:inline-block;border:1px solid var(--bd);border-radius:6px;padding:1px 7px;color:var(--txt)}
+ .wcx-st.ok{border-color:var(--ok)}.wcx-st.err,.wcx-st.blocked,.wcx-st.capped{border-color:var(--bad)}.wcx-st.refused,.wcx-st.not_configured{border-color:var(--warn)}
+ .wcx-cat h4{margin:12px 0 4px;color:var(--txt);font-size:.82rem}
+ .wcx-cat ul{margin:0;padding-left:18px}.wcx-cat li{margin:2px 0}
+ .wcx-note{font-size:.76rem;color:var(--mut);margin:6px 0 0}
+ .wcx-msgline{min-height:1.2em;font-size:.8rem;color:var(--warn);margin-top:4px}
+ @media (max-width:480px){
+   .wcx-wrap{padding:12px 16px}
+   .wcx-msg{max-width:100%}
+   .wcx-form .two{grid-template-columns:1fr}
+   .wcx-tbl .hide-sm{display:none}
+ }
+</style></head>
+<body data-portal="admin">
+<div class="wcx-wrap">
+  <header class="wcx-head">
+    <div>
+      <h1>Wren Chat</h1>
+      <p class="wcx-sub">Ask how Wren works, or for the nursery's numbers. It sees counts and totals, and Wren's manuals — never a child's, a parent's or a record's content.</p>
+    </div>
+    <div class="wcx-chips">
+      <span class="wcx-chip" id="wcx-chip-model">Checking…</span>
+      <span class="wcx-chip ok" title="Speech-to-text runs on the nursery's own Whisper server, not in the cloud. Spoken answers use your browser's own voices.">🔒 Your voice stays on-site</span>
+    </div>
+  </header>
+
+  <div id="wcx-banner" class="wcx-banner" role="status" hidden></div>
+
+  <section class="wcx-meter" id="wcx-meter" aria-label="What this has cost">
+    <div class="row"><span>This session <b id="wcx-m-sess">—</b></span><span>This month <b id="wcx-m-month">—</b></span></div>
+    <div class="wcx-bar" id="wcx-bar-month"><i></i></div>
+    <div class="row"><span id="wcx-m-note">Estimate at Google's list price, not an invoice.</span><span id="wcx-m-price"></span></div>
+  </section>
+
+  <main class="wcx-thread" id="wcx-thread" aria-live="polite" aria-label="Conversation"></main>
+
+  <form class="wcx-composer" id="wcx-form" autocomplete="off">
+    <textarea id="wcx-input" rows="1" maxlength="2000" placeholder="Ask about Wren or the numbers…" aria-label="Your question"></textarea>
+    <button type="button" class="wcx-btn" id="wcx-mic" title="Dictate — speech-to-text on the nursery's own server" aria-label="Dictate a question">🎤</button>
+    <button type="submit" class="wcx-btn primary" id="wcx-send">Send</button>
+  </form>
+
+  <div class="wcx-voice">
+    <button type="button" class="wcx-btn" id="wcx-convo" aria-pressed="false">🗣️ Conversation mode</button>
+    <span class="wcx-state" id="wcx-state" data-state="off" role="status"><i class="wcx-orb"></i><span id="wcx-state-txt">Voice off</span></span>
+    <label class="wcx-inline"><input type="checkbox" id="wcx-speak"> Read answers aloud</label>
+    <button type="button" class="wcx-btn" id="wcx-new" title="Clears this conversation and starts a fresh spending session">New session</button>
+    <small id="wcx-voice-note">Conversation mode listens, answers out loud, then listens again. Say “stop” to end it.</small>
+  </div>
+
+  <details class="wcx-panel" id="wcx-settings"><summary>⚙️ Settings — key, model, spending limits</summary>
+    <div class="in">
+      <dl class="wcx-kv" id="wcx-kv"></dl>
+      <div class="wcx-form">
+        <label>Which model answers
+          <select id="s-provider"><option value="gemini">Gemini (Google, cloud — counts and manuals only)</option><option value="ascent">Ascent (the nursery's own server, on-site)</option></select>
+        </label>
+        <label>Gemini model
+          <input type="text" id="s-model" list="wcx-models" autocapitalize="off" spellcheck="false"><datalist id="wcx-models"></datalist>
+        </label>
+        <div class="two">
+          <label>Monthly ceiling ($)<input type="number" id="s-month" min="0" max="200" step="0.5"></label>
+          <label>Per-session cap ($)<input type="number" id="s-sess" min="0" max="50" step="0.1"></label>
+        </div>
+        <div class="two">
+          <label>Longest answer (tokens)<input type="number" id="s-out" min="128" max="8192" step="128"></label>
+          <label>&nbsp;<button type="button" class="wcx-btn" id="s-models-btn">Check key &amp; list models</button></label>
+        </div>
+        <details><summary style="cursor:pointer;min-height:44px;display:flex;align-items:center">▸&nbsp;Price overrides (per million tokens, $)</summary>
+          <div class="two" style="margin-top:8px">
+            <label>Input<input type="number" id="s-pin" min="0" max="100" step="0.01" placeholder="from price table"></label>
+            <label>Output<input type="number" id="s-pout" min="0" max="100" step="0.01" placeholder="from price table"></label>
+          </div>
+        </details>
+        <div><button type="button" class="wcx-btn primary" id="s-save">Save settings</button></div>
+        <div class="wcx-msgline" id="s-msg" role="status"></div>
+      </div>
+
+      <h3 style="margin:14px 0 4px;font-size:.9rem;color:var(--txt)">Gemini API key</h3>
+      <p class="wcx-note">Put <code>GEMINI_API_KEY</code> in the ops env file (it is read at call time, no restart), or paste it here — it is stored encrypted and never shown again.</p>
+      <div class="wcx-form">
+        <label>API key<input type="password" id="s-key" autocomplete="off" spellcheck="false" placeholder="paste to store"></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="wcx-btn" id="s-key-save">Store key</button>
+          <button type="button" class="wcx-btn danger" id="s-key-del">Remove stored key</button>
+        </div>
+      </div>
+
+      <h3 style="margin:14px 0 4px;font-size:.9rem;color:var(--txt)">Google's terms for this key</h3>
+      <p class="wcx-note" id="s-terms-explain"></p>
+      <div class="wcx-form">
+        <label class="chk"><input type="checkbox" id="s-attest"><span>I have checked that this key belongs to a Google Cloud project with <b>billing enabled (Paid tier)</b>, so Google does not use prompts or responses to improve its products. I understand a free-tier key is not allowed here.</span></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="wcx-btn primary" id="s-attest-save">Confirm for this key</button>
+          <button type="button" class="wcx-btn" id="s-attest-clear">Withdraw confirmation</button>
+        </div>
+        <div class="wcx-msgline" id="s-att-msg" role="status"></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="wcx-panel" id="wcx-log"><summary>🧾 What has left the building — call log</summary>
+    <div class="in"><p class="wcx-note" style="margin-top:0">Every model call, including the ones that were blocked or refused. Open any row to see exactly what was sent, after masking.</p>
+      <div id="wcx-log-body">Open to load…</div></div>
+  </details>
+
+  <details class="wcx-panel" id="wcx-cat"><summary>📊 What it can see</summary>
+    <div class="in wcx-cat"><div id="wcx-cat-body">Open to load…</div></div>
+  </details>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+  var esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); };
+  var errText = function(e, fb){ return (e && (e.message || e.error)) || fb; };   // Wren.api rejects with the server's JSON body
+  var money = function(n){ n = Number(n)||0; return '$' + (n < 0.1 ? n.toFixed(4) : n.toFixed(2)); };
+
+  var S = { session: null, history: [], status: null, busy: false, convo: false, speak: false, catalogue: null };
+
+  function newSession(){
+    var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('s-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+    return id;
+  }
+
+  // ── tiny, safe renderer: escape first, then bold / bullets / paragraphs ─────────────────────────
+  function md(text){
+    var lines = esc(text).split('\n'), out = [], list = false;
+    lines.forEach(function(l){
+      var li = /^\s*[-*•]\s+(.*)$/.exec(l);
+      if (li) { if (!list) { out.push('<ul>'); list = true; } out.push('<li>' + li[1] + '</li>'); return; }
+      if (list) { out.push('</ul>'); list = false; }
+      if (l.trim()) out.push('<p>' + l + '</p>');
+    });
+    if (list) out.push('</ul>');
+    return out.join('').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  }
+
+  // ── thread ───────────────────────────────────────────────────────────────────────────────────────
+  var SUGGEST = ['How many children are in each room?', 'How full is each room against its capacity?', 'How many enquiries came in each month this year?',
+                 'Which invoices are overdue, by how long?', 'How do I set up the rota in Wren?'];
+  function renderEmpty(){
+    var t = $('wcx-thread');
+    t.innerHTML = '<div class="wcx-empty" id="wcx-empty"><p>Try one of these, or ask your own.</p><div class="wcx-sugg">' +
+      SUGGEST.map(function(q){ return '<button type="button" class="wcx-btn" data-q="' + esc(q) + '">' + esc(q) + '</button>'; }).join('') + '</div></div>';
+    t.querySelectorAll('[data-q]').forEach(function(b){ b.addEventListener('click', function(){ send(b.getAttribute('data-q')); }); });
+  }
+  function addMsg(kind, html){
+    var e = $('wcx-empty'); if (e) e.remove();
+    var d = document.createElement('div'); d.className = 'wcx-msg ' + kind; d.innerHTML = html;
+    $('wcx-thread').appendChild(d); d.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    return d;
+  }
+
+  function classTag(c){ var names = { system_prompt:'instructions', user_question:'your question', history:'earlier turns', docs:'Wren manuals', schema:'table names', aggregate:'counts & totals' };
+    return '<span class="wcx-tag">' + esc(names[c] || c) + '</span>'; }
+  function sentPanel(trace){
+    if (!trace || !trace.length) return '';
+    var calls = trace.filter(function(t){ return t && t.sent; });
+    if (!calls.length) return '';
+    var inner = calls.map(function(t, i){
+      var masked = t.redactions || {}, keys = Object.keys(masked);
+      var mtxt = keys.length ? keys.map(function(k){ return '<span class="wcx-tag mask">' + esc(masked[k] + ' × ' + k) + '</span>'; }).join('') : '<span class="wcx-tag">nothing needed masking</span>';
+      var where = t.trust === 'onsite' ? '🔒 stayed on-site' : '☁️ ' + esc(t.endpoint || '');
+      var tok = t.tokens ? (t.tokens.promptTokens + ' in / ' + (t.tokens.outputTokens + (t.tokens.thoughtTokens||0)) + ' out') : '';
+      return '<div class="wcx-call"><div class="k"><span><b>Call ' + (i+1) + '</b> · ' + esc(t.label || t.provider) + ' · ' + esc(t.model || '') + '</span><span>' + where + '</span>' +
+        '<span>' + Number(t.bytes||0).toLocaleString() + ' bytes</span>' + (tok ? '<span>' + esc(tok) + '</span>' : '') +
+        (t.cost_usd != null && t.trust !== 'onsite' ? '<span>≈ ' + money(t.cost_usd) + '</span>' : '') + '</div>' +
+        '<div>Sent: ' + (t.classes||[]).map(classTag).join('') + '</div><div>Masked first: ' + mtxt + '</div>' +
+        '<details><summary>Exact payload (after masking)</summary><pre>' + esc(JSON.stringify(t.sent, null, 1)) + '</pre></details></div>';
+    }).join('');
+    return '<details class="wcx-sent"><summary>What left the building (' + calls.length + ' call' + (calls.length>1?'s':'') + ')</summary>' + inner + '</details>';
+  }
+
+  // ── banner + meter + chips from /status ─────────────────────────────────────────────────────────
+  function banner(kind, title, body, actionLabel, action){
+    var b = $('wcx-banner');
+    if (!title) { b.hidden = true; b.innerHTML = ''; return; }
+    b.className = 'wcx-banner' + (kind ? ' ' + kind : ''); b.hidden = false;
+    b.innerHTML = '<h2>' + esc(title) + '</h2><p>' + esc(body) + '</p>' +
+      (actionLabel ? '<div class="wcx-act"><button type="button" class="wcx-btn" id="wcx-banner-act">' + esc(actionLabel) + '</button></div>' : '');
+    if (actionLabel) $('wcx-banner-act').addEventListener('click', action);
+  }
+  function openSettings(){ var d = $('wcx-settings'); d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+
+  function renderMeter(sp){
+    if (!sp) { $('wcx-m-sess').textContent = 'on-site: free'; $('wcx-m-month').textContent = '—'; $('wcx-bar-month').firstElementChild.style.width = '0'; return; }
+    $('wcx-m-sess').textContent = money(sp.session_usd) + ' of ' + money(sp.session_cap_usd);
+    $('wcx-m-month').textContent = money(sp.month_usd) + ' of ' + money(sp.monthly_ceiling_usd);
+    var pct = sp.monthly_ceiling_usd > 0 ? Math.min(100, (sp.month_usd / sp.monthly_ceiling_usd) * 100) : 100;
+    var bar = $('wcx-bar-month'); bar.firstElementChild.style.width = pct.toFixed(1) + '%';
+    bar.className = 'wcx-bar' + (pct >= 100 ? ' full' : pct >= 80 ? ' hot' : '');
+    if (sp.price) $('wcx-m-price').textContent = sp.price.model + ' · $' + sp.price.in + ' in / $' + sp.price.out + ' out per M';
+  }
+
+  function renderStatus(st){
+    S.status = st;
+    var chip = $('wcx-chip-model'), g = st.gemini || {};
+    if (st.provider === 'ascent') { chip.className = 'wcx-chip ok'; chip.innerHTML = '🔒 <b>On-site model</b>'; }
+    else { chip.className = 'wcx-chip ' + (st.ready ? 'ok' : 'warn'); chip.innerHTML = '☁️ <b>' + esc(g.model) + '</b> · ' + esc(g.endpoint); }
+    renderMeter(st.provider === 'ascent' ? null : st.spend);
+
+    var nr = st.not_ready;
+    if (!st.migrated) banner('bad', 'Not set up on this database yet', 'The Wren Chat tables have not been created here. Apply scripts/migrations/2026-09-21-b348-wren-chat.sql.');
+    else if (nr && nr.code === 'not_configured') banner('', 'Not configured yet', nr.message, 'Open settings', openSettings);
+    else if (nr && nr.code === 'terms_not_confirmed') banner('', 'One more step before Gemini is used', nr.message, 'Open settings', openSettings);
+    else if (nr) banner('bad', 'Nothing can be sent right now', nr.message);
+    else if (st.docs && st.docs.chunks === 0) banner('', 'No manuals loaded', 'It can still count things, but it has no Wren documentation to draw on. Run scripts/b348-ingest-docs.js on the server.');
+    else banner();
+
+    // settings panel
+    var att = g.terms || {};
+    var attTxt = att.state === 'ok' ? 'Confirmed by ' + esc(att.attested_by || 'a manager') + ' on ' + esc((att.attested_at||'').slice(0,10))
+               : att.state === 'key_changed' ? 'The key changed since it was confirmed — confirm again' : 'Not confirmed';
+    $('wcx-kv').innerHTML =
+      '<dt>API key</dt><dd>' + (g.key_configured ? 'Present (from ' + esc(g.key_source) + ')' : 'Not configured') + '</dd>' +
+      '<dt>Endpoint</dt><dd>' + esc(g.endpoint) + ' <span class="wcx-note">(' + esc(g.endpoint_class) + ')</span></dd>' +
+      '<dt>Paid-tier confirmation</dt><dd>' + attTxt + '</dd>' +
+      '<dt>Manuals loaded</dt><dd>' + (st.docs ? st.docs.chunks + ' passages from ' + st.docs.sources + ' files' : '—') + '</dd>' +
+      '<dt>Metrics allowed</dt><dd>' + st.metrics.enabled + ' of ' + st.metrics.total + (st.metrics.disabled.length ? ' — ' + st.metrics.disabled.length + ' switched off by the guard' : '') + '</dd>' +
+      '<dt>Name-masking list</dt><dd>' + (st.lexicon && st.lexicon.ok ? st.lexicon.tokens + ' names and addresses loaded' : 'UNAVAILABLE — sending is blocked') + '</dd>' +
+      '<dt>Speech-to-text</dt><dd>' + (st.voice && st.voice.whisper ? 'On-site Whisper ready' : 'On-site Whisper not reachable') + '</dd>';
+    $('s-terms-explain').innerHTML = 'Google\'s Gemini API terms: on the free tier prompts and responses may be used to improve Google\'s products and read by human reviewers; on the Paid tier they are not (Google still keeps logs for a limited time to detect abuse). A key does not say which tier it is on, so a person has to. A Workspace Gemini subscription is a different product and does not by itself cover an API key.<br><a class="wcx-btn" style="display:inline-flex;align-items:center;margin-top:8px;text-decoration:none" href="' + esc(att.url) + '" target="_blank" rel="noopener">Read Google\'s Gemini API terms ↗</a>';
+    if (document.activeElement && ['s-model','s-month','s-sess','s-out','s-pin','s-pout'].indexOf(document.activeElement.id) >= 0) return;   // don't clobber typing
+    $('s-provider').value = st.provider; $('s-model').value = g.model || '';
+    $('s-month').value = st.settings.monthly_ceiling_usd; $('s-sess').value = st.settings.session_cap_usd; $('s-out').value = st.settings.max_output_tokens;
+    $('s-pin').value = st.settings.price_in_per_mtok == null ? '' : st.settings.price_in_per_mtok;
+    $('s-pout').value = st.settings.price_out_per_mtok == null ? '' : st.settings.price_out_per_mtok;
+    $('s-attest').checked = false;
+  }
+  function loadStatus(){
+    return Wren.api('/api/wren-chat/status?session_id=' + encodeURIComponent(S.session)).then(renderStatus)
+      .catch(function(e){ banner('bad', 'Wren Chat is unavailable', errText(e, 'Could not load its status.')); });
+  }
+
+  // ── asking ───────────────────────────────────────────────────────────────────────────────────────
+  function send(text, opts){
+    opts = opts || {};
+    text = (text || '').trim();
+    if (!text || S.busy) return Promise.resolve(null);
+    S.busy = true; $('wcx-send').disabled = true;
+    addMsg('user', esc(text));
+    var pending = addMsg('bot', '<span class="wcx-think" aria-label="Thinking"><i></i><i></i><i></i></span>');
+    return Wren.api('/api/wren-chat/ask', { method: 'POST', body: { message: text, history: S.history.slice(-14), session_id: S.session, voice: !!opts.voice } })
+      .catch(function(e){ return (e && e.status) ? e : { status: 'error', message: errText(e, 'Could not reach Wren.') }; })
+      .then(function(r){
+        S.busy = false; $('wcx-send').disabled = false;
+        pending.remove();
+        var s = r.status;
+        if (s === 'ok') {
+          S.history.push({ role: 'user', text: text }, { role: 'assistant', text: r.answer });
+          var src = (r.sources && r.sources.length) ? '<div class="wcx-src">From the manuals: ' + r.sources.slice(0,3).map(function(x){ return esc(x.source.replace(/^manuals\//,'') + (x.title ? ' — ' + x.title : '')); }).join(' · ') + '</div>' : '';
+          var tl = (r.tools && r.tools.length) ? '<div class="wcx-src">Numbers from: ' + r.tools.filter(function(t){return t.ok;}).map(function(t){ return esc(t.name.replace(/_/g,' ')); }).join(', ') + ' (live)</div>' : '';
+          addMsg('bot', md(r.answer) + tl + src + sentPanel(r.trace));
+        } else if (s === 'refused') addMsg('bot note', '<p><b>Not something this chat can do.</b></p>' + md(r.message));
+        else if (s === 'capped') addMsg('bot note bad', '<p><b>Not now.</b></p>' + md(r.message));
+        else if (s === 'not_configured' || s === 'blocked') { addMsg('bot note', '<p><b>' + (s === 'blocked' ? 'Stopped before anything was sent.' : 'Not configured yet.') + '</b></p>' + md(r.message)); }
+        else addMsg('bot note bad', '<p><b>That did not work.</b></p>' + md(r.message || 'Something went wrong.') + sentPanel(r.trace));
+        if (r.spend !== undefined) renderMeter(S.status && S.status.provider === 'ascent' ? null : r.spend);
+        if (s !== 'ok' && s !== 'refused') loadStatus();
+        if (s === 'ok' && (opts.voice || S.speak)) return speak(r.answer).then(function(){ return r; });
+        if (opts.voice && r.message) return speak(r.message).then(function(){ return r; });      // hands-free: say why it stopped
+        return r;
+      });
+  }
+
+  // ── voice: capture in the browser, transcribe on the nursery's own Whisper ───────────────────────
+  // Browser speech recognition (webkitSpeechRecognition) streams audio to Google in Chrome, which
+  // would put raw speech — names included — outside the redaction gate. So the browser only captures
+  // and detects speech (voice-activity detection below); the words are made by /api/wren-chat/transcribe
+  // on the on-site server, and the text then goes through the same gate as anything typed.
+  var Voice = (function(){
+    var ctx, stream, proc, src, mute, open = false, paused = true, cb = null, once = false;
+    var rate = 16000, chunks = [], pre = [], recording = false, voicedFrames = 0, quietSince = 0, floor = 0.008, hot = 0, t0 = 0;
+    var PRE_FRAMES = 6, SILENCE_MS = 1100, MIN_VOICED_MS = 450, MAX_MS = 28000;
+
+    function rms(f){ var s = 0; for (var i = 0; i < f.length; i++) s += f[i] * f[i]; return Math.sqrt(s / f.length); }
+    function onFrame(e){
+      if (paused) return;
+      var f = new Float32Array(e.inputBuffer.getChannelData(0)); var level = rms(f), now = Date.now();
+      if (!recording) floor = floor * 0.98 + Math.min(level, 0.05) * 0.02;
+      var thr = Math.max(0.02, floor * 3.2);
+      var voiced = level > thr;
+      if (!recording) {
+        pre.push(f); if (pre.length > PRE_FRAMES) pre.shift();
+        hot = voiced ? hot + 1 : 0;
+        if (hot >= 2) { recording = true; chunks = pre.slice(); pre = []; voicedFrames = 0; quietSince = 0; t0 = now; if (cb && cb.state) cb.state('hearing'); }
+        return;
+      }
+      chunks.push(f);
+      if (voiced) { voicedFrames++; quietSince = 0; } else if (!quietSince) quietSince = now;
+      var frameMs = f.length / ctx.sampleRate * 1000;
+      if ((quietSince && now - quietSince > SILENCE_MS) || now - t0 > MAX_MS) finish(voicedFrames * frameMs);
+    }
+    function finish(voicedMs){
+      var data = chunks; chunks = []; recording = false; hot = 0; paused = true;
+      if (voicedMs < MIN_VOICED_MS) { if (cb && cb.discard) cb.discard(); return; }
+      cb.utterance(wav(data));
+    }
+    function wav(frames){
+      var n = 0; frames.forEach(function(f){ n += f.length; });
+      var all = new Float32Array(n), o = 0; frames.forEach(function(f){ all.set(f, o); o += f.length; });
+      var ratio = ctx.sampleRate / rate, m = Math.floor(n / ratio), pcm = new Int16Array(m);
+      for (var i = 0; i < m; i++) { var p = i * ratio, a = Math.floor(p), b = Math.min(a + 1, n - 1), v = all[a] + (all[b] - all[a]) * (p - a);
+        pcm[i] = Math.max(-1, Math.min(1, v)) * 0x7fff; }
+      var buf = new ArrayBuffer(44 + m * 2), dv = new DataView(buf);
+      function str(off, s){ for (var k = 0; k < s.length; k++) dv.setUint8(off + k, s.charCodeAt(k)); }
+      str(0, 'RIFF'); dv.setUint32(4, 36 + m * 2, true); str(8, 'WAVE'); str(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+      dv.setUint16(22, 1, true); dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+      str(36, 'data'); dv.setUint32(40, m * 2, true); new Int16Array(buf, 44).set(pcm);
+      return new Blob([buf], { type: 'audio/wav' });
+    }
+    return {
+      supported: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && (window.AudioContext || window.webkitAudioContext)),
+      begin: function(callbacks, single){
+        cb = callbacks; once = !!single;
+        var go = function(){ paused = false; recording = false; hot = 0; pre = []; chunks = []; if (cb.state) cb.state('listening'); };
+        if (open) { go(); return Promise.resolve(); }
+        return navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }).then(function(s){
+          stream = s; var AC = window.AudioContext || window.webkitAudioContext; ctx = new AC();
+          src = ctx.createMediaStreamSource(stream); proc = ctx.createScriptProcessor(4096, 1, 1); mute = ctx.createGain(); mute.gain.value = 0;
+          src.connect(proc); proc.connect(mute); mute.connect(ctx.destination); proc.onaudioprocess = onFrame; open = true; go();
+        });
+      },
+      pause: function(){ paused = true; recording = false; chunks = []; },
+      resume: function(){ if (open) { paused = false; hot = 0; pre = []; if (cb && cb.state) cb.state('listening'); } },
+      end: function(){ paused = true; recording = false; chunks = []; if (proc) proc.onaudioprocess = null;
+        try { if (stream) stream.getTracks().forEach(function(t){ t.stop(); }); if (ctx) ctx.close(); } catch (e) {}
+        open = false; stream = ctx = proc = src = mute = null; }
+    };
+  })();
+
+  function setState(state, text){
+    var el = $('wcx-state'); el.setAttribute('data-state', state);
+    var labels = { off: 'Voice off', listening: 'Listening…', hearing: 'Hearing you…', transcribing: 'Writing that down…', thinking: 'Thinking…', speaking: 'Speaking…' };
+    $('wcx-state-txt').textContent = text || labels[state] || state;
+  }
+  function transcribe(blob){
+    var fd = new FormData(); fd.append('audio', blob, 'speech.wav');
+    return fetch('/api/wren-chat/transcribe', { method: 'POST', headers: { Authorization: 'Bearer ' + Wren.getToken() }, body: fd })
+      .then(function(r){ return r.ok ? r.json() : r.json().catch(function(){ return {}; }).then(function(d){ throw d; }); })
+      .then(function(d){ return (d.text || '').trim(); });
+  }
+  var JUNK = /^\W*(thank you\.?|thanks\.?|you\.?|bye\.?|okay\.?|\.+)\W*$/i;      // what Whisper invents from near-silence
+  var STOP = /^\W*(stop|stop listening|end conversation|goodbye)\W*$/i;
+
+  // dictation: one utterance -> the text box, for the person to read and send
+  function dictate(){
+    if (!Voice.supported) { alert('This browser cannot record from the microphone.'); return; }
+    if (S.convo) return;
+    var mic = $('wcx-mic'); mic.setAttribute('aria-pressed', 'true');
+    var stop = function(){ Voice.end(); mic.setAttribute('aria-pressed', 'false'); setState('off'); };
+    Voice.begin({
+      state: function(s){ setState(s); },
+      discard: function(){ stop(); },
+      utterance: function(blob){
+        setState('transcribing');
+        transcribe(blob).then(function(t){ if (t && !JUNK.test(t)) { var i = $('wcx-input'); i.value = (i.value ? i.value + ' ' : '') + t; autosize(); i.focus(); } })
+          .catch(function(e){ banner('bad', 'Speech-to-text failed', errText(e, 'The on-site Whisper server did not answer.')); })
+          .then(stop);
+      }
+    }, true).catch(function(){ stop(); banner('', 'Microphone not available', 'Allow microphone access for this page, then try again.'); });
+  }
+
+  // conversation mode: listen -> transcribe -> ask -> speak -> listen again
+  function convoStart(){
+    if (!Voice.supported) { alert('This browser cannot record from the microphone.'); return; }
+    S.convo = true; S.speak = true; $('wcx-speak').checked = true;
+    var b = $('wcx-convo'); b.setAttribute('aria-pressed', 'true'); b.textContent = '⏹ End conversation';
+    Voice.begin({
+      state: function(s){ if (S.convo) setState(s); },
+      discard: function(){ if (S.convo) Voice.resume(); },
+      utterance: function(blob){
+        setState('transcribing');
+        transcribe(blob).then(function(t){
+          if (!S.convo) return;
+          if (!t || JUNK.test(t)) { Voice.resume(); return; }
+          if (STOP.test(t)) { convoStop(); return; }
+          setState('thinking');
+          return send(t, { voice: true }).then(function(r){
+            if (!S.convo) return;
+            if (r && ['not_configured', 'blocked', 'capped', 'error'].indexOf(r.status) >= 0) convoStop();    // needs a person, not another listen
+            else Voice.resume();
+          });
+        }).catch(function(e){ banner('bad', 'Speech-to-text failed', errText(e, 'The on-site Whisper server did not answer.')); convoStop(); });
+      }
+    }, false).catch(function(){ convoStop(); banner('', 'Microphone not available', 'Allow microphone access for this page, then try again.'); });
+  }
+  function convoStop(){
+    S.convo = false; Voice.end(); cancelSpeech(); setState('off');
+    var b = $('wcx-convo'); b.setAttribute('aria-pressed', 'false'); b.textContent = '🗣️ Conversation mode';
+  }
+
+  // ── speaking: on-device voices where the browser has one ────────────────────────────────────────
+  var synth = window.speechSynthesis || null;
+  function pickVoice(){
+    if (!synth) return null;
+    var vs = synth.getVoices() || [];
+    var gb = vs.filter(function(v){ return /^en[-_]GB/i.test(v.lang); });
+    return (gb.filter(function(v){ return v.localService; })[0]) || (vs.filter(function(v){ return /^en/i.test(v.lang) && v.localService; })[0]) || gb[0] || null;
+  }
+  function cancelSpeech(){ if (synth) synth.cancel(); }
+  function spoken(text){
+    return String(text).replace(/\[(child|parent|staff|name)\]/g, 'someone').replace(/\*\*/g, '').replace(/^\s*[-*•]\s+/gm, '').replace(/\s+/g, ' ').trim();
+  }
+  function speak(text){
+    return new Promise(function(resolve){
+      if (!synth || !$('wcx-speak').checked) return resolve();
+      var parts = (spoken(text).match(/[^.!?]+[.!?]*/g) || []).map(function(x){ return x.trim(); }).filter(Boolean), v = pickVoice(), n = parts.length, done = 0;
+      if (!n) return resolve();
+      if (S.convo) setState('speaking');
+      var finished = function(){ if (++done >= n) resolve(); };
+      cancelSpeech();
+      parts.forEach(function(p){ var u = new SpeechSynthesisUtterance(p); u.lang = 'en-GB'; if (v) u.voice = v; u.rate = 1.05; u.onend = finished; u.onerror = finished; synth.speak(u); });
+    });
+  }
+
+  // ── settings, log, catalogue ────────────────────────────────────────────────────────────────────
+  function line(id, text, ok){ var e = $(id); e.textContent = text || ''; e.style.color = ok ? 'var(--ok)' : 'var(--warn)'; }
+  function saveSettings(){
+    var body = { provider: $('s-provider').value, gemini_model: $('s-model').value.trim(), monthly_ceiling_usd: Number($('s-month').value),
+      session_cap_usd: Number($('s-sess').value), max_output_tokens: Number($('s-out').value),
+      price_in_per_mtok: $('s-pin').value === '' ? null : Number($('s-pin').value), price_out_per_mtok: $('s-pout').value === '' ? null : Number($('s-pout').value) };
+    Wren.api('/api/wren-chat/settings', { method: 'PUT', body: body }).then(function(){ line('s-msg', 'Saved.', true); return loadStatus(); })
+      .catch(function(e){ line('s-msg', errText(e, 'Could not save.')); });
+  }
+  function listModels(){
+    line('s-msg', 'Asking Google which models this key can use…', true);
+    Wren.api('/api/wren-chat/models').then(function(d){
+      $('wcx-models').innerHTML = d.models.map(function(m){ return '<option value="' + esc(m) + '">'; }).join('');
+      line('s-msg', 'Key accepted. ' + d.models.length + ' Flash models available — pick one in the model box.', true);
+    }).catch(function(e){ line('s-msg', errText(e, 'Could not check the key.')); });
+  }
+  function storeKey(){
+    var k = $('s-key').value.trim(); if (!k) return line('s-msg', 'Paste a key first.');
+    Wren.api('/api/wren-chat/settings/key', { method: 'PUT', body: { key: k } }).then(function(d){ $('s-key').value = ''; line('s-msg', d.note, true); return loadStatus(); })
+      .catch(function(e){ line('s-msg', errText(e, 'Could not store the key.')); });
+  }
+  function removeKey(){
+    Wren.api('/api/wren-chat/settings/key', { method: 'DELETE' }).then(function(d){ line('s-msg', d.note, true); return loadStatus(); }).catch(function(e){ line('s-msg', errText(e, 'Failed.')); });
+  }
+  function attest(confirmed){
+    if (confirmed && !$('s-attest').checked) return line('s-att-msg', 'Tick the box to confirm.');
+    Wren.api('/api/wren-chat/settings/attestation', { method: 'PUT', body: { confirmed: confirmed } })
+      .then(function(){ line('s-att-msg', confirmed ? 'Confirmed for this key.' : 'Confirmation withdrawn.', true); return loadStatus(); })
+      .catch(function(e){ line('s-att-msg', errText(e, 'Could not record that.')); });
+  }
+
+  function loadLog(){
+    Wren.api('/api/wren-chat/calls?limit=25').then(function(d){
+      if (!d.calls.length) { $('wcx-log-body').textContent = 'Nothing yet.'; return; }
+      $('wcx-log-body').innerHTML = '<table class="wcx-tbl"><thead><tr><th>When</th><th>Result</th><th class="hide-sm">Model</th><th>Masked</th><th>Cost</th></tr></thead><tbody>' +
+        d.calls.map(function(c){
+          var masked = Object.keys(c.redactions || {}).reduce(function(n, k){ return n + c.redactions[k]; }, 0);
+          return '<tr><td>' + esc(new Date(c.created_at).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })) + '</td>' +
+            '<td><span class="wcx-st ' + esc(c.status) + '">' + esc(c.status) + '</span>' + (c.reason ? '<div class="wcx-note">' + esc(c.reason) + '</div>' : '') + '</td>' +
+            '<td class="hide-sm">' + esc(c.provider + ' · ' + (c.model || '')) + '</td><td>' + masked + '</td><td>' + (c.provider === 'gemini' ? money(c.cost_usd) : '—') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function(e){ $('wcx-log-body').textContent = errText(e, 'Could not load the log.'); });
+  }
+  function loadCatalogue(){
+    if (S.catalogue) return;
+    Wren.api('/api/wren-chat/catalogue').then(function(d){
+      S.catalogue = d.metrics; var by = {};
+      d.metrics.forEach(function(m){ (by[m.group] = by[m.group] || []).push(m); });
+      $('wcx-cat-body').innerHTML = '<p class="wcx-note" style="margin-top:0">Each of these is a fixed, read-only, counts-and-totals query. There is no way to ask for a list of children, or for anyone\'s record. Small groups in sensitive areas are withheld and shown as “&lt;3” or “&lt;5”.</p>' +
+        Object.keys(by).map(function(g){ return '<h4>' + esc(g) + '</h4><ul>' + by[g].map(function(m){
+          return '<li><b>' + esc(m.title) + '</b>' + (m.sensitivity !== 'normal' ? ' <span class="wcx-tag mask">small groups withheld</span>' : '') + '<div class="wcx-note" style="margin:0">' + esc(m.description) + '</div></li>'; }).join('') + '</ul>'; }).join('');
+    }).catch(function(e){ $('wcx-cat-body').textContent = errText(e, 'Could not load the list.'); });
+  }
+
+  // ── wiring ───────────────────────────────────────────────────────────────────────────────────────
+  function autosize(){ var t = $('wcx-input'); t.style.height = 'auto'; t.style.height = Math.min(140, t.scrollHeight) + 'px'; }
+  function resetSession(){
+    if (S.convo) convoStop(); cancelSpeech();
+    S.session = newSession(); S.history = []; renderEmpty(); loadStatus();
+  }
+  function init(){
+    S.session = newSession();
+    renderEmpty();
+    $('wcx-form').addEventListener('submit', function(ev){ ev.preventDefault(); var v = $('wcx-input').value; $('wcx-input').value = ''; autosize(); send(v); });
+    $('wcx-input').addEventListener('keydown', function(ev){ if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); $('wcx-form').requestSubmit(); } });
+    $('wcx-input').addEventListener('input', autosize);
+    $('wcx-mic').addEventListener('click', dictate);
+    $('wcx-convo').addEventListener('click', function(){ S.convo ? convoStop() : convoStart(); });
+    $('wcx-new').addEventListener('click', resetSession);
+    var sp = $('wcx-speak'); if (!synth) { sp.disabled = true; sp.parentNode.title = 'This browser has no speech output'; }
+    sp.addEventListener('change', function(){ S.speak = sp.checked; if (!sp.checked) cancelSpeech(); });
+    if (synth && synth.onvoiceschanged !== undefined) synth.onvoiceschanged = function(){};
+    $('s-save').addEventListener('click', saveSettings); $('s-models-btn').addEventListener('click', listModels);
+    $('s-key-save').addEventListener('click', storeKey); $('s-key-del').addEventListener('click', removeKey);
+    $('s-attest-save').addEventListener('click', function(){ attest(true); }); $('s-attest-clear').addEventListener('click', function(){ attest(false); });
+    $('wcx-log').addEventListener('toggle', function(){ if ($('wcx-log').open) loadLog(); });
+    $('wcx-cat').addEventListener('toggle', function(){ if ($('wcx-cat').open) loadCatalogue(); });
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) { if (S.convo) convoStop(); cancelSpeech(); } });
+    window.addEventListener('pagehide', function(){ Voice.end(); cancelSpeech(); });
+    loadStatus();
+  }
+  document.addEventListener('wren:ready', init);
+})();
+</script>
+</body></html>

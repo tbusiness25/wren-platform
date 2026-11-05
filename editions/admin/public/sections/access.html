@@ -1,0 +1,187 @@
+<div class="v2-section" data-section="access">
+<style>
+.acc-wrap{padding:24px;max-width:1100px}
+.acc-h{color:var(--text);font-size:1.3rem;margin:0 0 4px}
+.acc-sub{color:var(--text-muted);font-size:.85rem;margin:0 0 18px}
+.acc-card{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
+.acc-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.acc-badge{white-space:nowrap;font-size:.7rem;font-weight:700;padding:3px 9px;border-radius:6px}
+.acc-b-pending{background:#f59e0b22;color:#b45309}
+.acc-b-ok{background:#22c55e22;color:#15803d}
+.acc-b-queued{background:#3b82f622;color:#1d4ed8}
+.acc-b-rejected{background:#ef444422;color:#b91c1c}
+.acc-btn{border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.8rem;font-weight:600}
+.acc-btn-ok{background:#22c55e;color:#fff}
+.acc-btn-no{background:#ef4444;color:#fff}
+.acc-btn-grant{background:var(--primary,#6366f1);color:#fff}
+.acc-btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text-muted)}
+.acc-tabs{display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.acc-tab{background:none;border:none;padding:10px 4px;margin-right:14px;cursor:pointer;color:var(--text-muted);font-weight:600;border-bottom:2px solid transparent}
+.acc-tab.active{color:var(--text);border-bottom-color:var(--primary,#6366f1)}
+.acc-msg{font-size:.75rem;color:var(--text-muted);margin-top:6px}
+.acc-note{font-size:.78rem;color:var(--text-muted);margin-top:3px}
+</style>
+
+<div class="acc-wrap">
+  <h2 class="acc-h">🔓 Access</h2>
+  <p class="acc-sub">Approve staff access requests and give enquiring families early Parents-portal access — Wren performs the Cloudflare / Google-group grant for you.</p>
+
+  <div class="acc-tabs">
+    <button class="acc-tab active" data-acc-tab="requests">Access requests</button>
+    <button class="acc-tab" data-acc-tab="enquiry">Enquiry portal access</button>
+  </div>
+
+  <!-- Feature A -->
+  <div data-acc-panel="requests">
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+      <select id="acc-req-filter" class="acc-btn-ghost acc-btn">
+        <option value="pending">Pending</option>
+        <option value="">All</option>
+        <option value="approved">Approved</option>
+        <option value="grant_queued">Grant queued</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button class="acc-btn acc-btn-ghost" id="acc-req-refresh">Refresh</button>
+    </div>
+    <div id="acc-req-list"><p style="color:var(--text-muted)">Loading…</p></div>
+  </div>
+
+  <!-- Feature B -->
+  <div data-acc-panel="enquiry" hidden>
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+      <button class="acc-btn acc-btn-ghost" id="acc-enq-refresh">Refresh</button>
+    </div>
+    <div id="acc-enq-list"><p style="color:var(--text-muted)">Loading…</p></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function tok(){return sessionStorage.getItem('wrenToken');}
+  async function api(url, opts){
+    opts = opts || {};
+    const r = await fetch(url, {
+      method: opts.method || 'GET',
+      headers: { 'Authorization':'Bearer '+tok(), 'Content-Type':'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    let j = null; try { j = await r.json(); } catch(e){}
+    if (!r.ok) throw (j || { error: 'HTTP '+r.status });
+    return j;
+  }
+  function toast(m,t){ if (window.Wren && Wren.toast) Wren.toast(m,t); else console.log('['+t+'] '+m); }
+
+  const REQ_BADGE = { pending:['acc-b-pending','Pending'], approved:['acc-b-ok','Approved'],
+    grant_queued:['acc-b-queued','Grant queued'], rejected:['acc-b-rejected','Rejected'] };
+  const KIND_LABEL = { portal_unblock:'Portal unblock', cf_allowlist:'Add login email (CF)', group_member:'Add to Google group' };
+
+  // ── Feature A: access requests ──────────────────────────────────────────────
+  async function loadRequests(){
+    const el = document.getElementById('acc-req-list');
+    const status = document.getElementById('acc-req-filter').value;
+    try {
+      const rows = await api('/api/access-requests' + (status ? '?status='+encodeURIComponent(status) : ''));
+      if (!rows.length){ el.innerHTML = '<p style="color:var(--text-muted)">No requests. ✅</p>'; return; }
+      el.innerHTML = rows.map(function(r){
+        const b = REQ_BADGE[r.status] || ['acc-b-pending', r.status];
+        const msgs = (r.grant_result && r.grant_result.messages) ? r.grant_result.messages.join(' · ') : '';
+        return '<div class="acc-card"><div class="acc-row"><div>'
+          + '<div style="font-weight:600;color:var(--text)">'+esc(KIND_LABEL[r.kind]||r.kind)+(r.target_email?' — '+esc(r.target_email):'')+'</div>'
+          + '<div class="acc-note">by '+esc(r.requested_by_name||('#'+r.requested_by))+' · '+new Date(r.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</div>'
+          + (r.note?'<div class="acc-note">“'+esc(r.note)+'”</div>':'')
+          + (msgs?'<div class="acc-msg">'+esc(msgs)+'</div>':'')
+          + '</div>'
+          + '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'
+          + '<span class="acc-badge '+b[0]+'">'+esc(b[1])+'</span>'
+          + (r.status==='pending'
+              ? '<div style="display:flex;gap:6px"><button class="acc-btn acc-btn-ok" data-appr="'+r.id+'">Approve</button>'
+                + '<button class="acc-btn acc-btn-no" data-rej="'+r.id+'">Reject</button></div>'
+              : '')
+          + '</div></div></div>';
+      }).join('');
+    } catch(e){ el.innerHTML = '<p style="color:#ef4444">Failed: '+esc(e.error||e.message||'')+'</p>'; }
+  }
+  async function approve(id){
+    try { const r = await api('/api/access-requests/'+id+'/approve', { method:'POST' });
+      toast((r.messages||['Approved']).join(' · '), r.grant_queued ? 'warning' : 'success'); loadRequests();
+    } catch(e){ toast('Failed: '+(e.error||e.message||''), 'error'); }
+  }
+  async function reject(id){
+    try { await api('/api/access-requests/'+id+'/reject', { method:'POST', body:{} });
+      toast('Rejected', 'success'); loadRequests();
+    } catch(e){ toast('Failed: '+(e.error||e.message||''), 'error'); }
+  }
+
+  // ── Feature B: enquiry portal access ────────────────────────────────────────
+  async function loadEnquiries(){
+    const el = document.getElementById('acc-enq-list');
+    try {
+      const rows = await api('/api/enquiry-portal');
+      if (!rows.length){ el.innerHTML = '<p style="color:var(--text-muted)">No enquiries.</p>'; return; }
+      el.innerHTML = rows.map(function(r){
+        const granted = r.access_active === true;
+        const provisional = r.child_status === 'enquiry';
+        const badge = granted
+          ? '<span class="acc-badge acc-b-ok">Portal active</span>'
+          : '<span class="acc-badge acc-b-pending">No portal access</span>';
+        let actions = '';
+        if (!granted) actions += '<button class="acc-btn acc-btn-grant" data-grant="'+r.enquiry_id+'">Grant portal access</button>';
+        if (granted) actions += '<button class="acc-btn acc-btn-ghost" data-revoke="'+r.enquiry_id+'">Revoke</button>';
+        if (granted && provisional && r.provisional_child_id) actions += '<button class="acc-btn acc-btn-ok" data-enrol="'+r.provisional_child_id+'">Enrol (go live)</button>';
+        return '<div class="acc-card"><div class="acc-row"><div>'
+          + '<div style="font-weight:600;color:var(--text)">'+esc((r.child_first_name||'')+' '+(r.child_last_name||''))+'</div>'
+          + '<div class="acc-note">'+esc(r.parent_name||'')+' · '+esc(r.parent_email||'—')+(r.room_needed?' · '+esc(r.room_needed):'')+'</div>'
+          + (provisional?'<div class="acc-note">Provisional child #'+r.provisional_child_id+' (history builds now, reused on enrolment)</div>':'')
+          + '</div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">'
+          + badge + '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'+actions+'</div>'
+          + '</div></div></div>';
+      }).join('');
+    } catch(e){ el.innerHTML = '<p style="color:#ef4444">Failed: '+esc(e.error||e.message||'')+'</p>'; }
+  }
+  async function grant(id){
+    try { const r = await api('/api/enquiry-portal/'+id+'/grant', { method:'POST' });
+      toast((r.messages||['Granted']).join(' · '), r.cf_queued ? 'warning' : 'success'); loadEnquiries();
+    } catch(e){ toast('Failed: '+(e.error||e.message||''), 'error'); }
+  }
+  async function revoke(id){
+    try { await api('/api/enquiry-portal/'+id+'/revoke', { method:'POST' });
+      toast('Access revoked', 'success'); loadEnquiries();
+    } catch(e){ toast('Failed: '+(e.error||e.message||''), 'error'); }
+  }
+  async function enrol(childId){
+    try { await api('/api/enquiry-portal/child/'+childId+'/enrol', { method:'POST' });
+      toast('Child enrolled — same record reused, history kept ✓', 'success'); loadEnquiries();
+    } catch(e){ toast('Failed: '+(e.error||e.message||''), 'error'); }
+  }
+
+  function init(){
+    const root = document.querySelector('.v2-section[data-section="access"]');
+    if (!root) return;
+    root.addEventListener('click', function(e){
+      const t = e.target;
+      if (t.dataset.appr)   return approve(t.dataset.appr);
+      if (t.dataset.rej)    return reject(t.dataset.rej);
+      if (t.dataset.grant)  return grant(t.dataset.grant);
+      if (t.dataset.revoke) return revoke(t.dataset.revoke);
+      if (t.dataset.enrol)  return enrol(t.dataset.enrol);
+      if (t.dataset.accTab){
+        root.querySelectorAll('.acc-tab').forEach(function(x){ x.classList.toggle('active', x===t); });
+        root.querySelectorAll('[data-acc-panel]').forEach(function(p){ p.hidden = (p.dataset.accPanel !== t.dataset.accTab); });
+        if (t.dataset.accTab==='enquiry') loadEnquiries(); else loadRequests();
+      }
+    });
+    document.getElementById('acc-req-filter').addEventListener('change', loadRequests);
+    document.getElementById('acc-req-refresh').addEventListener('click', loadRequests);
+    document.getElementById('acc-enq-refresh').addEventListener('click', loadEnquiries);
+    loadRequests();
+  }
+
+  if (document.querySelector('.v2-section[data-section="access"]')) {
+    document.addEventListener('wren:ready', init);
+    // Section may be injected after wren:ready already fired:
+    if (window.Wren && Wren.getToken) init();
+  }
+})();
+</script>
+</div>

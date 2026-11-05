@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Funding dates — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b298 — tokens only, no bare hex. */
+.fd-intro{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:13px 15px;
+  font-size:.85rem;color:var(--c-muted);line-height:1.6;margin-bottom:14px;max-width:940px}
+.fd-intro b{color:var(--c-text)}
+.fd-what{font-size:.95rem;color:var(--c-text);font-weight:700;margin-bottom:6px}
+.fd-not{font-size:.82rem;color:var(--c-muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--c-border)}
+.fd-not a{color:var(--c-blue);font-weight:700}
+
+/* The whole point of the ask: allocation must be one click from here, the way
+   EyLog does it, so nobody has to remember where it lives. */
+.fd-alloc{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;
+  border:1px solid var(--c-blue);border-radius:12px;padding:14px 16px;margin-bottom:16px;
+  background:color-mix(in srgb,var(--c-blue) 12%,transparent)}
+.fd-alloc .t{font-weight:800;color:var(--c-text);font-size:.98rem}
+.fd-alloc .s{font-size:.8rem;color:var(--c-muted);margin-top:3px;line-height:1.5}
+.fd-alloc select{background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-text);
+  border-radius:9px;padding:9px 11px;font-size:.85rem;font-family:inherit;min-height:44px;max-width:100%}
+
+.fd-panel{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;
+  padding:14px 16px;margin-bottom:16px}
+.fd-panel h2{font-size:1rem;margin:0 0 4px;color:var(--c-text)}
+.fd-panel .sub{font-size:.8rem;color:var(--c-muted);margin:0 0 12px;line-height:1.55}
+
+.fd-card{border:1px solid var(--c-border);border-left:4px solid var(--c-blue);border-radius:11px;
+  padding:12px 14px;margin-bottom:9px;background:var(--c-bg)}
+.fd-card.current{border-left-color:var(--c-green)}
+.fd-card.hist{border-left-color:var(--c-muted);opacity:.85}
+.fd-head{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.fd-nm{font-weight:800;color:var(--c-text);font-size:.95rem;flex:1 1 200px}
+.fd-dates{font-size:.83rem;color:var(--c-text)}
+.fd-sub{font-size:.75rem;color:var(--c-muted);margin-top:5px;line-height:1.55}
+.fd-badge{font-size:.63rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  border-radius:999px;padding:3px 9px;border:1px solid currentColor;white-space:nowrap}
+.fd-badge.now{color:var(--c-green)} .fd-badge.ro{color:var(--c-muted)}
+.fd-rates{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.fd-rate{font-size:.72rem;border:1px solid var(--c-border);border-radius:8px;padding:4px 9px;color:var(--c-muted)}
+.fd-rate b{color:var(--c-text)}
+.fd-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.fd-btn{background:transparent;border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;
+  padding:7px 13px;font-size:.79rem;cursor:pointer;font-family:inherit;min-height:40px;white-space:nowrap;
+  text-decoration:none;display:inline-flex;align-items:center}
+.fd-btn:hover{border-color:var(--c-blue)}
+.fd-btn.primary{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-navy);font-weight:700}
+.fd-btn[disabled]{opacity:.5;cursor:default}
+
+.fd-hist-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer;
+  border:1px solid var(--c-border);border-radius:11px;padding:12px 14px;background:var(--c-bg)}
+.fd-hist-head .t{font-weight:700;color:var(--c-text);font-size:.9rem;flex:1 1 240px}
+.fd-hist-body{margin-top:10px}
+.fd-lock{border:1px solid var(--c-amber);border-radius:10px;padding:11px 13px;margin-bottom:10px;
+  background:color-mix(in srgb,var(--c-amber) 11%,transparent);font-size:.83rem;line-height:1.6;color:var(--c-text)}
+
+.fd-form{display:grid;gap:10px;margin-top:6px}
+.fd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.fd-form label{display:block;font-size:.71rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--c-muted);margin-bottom:4px}
+.fd-form input,.fd-form select,.fd-form textarea{width:100%;background:var(--c-bg);
+  border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;padding:9px 11px;
+  font-size:.85rem;font-family:inherit;min-height:42px;box-sizing:border-box}
+.fd-shapes{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:4px}
+.muted{color:var(--c-muted);font-size:.84rem}
+.fd-msg{font-size:.82rem;margin-left:8px}
+.fd-msg.ok{color:var(--c-green)} .fd-msg.bad{color:var(--c-red)}
+</style>
+</head>
+<body>
+<div class="v2-page">
+  <h1 class="page-title">💷 Funding dates</h1>
+
+  <div class="fd-intro">
+    <div class="fd-what">Used for funding: entitlement hours, rates and what the council pays.</div>
+    Three funding periods a year — <b>Autumn 1 Sep – 31 Dec</b>, <b>Spring 1 Jan – 31 Mar</b>,
+    <b>Summer 1 Apr – 31 Aug</b>. Funding runs continuously across holidays; the rates the
+    council pays per band live on the same period.
+    <div class="fd-not">
+      These are <b>not</b> the teaching half-terms. Planning, weekly plans and the breaks between
+      them live on <a href="/term-dates.html">Settings → Term dates →</a>.
+      The two calendars are separate on purpose: funding runs continuously, teaching does not.
+    </div>
+  </div>
+
+  <div class="fd-alloc">
+    <div style="flex:1 1 280px">
+      <div class="t">Allocate children to a funding period</div>
+      <div class="s">Who claims what, for how many hours, and whose parental declaration is
+        still outstanding — the same screen EyLog puts one click from the term.</div>
+    </div>
+    <select id="fd-alloc-term" aria-label="Funding period to allocate"></select>
+    <a class="fd-btn primary" id="fd-alloc-go" href="/funding.html?full=1">Allocate children to this funding period →</a>
+  </div>
+
+  <div class="fd-panel">
+    <h2>Funding periods</h2>
+    <p class="sub">The periods you claim against. Editing dates or rates here changes what the
+      funding screens calculate — it does not move a single teaching week.</p>
+    <div id="fd-list"><p class="muted">Loading…</p></div>
+    <!-- b299: every edition sets its own funding dates. This is what a setting
+         with none sees, and how any setting starts the next funding year. -->
+    <div id="fd-newyear" style="margin-top:14px"></div>
+  </div>
+
+  <div class="fd-panel">
+    <h2 id="fd-form-title">Add a funding period</h2>
+    <p class="sub">Start from the shape the council uses, then set the year's rates.</p>
+    <div class="fd-shapes" id="fd-shapes"></div>
+    <form class="fd-form" id="fd-form">
+      <div class="fd-grid">
+        <div><label for="fd-name">Name</label><input id="fd-name" maxlength="100" placeholder="Funding: Autumn 2026 (1 Sep – 31 Dec)" required></div>
+        <div><label for="fd-year">Funding year</label><input id="fd-year" type="number" min="2000" max="2100" step="1"></div>
+        <div><label for="fd-start">Starts</label><input id="fd-start" type="date" required></div>
+        <div><label for="fd-end">Ends</label><input id="fd-end" type="date" required></div>
+        <div><label for="fd-elig">Eligible from</label><input id="fd-elig" type="date"></div>
+      </div>
+      <div class="fd-grid">
+        <div><label for="fd-r-u2">Under 2 £/hr</label><input id="fd-r-u2" type="number" step="0.0001" min="0"></div>
+        <div><label for="fd-r-2d">2yr disadvantaged £/hr</label><input id="fd-r-2d" type="number" step="0.0001" min="0"></div>
+        <div><label for="fd-r-2w">2yr working parents £/hr</label><input id="fd-r-2w" type="number" step="0.0001" min="0"></div>
+        <div><label for="fd-r-3u">3yr universal £/hr</label><input id="fd-r-3u" type="number" step="0.0001" min="0"></div>
+        <div><label for="fd-r-3e">3yr extended £/hr</label><input id="fd-r-3e" type="number" step="0.0001" min="0"></div>
+        <div><label for="fd-r-eypp">EYPP £/hr</label><input id="fd-r-eypp" type="number" step="0.0001" min="0"></div>
+      </div>
+      <div class="fd-grid">
+        <div><label for="fd-cons">Consumables £ per child</label><input id="fd-cons" type="number" step="0.01" min="0"></div>
+        <div style="grid-column:span 2"><label for="fd-cons-d">Consumables description</label><input id="fd-cons-d" maxlength="200"></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button type="submit" class="fd-btn primary" id="fd-save">Save funding period</button>
+        <button type="button" class="fd-btn" id="fd-reset">Clear</button>
+        <span class="fd-msg" id="fd-msg"></span>
+      </div>
+      <div class="muted">Deprivation bands, invoice rates and holiday dates are on the full term
+        record — <a href="/funding.html?full=1" style="color:var(--c-blue)">Funding → Terms</a>.</div>
+    </form>
+  </div>
+
+  <!-- b299: hidden outright on an edition with nothing imported. A "Historic
+       (imported from EyLog)" heading on a setting that has never used EyLog is a
+       question, not information. -->
+  <div class="fd-panel" id="fd-hist-panel" hidden style="display:none">
+    <div class="fd-hist-head" id="fd-hist-toggle">
+      <span class="t">🗄️ Historic (imported from EyLog)</span>
+      <span class="muted" id="fd-hist-count"></span>
+      <span class="fd-badge ro">Read-only</span>
+      <span id="fd-hist-caret" style="color:var(--c-muted)">▸</span>
+    </div>
+    <div class="fd-hist-body" id="fd-hist-body" hidden style="display:none">
+      <div class="fd-lock" id="fd-hist-why"></div>
+      <div id="fd-hist-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* b298 (2026-09-10) — Settings → Funding dates.
+   Toby: "When you go to the funding options in settings it should also have a
+   link to allocate the children which takes you to the funding page just like on
+   EyLog." This page edits ladn.funding_terms and nothing else — it never reads or
+   writes ladn.school_terms.
+
+   The historic group is not decoration. ladn.funding_terms holds 17 rows imported
+   from EyLog with 1970-01-01 dates ("EyMan term 9" … "EyMan term 26"); hundreds of
+   ladn.child_funding rows point at them. They must never be deleted and must never
+   be offered as a choice, so they are shown here, read-only, in their own group —
+   and the server refuses to edit or set-current one even if this page is bypassed. */
+const api = (u, o) => Wren.api(u, o);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* Wren.api rejects with the server's PARSED BODY — the text is `.error`. */
+const errOf = e => (e && (e.error || e.message)) || 'Something went wrong';
+
+let DATA = null, EDITING = null, HIST_OPEN = false;
+
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmt(d){
+  if (!d) return '—';
+  const p = String(d).slice(0,10).split('-');
+  if (p.length !== 3) return '—';
+  return Number(p[2]) + ' ' + MON[Number(p[1])-1] + ' ' + p[0];
+}
+function ymd(d){ return d ? String(d).slice(0,10) : ''; }
+function money(v){ const n = Number(v || 0); return n ? '£' + n.toFixed(2) : '—'; }
+
+async function load(){
+  try { DATA = await api('/api/funding/calendar'); }
+  catch (e) { document.getElementById('fd-list').innerHTML =
+    '<p class="muted">Could not load funding periods: ' + esc(errOf(e)) + '</p>'; return; }
+  renderShapes(); renderList(); renderAllocate(); renderHistoric(); renderNewYear();
+}
+
+/* b299 — the three funding periods, for an edition that has none.
+   Funding does not run on half-terms. It runs 1 Sep–31 Dec, 1 Jan–31 Mar,
+   1 Apr–31 Aug, and those three shapes are the same for every English setting,
+   so there is no reason to make a new setting type them.
+
+   The RATES are deliberately not generated. They come from the local authority,
+   they change every April, and a rate Wren invented would quietly under- or
+   over-claim real money. */
+function renderNewYear(){
+  const box = document.getElementById('fd-newyear');
+  if (!box) return;
+  const thisSep = new Date().getMonth() >= 8
+    ? new Date().getFullYear() : new Date().getFullYear() - 1;
+  const years = [];
+  for (let y = thisSep; y <= thisSep + 3; y++) years.push(y);
+  const empty = !DATA.periods.length;
+  box.innerHTML =
+    '<div class="fd-lock"' + (empty ? '' : ' style="border-color:var(--c-border)"') + '>'
+    + (empty
+        ? '<b>No funding periods yet.</b> Wren can create the three standard ones for a funding '
+          + 'year — Autumn 1 Sep–31 Dec, Spring 1 Jan–31 Mar, Summer 1 Apr–31 Aug.'
+        : '<b>Add the next funding year.</b> The same three periods, for a year you do not have yet.')
+    + '<div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    + '<select id="fd-ny-year" aria-label="Funding year to create" '
+    + 'style="background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-text);'
+    + 'border-radius:9px;padding:9px 11px;font-size:.84rem;font-family:inherit;min-height:42px">'
+    + years.map(y => '<option value="' + y + '">' + y + '/' + String((y + 1) % 100).padStart(2,'0') + '</option>').join('')
+    + '</select>'
+    + '<button class="fd-btn primary" id="fd-ny-go">Create these funding periods</button>'
+    + '<span class="fd-msg" id="fd-ny-msg"></span></div>'
+    + '<div class="muted" style="margin-top:8px">Every rate is left at zero — set them from what '
+    + 'your local authority publishes. A year that already has periods is refused.</div></div>';
+
+  document.getElementById('fd-ny-go').addEventListener('click', async () => {
+    const btn = document.getElementById('fd-ny-go');
+    const msg = document.getElementById('fd-ny-msg');
+    btn.disabled = true; msg.textContent = 'Creating…';
+    try {
+      const r = await api('/api/funding/calendar/generate',
+        { method: 'POST', body: { year: Number(document.getElementById('fd-ny-year').value) } });
+      msg.textContent = r.created.length + ' period(s) created — now set the rates.';
+      await load();
+      Wren.toast('Funding periods created — rates are still zero', 'success');
+    } catch (e) {
+      btn.disabled = false;
+      msg.textContent = errOf(e);
+    }
+  });
+}
+
+function renderList(){
+  const box = document.getElementById('fd-list');
+  if (!DATA.periods.length) {
+    box.innerHTML = '<p class="muted">No funding periods yet — add the first one below.</p>'; return;
+  }
+  box.innerHTML = DATA.periods.map(t => {
+    const now = t.id === DATA.current_id;
+    return '<div class="fd-card' + (now ? ' current' : '') + '">'
+      + '<div class="fd-head"><span class="fd-nm">' + esc(t.name) + '</span>'
+      + (now ? '<span class="fd-badge now">Current</span>' : '')
+      + '<span class="fd-dates">' + fmt(t.start_date) + ' – ' + fmt(t.end_date) + '</span></div>'
+      + '<div class="fd-sub">'
+        + (t.year ? 'Funding year ' + esc(String(t.year)) + ' · ' : '')
+        + t.allocation_count + ' child' + (t.allocation_count === 1 ? '' : 'ren') + ' allocated'
+        + (t.funding_eligible_date ? ' · eligible from ' + fmt(t.funding_eligible_date) : '')
+      + '</div>'
+      + '<div class="fd-rates">'
+        + rate('Under 2', t.rate_under_2) + rate('2yr disadv.', t.rate_2yr_disadvantaged)
+        + rate('2yr working', t.rate_2yr_working_parents) + rate('3yr universal', t.rate_3yr_universal)
+        + rate('3yr extended', t.rate_3yr_extended) + rate('EYPP', t.eypp_rate)
+        + (Number(t.consumables_charge) ? '<span class="fd-rate">Consumables <b>'
+            + money(t.consumables_charge) + '</b></span>' : '')
+      + '</div>'
+      + '<div class="fd-acts">'
+        + '<a class="fd-btn primary" href="/funding.html?full=1&tab=allocation&term=' + t.id + '">Allocate children →</a>'
+        + '<button class="fd-btn" data-edit="' + t.id + '">Edit dates &amp; rates</button>'
+        + (now ? '' : '<button class="fd-btn" data-current="' + t.id + '">Set as current</button>')
+      + '</div></div>';
+  }).join('');
+}
+function rate(label, v){
+  return '<span class="fd-rate">' + esc(label) + ' <b>' + (Number(v) ? '£' + Number(v).toFixed(4) : '—') + '</b></span>';
+}
+
+function renderAllocate(){
+  const sel = document.getElementById('fd-alloc-term');
+  sel.innerHTML = DATA.periods.map(t =>
+    '<option value="' + t.id + '"' + (t.id === DATA.current_id ? ' selected' : '') + '>'
+    + esc(t.name) + '</option>').join('')
+    || '<option value="">No funding period yet</option>';
+  syncAllocateHref();
+}
+function syncAllocateHref(){
+  const id = document.getElementById('fd-alloc-term').value;
+  document.getElementById('fd-alloc-go').href =
+    id ? '/funding.html?full=1&tab=allocation&term=' + encodeURIComponent(id) : '/funding.html?full=1';
+}
+
+/* Read-only, and said out loud why: 294 child_funding rows point at these. They
+   are the setting's funding history and deleting one would take real allocations
+   with it. They are never offered as a choice anywhere. */
+function renderHistoric(){
+  const panel = document.getElementById('fd-hist-panel');
+  const any = DATA.historic.length > 0;
+  panel.hidden = !any;
+  panel.style.display = any ? '' : 'none';
+  if (!any) return;
+  document.getElementById('fd-hist-count').textContent =
+    DATA.historic.length + ' period' + (DATA.historic.length === 1 ? '' : 's')
+    + ' · ' + DATA.historic_allocations + ' allocation'
+    + (DATA.historic_allocations === 1 ? '' : 's');
+  document.getElementById('fd-hist-why').innerHTML =
+    '<b>These cannot be edited or deleted, and that is deliberate.</b> They came across from '
+    + 'EyLog with no dates, and <b>' + DATA.historic_allocations + ' child funding allocation'
+    + (DATA.historic_allocations === 1 ? '' : 's') + '</b> still point at them. They are the '
+    + 'setting’s funding history, kept so past claims stay readable. They are never offered '
+    + 'as a period you can allocate to, plan against, or set as current.';
+  document.getElementById('fd-hist-list').innerHTML = DATA.historic.map(t =>
+    '<div class="fd-card hist"><div class="fd-head">'
+    + '<span class="fd-nm">' + esc(t.name) + '</span>'
+    + '<span class="fd-badge ro">Read-only</span>'
+    + '<span class="fd-dates">' + (String(t.start_date).slice(0,4) === '1970'
+        ? '<span class="muted">no dates recorded</span>' : fmt(t.start_date) + ' – ' + fmt(t.end_date)) + '</span>'
+    + '</div><div class="fd-sub">'
+    + (t.eylog_term_id ? 'EyLog term ' + esc(String(t.eylog_term_id)) + ' · ' : '')
+    + t.allocation_count + ' allocation' + (t.allocation_count === 1 ? '' : 's')
+    + '</div></div>').join('') || '<p class="muted">Nothing imported.</p>';
+}
+
+function renderShapes(){
+  document.getElementById('fd-shapes').innerHTML = (DATA.period_shapes || []).map(s =>
+    '<button type="button" class="fd-btn" data-shape="' + esc(s.key) + '">' + esc(s.label) + ' period</button>'
+  ).join('');
+}
+
+/* The council's three shapes, prefilled for the funding year that makes sense
+   from today. Autumn belongs to the year it starts in; Spring and Summer to the
+   year they fall in. Nothing is written until Save is pressed. */
+function applyShape(key){
+  const s = (DATA.period_shapes || []).find(x => x.key === key); if (!s) return;
+  const now = new Date(DATA.today + 'T00:00:00');
+  const y = key === 'autumn'
+    ? (now.getMonth() + 1 >= 9 ? now.getFullYear() : now.getFullYear())
+    : (now.getMonth() + 1 >= 9 ? now.getFullYear() + 1 : now.getFullYear());
+  document.getElementById('fd-start').value = y + '-' + s.start;
+  document.getElementById('fd-end').value   = y + '-' + s.end;
+  document.getElementById('fd-year').value  = y;
+  if (!document.getElementById('fd-name').value.trim()) {
+    document.getElementById('fd-name').value = 'Funding: ' + s.label + ' ' + y
+      + ' (' + fmt(y + '-' + s.start).replace(' ' + y, '') + ' – ' + fmt(y + '-' + s.end).replace(' ' + y, '') + ')';
+  }
+}
+
+function fillForm(t){
+  EDITING = t ? t.id : null;
+  document.getElementById('fd-form-title').textContent = t ? 'Edit ' + t.name : 'Add a funding period';
+  const v = (id, val) => { document.getElementById(id).value = val == null ? '' : val; };
+  v('fd-name', t && t.name); v('fd-year', t && t.year);
+  v('fd-start', t && ymd(t.start_date)); v('fd-end', t && ymd(t.end_date));
+  v('fd-elig', t && ymd(t.funding_eligible_date));
+  v('fd-r-u2', t && t.rate_under_2); v('fd-r-2d', t && t.rate_2yr_disadvantaged);
+  v('fd-r-2w', t && t.rate_2yr_working_parents); v('fd-r-3u', t && t.rate_3yr_universal);
+  v('fd-r-3e', t && t.rate_3yr_extended); v('fd-r-eypp', t && t.eypp_rate);
+  v('fd-cons', t && t.consumables_charge); v('fd-cons-d', t && t.consumables_description);
+  document.getElementById('fd-save').textContent = t ? 'Save changes' : 'Save funding period';
+  document.getElementById('fd-msg').textContent = '';
+  document.getElementById('fd-form-title').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function num(id){ const v = document.getElementById(id).value; return v === '' ? undefined : Number(v); }
+function str(id){ const v = document.getElementById(id).value.trim(); return v === '' ? undefined : v; }
+
+async function save(e){
+  e.preventDefault();
+  const msg = document.getElementById('fd-msg');
+  const body = {
+    name: str('fd-name'), year: num('fd-year'),
+    start_date: str('fd-start'), end_date: str('fd-end'),
+    funding_eligible_date: document.getElementById('fd-elig').value || null,
+    rate_under_2: num('fd-r-u2'), rate_2yr_disadvantaged: num('fd-r-2d'),
+    rate_2yr_working_parents: num('fd-r-2w'), rate_3yr_universal: num('fd-r-3u'),
+    rate_3yr_extended: num('fd-r-3e'), eypp_rate: num('fd-r-eypp'),
+    consumables_charge: num('fd-cons'), consumables_description: str('fd-cons-d') || null,
+  };
+  if (!body.name || !body.start_date || !body.end_date) {
+    msg.className = 'fd-msg bad'; msg.textContent = 'Name and both dates are needed'; return;
+  }
+  if (body.end_date < body.start_date) {
+    msg.className = 'fd-msg bad'; msg.textContent = 'The end date is before the start date'; return;
+  }
+  msg.className = 'fd-msg'; msg.textContent = 'Saving…';
+  try {
+    if (EDITING) await api('/api/funding/terms/' + EDITING, { method:'PUT', body });
+    else         await api('/api/funding/terms', { method:'POST', body });
+    msg.className = 'fd-msg ok'; msg.textContent = 'Saved ✓';
+    fillForm(null); await load();
+  } catch (err) { msg.className = 'fd-msg bad'; msg.textContent = errOf(err); }
+}
+
+async function setCurrent(id){
+  try { await api('/api/funding/terms/' + id + '/set-current', { method:'PUT' });
+        Wren.toast('Current funding period set'); await load(); }
+  catch (e) { Wren.toast(errOf(e), 'error'); }
+}
+
+document.addEventListener('click', e => {
+  const sh = e.target.closest('[data-shape]');   if (sh) { applyShape(sh.dataset.shape); return; }
+  const ed = e.target.closest('[data-edit]');    if (ed) { fillForm(DATA.periods.find(t => t.id === parseInt(ed.dataset.edit,10))); return; }
+  const cu = e.target.closest('[data-current]'); if (cu) { setCurrent(parseInt(cu.dataset.current,10)); return; }
+  if (e.target.closest('#fd-reset')) { fillForm(null); return; }
+  if (e.target.closest('#fd-hist-toggle')) {
+    HIST_OPEN = !HIST_OPEN;
+    const b = document.getElementById('fd-hist-body');
+    /* `hidden` loses to an inline display:, so clear both — an element carrying
+       `hidden` with display:block set inline still paints. */
+    b.hidden = !HIST_OPEN; b.style.display = HIST_OPEN ? 'block' : 'none';
+    document.getElementById('fd-hist-caret').textContent = HIST_OPEN ? '▾' : '▸';
+  }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'fd-alloc-term') syncAllocateHref();
+});
+document.getElementById('fd-form').addEventListener('submit', save);
+
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

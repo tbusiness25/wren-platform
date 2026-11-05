@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parent onboarding — Roost</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+  #po-wrap{max-width:1000px;margin:0 auto;padding:18px 16px}
+  #po-wrap h1{font-size:1.3rem;margin:0 0 4px}
+  .po-sub{color:var(--c-muted,#94a3b8);font-size:.85rem;margin-bottom:16px}
+  .po-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:20px}
+  .po-tile{background:var(--c-surface,#1e293b);border:1px solid var(--c-border,#2d3748);border-radius:12px;padding:12px 14px}
+  .po-tile .n{font-size:1.5rem;font-weight:800}
+  .po-tile .l{font-size:.76rem;color:var(--c-muted,#94a3b8);text-transform:uppercase;letter-spacing:.03em}
+  .po-filter{margin:0 0 12px}
+  .po-filter input{width:100%;max-width:320px;padding:9px 12px;border:1px solid var(--c-border,#2d3748);background:var(--c-surface,#1e293b);color:var(--c-text,#e2e8f0);border-radius:8px;font-family:inherit}
+  table{width:100%;border-collapse:collapse;font-size:.86rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--c-border,#2d3748);white-space:nowrap}
+  th{color:var(--c-muted,#94a3b8);font-weight:600}
+  td.c{text-align:center}
+  .yes{color:#3aa76d;font-weight:800}.no{color:#e07070;font-weight:800}
+  .name{font-weight:700;color:var(--c-text,#e2e8f0)}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="po-wrap">
+  <h1>👪 Parent onboarding</h1>
+  <div class="po-sub">Every current child — who's signed up, using the app, and what's outstanding.</div>
+  <div class="po-tiles" id="po-tiles"></div>
+  <div class="po-filter"><input id="po-search" type="search" placeholder="Filter by name…"></div>
+  <div id="po-table"><div class="po-sub">Loading…</div></div>
+</div>
+<script>
+(function () {
+  var ROWS = [];
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function yn(v){ return v ? '<span class="yes">✓</span>' : '<span class="no">✗</span>'; }
+  function tile(n,l){ return '<div class="po-tile"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+  function render(filter){
+    var rows = ROWS.filter(function(r){ return !filter || ((r.first_name+' '+(r.last_name||'')).toLowerCase().indexOf(filter)>=0); });
+    document.getElementById('po-table').innerHTML = rows.length
+      ? '<table><thead><tr><th>Child</th><th class="c">Signed up</th><th class="c">Logged in</th><th class="c">Details</th><th class="c">Funding</th><th class="c">Payment</th></tr></thead><tbody>'
+        + rows.map(function(r){ return '<tr><td class="name">'+esc(r.first_name)+' '+esc(r.last_name||'')+'</td>'
+          + '<td class="c">'+yn(r.signed_up)+'</td><td class="c">'+yn(r.logged_in)+'</td>'
+          + '<td class="c">'+yn(r.details_complete)+'</td><td class="c">'+yn(r.funding_signed)+'</td>'
+          + '<td class="c">'+yn(r.payment_setup)+'</td></tr>'; }).join('')
+        + '</tbody></table>'
+      : '<div class="po-sub">No children match.</div>';
+  }
+  function load(){
+    Wren.api('/api/admin/parent-onboarding').then(function(rows){
+      ROWS = rows || [];
+      var t = ROWS.length, sum = function(k){ return ROWS.filter(function(r){return r[k];}).length; };
+      document.getElementById('po-tiles').innerHTML =
+        tile(t,'Children') + tile(sum('signed_up'),'Signed up') + tile(sum('logged_in'),'Logged in')
+        + tile(sum('details_complete'),'Details done') + tile(sum('funding_signed'),'Funding signed') + tile(sum('payment_setup'),'Payment set');
+      render('');
+    }).catch(function(e){ document.getElementById('po-table').innerHTML = '<div class="po-sub">Could not load ('+esc((e&&e.message)||'error')+').</div>'; });
+  }
+  document.getElementById('po-search').addEventListener('input', function(){ render(this.value.toLowerCase().trim()); });
+  document.addEventListener('wren:ready', load);
+  if (window.Wren && Wren.api) load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"  content="admin">
+  <meta name="wren-app-page" content="security-hub">
+  <title>Security hub · Roost</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+  <script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <style>
+    /* ═══════════════════════════════════════════════════════════════════════════
+       b505 — Roost → Operations → 🛡 Security hub.
+
+       ONE page that answers "what happened at the building over the weekend?",
+       built out of routes that already exist. It is a HUB, not a second copy:
+       every number comes from the route that owns it, so this page and the page
+       it summarises cannot disagree.
+
+       Colour: var(--c-*) tokens only — no hex, no rgb(), no named colour. Tints
+       are color-mix() of a token, which is the house idiom (public/css/wren-tokens.css)
+       and is what keeps both themes correct from one definition.
+       scripts/b351-colour-audit.js enforces this.
+       ═══════════════════════════════════════════════════════════════════════════ */
+    .sh-wrap { max-width: 1100px; margin: 0 auto; padding: 16px 16px calc(env(safe-area-inset-bottom, 16px) + 32px); }
+    .sh-head h1 { font-size: 1.35rem; margin: 0 0 4px; color: var(--c-text); }
+    .sh-head p  { margin: 0 0 16px; color: var(--c-muted); font-size: .86rem; line-height: 1.5; max-width: 70ch; }
+
+    /* ── Tabs ── */
+    .sh-tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 18px; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+    .sh-tabs button { flex: 0 0 auto; background: var(--c-surface); color: var(--c-muted);
+      border: 1px solid var(--c-border); border-radius: 999px; padding: 9px 15px;
+      font: inherit; font-size: .86rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .sh-tabs button:hover { color: var(--c-text); border-color: var(--c-border-strong); }
+    .sh-tabs button[aria-selected="true"] { background: var(--c-blue); color: var(--c-on-blue); border-color: transparent; }
+    .sh-tabs button:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .sh-pane[hidden] { display: none; }
+
+    /* ── Cards ── */
+    .card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+            padding: 15px; margin-bottom: 15px; }
+    .card > h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+                 color: var(--c-muted); margin: 0 0 11px; font-weight: 800; }
+    .card > h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 600; margin-left: 8px; }
+
+    /* ── Status tiles.
+       Status colour is RESERVED and never carries meaning on its own: every tile
+       pairs its colour with an icon AND the word. ── */
+    .tiles { display: grid; gap: 11px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .tile { display: block; text-align: left; width: 100%; background: var(--c-surface-2);
+            border: 1px solid var(--c-border); border-left: 3px solid var(--c-muted);
+            border-radius: 12px; padding: 12px 13px; cursor: pointer; font: inherit; color: var(--c-text); }
+    .tile:hover { border-color: var(--c-border-strong); }
+    .tile:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .tile .t-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em;
+                     color: var(--c-muted); font-weight: 800; }
+    .tile .t-main  { font-size: 1.02rem; font-weight: 800; margin: 5px 0 3px; line-height: 1.25; }
+    .tile .t-sub   { font-size: .78rem; color: var(--c-muted); line-height: 1.45; }
+    .tile.ok     { border-left-color: var(--c-ok);     background: var(--c-ok-soft); }
+    .tile.warn   { border-left-color: var(--c-warn);   background: var(--c-warn-soft); }
+    .tile.bad    { border-left-color: var(--c-danger); background: var(--c-danger-soft); }
+    .tile.info   { border-left-color: var(--c-info);   background: var(--c-info-soft); }
+    .tile.off    { border-left-color: var(--c-muted);  background: var(--c-muted-soft); }
+
+    /* ── Pills ── */
+    .pill { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 800;
+            border-radius: 999px; padding: 3px 9px; border: 1px solid var(--c-border);
+            background: var(--c-muted-soft); color: var(--c-text); }
+    .pill.ok   { background: var(--c-ok-soft);     border-color: var(--c-ok);     color: var(--c-text); }
+    .pill.warn { background: var(--c-warn-soft);   border-color: var(--c-warn);   color: var(--c-text); }
+    .pill.bad  { background: var(--c-danger-soft); border-color: var(--c-danger); color: var(--c-text); }
+    .pill.info { background: var(--c-info-soft);   border-color: var(--c-info);   color: var(--c-text); }
+
+    /* ── Banners ── */
+    .banner { display: none; gap: 9px; align-items: flex-start; font-size: .83rem; line-height: 1.55;
+              border-radius: 11px; padding: 11px 13px; margin-bottom: 14px; color: var(--c-text);
+              border: 1px solid var(--c-border); background: var(--c-muted-soft); }
+    .banner.show { display: flex; }
+    .banner.warn { background: var(--c-warn-soft);   border-color: var(--c-warn); }
+    .banner.bad  { background: var(--c-danger-soft); border-color: var(--c-danger); }
+    .banner.info { background: var(--c-info-soft);   border-color: var(--c-info); }
+    .banner .b-icon { flex: 0 0 auto; font-size: 1rem; }
+    .banner a { color: var(--c-ink-strong); }
+
+    /* ── Timeline ── */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .chips button { background: var(--c-surface-2); border: 1px solid var(--c-border); color: var(--c-muted);
+      border-radius: 999px; padding: 5px 11px; font: inherit; font-size: .76rem; font-weight: 700; cursor: pointer; }
+    .chips button[aria-pressed="true"] { background: var(--c-blue-soft); border-color: var(--c-blue); color: var(--c-text); }
+    .chips button:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+
+    .tl-day { font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+              color: var(--c-muted); margin: 16px 0 7px; padding-bottom: 5px;
+              border-bottom: 1px solid var(--c-border); }
+    .tl-day:first-child { margin-top: 0; }
+    .tl-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0;
+              border-bottom: 1px solid var(--c-border); }
+    .tl-row:last-child { border-bottom: 0; }
+    .tl-time { flex: 0 0 46px; font-variant-numeric: tabular-nums; font-size: .8rem;
+               color: var(--c-muted); font-weight: 700; padding-top: 1px; }
+    .tl-icon { flex: 0 0 20px; text-align: center; font-size: .95rem; }
+    .tl-text { flex: 1; min-width: 0; font-size: .86rem; line-height: 1.5; overflow-wrap: anywhere; }
+    .tl-text .src { color: var(--c-muted); font-size: .74rem; font-weight: 700; text-transform: uppercase;
+                    letter-spacing: .04em; margin-left: 7px; }
+    .tl-row.refused .tl-text { color: var(--c-danger); font-weight: 700; }
+    .tl-text a { color: var(--c-ink-strong); font-size: .76rem; margin-left: 8px; white-space: nowrap; }
+
+    /* ── Tables ── */
+    table.t { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    table.t th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+                 color: var(--c-muted); font-weight: 800; padding: 0 9px 7px 0;
+                 border-bottom: 1px solid var(--c-border); white-space: nowrap; }
+    table.t td { padding: 8px 9px 8px 0; border-bottom: 1px solid var(--c-border);
+                 color: var(--c-text); vertical-align: top; line-height: 1.45; }
+    table.t tr:last-child td { border-bottom: 0; }
+    table.t td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ── Anomalies ── */
+    .an { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--c-border); }
+    .an:last-child { border-bottom: 0; }
+    .an .sev { flex: 0 0 auto; }
+    .an .body { flex: 1; min-width: 0; font-size: .86rem; line-height: 1.5; }
+    .an .body a { color: var(--c-ink-strong); font-size: .76rem; margin-left: 6px; }
+
+    /* ── The hour-of-day strip ──
+       A heatmap over a grid: the job is MAGNITUDE, so the colour job is
+       SEQUENTIAL — one hue, light→dark, monotone. Not categorical: these hours
+       are not series and colouring them by identity would spend the identity
+       channel re-encoding what the number already says. Zero gets the neutral
+       surface rather than the palest blue, because "nothing happened" and "a
+       little happened" are different statements. Counts are direct-labelled and
+       a table view sits underneath, so nothing here is carried by colour alone.
+       2px gaps between cells, per the mark spec. ── */
+    .hm { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; margin-top: 4px; }
+    .hm .cell { height: 34px; border-radius: 4px; display: flex; align-items: center;
+                justify-content: center; font-size: .62rem; font-weight: 800;
+                font-variant-numeric: tabular-nums; border: 1px solid var(--c-border); }
+    .hm .cell.z  { background: var(--c-surface-2); color: var(--c-muted); }
+    .hm .cell.s1 { background: color-mix(in srgb, var(--c-blue) 18%, var(--c-surface-solid)); color: var(--c-text); }
+    .hm .cell.s2 { background: color-mix(in srgb, var(--c-blue) 36%, var(--c-surface-solid)); color: var(--c-text); }
+    .hm .cell.s3 { background: color-mix(in srgb, var(--c-blue) 58%, var(--c-surface-solid)); color: var(--c-text); }
+    .hm .cell.s4 { background: color-mix(in srgb, var(--c-blue) 80%, var(--c-surface-solid)); color: var(--c-text); }
+    .hm .cell.oh { border-color: var(--c-warn); border-width: 2px; }
+    .hm-ax { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; margin-top: 3px; }
+    .hm-ax span { font-size: .56rem; color: var(--c-muted); text-align: center; font-variant-numeric: tabular-nums; }
+    .hm-legend { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: .72rem; color: var(--c-muted); }
+    .hm-legend i { width: 15px; height: 11px; border-radius: 3px; display: inline-block; border: 1px solid var(--c-border); }
+
+    /* ── Camera tiles / planned strip ── */
+    .planned { margin-top: 14px; }
+    .planned summary { cursor: pointer; font-size: .78rem; color: var(--c-muted); font-weight: 700; }
+    .planned .pgrid { display: grid; gap: 9px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-top: 11px; }
+    .planned .pcam { background: var(--c-surface-2); border: 1px dashed var(--c-border-strong); border-radius: 11px;
+                     padding: 11px; opacity: .65; }
+    .planned .pcam .n { font-weight: 700; font-size: .84rem; color: var(--c-text); }
+    .planned .pcam .w { font-size: .72rem; color: var(--c-muted); margin-top: 3px; }
+
+    /* ── Forms / buttons ── */
+    label.f { display: block; font-size: .7rem; font-weight: 800; color: var(--c-muted);
+              margin: 10px 0 5px; text-transform: uppercase; letter-spacing: .04em; }
+    input.f, select.f { width: 100%; box-sizing: border-box; background: var(--c-surface-solid); color: var(--c-text);
+      border: 1px solid var(--c-border-strong); border-radius: 10px; padding: 10px; font: inherit; font-size: .9rem; }
+    input.f:focus-visible, select.f:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 1px; }
+    .btn { border: none; border-radius: 11px; padding: 11px 15px; font: inherit; font-size: .88rem;
+           font-weight: 800; cursor: pointer; background: var(--c-blue); color: var(--c-on-blue); }
+    .btn.ghost  { background: transparent; border: 1px solid var(--c-border-strong); color: var(--c-text); }
+    .btn.danger { background: var(--c-danger); color: var(--c-on-fill); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .row { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+    .grow { flex: 1 1 160px; min-width: 0; }
+    .msg { font-size: .8rem; color: var(--c-muted); margin-top: 9px; line-height: 1.5; min-height: 17px; }
+    .msg.err { color: var(--c-danger); }
+    .msg.ok  { color: var(--c-ok); }
+    .empty { color: var(--c-muted); font-size: .84rem; line-height: 1.55; padding: 6px 0; }
+    .note  { color: var(--c-muted); font-size: .76rem; line-height: 1.55; margin-top: 10px; }
+
+    /* ── The embedded Cameras section.
+       The hub does NOT have its own camera client. It mounts the existing
+       editions/admin/public/sections/cameras.html — the SPA section, unchanged —
+       so there is one implementation and two mount points. That section expects
+       the SPA shell's tab CSS, which a standalone page does not load, so the few
+       rules it needs are reproduced here against the same tokens. ── */
+    #cam-mount .wren-tab-bar { display: flex; gap: 6px; overflow: hidden; margin: 0 0 14px; position: relative; }
+    #cam-mount .tab-bar-track { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    #cam-mount .wren-tab { flex: 0 0 auto; background: var(--c-surface-2); color: var(--c-muted);
+      border: 1px solid var(--c-border); border-radius: 999px; padding: 7px 13px;
+      font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    #cam-mount .wren-tab[aria-selected="true"], #cam-mount .wren-tab.wren-tab-active {
+      background: var(--c-blue-soft); border-color: var(--c-blue); color: var(--c-text); }
+    #cam-mount .tab-scroll-arrow { display: none; }
+    #cam-mount .wren-tab-panel[hidden] { display: none; }
+    #cam-mount .cam-wrap { padding: 0; max-width: none; }
+
+    @media (max-width: 640px) {
+      .sh-wrap { padding: 12px 12px calc(env(safe-area-inset-bottom, 16px) + 32px); }
+      .tiles { grid-template-columns: 1fr 1fr; }
+      .tl-time { flex-basis: 42px; }
+      .hm .cell { font-size: 0; }      /* the numbers stop fitting; the table below carries them */
+    }
+  </style>
+</head>
+<body>
+<div class="sh-wrap">
+
+  <div class="sh-head">
+    <h1>🛡 Security hub</h1>
+    <p>Everything about the physical security of the building, in one place. Each figure is read
+       from the page that owns it, so nothing here can disagree with Clock in/out, Front door,
+       Door&nbsp;&amp;&nbsp;access or Cameras. Staff appear by first name and role; no child or
+       parent name appears on this page.</p>
+  </div>
+
+  <div class="sh-tabs" role="tablist" aria-label="Security hub tabs">
+    <button role="tab" aria-selected="true"  data-pane="overview">Overview</button>
+    <button role="tab" aria-selected="false" data-pane="cameras">Cameras</button>
+    <button role="tab" aria-selected="false" data-pane="door">Door &amp; fobs</button>
+    <button role="tab" aria-selected="false" data-pane="clock">Clock-in patterns</button>
+    <button role="tab" aria-selected="false" data-pane="oh">Out-of-hours</button>
+    <button role="tab" aria-selected="false" data-pane="building">Building</button>
+  </div>
+
+  <!-- ══ 1. OVERVIEW ══════════════════════════════════════════════════════ -->
+  <section class="sh-pane" data-pane="overview" role="tabpanel">
+    <div class="banner" id="ov-banner"><span class="b-icon">⚠️</span><span id="ov-banner-text"></span></div>
+
+    <div class="card">
+      <h2>Right now <span class="sub" id="ov-stamp"></span></h2>
+      <div class="tiles" id="ov-tiles"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>What happened at the building
+        <span class="sub">
+          <select class="f" id="tl-window" style="width:auto;display:inline-block;padding:4px 8px;font-size:.78rem">
+            <option value="24">last 24 hours</option>
+            <option value="72" selected>last 72 hours</option>
+            <option value="168">last 7 days</option>
+          </select>
+        </span>
+      </h2>
+      <div class="chips" id="tl-chips"></div>
+      <div id="tl-body"><div class="empty">Loading…</div></div>
+      <div class="note" id="tl-note"></div>
+    </div>
+
+    <!-- A log nobody reads is not a control. Putting it on the same page as the
+         cameras is the cheapest way to make it get read. -->
+    <div class="card">
+      <h2>Who looked at what <span class="sub">last 20 camera access rows — grants and refusals</span></h2>
+      <div class="scroll-x" id="ov-log"><div class="empty">Loading…</div></div>
+      <div class="note">Every camera interaction writes a row here before any video is served.
+        Refusals are kept too. Retention: 3 years.</div>
+    </div>
+  </section>
+
+  <!-- ══ 2. CAMERAS ═══════════════════════════════════════════════════════ -->
+  <section class="sh-pane" data-pane="cameras" role="tabpanel" hidden>
+    <div class="banner info show"><span class="b-icon">ℹ️</span><span>
+      Live view, the access log, footage requests and recordings below are the same screen as
+      Roost&nbsp;→&nbsp;Cameras — mounted here, not copied. Internal cameras stay viewable only
+      outside opening hours, playback still needs a CCTV&nbsp;Policy&nbsp;§3 trigger, and a window
+      longer than 30&nbsp;minutes is refused as a disclosure.
+    </span></div>
+    <div id="cam-mount"><div class="empty">Loading the camera screen…</div></div>
+    <details class="planned" id="cam-planned" hidden>
+      <summary id="cam-planned-sum">Planned (not installed)</summary>
+      <div class="pgrid" id="cam-planned-grid"></div>
+      <div class="note">These rows are the planned positions from the CCTV install. The hardware was
+        never bought, so there is no camera at them and nothing to watch. They are kept, not deleted,
+        because the access log and the footage-request table hold references to them. Adding a real
+        camera later is a settings and database change, not a code change.</div>
+    </details>
+  </section>
+
+  <!-- ══ 3. DOOR & FOBS ═══════════════════════════════════════════════════ -->
+  <section class="sh-pane" data-pane="door" role="tabpanel" hidden>
+    <div class="banner" id="rdr-banner"><span class="b-icon">⚠️</span><span id="rdr-banner-text"></span></div>
+
+    <div class="card">
+      <h2>Front door</h2>
+      <div id="door-status"><div class="empty">Loading…</div></div>
+      <div class="row" style="margin-top:12px">
+        <a class="btn ghost" href="/door.html">Open the Front door page</a>
+      </div>
+      <div class="note">Releasing the door is deliberately not a button on this page. It lives on the
+        Front door page, behind its own role check and its on-site check, and it stays there.</div>
+    </div>
+
+    <div class="card">
+      <h2>Fobs <span class="sub" id="fob-count"></span></h2>
+      <div class="scroll-x" id="fob-body"><div class="empty">Loading…</div></div>
+      <div class="row" style="margin-top:12px">
+        <a class="btn ghost" href="/door-access.html">Issue, revoke or replace a fob</a>
+      </div>
+      <div class="note">Issuing and revoking stay on Door&nbsp;&amp;&nbsp;access, behind the
+        <code>staff.access-fobs</code> permission. This page reads the same endpoints; it does not
+        get its own way in.</div>
+    </div>
+
+    <div class="card">
+      <h2>Reconcile <span class="sub">Wren's keyring against the door station</span></h2>
+      <div id="fob-recon"><div class="empty">Loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ══ 4. CLOCK-IN PATTERNS ═════════════════════════════════════════════ -->
+  <section class="sh-pane" data-pane="clock" role="tabpanel" hidden>
+    <div class="card">
+      <h2>On site now</h2>
+      <div id="ck-now"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Open questions <span class="sub">a missing tap is a question, never a guess</span></h2>
+      <div id="ck-queries"><div class="empty">Loading…</div></div>
+      <div class="row" style="margin-top:12px">
+        <a class="btn ghost" href="/clockin.html">Answer them on Clock in/out</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Anomalies <span class="sub">last 28 days · out-of-hours first</span></h2>
+      <div id="ck-anoms"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>When people tap <span class="sub">entries by hour of day, last 28 days</span></h2>
+      <div id="ck-heat"><div class="empty">Loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ══ 5. OUT-OF-HOURS ══════════════════════════════════════════════════ -->
+  <section class="sh-pane" data-pane="oh" role="tabpanel" hidden>
+    <div class="banner" id="oh-banner"><span class="b-icon">⚠️</span><span id="oh-banner-text"></span></div>
+    <div id="oh-body"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ══ 6. BUILDING ══════════════════════════════════════════════════════ -->
+  <section class="sh-pane" data-pane="building" role="tabpanel" hidden>
+    <div class="banner info show"><span class="b-icon">🏠</span><span>
+      This is the <strong>nursery's own</strong> Home Assistant — heating and lighting at
+      1A&nbsp;Dudley&nbsp;Gardens. Nothing on this page talks to a home system, and no camera
+      footage or detection leaves the building. Locks, alarms and sirens are deliberately out of
+      scope: the front door keeps its own gated route.
+    </span></div>
+    <!-- b511 (2026-10-19) — the devices THEMSELVES (radiator valves, thermometers,
+         plugs, buttons, sensors) now have their own page, written for somebody who
+         has never heard the word Zigbee. This tab keeps doing what it always did —
+         the allow-listed heating and lights — and points at it. Additive: nothing
+         below was removed. -->
+    <div class="banner info show"><span class="b-icon">🏠</span><span>
+      Looking for a thermometer, a radiator valve or a smart plug — or need to add one?
+      <a href="/building-devices.html"><strong>Building &amp; devices</strong></a> is the room-by-room
+      map, with a step-by-step wizard for adding one and the re-pair checklist.
+    </span></div>
+    <div id="ha-body"><div class="empty">Loading…</div></div>
+  </section>
+
+</div>
+
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+/* ═════════════════════════════════════════════════════════════════════════════
+   The hub's own client. It calls /api/security-hub/* and the existing routes;
+   it decides nothing — every rule (the time gate, the §3 trigger, the 30-minute
+   cap, the allow-list, the out-of-hours window) is evaluated server-side and
+   this file renders the answer.
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  var API = '/api/security-hub';
+  var loaded = {};                 // pane -> true. Each tab loads on FIRST open, not on page load.
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function errText(e) {
+    if (!e) return 'something went wrong';
+    return e.message || e.error || (typeof e === 'string' ? e : 'something went wrong');
+  }
+  function $(id) { return document.getElementById(id); }
+  function hhmm(iso) {
+    if (!iso) return '—';
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit',
+        minute: '2-digit', hour12: false }).format(new Date(iso));
+    } catch (e) { return '—'; }
+  }
+  function dayLabel(iso) {
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'long',
+        day: 'numeric', month: 'long' }).format(new Date(iso));
+    } catch (e) { return '—'; }
+  }
+  function when(iso) {
+    if (!iso) return 'never';
+    return dayLabel(iso) + ', ' + hhmm(iso);
+  }
+  function banner(id, textId, cls, html) {
+    var b = $(id);
+    if (!b) return;
+    b.className = 'banner' + (html ? ' show ' + cls : '');
+    if (html) $(textId).innerHTML = html;
+  }
+
+  // ── Tabs ───────────────────────────────────────────────────────────────────
+  var LOADERS = {
+    overview: loadOverview, cameras: loadCameras, door: loadDoor,
+    clock: loadClock, oh: loadOutOfHours, building: loadBuilding,
+  };
+  function show(pane) {
+    document.querySelectorAll('.sh-tabs button').forEach(function (b) {
+      b.setAttribute('aria-selected', String(b.dataset.pane === pane));
+    });
+    document.querySelectorAll('.sh-pane').forEach(function (p) {
+      p.hidden = p.dataset.pane !== pane;
+    });
+    if (!loaded[pane]) {
+      loaded[pane] = true;
+      try { LOADERS[pane](); } catch (e) { console.error('[security-hub]', pane, e); }
+    }
+    if (location.hash !== '#tab-' + pane) history.replaceState(null, '', '#tab-' + pane);
+  }
+  document.querySelectorAll('.sh-tabs button').forEach(function (b) {
+    b.addEventListener('click', function () { show(b.dataset.pane); });
+  });
+
+  /* ══ 1. OVERVIEW ════════════════════════════════════════════════════════ */
+  function tile(pane, label, cls, main, sub) {
+    return '<button class="tile ' + cls + '" data-go="' + esc(pane) + '">'
+      + '<div class="t-label">' + esc(label) + '</div>'
+      + '<div class="t-main">' + main + '</div>'
+      + '<div class="t-sub">' + sub + '</div></button>';
+  }
+
+  function loadOverview() {
+    Wren.api(API + '/overview').then(function (d) {
+      var t = (d && d.tiles) || {};
+      var out = [];
+      $('ov-stamp').textContent = d && d.generated_at ? 'as at ' + hhmm(d.generated_at) : '';
+
+      // Cameras. Retention is READ off the recorder, never assumed — "not known"
+      // is an honest answer and "7 days" would be a guess.
+      var c = t.cameras || {};
+      if (!c.ok) {
+        out.push(tile('cameras', 'Cameras', 'bad', '✕ Cannot read', esc(c.reason || 'the camera list did not answer')));
+      } else {
+        var rcls = !c.recorder_up ? 'bad' : c.retention_breach ? 'warn' : 'ok';
+        var ricon = !c.recorder_up ? '✕' : c.retention_breach ? '⚠' : '✓';
+        out.push(tile('cameras', 'Cameras', rcls,
+          ricon + ' ' + c.in_service + ' in service',
+          (c.recorder_up ? 'Recorder up' : 'RECORDER DOWN — ' + esc(c.recorder_error || 'no answer'))
+          + ' · ' + (c.retention_days != null ? c.retention_days + '-day retention' : 'retention not known')
+          + (c.planned ? ' · ' + c.planned + ' planned' : '')));
+      }
+
+      // Front door
+      var dr = t.door || {};
+      out.push(tile('door', 'Front door', dr.reachable ? 'ok' : 'bad',
+        (dr.reachable ? '✓ Online' : '✕ Offline'),
+        'Last ring ' + esc(when(dr.last_ring)) + '<br>Last open ' + esc(when(dr.last_open))));
+
+      // Fobs — the reader line is the honest one.
+      var f = t.fobs || {};
+      var rd = f.reader || {};
+      var fcls = rd.verdict === 'not_detected' ? 'warn' : f.pending_removal ? 'bad' : 'ok';
+      const ficon = rd.verdict === 'not_detected' ? '⚠' : f.pending_removal ? '✕' : '✓';
+      out.push(tile('door', 'Fobs', fcls,
+        ficon + ' ' + (f.active != null ? f.active : '—') + ' active',
+        (f.pending_removal ? '⚠ ' + f.pending_removal + ' pending removal' : 'none pending removal')
+        + '<br>Reader: ' + (rd.verdict === 'not_detected' ? '<strong>not detected</strong>'
+            : rd.verdict === 'working' ? 'working' : rd.verdict === 'quiet' ? 'quiet' : 'unknown')));
+
+      // Clock-in
+      var ck = t.clockin || {};
+      out.push(tile('clock', 'Clock-in', ck.open_queries ? 'warn' : 'info',
+        (ck.ok ? (ck.open_queries ? '⚠ ' : '✓ ') + ck.on_site + ' on site now' : '✕ Cannot read'),
+        ck.open_queries == null ? 'open questions not known'
+          : ck.open_queries + (ck.open_queries === 1 ? ' open question' : ' open questions')));
+
+      // Out-of-hours
+      var oh = t.out_of_hours || {};
+      var ocls = oh.state === 'armed' ? 'ok' : oh.state === 'disarmed' ? 'off' : 'warn';
+      out.push(tile('oh', 'Out-of-hours', ocls,
+        oh.state === 'armed' ? '✓ Armed' : oh.state === 'disarmed' ? '○ Disarmed' : '⚠ Unavailable',
+        (oh.out_of_hours ? 'Building should be empty' : 'Nursery is open')
+        + (oh.last_alert ? '<br>Last alert ' + esc(when(oh.last_alert.detected_at)) : '<br>No alert yet')));
+
+      // Building
+      var b = t.building || {};
+      out.push(tile('building', 'Building', b.configured ? 'info' : 'off',
+        b.configured ? '✓ ' + esc((b.summary && b.summary.text) || '—') : '○ Not connected',
+        b.configured ? ((b.entities || []).length + ' entities on the allow-list')
+          : esc(b.reason || 'Home Assistant is not configured')));
+
+      $('ov-tiles').innerHTML = out.join('');
+      $('ov-tiles').querySelectorAll('[data-go]').forEach(function (el) {
+        el.addEventListener('click', function () { show(el.dataset.go); });
+      });
+
+      // The loudest things, said at the top.
+      var bad = [];
+      if (c.ok && !c.recorder_up) bad.push('The recorder is not answering, so nothing is being recorded and no retention figure on this page is a measurement.');
+      if (c.retention_breach) bad.push('The recorder is keeping footage for longer than the CCTV policy allows.');
+      if (f.pending_removal) bad.push(f.pending_removal + ' fob(s) are marked revoked in Wren but still open the door.');
+      if (oh.state === 'unavailable') bad.push(esc(oh.unavailable_reason || 'Out-of-hours alerting cannot deliver.'));
+      banner('ov-banner', 'ov-banner-text', bad.length > 1 ? 'bad' : 'warn',
+        bad.length ? bad.map(esc).join('<br>') : '');
+    }).catch(function (e) {
+      $('ov-tiles').innerHTML = '<div class="empty">Could not load the status tiles: ' + esc(errText(e)) + '</div>';
+    });
+
+    loadTimeline();
+    loadAccessLog();
+  }
+
+  // ── Timeline ───────────────────────────────────────────────────────────────
+  var SRC_LABEL = { door: '🚪 Door', fob: '🔑 Fob taps', fob_admin: '🗂 Fob admin',
+    clock: '🕑 Clock-in', detection: '📹 Detections', camera_access: '👁 Camera access', alert: '🚨 Alerts' };
+  var srcOff = {};
+
+  function chips(all) {
+    $('tl-chips').innerHTML = all.map(function (s) {
+      return '<button data-src="' + esc(s) + '" aria-pressed="' + (srcOff[s] ? 'false' : 'true') + '">'
+        + esc(SRC_LABEL[s] || s) + '</button>';
+    }).join('');
+    $('tl-chips').querySelectorAll('[data-src]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        srcOff[b.dataset.src] = !srcOff[b.dataset.src];
+        b.setAttribute('aria-pressed', String(!srcOff[b.dataset.src]));
+        loadTimeline();
+      });
+    });
+  }
+
+  function loadTimeline() {
+    var hrs = parseInt($('tl-window').value, 10) || 72;
+    var to = new Date();
+    var from = new Date(to.getTime() - hrs * 3600 * 1000);
+    var q = '?from=' + encodeURIComponent(from.toISOString()) + '&to=' + encodeURIComponent(to.toISOString());
+    var on = Object.keys(SRC_LABEL).filter(function (s) { return !srcOff[s]; });
+    if (on.length && on.length < Object.keys(SRC_LABEL).length) q += '&sources=' + on.join(',');
+
+    $('tl-body').innerHTML = '<div class="empty">Loading…</div>';
+    Wren.api(API + '/timeline' + q).then(function (d) {
+      if (!$('tl-chips').children.length) chips(d.all_sources || Object.keys(SRC_LABEL));
+      var items = (d && d.items) || [];
+      if (!items.length) {
+        $('tl-body').innerHTML = '<div class="empty">Nothing recorded from these sources in the last '
+          + hrs + ' hours. That is an absence of records, not proof that nothing happened — '
+          + 'if a source is down it says so above.</div>';
+      } else {
+        var html = '', lastDay = null;
+        items.forEach(function (it) {
+          var day = dayLabel(it.at);
+          if (day !== lastDay) { html += '<div class="tl-day">' + esc(day) + '</div>'; lastDay = day; }
+          html += '<div class="tl-row' + (it.granted === false ? ' refused' : '') + '">'
+            + '<div class="tl-time">' + esc(hhmm(it.at)) + '</div>'
+            + '<div class="tl-icon">' + esc(it.icon || '·') + '</div>'
+            + '<div class="tl-text">' + esc(it.text)
+            + '<span class="src">' + esc((SRC_LABEL[it.source] || it.source).replace(/^\S+\s/, '')) + '</span>'
+            + (it.detail_href && it.detail_href.charAt(0) === '/'
+               ? '<a href="' + esc(it.detail_href) + '">open</a>' : '')
+            + '</div></div>';
+        });
+        $('tl-body').innerHTML = html;
+      }
+      var notes = [];
+      if (d.truncated) notes.push('Capped at 500 rows — narrow the window to see further back.');
+      (d.errors || []).forEach(function (x) { notes.push('⚠ ' + x); });
+      notes.push(d.privacy || '');
+      $('tl-note').innerHTML = notes.filter(Boolean).map(esc).join('<br>');
+    }).catch(function (e) {
+      $('tl-body').innerHTML = '<div class="empty">Could not load the timeline: ' + esc(errText(e)) + '</div>';
+    });
+  }
+  $('tl-window').addEventListener('change', loadTimeline);
+
+  function loadAccessLog() {
+    Wren.api('/api/cameras/access-log?limit=20').then(function (d) {
+      var rows = (d && d.entries) || [];
+      if (!rows.length) { $('ov-log').innerHTML = '<div class="empty">No camera access recorded yet.</div>'; return; }
+      $('ov-log').innerHTML = '<table class="t"><thead><tr><th>When</th><th>Who</th><th>Camera</th>'
+        + '<th>Action</th><th>Result</th></tr></thead><tbody>'
+        + rows.map(function (r) {
+          // The log route returns a full staff name; this page shows first names
+          // only, like everything else on it.
+          var first = String(r.staff_name || '').trim().split(/\s+/)[0] || '—';
+          return '<tr><td class="num">' + esc(hhmm(r.created_at)) + '<br><span style="color:var(--c-muted);font-size:.72rem">'
+            + esc(dayLabel(r.created_at)) + '</span></td>'
+            + '<td>' + esc(first) + '</td>'
+            + '<td>' + esc(r.camera_name || '—') + '</td>'
+            + '<td>' + esc(r.action) + '</td>'
+            + '<td>' + (r.granted ? '<span class="pill ok">✓ allowed</span>'
+                                  : '<span class="pill bad">✕ refused</span>') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function (e) {
+      $('ov-log').innerHTML = '<div class="empty">Could not load the access log: ' + esc(errText(e)) + '</div>';
+    });
+  }
+
+  /* ══ 2. CAMERAS ═════════════════════════════════════════════════════════
+     Mount the EXISTING section rather than writing a second camera client.
+     The section is an IIFE that finds its own root, registers
+     window.wrenLoadTab_cameras_* and talks to /api/cameras itself — so the only
+     thing missing on a standalone page is the SPA's tab driver, which is the
+     twenty lines below. Nothing in sections/cameras.html is modified.
+     ════════════════════════════════════════════════════════════════════════ */
+  function loadCameras() {
+    fetch('/sections/cameras.html', { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (html) {
+        var mount = $('cam-mount');
+        mount.innerHTML = html;
+        // Inline <script> in injected HTML does not execute; re-create it so it does.
+        mount.querySelectorAll('script').forEach(function (old) {
+          var s = document.createElement('script');
+          if (old.src) { s.src = old.src; } else { s.textContent = old.textContent; }
+          old.parentNode.replaceChild(s, old);
+        });
+        driveSectionTabs(mount);
+        loadPlanned();
+      })
+      .catch(function (e) {
+        $('cam-mount').innerHTML = '<div class="empty">Could not load the camera screen: '
+          + esc(errText(e)) + ' — it is still at <a href="/app.html#/cameras">Roost → Cameras</a>.</div>';
+      });
+  }
+
+  function driveSectionTabs(root) {
+    var tabs = [].slice.call(root.querySelectorAll('.wren-tab-bar [role="tab"]'));
+    var panels = [].slice.call(root.querySelectorAll('[role="tabpanel"]'));
+    if (!tabs.length) return;
+    function activate(id) {
+      tabs.forEach(function (t) {
+        var on = t.dataset.tab === id;
+        t.setAttribute('aria-selected', String(on));
+        t.classList.toggle('wren-tab-active', on);
+        t.setAttribute('tabindex', on ? '0' : '-1');
+      });
+      panels.forEach(function (p) {
+        var on = p.dataset.tab === id;
+        p.hidden = !on;
+        if (on) {
+          var fn = window['wrenLoadTab_cameras_' + id];
+          // Called once then cleared, exactly as wren-shell-v2 does — the section's
+          // own loaders are written on that assumption.
+          if (typeof fn === 'function') { fn(p); window['wrenLoadTab_cameras_' + id] = null; }
+        }
+      });
+    }
+    tabs.forEach(function (t) { t.addEventListener('click', function () { activate(t.dataset.tab); }); });
+    activate(tabs[0].dataset.tab);
+  }
+
+  // The planned-but-unbought rows. Greyed, no play button. It stops the page
+  // looking broken and stops anyone re-adding them by hand.
+  function loadPlanned() {
+    Wren.api('/api/cameras?include_planned=1').then(function (d) {
+      var planned = ((d && d.cameras) || []).filter(function (c) { return !c.in_service; });
+      if (!planned.length) return;
+      $('cam-planned-sum').textContent = 'Planned (not installed) — ' + planned.length;
+      $('cam-planned-grid').innerHTML = planned.map(function (c) {
+        return '<div class="pcam"><div class="n">' + esc(c.name) + '</div>'
+          + '<div class="w">' + esc(c.location) + ' · <strong>Not installed</strong></div></div>';
+      }).join('');
+      $('cam-planned').hidden = false;
+    }).catch(function () { /* the camera screen above already reports a failure */ });
+  }
+
+  /* ══ 3. DOOR & FOBS ═════════════════════════════════════════════════════ */
+  function loadDoor() {
+    Wren.api('/api/door/status').then(function (d) {
+      $('door-status').innerHTML = '<div class="row">'
+        + (d && d.reachable ? '<span class="pill ok">✓ Online</span>' : '<span class="pill bad">✕ Not reachable</span>')
+        + (d && d.status ? '<span class="pill">' + esc(d.status) + '</span>' : '')
+        + '</div>' + (d && d.message ? '<div class="note">' + esc(d.message) + '</div>' : '');
+    }).catch(function (e) {
+      $('door-status').innerHTML = '<span class="pill bad">✕ Not reachable</span>'
+        + '<div class="note">' + esc(errText(e)) + '</div>';
+    });
+
+    Wren.api('/api/door/fobs').then(function (d) {
+      var rows = Array.isArray(d) ? d : ((d && d.fobs) || []);
+      $('fob-count').textContent = rows.length + (rows.length === 1 ? ' fob' : ' fobs');
+      if (!rows.length) { $('fob-body').innerHTML = '<div class="empty">No fobs are registered.</div>'; return; }
+      $('fob-body').innerHTML = '<table class="t"><thead><tr><th>Who</th><th>Label</th>'
+        + '<th>Active</th><th>On the door</th></tr></thead><tbody>'
+        + rows.map(function (r) {
+          var first = String(r.staff_name || r.first_name || '').trim().split(/\s+/)[0] || 'unassigned';
+          return '<tr><td>' + esc(first) + '</td><td>' + esc(r.label || '—') + '</td>'
+            + '<td>' + (r.is_active ? '<span class="pill ok">✓ yes</span>' : '<span class="pill">no</span>') + '</td>'
+            + '<td>' + esc(r.device_state || '—') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function (e) {
+      $('fob-body').innerHTML = '<div class="empty">Could not load the fob list: ' + esc(errText(e)) + '</div>';
+    });
+
+    Wren.api(API + '/reader-health').then(function (h) {
+      if (h && h.banner) {
+        banner('rdr-banner', 'rdr-banner-text', 'warn',
+          'The door panel accepts fob writes but <strong>no swipe has ever been recorded</strong>. '
+          + 'The card-reader module (VTO4202F-MR) may not be fitted — see '
+          + '<code>wren-docs/research/2026-10-17-ha-security-hardware.md §6</code>. '
+          + 'An empty fob-tap list below therefore means "no reader detected", not "no activity".');
+      } else if (h && h.verdict === 'not_detected') {
+        banner('rdr-banner', 'rdr-banner-text', 'warn',
+          'No fob swipe has ever reached Wren. Check the reader itself before debugging the bridge — '
+          + 'silence here is not evidence that nobody tapped.');
+      }
+    }).catch(function () { /* the banner is an extra; its absence is not an error state */ });
+
+    Wren.api('/api/door/fobs/reconcile').then(function (d) {
+      if (!d.reachable) {
+        $('fob-recon').innerHTML = '<span class="pill bad">✕ Not in contact with the door station</span>'
+          + '<div class="note">' + esc(d.message || d.reason || '') + '</div>';
+        return;
+      }
+      var parts = [];
+      if (d.in_step) parts.push('<span class="pill ok">✓ Wren and the door agree</span>');
+      function group(list, title, cls) {
+        if (!list || !list.length) return '';
+        return '<h2 style="margin-top:14px">' + esc(title) + '</h2><table class="t"><tbody>'
+          + list.map(function (r) {
+            var first = String(r.staff_name || '').trim().split(/\s+/)[0] || 'unassigned';
+            return '<tr><td><span class="pill ' + cls + '">' + esc(first) + '</span></td>'
+              + '<td>' + esc(r.consequence || '') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+      parts.push(group(d.live_but_should_be_revoked, 'Still opens the door, but should not', 'bad'));
+      parts.push(group(d.only_in_wren, 'Wren says live, the door has never heard of it', 'warn'));
+      if (d.only_on_device && d.only_on_device.length) {
+        parts.push('<h2 style="margin-top:14px">On the door, unknown to Wren</h2><div class="empty">'
+          + d.only_on_device.length + ' card(s) open the door and Wren does not know whose they are. '
+          + 'They are listed on <a href="/door-access.html">Door &amp; access</a>.</div>');
+      }
+      $('fob-recon').innerHTML = parts.filter(Boolean).join('')
+        + '<div class="note">Checked ' + esc(when(d.checked_at)) + '.</div>';
+    }).catch(function (e) {
+      $('fob-recon').innerHTML = '<div class="empty">Could not reconcile: ' + esc(errText(e)) + '</div>';
+    });
+  }
+
+  /* ══ 4. CLOCK-IN PATTERNS ═══════════════════════════════════════════════ */
+  var SEV = { high: '<span class="pill bad">⚠ security</span>',
+              medium: '<span class="pill warn">⚠ check</span>',
+              low: '<span class="pill">note</span>' };
+
+  function loadClock() {
+    Wren.api('/api/clockin/today').then(function (d) {
+      var rows = Array.isArray(d) ? d : [];
+      var inNow = rows.filter(function (r) { return r.status === 'in'; });
+      if (!inNow.length) {
+        $('ck-now').innerHTML = '<div class="empty">Nobody is clocked in.</div>';
+        return;
+      }
+      $('ck-now').innerHTML = '<div class="row">' + inNow.map(function (r) {
+        var first = String(r.name || '').trim().split(/\s+/)[0];
+        return '<span class="pill ok">' + esc(first) + ' · ' + esc(r.role || '') + '</span>';
+      }).join('') + '</div><div class="note">' + inNow.length
+        + (inNow.length === 1 ? ' person' : ' people') + ' on site, of ' + rows.length + ' active staff.</div>';
+    }).catch(function (e) {
+      $('ck-now').innerHTML = '<div class="empty">Could not read the board: ' + esc(errText(e)) + '</div>';
+    });
+
+    Wren.api('/api/clockin/queries').then(function (d) {
+      var open = ((d && d.queries) || []).filter(function (q) { return q.status === 'open'; });
+      if (!open.length) { $('ck-queries').innerHTML = '<div class="empty">No open questions.</div>'; return; }
+      $('ck-queries').innerHTML = '<div class="scroll-x"><table class="t"><thead><tr><th>Who</th>'
+        + '<th>Day</th><th>Question</th></tr></thead><tbody>'
+        + open.map(function (q) {
+          var first = String(q.staff_name || '').trim().split(/\s+/)[0];
+          return '<tr><td>' + esc(first) + '</td><td class="num">' + esc(q.date || '') + '</td>'
+            + '<td>' + esc(q.query_type === 'missing_out' ? 'A tap-out is missing' : 'A tap-in is missing') + '</td></tr>';
+        }).join('') + '</tbody></table></div>'
+        + (d.prompt ? '<div class="note">' + esc(d.prompt) + '</div>' : '');
+    }).catch(function (e) {
+      $('ck-queries').innerHTML = '<div class="empty">Could not read the questions: ' + esc(errText(e)) + '</div>';
+    });
+
+    Wren.api(API + '/anomalies?days=28').then(function (d) {
+      var list = (d && d.anomalies) || [];
+      if (!list.length) {
+        $('ck-anoms').innerHTML = '<div class="empty">Nothing stood out in the last 28 days.</div>';
+      } else {
+        $('ck-anoms').innerHTML = list.slice(0, 80).map(function (a) {
+          return '<div class="an"><div class="sev">' + (SEV[a.severity] || SEV.low) + '</div>'
+            + '<div class="body">' + esc(a.text)
+            + (a.href ? '<a href="' + esc(a.href) + '">open the day</a>' : '') + '</div></div>';
+        }).join('')
+        + (list.length > 80 ? '<div class="note">Showing 80 of ' + list.length + '.</div>' : '')
+        + '<div class="note">Worked time comes from the one derivation every clock-in screen uses '
+        + '(pairs summed, lunch excluded) — this page does not recompute a day.</div>';
+      }
+      if ((d.errors || []).length) {
+        $('ck-anoms').innerHTML += '<div class="note">⚠ ' + d.errors.map(esc).join('<br>⚠ ') + '</div>';
+      }
+      drawHeat(d && d.hour_histogram, d && d.window);
+    }).catch(function (e) {
+      $('ck-anoms').innerHTML = '<div class="empty">Could not load the anomalies: ' + esc(errText(e)) + '</div>';
+      $('ck-heat').innerHTML = '';
+    });
+  }
+
+  /* The hour-of-day strip.
+     Sequential, one hue, light→dark — the job is magnitude, not identity. Zero is
+     the neutral surface, because "nothing" and "a little" are different things to
+     say. Every cell is direct-labelled with its count, carries a hover title, and
+     the same numbers appear in a table underneath, so no reading of this depends
+     on telling two blues apart. Out-of-hours columns get a warn-token outline, not
+     a different fill — that would be two colour jobs in one encoding. */
+  function drawHeat(hist) {
+    if (!hist || !hist.length) { $('ck-heat').innerHTML = '<div class="empty">No clock events to plot.</div>'; return; }
+    var max = Math.max.apply(null, hist);
+    function step(n) {
+      if (!n) return 'z';
+      if (!max) return 's1';
+      var r = n / max;
+      return r > .75 ? 's4' : r > .5 ? 's3' : r > .25 ? 's2' : 's1';
+    }
+    // The outline marks the hours the Out-of-hours tab calls out-of-hours, read
+    // from the same server answer rather than assumed here.
+    var oh = function (h) { return h < 7 || h >= 19; };
+    var cells = hist.map(function (n, h) {
+      var hh = String(h).padStart(2, '0') + ':00';
+      return '<div class="cell ' + step(n) + (oh(h) ? ' oh' : '') + '" title="' + hh + ' — '
+        + n + (n === 1 ? ' tap' : ' taps') + '">' + (n || '') + '</div>';
+    }).join('');
+    var axis = hist.map(function (n, h) { return '<span>' + (h % 3 === 0 ? h : '') + '</span>'; }).join('');
+    var nonzero = hist.map(function (n, h) { return { h: h, n: n }; }).filter(function (x) { return x.n; });
+    $('ck-heat').innerHTML = '<div class="hm">' + cells + '</div><div class="hm-ax">' + axis + '</div>'
+      + '<div class="hm-legend"><span>fewer</span>'
+      + '<i style="background:var(--c-surface-2)"></i>'
+      + '<i style="background:color-mix(in srgb, var(--c-blue) 18%, var(--c-surface-solid))"></i>'
+      + '<i style="background:color-mix(in srgb, var(--c-blue) 36%, var(--c-surface-solid))"></i>'
+      + '<i style="background:color-mix(in srgb, var(--c-blue) 58%, var(--c-surface-solid))"></i>'
+      + '<i style="background:color-mix(in srgb, var(--c-blue) 80%, var(--c-surface-solid))"></i>'
+      + '<span>more</span><span style="margin-left:10px">outlined = outside opening hours</span></div>'
+      + '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:.78rem;color:var(--c-muted);font-weight:700">'
+      + 'Show as a table</summary><div class="scroll-x" style="margin-top:9px"><table class="t"><thead><tr>'
+      + '<th>Hour</th><th>Taps</th></tr></thead><tbody>'
+      + nonzero.map(function (x) {
+          return '<tr><td class="num">' + String(x.h).padStart(2, '0') + ':00</td>'
+            + '<td class="num">' + x.n + '</td></tr>';
+        }).join('')
+      + '</tbody></table></div></details>';
+  }
+
+  /* ══ 5. OUT-OF-HOURS ════════════════════════════════════════════════════ */
+  function loadOutOfHours() {
+    Wren.api(API + '/alarm').then(function (d) {
+      if (d && d.available === false) {
+        $('oh-body').innerHTML = '<div class="card"><h2>Out-of-hours alerting</h2><div class="empty">'
+          + esc(d.reason || 'This is not available.') + '</div></div>';
+        return;
+      }
+      var h = [];
+
+      // State. "Armed" with nowhere to send is NOT armed, and this must not imply it is.
+      h.push('<div class="card"><h2>State</h2><div class="row">'
+        + (d.state === 'armed' ? '<span class="pill ok">✓ Armed</span>'
+           : d.state === 'disarmed' ? '<span class="pill">○ Disarmed</span>'
+           : '<span class="pill warn">⚠ Unavailable</span>')
+        + (d.out_of_hours ? '<span class="pill warn">building should be empty</span>'
+                          : '<span class="pill info">nursery is open</span>')
+        + (d.certain === false ? '<span class="pill warn">not certain</span>' : '')
+        + '</div><div class="note">' + esc(d.reason || '') + '</div>'
+        + (d.unavailable_reason ? '<div class="note">' + esc(d.unavailable_reason) + '</div>' : '')
+        + '<div class="row" style="margin-top:12px">'
+        + '<button class="btn' + (d.state === 'armed' ? ' danger' : d.state === 'unavailable' ? ' ghost' : '')
+        + '" id="oh-arm"' + (d.state === 'unavailable'
+            ? ' disabled title="There is nowhere to send an alert yet, so arming would not do anything. Set up the notification channel first."'
+            : '') + '>'
+        + (d.state === 'armed' ? 'Disarm out-of-hours alerts' : 'Arm out-of-hours alerts') + '</button>'
+        + '<button class="btn ghost" id="oh-test">Send test alert</button>'
+        + '<button class="btn ghost" id="oh-sweep">Check for detections now</button>'
+        + '</div><div class="msg" id="oh-msg"></div></div>');
+
+      // The window actually in force — read from the server, not written here.
+      var w = d.window || {};
+      h.push('<div class="card"><h2>In-hours window <span class="sub">' + esc(w.source || '') + '</span></h2>'
+        + '<div class="row"><span class="pill">' + esc(w.days || 'Mon–Fri') + ' '
+        + esc(w.open_time || '') + '–' + esc(w.close_time || '') + '</span>'
+        + '<span class="pill">' + esc(w.timezone || 'Europe/London') + '</span></div>'
+        + '<div class="note">Today is ' + esc((d.today && d.today.date) || '') + ' ('
+        + esc((d.today && d.today.weekday) || '') + ')'
+        + (d.today && d.today.closure ? ' — <strong>' + esc(d.today.closure) + '</strong>' : '')
+        + '. The half-hour either side of the published 08:00–18:00 session means footage of staff '
+        + 'arriving and locking up is treated as in-hours footage.</div>'
+        + '<h2 style="margin-top:14px">Next closures</h2>'
+        + ((d.next_closures || []).length
+            ? '<div class="row">' + d.next_closures.map(function (c) {
+                return '<span class="pill">' + esc(c.date) + ' · ' + esc(c.label) + '</span>'; }).join('') + '</div>'
+            : '<div class="empty">No closure in the next six months is recorded. Weekends are not '
+              + 'listed — they are not a closure, they are simply not a session day.</div>')
+        + '</div>');
+
+      // The gate self-test. "Never run" is reported as never run, not as a pass.
+      var g = d.gate_test || {};
+      var gcls = g.status === 'leaked' ? 'bad' : g.status === 'pass' ? 'ok' : g.status === 'fail' ? 'warn' : '';
+      h.push('<div class="card"><h2>Time-gate self-test</h2><div class="row">'
+        + '<span class="pill ' + gcls + '">'
+        + (g.status === 'pass' ? '✓ refused, as it should be'
+           : g.status === 'leaked' ? '🔴 A GATE CHECK RETURNED 200'
+           : g.status === 'fail' ? '⚠ last check did not pass'
+           : '○ never run') + '</span>'
+        + (g.last ? '<span class="pill">' + esc(when(g.last.ran_at)) + '</span>' : '') + '</div>'
+        + (g.status === 'leaked'
+            ? '<div class="note" style="color:var(--c-danger);font-weight:700">A request for in-hours '
+              + 'footage was ANSWERED rather than refused. That is a disclosure that has already '
+              + 'happened. Treat it as an incident, not a bug report.</div>'
+            : g.status === 'never_run'
+              ? '<div class="note">The daily check — ask for an in-hours clip and expect a 403 — has not '
+                + 'run yet. No cron line was installed by this build; it is written up in the b505 NOTES '
+                + 'for Toby to add deliberately. Until then this says "never run", which is the truth, '
+                + 'rather than green.</div>'
+              : '<div class="note">' + esc((g.last && g.last.detail) || '') + '</div>')
+        + '</div>');
+
+      // The alerts. Suppressions shown too — a system that silently sends nothing
+      // is indistinguishable from a camera that saw nothing.
+      var al = d.alerts || [];
+      h.push('<div class="card"><h2>Last 30 alerts</h2>'
+        + (!al.length
+            ? '<div class="empty">No detection has been considered yet. Out-of-hours alerting is '
+              + 'built but nothing has reached it — this is an empty log, not a measurement of a quiet site.</div>'
+            : '<div class="scroll-x"><table class="t"><thead><tr><th>When</th><th>Camera</th><th>Saw</th>'
+              + '<th>Sent?</th><th>Clip</th><th>Log</th><th></th></tr></thead><tbody>'
+              + al.map(function (a) {
+                  return '<tr><td class="num">' + esc(hhmm(a.detected_at)) + '<br>'
+                    + '<span style="color:var(--c-muted);font-size:.72rem">' + esc(dayLabel(a.detected_at)) + '</span></td>'
+                    + '<td>' + esc(a.camera_name || a.camera_key) + (a.is_test ? ' <span class="pill">test</span>' : '') + '</td>'
+                    + '<td>' + esc(a.object_label || '—') + '</td>'
+                    + '<td>' + (a.delivered ? '<span class="pill ok">✓ sent</span>'
+                        : '<span class="pill">not sent — ' + esc(a.suppress_reason || a.delivery_error || 'unknown') + '</span>') + '</td>'
+                    + '<td>' + (a.clip_exported ? 'exported' : '—') + '</td>'
+                    + '<td class="num">' + (a.access_log_id ? '#' + a.access_log_id : '—') + '</td>'
+                    + '<td>' + (a.acknowledged_at
+                        ? '<span class="pill ok">✓ ' + esc(a.acknowledged_by_name || 'seen') + '</span>'
+                        : '<button class="btn ghost" style="padding:5px 9px;font-size:.74rem" data-ack="' + a.id + '">Acknowledge</button>'
+                          + ' <button class="btn ghost" style="padding:5px 9px;font-size:.74rem" data-snooze="' + a.id + '">Snooze 1h</button>')
+                    + '</td></tr>';
+                }).join('') + '</tbody></table></div>')
+        + '<div class="note">An alert is TEXT ONLY: a time, a camera and "open Roost". It never carries a '
+        + 'snapshot or a clip. Footage stays in Wren behind the §3 trigger, the 30-minute cap and the access log.</div>'
+        + '</div>');
+
+      $('oh-body').innerHTML = h.join('');
+
+      if (!$('oh-arm').disabled) $('oh-arm').addEventListener('click', function () {
+        var want = d.state !== 'armed';
+        $('oh-msg').className = 'msg';
+        $('oh-msg').textContent = want ? 'Arming…' : 'Disarming…';
+        Wren.api(API + '/alarm/arm', { method: 'POST', body: { on: want } })
+          .then(function () { loaded.oh = true; loadOutOfHours(); })
+          .catch(function (e) { $('oh-msg').className = 'msg err'; $('oh-msg').textContent = errText(e); });
+      });
+      $('oh-test').addEventListener('click', function () {
+        $('oh-msg').className = 'msg';
+        $('oh-msg').textContent = 'Sending…';
+        Wren.api(API + '/alarm/test', { method: 'POST', body: {} })
+          .then(function () {
+            $('oh-msg').className = 'msg ok';
+            $('oh-msg').textContent = 'Sent. If your phone did not make a noise, check the ntfy app’s '
+              + 'max-priority channel has "Override Do Not Disturb" switched on.';
+          })
+          .catch(function (e) { $('oh-msg').className = 'msg err'; $('oh-msg').textContent = errText(e); });
+      });
+      $('oh-sweep').addEventListener('click', function () {
+        $('oh-msg').className = 'msg';
+        $('oh-msg').textContent = 'Checking the recorder…';
+        Wren.api(API + '/alarm/sweep', { method: 'POST', body: {} }).then(function (r) {
+          $('oh-msg').className = 'msg ok';
+          $('oh-msg').textContent = 'Recorder: ' + (r.recorder || '—') + '. '
+            + r.considered + ' detection(s) considered, ' + r.sent + ' alert(s) sent.'
+            + ((r.errors || []).length ? ' ⚠ ' + r.errors.join('; ') : '');
+          loaded.oh = true; setTimeout(loadOutOfHours, 900);
+        }).catch(function (e) { $('oh-msg').className = 'msg err'; $('oh-msg').textContent = errText(e); });
+      });
+      $('oh-body').querySelectorAll('[data-ack]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          Wren.api(API + '/alerts/' + b.dataset.ack + '/ack', { method: 'POST', body: {} })
+            .then(function () { loaded.oh = true; loadOutOfHours(); })
+            .catch(function (e) { Wren.toast(errText(e), 'error'); });
+        });
+      });
+      $('oh-body').querySelectorAll('[data-snooze]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          Wren.api(API + '/alerts/' + b.dataset.snooze + '/snooze', { method: 'POST', body: { minutes: 60 } })
+            .then(function () { Wren.toast('Snoozed for an hour', 'success'); })
+            .catch(function (e) { Wren.toast(errText(e), 'error'); });
+        });
+      });
+
+      if (d.state === 'unavailable') {
+        banner('oh-banner', 'oh-banner-text', 'warn', esc(d.unavailable_reason || ''));
+      } else if ((d.gate_test || {}).status === 'leaked') {
+        banner('oh-banner', 'oh-banner-text', 'bad',
+          'A time-gate self-test returned 200 where it should have returned 403. In-hours footage was '
+          + 'served. Treat this as an incident.');
+      }
+    }).catch(function (e) {
+      $('oh-body').innerHTML = '<div class="card"><div class="empty">Could not load the out-of-hours state: '
+        + esc(errText(e)) + '</div></div>';
+    });
+  }
+
+  /* ══ 6. BUILDING ════════════════════════════════════════════════════════ */
+  function loadBuilding() {
+    Wren.api(API + '/ha/summary').then(function (d) {
+      var h = [];
+      if (!d.configured) {
+        // "Not configured" is the normal state and the page renders fully without
+        // HA. No spinner that never resolves.
+        h.push('<div class="card"><h2>Home Assistant</h2><div class="empty">' + esc(d.reason || '')
+          + '</div><div class="note">The nursery’s heating and lighting will appear here once Home '
+          + 'Assistant is connected and at least one entity has been added to the allow-list below. '
+          + 'Nothing is controllable until somebody enables it.</div></div>');
+      } else {
+        var climate = (d.entities || []).filter(function (e) { return e.kind === 'climate'; });
+        var toggles = (d.entities || []).filter(function (e) { return e.kind === 'light' || e.kind === 'switch'; });
+        h.push('<div class="card"><h2>Radiators</h2>' + (climate.length
+          ? '<div class="scroll-x"><table class="t"><thead><tr><th>Room</th><th>Now</th><th>Target</th>'
+            + '<th>Set</th></tr></thead><tbody>' + climate.map(function (e) {
+              return '<tr><td>' + esc(e.label) + (e.room ? ' <span style="color:var(--c-muted)">· '
+                + esc(e.room) + '</span>' : '') + '</td>'
+                + '<td class="num">' + (e.current_temperature != null ? esc(e.current_temperature) + '°C' : '—') + '</td>'
+                + '<td class="num">' + (e.temperature != null ? esc(e.temperature) + '°C' : '—') + '</td>'
+                + '<td><div class="row"><input class="f" type="number" min="5" max="28" step="0.5" '
+                + 'style="width:84px" value="' + esc(e.temperature != null ? e.temperature : 19) + '" '
+                + 'data-temp-for="' + esc(e.entity_id) + '" aria-label="Target for ' + esc(e.label) + '">'
+                + '<button class="btn ghost" style="padding:7px 11px;font-size:.78rem" '
+                + 'data-set-temp="' + esc(e.entity_id) + '">Set</button></div></td></tr>';
+            }).join('') + '</tbody></table></div>'
+          : '<div class="empty">No climate entity is on the allow-list.</div>') + '</div>');
+
+        h.push('<div class="card"><h2>Lighting</h2>' + (toggles.length
+          ? '<div class="scroll-x"><table class="t"><tbody>' + toggles.map(function (e) {
+              return '<tr><td>' + esc(e.label) + (e.room ? ' <span style="color:var(--c-muted)">· '
+                + esc(e.room) + '</span>' : '') + '</td>'
+                + '<td>' + (e.state === 'on' ? '<span class="pill ok">✓ on</span>'
+                    : e.state === 'off' ? '<span class="pill">off</span>'
+                    : '<span class="pill warn">⚠ ' + esc(e.state || e.error || 'unknown') + '</span>') + '</td>'
+                + '<td><button class="btn ghost" style="padding:7px 11px;font-size:.78rem" '
+                + 'data-toggle="' + esc(e.entity_id) + '" data-on="' + (e.state === 'on' ? '0' : '1') + '">'
+                + (e.state === 'on' ? 'Turn off' : 'Turn on') + '</button></td></tr>';
+            }).join('') + '</tbody></table></div>'
+          : '<div class="empty">No light or switch is on the allow-list.</div>') + '</div>');
+      }
+
+      // The allow-list. Discovery proposes; a person enables.
+      h.push('<div class="card"><h2>Allow-list <span class="sub">discovery proposes, a person enables</span></h2>'
+        + '<div id="ha-list"><div class="empty">Loading…</div></div>'
+        + '<h2 style="margin-top:16px">Add an entity</h2>'
+        + '<div class="row">'
+        + '<div class="grow"><label class="f" for="ha-eid">Entity id</label>'
+        + '<input class="f" id="ha-eid" placeholder="climate.hallway" autocapitalize="off" spellcheck="false"></div>'
+        + '<div class="grow"><label class="f" for="ha-label">Label</label>'
+        + '<input class="f" id="ha-label" placeholder="Hallway radiator"></div>'
+        + '<div class="grow"><label class="f" for="ha-room">Room (optional)</label>'
+        + '<input class="f" id="ha-room" placeholder="Hallway"></div>'
+        + '</div><div class="row" style="margin-top:11px">'
+        + '<label style="font-size:.82rem;color:var(--c-text);display:flex;gap:7px;align-items:center">'
+        + '<input type="checkbox" id="ha-enabled"> Enable it now</label>'
+        + '<button class="btn" id="ha-add">Add to the allow-list</button>'
+        + '<button class="btn ghost" id="ha-refresh">Refresh</button>'
+        + '</div><div class="msg" id="ha-msg"></div>'
+        + '<div class="note">An entity id must be <code>climate.*</code>, <code>light.*</code>, '
+        + '<code>switch.*</code> or <code>sensor.*</code>. Locks, alarms and sirens cannot be added: '
+        + 'an HA token that can turn on a light can also unlock a door, so this page may only touch '
+        + 'what somebody deliberately listed. Every change is written to the audit log with the old '
+        + 'and new value.</div></div>');
+
+      $('ha-body').innerHTML = h.join('');
+      wireBuilding();
+      loadHaList();
+    }).catch(function (e) {
+      $('ha-body').innerHTML = '<div class="card"><div class="empty">Could not read the building state: '
+        + esc(errText(e)) + '</div></div>';
+    });
+  }
+
+  function loadHaList() {
+    Wren.api(API + '/ha/entities').then(function (d) {
+      var rows = (d && d.entities) || [];
+      if (!rows.length) {
+        $('ha-list').innerHTML = '<div class="empty">' + esc(d.reason
+          || 'Nothing is on the allow-list. Until something is, this tab can change nothing.') + '</div>';
+        return;
+      }
+      $('ha-list').innerHTML = '<div class="scroll-x"><table class="t"><thead><tr><th>Entity</th>'
+        + '<th>Label</th><th>Kind</th><th>Enabled</th><th></th></tr></thead><tbody>'
+        + rows.map(function (r) {
+          return '<tr><td><code style="font-size:.76rem">' + esc(r.entity_id) + '</code></td>'
+            + '<td>' + esc(r.label) + (r.room ? ' <span style="color:var(--c-muted)">· ' + esc(r.room) + '</span>' : '') + '</td>'
+            + '<td>' + esc(r.kind) + '</td>'
+            + '<td>' + (r.enabled ? '<span class="pill ok">✓ yes</span>' : '<span class="pill">no</span>') + '</td>'
+            + '<td><button class="btn ghost" style="padding:5px 9px;font-size:.74rem" '
+            + 'data-ha-toggle-enabled="' + r.id + '" data-eid="' + esc(r.entity_id) + '" '
+            + 'data-label="' + esc(r.label) + '" data-kind="' + esc(r.kind) + '" '
+            + 'data-room="' + esc(r.room || '') + '" data-enabled="' + (r.enabled ? '1' : '0') + '">'
+            + (r.enabled ? 'Disable' : 'Enable') + '</button> '
+            + '<button class="btn ghost" style="padding:5px 9px;font-size:.74rem" '
+            + 'data-ha-remove="' + r.id + '">Remove</button></td></tr>';
+        }).join('') + '</tbody></table></div>';
+
+      $('ha-list').querySelectorAll('[data-ha-toggle-enabled]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          Wren.api(API + '/ha/entities', { method: 'POST', body: {
+            entity_id: b.dataset.eid, label: b.dataset.label, kind: b.dataset.kind,
+            room: b.dataset.room || null, enabled: b.dataset.enabled !== '1' } })
+            .then(function () { loaded.building = true; loadBuilding(); })
+            .catch(function (e) { Wren.toast(errText(e), 'error'); });
+        });
+      });
+      $('ha-list').querySelectorAll('[data-ha-remove]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          Wren.api(API + '/ha/entities/' + b.dataset.haRemove, { method: 'DELETE' })
+            .then(function () { loaded.building = true; loadBuilding(); })
+            .catch(function (e) { Wren.toast(errText(e), 'error'); });
+        });
+      });
+    }).catch(function (e) {
+      $('ha-list').innerHTML = '<div class="empty">Could not read the allow-list: ' + esc(errText(e)) + '</div>';
+    });
+  }
+
+  function wireBuilding() {
+    var body = $('ha-body');
+    body.querySelectorAll('[data-set-temp]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var eid = b.dataset.setTemp;
+        var input = body.querySelector('[data-temp-for="' + eid + '"]');
+        var t = parseFloat(input && input.value);
+        $('ha-msg').className = 'msg';
+        $('ha-msg').textContent = 'Setting ' + eid + ' to ' + t + '°C…';
+        Wren.api(API + '/ha/climate', { method: 'POST', body: { entity_id: eid, temperature: t } })
+          .then(function () { $('ha-msg').className = 'msg ok'; $('ha-msg').textContent = 'Set.'; loaded.building = true; setTimeout(loadBuilding, 700); })
+          .catch(function (e) { $('ha-msg').className = 'msg err'; $('ha-msg').textContent = errText(e); });
+      });
+    });
+    body.querySelectorAll('[data-toggle]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        $('ha-msg').className = 'msg';
+        $('ha-msg').textContent = 'Switching…';
+        Wren.api(API + '/ha/switch', { method: 'POST', body: { entity_id: b.dataset.toggle, on: b.dataset.on === '1' } })
+          .then(function () { $('ha-msg').className = 'msg ok'; $('ha-msg').textContent = 'Done.'; loaded.building = true; setTimeout(loadBuilding, 700); })
+          .catch(function (e) { $('ha-msg').className = 'msg err'; $('ha-msg').textContent = errText(e); });
+      });
+    });
+    var add = $('ha-add');
+    if (add) add.addEventListener('click', function () {
+      var eid = ($('ha-eid').value || '').trim().toLowerCase();
+      $('ha-msg').className = 'msg';
+      $('ha-msg').textContent = 'Saving…';
+      Wren.api(API + '/ha/entities', { method: 'POST', body: {
+        entity_id: eid, label: ($('ha-label').value || '').trim() || eid,
+        room: ($('ha-room').value || '').trim() || null, enabled: $('ha-enabled').checked } })
+        .then(function () { $('ha-eid').value = ''; $('ha-label').value = ''; $('ha-room').value = '';
+          $('ha-enabled').checked = false; loaded.building = true; loadBuilding(); })
+        .catch(function (e) { $('ha-msg').className = 'msg err'; $('ha-msg').textContent = errText(e); });
+    });
+    var ref = $('ha-refresh');
+    if (ref) ref.addEventListener('click', function () { loaded.building = true; loadBuilding(); });
+  }
+
+  /* ══ Start ══════════════════════════════════════════════════════════════
+     wren:ready fires at the end of buildShell(). Calling the loader from a
+     script tag would race the shell and the data would never arrive
+     (CLAUDE.md rule 7).
+     ══════════════════════════════════════════════════════════════════════ */
+  function loadHub() {
+    var want = (location.hash || '').replace('#tab-', '');
+    show(LOADERS[want] ? want : 'overview');
+  }
+  document.addEventListener('wren:ready', loadHub);
+})();
+</script>
+</body>
+</html>

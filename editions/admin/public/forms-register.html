@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Forms &amp; documents — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css?v=20260715ux">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js?v=20260922-download" defer></script>
+<style>
+  .fr-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin:10px 0 14px; }
+  .fr-bar label { display:block; font-size:.72rem; color:var(--c-muted); margin-bottom:3px; }
+  .fr-bar select, .fr-bar input { padding:7px 9px; border-radius:8px; border:1px solid var(--c-border);
+    background:var(--c-surface); color:var(--c-text); font:inherit; font-size:.84rem; }
+  .fr-sum { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+  .fr-stat { flex:1 1 130px; background:var(--c-surface); border:1px solid var(--c-border);
+    border-radius:10px; padding:10px 12px; }
+  .fr-stat .n { font-size:1.35rem; font-weight:700; color:var(--c-text); font-variant-numeric:tabular-nums; }
+  .fr-stat .l { font-size:.72rem; color:var(--c-muted); }
+  .fr-wrap { overflow-x:auto; border:1px solid var(--c-border); border-radius:10px; background:var(--c-surface); }
+  table.fr { width:100%; border-collapse:collapse; font-size:.82rem; }
+  table.fr th { text-align:left; padding:8px 9px; border-bottom:1px solid var(--c-border);
+    color:var(--c-muted); font-weight:600; font-size:.73rem; white-space:nowrap;
+    position:sticky; top:0; background:var(--c-surface); }
+  table.fr td { padding:7px 9px; border-bottom:1px solid color-mix(in srgb, var(--c-border) 55%, transparent); vertical-align:top; }
+  table.fr tr:last-child td { border-bottom:none; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .tick { color:var(--c-ok); font-weight:700; }
+  .cross { color:var(--c-danger); font-weight:700; }
+  .dash { color:var(--c-muted); }
+  .miss { display:inline-block; margin:1px 3px 1px 0; padding:1px 7px; border-radius:20px; font-size:.7rem; font-weight:600;
+    background:color-mix(in srgb, var(--c-danger) 16%, transparent); color:var(--c-danger);
+    border:1px solid color-mix(in srgb, var(--c-danger) 40%, transparent); }
+  .ok-pill { display:inline-block; padding:1px 8px; border-radius:20px; font-size:.7rem; font-weight:700;
+    background:color-mix(in srgb, var(--c-ok) 18%, transparent); color:var(--c-ok);
+    border:1px solid color-mix(in srgb, var(--c-ok) 42%, transparent); }
+  .na { color:var(--c-muted); font-size:.75rem; }
+  .fr-note { font-size:.78rem; color:var(--c-muted); max-width:700px; margin-top:2px; }
+  .btn { padding:8px 13px; border-radius:8px; border:1px solid var(--c-border); background:var(--c-surface);
+    color:var(--c-text); font:inherit; font-size:.83rem; cursor:pointer; }
+  .btn.primary { background:var(--c-orange); border-color:var(--c-orange); color:var(--c-on-orange,#fff); font-weight:700; }
+  .btn:disabled { opacity:.55; cursor:default; }
+</style>
+</head>
+<body>
+<div class="page" style="padding:16px">
+  <div class="page-header">
+    <div class="page-title" style="font-size:1.05rem">Forms &amp; documents</div>
+    <div class="fr-note">
+      One row per child: what is on file for the funding claim and what is still missing. Filter by age band, then export the
+      file for the portal. For forms a parent has been asked to sign and has not yet, see
+      <a href="/parent-forms.html" style="color:var(--c-blue)">Forms waiting for parents</a>.
+    </div>
+  </div>
+
+  <div class="fr-bar">
+    <div><label for="fr-term">Funding term</label><select id="fr-term"></select></div>
+    <div><label for="fr-band">Age band</label>
+      <select id="fr-band">
+        <option value="all">All ages</option>
+        <option value="under_2">Under 2</option>
+        <option value="two">2-year-olds</option>
+        <option value="three_four">3 &amp; 4-year-olds</option>
+        <option value="over_5">Over 5</option>
+        <option value="unknown">No date of birth</option>
+      </select></div>
+    <div><label for="fr-show">Show</label>
+      <select id="fr-show">
+        <option value="all">Everyone</option>
+        <option value="funded">Funded children only</option>
+        <option value="incomplete">Something missing</option>
+      </select></div>
+    <div><button class="btn primary" id="fr-export">Export for the portal (CSV)</button></div>
+  </div>
+
+  <div class="fr-sum" id="fr-sum"></div>
+  <div class="fr-wrap"><table class="fr" id="fr-table">
+    <thead><tr>
+      <th>Child</th><th>DOB</th><th>Age band</th><th>Room</th><th>Funding</th>
+      <th class="num">Univ</th><th class="num">Ext</th><th>Code</th><th>NI</th>
+      <th>Declaration</th><th class="num">Docs</th><th>App</th><th>Still needed</th>
+    </tr></thead><tbody><tr><td colspan="13" class="dash" style="padding:16px">Loading…</td></tr></tbody></table></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var BASE = '/api/forms-register';
+  var STATE = { rows: [], termId: null };
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  var BAND = { under_2:'Under 2', two:'2-year-old', three_four:'3 & 4', over_5:'Over 5', unknown:'—' };
+  var FT = { universal:'Universal', extended:'Extended (30h)', '2yr_working':'2yr working', '2yr_disadvantaged':'2yr disadvantaged', none:'—' };
+  function n(v){ return (v===null||v===undefined||v==='') ? '' : (Math.round(Number(v)*100)/100); }
+
+  function render() {
+    var band = document.getElementById('fr-band').value;
+    var show = document.getElementById('fr-show').value;
+    var rows = STATE.rows.filter(function (r) {
+      if (band !== 'all' && r.age_band !== band) return false;
+      if (show === 'funded' && !r.funded) return false;
+      if (show === 'incomplete' && !(r.allocation_id && r.missing.length)) return false;
+      return true;
+    });
+    var tb = document.querySelector('#fr-table tbody');
+    tb.innerHTML = rows.length ? rows.map(function (r) {
+      var yn = function (v) { return v ? '<span class="tick">✓</span>' : '<span class="cross">✗</span>'; };
+      return '<tr>' +
+        '<td>' + esc((r.first_name||'') + ' ' + (r.last_name||'')) + (r.is_active ? '' : ' <span class="na">(left)</span>') + '</td>' +
+        '<td>' + esc(r.dob || '—') + '</td>' +
+        '<td>' + esc(BAND[r.age_band] || r.age_band) + '</td>' +
+        '<td>' + esc(r.room_name || '—') + '</td>' +
+        '<td>' + esc(FT[r.funding_type] || (r.allocation_id ? r.funding_type : '—')) + '</td>' +
+        '<td class="num">' + n(r.universal_hours_week) + '</td>' +
+        '<td class="num">' + n(r.extended_hours_week) + '</td>' +
+        '<td>' + (r.funding_type === 'extended' ? yn(r.thirty_hour_code) : '<span class="na">n/a</span>') + '</td>' +
+        '<td>' + (r.allocation_id ? yn(r.carer_ni_number) : '<span class="na">n/a</span>') + '</td>' +
+        '<td>' + (r.allocation_id ? yn(r.declaration_signed) : '<span class="na">n/a</span>') + '</td>' +
+        '<td class="num">' + (r.documents_on_file || 0) + '</td>' +
+        '<td>' + yn(r.parent_has_app) + '</td>' +
+        '<td>' + (!r.allocation_id ? '<span class="na">not funded this term</span>'
+                  : (r.missing.length ? r.missing.map(function (m) { return '<span class="miss">' + esc(m) + '</span>'; }).join('')
+                                      : '<span class="ok-pill">ready</span>')) + '</td>' +
+      '</tr>';
+    }).join('') : '<tr><td colspan="13" class="dash" style="padding:16px">Nothing matches that filter.</td></tr>';
+
+    var funded = rows.filter(function (r) { return r.funded; }).length;
+    var ready = rows.filter(function (r) { return r.allocation_id && !r.missing.length; }).length;
+    var incomplete = rows.filter(function (r) { return r.allocation_id && r.missing.length; }).length;
+    document.getElementById('fr-sum').innerHTML =
+      [[rows.length, 'children shown'], [funded, 'funded'], [ready, 'ready to claim'], [incomplete, 'something missing']]
+      .map(function (p) { return '<div class="fr-stat"><div class="n">' + p[0] + '</div><div class="l">' + p[1] + '</div></div>'; }).join('');
+  }
+
+  function load() {
+    var t = document.getElementById('fr-term').value;
+    return Wren.api(BASE + (t ? '?term_id=' + encodeURIComponent(t) : '')).then(function (d) {
+      STATE.rows = d.children || [];
+      STATE.termId = d.term && d.term.id;
+      var sel = document.getElementById('fr-term');
+      if (!sel.options.length && d.terms) {
+        sel.innerHTML = d.terms.map(function (x) {
+          return '<option value="' + x.id + '"' + (x.id === STATE.termId ? ' selected' : '') + '>' + esc(x.name) + '</option>';
+        }).join('');
+      }
+      render();
+    });
+  }
+
+  document.addEventListener('wren:ready', function () {
+    ['fr-band', 'fr-show'].forEach(function (id) { document.getElementById(id).onchange = render; });
+    document.getElementById('fr-term').onchange = function () { load().catch(function (e) { alert((e && (e.error || e.message)) || 'Could not load'); }); };
+    document.getElementById('fr-export').onclick = function () {
+      var b = this, was = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
+      var q = '?term_id=' + encodeURIComponent(STATE.termId) + '&age_band=' + encodeURIComponent(document.getElementById('fr-band').value)
+            + (document.getElementById('fr-show').value === 'funded' ? '&funded_only=true' : '');
+      Wren.download(BASE + '/export.csv' + q, 'forms-register.csv')
+        .catch(function (e) { alert((e && (e.error || e.message)) || 'Export failed'); })
+        .then(function () { b.disabled = false; b.textContent = was; });
+    };
+    load().catch(function (e) {
+      document.querySelector('#fr-table tbody').innerHTML =
+        '<tr><td colspan="13" class="dash" style="padding:16px">Could not load: ' + esc((e && (e.error || e.message)) || 'error') + '</td></tr>';
+    });
+  });
+})();
+</script>
+</body>
+</html>

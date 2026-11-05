@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Nursery Watchdog — Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .mon-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+    .mon-cat { margin-bottom:22px; }
+    .mon-cat h2 { font-size:14px; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; margin:0 0 10px; }
+    .mon-alert {
+      display:flex; align-items:flex-start; gap:12px;
+      background:#1e293b; border:1px solid #2d3748; border-left-width:4px;
+      border-radius:10px; padding:12px 14px; margin-bottom:10px;
+    }
+    .mon-alert.critical { border-left-color:#ef4444; }
+    .mon-alert.warn     { border-left-color:#f59e0b; }
+    .mon-alert.info     { border-left-color:#64748b; }
+    .mon-alert .body { flex:1; min-width:0; }
+    .mon-alert .title { font-weight:700; color:#f1f5f9; font-size:14px; }
+    .mon-alert .detail { color:#94a3b8; font-size:13px; margin-top:3px; }
+    .mon-alert .meta { color:#64748b; font-size:11px; margin-top:5px; }
+    .sev-pill { font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:.05em; }
+    .sev-pill.critical { background:rgba(239,68,68,.15); color:#ef4444; }
+    .sev-pill.warn     { background:rgba(245,158,11,.15); color:#f59e0b; }
+    .sev-pill.info     { background:rgba(148,163,184,.12); color:#94a3b8; }
+    .mon-empty { color:#64748b; padding:30px; text-align:center; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Nursery Watchdog</div>
+      <div class="page-subtitle" style="color:#94a3b8">Finance · staffing · absence alerts</div>
+    </div>
+    <div class="mon-toolbar" id="mon-actions">
+      <button class="btn btn-primary btn-sm" id="btn-run">⚡ Run checks now</button>
+      <button class="btn btn-ghost btn-sm" id="btn-refresh">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div id="mon-summary" style="color:#94a3b8;font-size:13px;margin-bottom:14px"></div>
+  <div id="mon-body"><div class="mon-empty">Loading…</div></div>
+</div>
+
+<script>
+const CAT_LABELS = { financial: '💷 Financial', staffing: '👥 Staffing', absence: '📅 Absence' };
+const SEV_ORDER = { critical: 0, warn: 1, info: 2 };
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function loadAlerts() {
+  const body = document.getElementById('mon-body');
+  const summary = document.getElementById('mon-summary');
+  try {
+    const alerts = await Wren.api('/api/monitor/alerts');
+    if (!alerts.length) {
+      body.innerHTML = '<div class="mon-empty">✅ No open alerts — all clear.</div>';
+      summary.textContent = '';
+      return;
+    }
+    const counts = alerts.reduce((m, a) => (m[a.severity] = (m[a.severity]||0)+1, m), {});
+    summary.innerHTML = `${alerts.length} open alert(s): ` +
+      `<span class="sev-pill critical">${counts.critical||0} critical</span> ` +
+      `<span class="sev-pill warn">${counts.warn||0} warn</span> ` +
+      `<span class="sev-pill info">${counts.info||0} info</span>`;
+
+    const byCat = {};
+    for (const a of alerts) (byCat[a.category] = byCat[a.category] || []).push(a);
+
+    body.innerHTML = Object.keys(byCat).sort().map(cat => {
+      const rows = byCat[cat].sort((x, y) => (SEV_ORDER[x.severity]??9) - (SEV_ORDER[y.severity]??9));
+      return `<div class="mon-cat"><h2>${CAT_LABELS[cat] || esc(cat)} (${rows.length})</h2>` +
+        rows.map(a => `
+          <div class="mon-alert ${esc(a.severity)}">
+            <span class="sev-pill ${esc(a.severity)}">${esc(a.severity)}</span>
+            <div class="body">
+              <div class="title">${esc(a.title)}</div>
+              <div class="detail">${esc(a.detail)}</div>
+              <div class="meta">${new Date(a.created_at).toLocaleString()}${a.entity_type ? ' · ' + esc(a.entity_type) + (a.entity_id ? ' #' + a.entity_id : '') : ''}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" data-resolve="${a.id}">Resolve</button>
+          </div>`).join('') +
+        `</div>`;
+    }).join('');
+
+    body.querySelectorAll('[data-resolve]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '…';
+        try { await Wren.api(`/api/monitor/alerts/${btn.dataset.resolve}/resolve`, { method: 'POST', body: '{}' }); await loadAlerts(); }
+        catch (e) { btn.disabled = false; btn.textContent = 'Resolve'; alert('Could not resolve: ' + (e && e.error || e)); }
+      });
+    });
+  } catch (e) {
+    body.innerHTML = `<div class="mon-empty">Failed to load alerts: ${esc(e && e.error || e)}</div>`;
+  }
+}
+
+document.addEventListener('wren:ready', () => {
+  document.getElementById('btn-refresh').addEventListener('click', loadAlerts);
+  document.getElementById('btn-run').addEventListener('click', async () => {
+    const b = document.getElementById('btn-run');
+    b.disabled = true; b.textContent = 'Running…';
+    try { const r = await Wren.api('/api/monitor/run', { method: 'POST', body: '{}' }); await loadAlerts();
+      document.getElementById('mon-summary').insertAdjacentHTML('beforeend', ` — ran: ${r.inserted} new / ${r.evaluated} evaluated`); }
+    catch (e) { alert('Run failed: ' + (e && e.error || e)); }
+    finally { b.disabled = false; b.textContent = '⚡ Run checks now'; }
+  });
+  loadAlerts();
+});
+</script>
+</body>
+</html>

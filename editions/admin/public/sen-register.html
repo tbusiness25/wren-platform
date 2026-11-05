@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>SEND Register — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<script src="/js/sen-child-panel.js?v=b155" defer></script>
+<style>
+.sen-intro{background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:12px 14px;font-size:.82rem;color:#94a3b8;line-height:1.55;margin-bottom:14px}
+.sen-intro b{color:#cbd5e1}
+.sen-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.sen-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;cursor:pointer}
+.sen-child{font-weight:700;color:#f1f5f9;font-size:.95rem}
+.sen-meta{color:#94a3b8;font-size:.76rem;margin-top:2px}
+.sen-badge{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:6px;text-transform:uppercase;letter-spacing:.03em}
+.status-diagnosed{background:#a855f722;color:#d8b4fe}
+.status-monitoring{background:#f59e0b22;color:#fbbf24}
+.type-ehcp{background:#ef444422;color:#fca5a5}
+.sen-area{display:inline-block;font-size:.68rem;padding:3px 9px;border-radius:6px;background:#4a9abf22;color:#7dd3fc;margin:2px 4px 2px 0}
+.review-soon{color:#f59e0b}
+.review-overdue{color:#ef4444;font-weight:700}
+.muted{color:#64748b;font-size:.8rem}
+.sen-expand{margin-top:14px;padding-top:14px;border-top:1px solid #2d3748;display:none}
+.sen-expand.open{display:block}
+.sen-chevron{color:#64748b;font-size:1.1rem;transition:transform .15s}
+.sen-chevron.open{transform:rotate(90deg)}
+#sen-add-modal-body label{display:block;font-size:.78rem;color:#94a3b8;margin:10px 0 4px}
+#sen-add-modal-body input,#sen-add-modal-body select,#sen-add-modal-body textarea{width:100%;box-sizing:border-box}
+.sen-checks{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+.sen-checks label{display:flex;align-items:center;gap:5px;font-size:.8rem;color:#cbd5e1;margin:0}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div class="page-title">🧩 SEND Register</div>
+    <button class="btn btn-primary" id="btn-add-register">+ Add to register</button>
+  </div>
+
+  <div class="sen-intro">
+    <b>Diagnosed</b> vs <b>Monitoring</b> — Toby's distinction: <i>diagnosed</i> once a formal diagnosis or EHCP is
+    in place, <i>monitoring</i> while the setting is watching and gathering evidence. Tap a child to open their
+    register entry, SMART targets, APDR cycles and Play Plan inline. Modelled on the SENCO consultant's real
+    templates (register / APDR-IEP / Play Plan).
+  </div>
+
+  <div id="sen-list"><p class="muted">Loading…</p></div>
+</div>
+
+<script>
+const api = (u,o)=>window.Wren.api(u,o);
+const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function ageStr(dob){
+  if(!dob) return '';
+  const d=new Date(dob), now=new Date();
+  let m=(now.getFullYear()-d.getFullYear())*12+(now.getMonth()-d.getMonth());
+  if(now.getDate()<d.getDate()) m--;
+  return Math.floor(m/12)+'y '+(m%12)+'m';
+}
+
+async function load(){
+  const list=document.getElementById('sen-list');
+  try{
+    const rows=await api('/api/sen');
+    if(!rows.length){ list.innerHTML='<p class="muted">No children on the SEND register yet.</p>'; return; }
+    list.innerHTML=rows.map(r=>{
+      const areas=(r.areas_of_need||[]).map(a=>`<span class="sen-area">${esc(a)}</span>`).join('');
+      let reviewCls='muted', reviewTxt='No review date set';
+      if(r.review_date){
+        const days=(new Date(r.review_date)-new Date())/86400000;
+        reviewTxt='Review '+new Date(r.review_date).toLocaleDateString('en-GB');
+        reviewCls = days<0 ? 'review-overdue' : (days<=28 ? 'review-soon' : 'muted');
+      }
+      return `
+      <div class="sen-card" data-child="${r.child_id}">
+        <div class="sen-card-head" data-toggle="${r.child_id}">
+          <div>
+            <div class="sen-child">${esc(r.child_name||('Child #'+r.child_id))} <span class="muted">${esc(r.room_name||'')} · ${ageStr(r.date_of_birth)}</span></div>
+            <div class="sen-meta">
+              <span class="sen-badge status-${esc(r.status||'monitoring')}">${esc(r.status||'monitoring')}</span>
+              ${r.sen_type==='ehcp'?'<span class="sen-badge type-ehcp">EHCP</span>':''}
+              <span class="${reviewCls}">${reviewTxt}</span>
+            </div>
+            <div style="margin-top:8px">${areas}</div>
+          </div>
+          <span class="sen-chevron" id="chev-${r.child_id}">›</span>
+        </div>
+        <div class="sen-expand" id="expand-${r.child_id}"></div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-toggle]').forEach(head=>{
+      head.addEventListener('click', ()=>toggleExpand(head.dataset.toggle));
+    });
+  }catch(e){ list.innerHTML='<p class="muted">Could not load the register.</p>'; }
+}
+
+const _mounted = {};
+function toggleExpand(childId){
+  const box = document.getElementById('expand-'+childId);
+  const chev = document.getElementById('chev-'+childId);
+  const open = box.classList.toggle('open');
+  chev.classList.toggle('open', open);
+  if (open && !_mounted[childId] && window.WrenSenPanel) {
+    _mounted[childId] = true;
+    WrenSenPanel.mount(box, childId, { isSenco: true }); // this page is manager-gated (requiresRole: manager)
+  }
+}
+
+function addFormHtml(){
+  return `<div id="sen-add-modal-body">
+    <label>Child</label>
+    <select class="form-control" id="sen-add-child"><option value="">Select a child…</option></select>
+    <label>Status</label>
+    <select class="form-control" id="sen-add-status">
+      <option value="monitoring">Monitoring</option>
+      <option value="diagnosed">Diagnosed</option>
+    </select>
+    <label>SEN type</label>
+    <select class="form-control" id="sen-add-sentype">
+      <option value="sen_support">SEN Support</option>
+      <option value="ehcp">EHCP</option>
+      <option value="monitoring">Monitoring</option>
+    </select>
+    <label>Area(s) of need</label>
+    <div class="sen-checks" id="sen-add-areas">
+      <label><input type="checkbox" value="Communication & Interaction"> Communication &amp; Interaction</label>
+      <label><input type="checkbox" value="Cognition & Learning"> Cognition &amp; Learning</label>
+      <label><input type="checkbox" value="Social, Emotional & Mental Health"> Social, Emotional &amp; Mental Health</label>
+      <label><input type="checkbox" value="Sensory/Physical"> Sensory/Physical</label>
+    </div>
+    <label>Primary need (free text)</label>
+    <textarea class="form-control" id="sen-add-need" rows="2"></textarea>
+    <label>Outside agencies involved</label>
+    <div class="sen-checks" id="sen-add-agencies">
+      <label><input type="checkbox" value="EYSEND"> EYSEND</label>
+      <label><input type="checkbox" value="SALT"> SALT</label>
+      <label><input type="checkbox" value="OT"> OT</label>
+      <label><input type="checkbox" value="Paediatrician"> Paediatrician</label>
+      <label><input type="checkbox" value="Physio"> Physio</label>
+    </div>
+    <label><input type="checkbox" id="sen-add-consent"> Parental consent given</label>
+    <label>SENIF / EHCNA applied</label>
+    <div class="sen-checks">
+      <label><input type="checkbox" id="sen-add-senif"> SENIF applied</label>
+      <label><input type="checkbox" id="sen-add-ehcna"> EHCNA applied</label>
+    </div>
+    <div style="margin-top:14px;text-align:right">
+      <button class="btn btn-primary" id="sen-add-save">Add to register</button>
+    </div>
+  </div>`;
+}
+
+function openAddModal(){
+  window.Wren.modal('Add to SEND register', addFormHtml());
+  const overlay = document.querySelector('.wren-modal-overlay');
+  if (!overlay) return;
+  const sel = overlay.querySelector('#sen-add-child');
+  api('/api/children?is_active=true').then(rows=>{
+    const list = Array.isArray(rows) ? rows : (rows && rows.children) || [];
+    sel.innerHTML = '<option value="">Select a child…</option>' + list.map(c=>
+      `<option value="${c.id}">${esc((c.first_name||'')+' '+(c.last_name||''))}</option>`).join('');
+  }).catch(()=>{});
+  overlay.querySelector('#sen-add-save').addEventListener('click', async ()=>{
+    const childId = sel.value;
+    if(!childId){ window.Wren.toast('Select a child', 'warning'); return; }
+    const areas = Array.from(overlay.querySelectorAll('#sen-add-areas input:checked')).map(i=>i.value);
+    const agencies = {};
+    overlay.querySelectorAll('#sen-add-agencies input').forEach(i=>{ agencies[i.value] = i.checked; });
+    const body = {
+      child_id: childId,
+      status: overlay.querySelector('#sen-add-status').value,
+      sen_type: overlay.querySelector('#sen-add-sentype').value,
+      areas_of_need: areas,
+      primary_need: overlay.querySelector('#sen-add-need').value.trim() || null,
+      outside_agencies: agencies,
+      parental_consent: overlay.querySelector('#sen-add-consent').checked,
+      parental_consent_date: overlay.querySelector('#sen-add-consent').checked ? new Date().toISOString().slice(0,10) : null,
+      senif_applied: overlay.querySelector('#sen-add-senif').checked,
+      ehcna_applied: overlay.querySelector('#sen-add-ehcna').checked,
+    };
+    const res = await api('/api/sen', {method:'POST', body}).catch(e=>({error:e.message}));
+    if(res && res.id){
+      window.Wren.toast('Added to register', 'success');
+      const closeBtn = overlay.querySelector('.modal-close');
+      if (closeBtn) closeBtn.click();
+      load();
+    } else window.Wren.toast((res&&res.error)||'Could not add', 'error');
+  });
+}
+
+document.getElementById('btn-add-register').addEventListener('click', openAddModal);
+document.addEventListener('wren:ready', load);
+</script>
+</body>
+</html>

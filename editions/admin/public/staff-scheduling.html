@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Staff Weekly Schedule · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf;--orange:#e07820}
+ body{background:var(--bg);color:var(--txt);font-family:Inter,-apple-system,sans-serif}
+ .sched-wrap{padding:18px;max-width:1500px;margin:0 auto}
+ h1{font-size:1.3rem;margin:0 0 4px}
+ .sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .sched-grid{display:grid;grid-template-columns:220px repeat(5,1fr);gap:2px;background:var(--bd);
+   border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+ .sched-cell{background:var(--card);padding:10px 12px;min-height:52px;position:relative}
+ .sched-header{font-weight:700;font-size:.85rem;text-align:center;padding:10px;background:var(--bg)}
+ .sched-name{font-weight:600;font-size:.9rem;display:flex;flex-direction:column;gap:2px}
+ .sched-name .role{font-size:.7rem;color:var(--mut);font-weight:500;text-transform:capitalize}
+ .sched-name .hrs{font-size:.7rem;color:var(--blue);font-weight:600}
+ .shift{background:var(--blue);color:#06121f;border-radius:8px;padding:5px 9px;
+   font-size:.8rem;font-weight:700;display:inline-block;line-height:1.3}
+ .shift.am{background:var(--orange)}
+ .shift .room{display:block;font-size:.68rem;font-weight:600;opacity:.85}
+ .shift .ratio-note{display:block;font-size:.66rem;font-weight:600;color:#7a1f00}
+ .off{color:var(--mut);font-size:.78rem}
+ .none{color:var(--mut);font-size:.75rem;font-style:italic}
+ .empty-state{color:var(--mut);font-size:.85rem;text-align:center;padding:40px;
+   background:var(--card);border:1px solid var(--bd);border-radius:10px;margin:20px 0}
+ .msg{margin:10px 0;font-size:.85rem;padding:10px;background:var(--card);border:1px solid var(--bd);border-radius:8px}
+ .msg.bad{border-color:var(--bad);color:var(--bad)}
+ .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.78rem;color:var(--mut);margin:14px 0}
+ .legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:5px}
+</style>
+</head>
+<body data-portal="admin">
+<div class="sched-wrap">
+  <h1>🗓️ Staff Weekly Schedule</h1>
+  <div class="sub">Each staff member's working pattern, Mon–Fri. Lunch is 1 hour unpaid on every working day. Assign patterns from Staff → a staff member → Working pattern.</div>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--blue)"></span>Day shift</span>
+    <span><span class="sw" style="background:var(--orange)"></span>AM / early shift</span>
+    <span>⏱️ off-ratio until = on the floor but not counted toward ratios until that time</span>
+  </div>
+  <div id="msg"></div>
+  <div id="grid-container"><div class="empty-state">Loading…</div></div>
+</div>
+
+<script defer src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script defer src="/js/wren-shell-v2.js"></script>
+<script>
+document.addEventListener('wren:ready', init);
+
+const WEEKDAYS = [0,1,2,3,4];
+const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+
+function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function hhmm(t){return t?String(t).slice(0,5):'';}
+
+async function init(){
+  try{
+    const staff = await Wren.api('/api/work-patterns/schedule');
+    renderGrid(staff);
+  }catch(e){
+    showMsg((e&&e.error)||e.message||'Could not load schedule','bad');
+    document.getElementById('grid-container').innerHTML='<div class="empty-state">Could not load the schedule.</div>';
+  }
+}
+
+function shiftHtml(d){
+  if(!d) return '<span class="none">—</span>';
+  if(d.is_off) return '<span class="off">Off</span>';
+  if(!d.shift_start||!d.shift_end) return '<span class="none">—</span>';
+  const start=hhmm(d.shift_start), end=hhmm(d.shift_end);
+  const isAm = start < '09:00';
+  const room = d.room ? `<span class="room">${esc(d.room)}</span>` : '';
+  const ratio = d.ratio_start ? `<span class="ratio-note">⏱️ off-ratio until ${hhmm(d.ratio_start)}</span>` : '';
+  return `<span class="shift${isAm?' am':''}">${start}–${end}${room}${ratio}</span>`;
+}
+
+function renderGrid(staff){
+  const container=document.getElementById('grid-container');
+  if(!staff||!staff.length){container.innerHTML='<div class="empty-state">No active staff found.</div>';return;}
+
+  const grid=document.createElement('div');
+  grid.className='sched-grid';
+
+  const corner=document.createElement('div');
+  corner.className='sched-header';corner.textContent='Staff';
+  grid.appendChild(corner);
+  DAY_NAMES.forEach(n=>{const h=document.createElement('div');h.className='sched-header';h.textContent=n;grid.appendChild(h);});
+
+  staff.forEach(s=>{
+    const byDow={};
+    (s.days||[]).forEach(d=>{byDow[d.day_of_week]=d;});
+
+    const nameCell=document.createElement('div');
+    nameCell.className='sched-cell';
+    nameCell.innerHTML=`<div class="sched-name">
+        <span>${esc(s.name||('Staff #'+s.staff_id))}</span>
+        <span class="role">${esc((s.role||'').replace(/_/g,' '))}</span>
+        <span class="hrs">${s.weekly_hours!=null?s.weekly_hours+'h/wk paid':''}</span>
+      </div>`;
+    grid.appendChild(nameCell);
+
+    WEEKDAYS.forEach(dow=>{
+      const cell=document.createElement('div');
+      cell.className='sched-cell';
+      cell.innerHTML=shiftHtml(byDow[dow]);
+      grid.appendChild(cell);
+    });
+  });
+
+  container.innerHTML='';
+  container.appendChild(grid);
+}
+
+function showMsg(text,cls){
+  const m=document.getElementById('msg');
+  m.textContent=text;m.className='msg '+(cls||'');
+  setTimeout(()=>{m.textContent='';m.className='msg';},5000);
+}
+</script>
+</body>
+</html>

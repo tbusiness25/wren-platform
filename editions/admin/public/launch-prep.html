@@ -1,0 +1,465 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wren To Do List · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ /* b307 — this page used to carry its own hard-coded dark palette, which meant it
+    only ever looked right in one theme. The local names are kept (the markup below
+    uses them everywhere) but they are now aliases of the design tokens, so the page
+    follows light AND dark like every other screen. */
+ :root{--bg:var(--c-bg);--card:var(--c-card);--bd:var(--c-border);--txt:var(--c-text);--mut:var(--c-muted);
+   --ok:var(--c-green);--warn:var(--c-amber);--bad:var(--c-red);--blue:var(--c-blue)}
+ .lp-wrap{padding:18px;max-width:1000px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .checks{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+ .chk{display:flex;align-items:flex-start;gap:12px;background:var(--card);border:1px solid var(--bd);
+   border-radius:12px;padding:12px 14px}
+ .chk .dot{width:12px;height:12px;border-radius:50%;margin-top:4px;flex:none}
+ .dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
+ .chk .body{flex:1;min-width:0}
+ .chk .name{font-weight:700;font-size:.9rem}
+ .chk .detail{color:var(--mut);font-size:.78rem;margin-top:2px}
+ .chk .action{font-size:.78rem;margin-top:4px}
+ .chk .action a{color:var(--blue)}
+ .exitcard{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:18px 0}
+ .exitcard.red{border-color:var(--bad)}
+ .exitcard h3{margin:0 0 8px;font-size:1rem}
+ .exitcard ul{margin:8px 0 0;padding-left:20px;color:var(--mut);font-size:.82rem;line-height:1.7}
+ .actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+ .btn{background:var(--card);border:1px solid var(--bd);color:var(--txt);border-radius:10px;
+   padding:10px 16px;font-size:.85rem;cursor:pointer}
+ .btn:hover{border-color:var(--blue)}
+ /* b307 — was a hard-coded navy, which only worked against the old dark-only
+    palette. var(--bg) inverts with the theme, so the label stays legible on the
+    blue in light AND dark. */
+ .btn.primary{background:var(--blue);border-color:var(--blue);color:var(--bg);font-weight:700}
+ .btn:disabled{opacity:.5;cursor:default}
+ .note{color:var(--mut);font-size:.75rem;margin-top:8px}
+ #lp-msg{margin:10px 0;font-size:.82rem;color:var(--warn);min-height:1em}
+
+ /* ── b307 — the list itself ─────────────────────────────────────────────── */
+ .lp-sec-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:26px 0 4px}
+ .lp-sec-head h2{font-size:1.02rem;margin:0}
+ .lp-sec-head .why{color:var(--mut);font-size:.78rem}
+ .todo-add{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px}
+ .todo-add input[type=text]{flex:1 1 280px;min-width:0;background:var(--bg);border:1px solid var(--bd);
+   color:var(--txt);border-radius:10px;padding:9px 12px;font:inherit;font-size:.86rem}
+ .todo-add select,.todo-add input[type=date]{background:var(--bg);border:1px solid var(--bd);color:var(--txt);
+   border-radius:10px;padding:9px 10px;font:inherit;font-size:.82rem}
+ .todo-list{display:flex;flex-direction:column;gap:7px}
+ .todo{display:flex;align-items:flex-start;gap:10px;background:var(--card);border:1px solid var(--bd);
+   border-radius:12px;padding:10px 12px}
+ .todo.dragging{opacity:.45}
+ .todo.drop-target{border-color:var(--blue)}
+ .todo.is-done{opacity:.62}
+ .todo.is-done .todo-title{text-decoration:line-through}
+ .todo .grip{cursor:grab;color:var(--mut);font-size:.95rem;line-height:1.5;user-select:none;flex:none;padding:0 2px}
+ .todo .tick{flex:none;margin-top:3px;width:16px;height:16px;accent-color:var(--blue);cursor:pointer}
+ .todo .body{flex:1;min-width:0}
+ .todo-title{font-weight:600;font-size:.88rem;line-height:1.35;word-break:break-word;
+   border-radius:6px;padding:1px 3px;margin:-1px -3px;cursor:text}
+ .todo-title:focus{outline:2px solid var(--blue);outline-offset:1px;background:var(--bg)}
+ .todo-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px}
+ .pill{font-size:.68rem;border:1px solid var(--bd);border-radius:999px;padding:1px 8px;color:var(--mut);
+   background:transparent}
+ .pill.urgent,.pill.high{border-color:var(--bad);color:var(--bad)}
+ .pill.overdue{border-color:var(--warn);color:var(--warn)}
+ .todo select.pill,.todo input.pill{background:var(--bg);color:var(--mut);font:inherit;font-size:.68rem;
+   padding:1px 6px;cursor:pointer}
+ .todo .rm{flex:none;background:transparent;border:1px solid var(--bd);border-radius:8px;color:var(--mut);
+   cursor:pointer;font-size:.72rem;padding:2px 7px;line-height:1.5}
+ .todo .rm:hover{color:var(--bad);border-color:var(--bad)}
+ .todo-empty{color:var(--mut);font-size:.82rem;background:var(--card);border:1px dashed var(--bd);
+   border-radius:12px;padding:16px;text-align:center}
+ .todo-foot{color:var(--mut);font-size:.75rem;margin-top:9px}
+ .todo-foot a{color:var(--blue)}
+ #lp-todo-msg{font-size:.8rem;min-height:1em;margin:0 0 6px;color:var(--warn)}
+</style></head>
+<body data-portal="admin">
+<div class="lp-wrap">
+  <h1>📋 Wren To Do List</h1>
+  <div class="sub">Everything to be done to <strong>Wren itself</strong> — the software, not the nursery.
+    Nursery work stays on the Cockpit board.</div>
+
+  <!-- ── b307 — THE LIST. It is the point of the page, so it is at the top. ──
+       The readiness checks that used to be the whole page are still here, below,
+       under a heading that says what they are. -->
+  <div id="lp-todo-msg"></div>
+  <form class="todo-add" id="lp-todo-add" autocomplete="off">
+    <input type="text" id="lp-new-title" maxlength="300" placeholder="Something to build or fix in Wren…" required>
+    <select id="lp-new-prio" aria-label="Priority">
+      <option value="low">low</option>
+      <option value="medium" selected>medium</option>
+      <option value="high">high</option>
+      <option value="urgent">urgent</option>
+    </select>
+    <input type="date" id="lp-new-due" aria-label="Due date">
+    <button type="submit" class="btn primary">Add</button>
+  </form>
+  <div class="todo-list" id="lp-todos"><div class="todo-empty">Loading…</div></div>
+  <div class="todo-foot" id="lp-todo-foot"></div>
+
+  <div class="lp-sec-head">
+    <h2>Checks that run themselves</h2>
+    <span class="why">Read-only, computed from the database every time this page loads — nothing here is a to-do you tick off.</span>
+  </div>
+  <div id="lp-msg"></div>
+  <div class="checks" id="lp-checks"><div class="chk"><div class="body">Loading…</div></div></div>
+
+  <div class="exitcard" id="lp-exitcard">
+    <h3>📦 Before cancelling EyLog</h3>
+    <ul>
+      <li>Export all observations as PDF / learning journeys from EyLog</li>
+      <li>Export child records + registers (already mirrored nightly into Wren — verify counts above match)</li>
+      <li>Export staff records and any funding history held in EyMan</li>
+      <li>Check the notice period on the EyLog contract before cancelling</li>
+    </ul>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btn-refresh">↻ Refresh status</button>
+    <button class="btn" id="btn-derive">Re-run bookings derivation</button>
+    <button class="btn" id="btn-test-email">✉️ Send TEST onboarding email (to Toby)</button>
+    <button class="btn primary" id="btn-send-all">Send parent onboarding email…</button>
+  </div>
+  <div class="note">“Send parent onboarding” asks for confirmation and shows the recipient count first — nothing is sent without it.</div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var S = null;
+
+  function dot(state){ return '<div class="dot ' + state + '"></div>'; }
+  function chk(state, name, detail, action){
+    return '<div class="chk">' + dot(state) +
+      '<div class="body"><div class="name">' + name + '</div>' +
+      '<div class="detail">' + detail + '</div>' +
+      (action ? '<div class="action">' + action + '</div>' : '') + '</div></div>';
+  }
+  function esc(s){ var d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+
+  function render(){
+    var el = document.getElementById('lp-checks');
+    if (!S) { el.innerHTML = chk('bad','Status unavailable','Could not load /api/launch-prep/status',''); return; }
+    var rows = [];
+
+    var st = S.staff || {};
+    rows.push(chk((st.with_pin >= 5 && st.with_email >= 5) ? 'ok' : 'warn',
+      'Staff accounts',
+      (st.total||0) + ' active staff · ' + (st.with_pin||0) + ' with PIN · ' + (st.with_email||0) + ' with email · roles: ' + esc(JSON.stringify(st.roles||{})),
+      (st.with_pin >= 5) ? '' : '<a href="/staff.html">Add PINs in Staff →</a>'));
+
+    var ch = S.children || {};
+    rows.push(chk((ch.missing_room||[]).length === 0 ? 'ok' : 'warn',
+      'Children',
+      (ch.total_active||0) + ' active · ' + (ch.with_room||0) + ' with room · ' + esc(JSON.stringify(ch.by_room||{})),
+      (ch.missing_room||[]).length ? 'Missing room: ' + esc((ch.missing_room||[]).join(', ')) + ' — <a href="/admin/children/list">fix →</a>' : ''));
+
+    var bk = S.bookings || {};
+    rows.push(chk((bk.total||0) >= 20 ? 'ok' : 'bad',
+      'Daily bookings',
+      (bk.total||0) + ' active bookings (' + esc(bk.main_source||'—') + ') · Mon ' + (bk.mon||0) + ' / Tue ' + (bk.tue||0) + ' / Wed ' + (bk.wed||0) + ' / Thu ' + (bk.thu||0) + ' / Fri ' + (bk.fri||0),
+      (bk.total||0) >= 20 ? '' : 'Add bookings on child profiles in Roost'));
+
+    var pa = S.parents || {};
+    var noPortal = pa.no_portal || [];
+    rows.push(chk((pa.portal_access||0) >= 50 ? 'ok' : 'warn',
+      'Parent portal enrolment',
+      (pa.portal_access||0) + ' portal accounts · ' + (pa.children_with_parent_email||0) + ' children with a parent email',
+      (pa.portal_access||0) >= 50 ? '' : 'Use the onboarding email button below once ready'));
+
+    rows.push(chk(noPortal.length === 0 ? 'ok' : 'warn',
+      'No parent on portal (' + noPortal.length + ')',
+      noPortal.length === 0 ? 'Every child has at least one parent portal account.'
+        : 'Checked: ' + esc((pa.no_portal_sources_checked||[]).join(', ')) + '. No email found in any source for these children:',
+      noPortal.length ? '<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px">' +
+        noPortal.map(function(c){
+          return '<span>' + esc(c.name) + ' <span style="color:var(--mut)">(#' + c.id + (c.start_date ? ', starts ' + esc(c.start_date) : '') + ')</span></span>';
+        }).join('') + '</div><div style="margin-top:6px">Add a parent email on the child profile, or via <a href="/admin/admissions/pipeline">Enquiries</a>/<a href="/waiting-list.html">Waiting list</a> if one exists there — then re-run the portal-access backfill.</div>'
+        : ''));
+
+    var ey = S.eylog_data || {};
+    rows.push(chk((ey.observations_imported||0) >= 12000 ? 'ok' : 'warn',
+      'EyLog data imported',
+      (ey.observations_imported||0) + ' observations · ' + (ey.attendance_rows||0) + ' attendance rows · ' + (ey.diary_rows||0) + ' diary rows · ' + (ey.framework_tracker_entries||0) + ' tracker entries', ''));
+
+    var ob = S.observations || {};
+    var pct = ob.total ? Math.round(100 * (ob.with_statements||0) / ob.total) : 0;
+    rows.push(chk(pct > 50 ? 'ok' : 'warn',
+      'Observation → statement links',
+      (ob.with_statements||0) + ' of ' + (ob.total||0) + ' linked (' + pct + '%) · ' + (ob.recent_7d||0) + ' new obs in 7d',
+      pct > 50 ? '' : 'Historic EyLog imports have no links — new obs link via the ✨ statement picker'));
+
+    var rg = S.register || {};
+    rows.push(chk((rg.todays_seeded||0) > 0 ? 'ok' : 'warn',
+      'Daily register',
+      'Today: ' + (rg.todays_seeded||0) + ' seeded · ' + (rg.todays_signed_in||0) + ' signed in · last register day: ' + esc(rg.last_register_date||'—'),
+      (rg.todays_seeded||0) > 0 ? '' : 'Weekend / seeding runs 6am weekdays'));
+
+    var fu = S.funding || {};
+    rows.push(chk((fu.funded_children_this_term||0) >= 20 ? 'ok' : 'warn',
+      'Funding (current term)',
+      (fu.funded_children_this_term||0) + ' funded children · ' + (fu.total_hours_week||0) + ' hrs/week · ' + esc(fu.term_name||'no current term'),
+      (fu.funded_children_this_term||0) >= 20 ? '' : '<a href="/funding.html">Open Funding →</a>'));
+
+    var em = S.email || {};
+    rows.push(chk(em.gmail_dwd_send ? 'ok' : 'bad',
+      'Email relay (Gmail DWD)',
+      'Send: ' + (em.gmail_dwd_send ? 'working' : 'broken') + ' · read-only scope: ' + (em.gmail_readonly_dwd ? 'granted' : 'pending') + ' · SMTP fallback: ' + (em.smtp_configured ? 'configured' : 'not set'),
+      em.gmail_readonly_dwd ? '' : 'Add admin.directory.group scopes in Workspace Admin (weekly sync self-heals)'));
+
+    var ba = S.banking || {};
+    rows.push(chk((ba.xero_connected||0) >= 1 ? 'ok' : 'warn',
+      'Xero banking',
+      (ba.xero_connected||0) ? ('Connected · last sync ' + esc(ba.last_sync||'never')) : 'Not connected',
+      (ba.xero_connected||0) ? '' : 'Connect in System → Integrations → Xero'));
+
+    el.innerHTML = rows.join('');
+    // b307 — the countdown to 31 July 2026 is gone; that date has passed and a
+    // dead deadline reads as noise. The checks themselves are unchanged.
+  }
+
+  function msg(t, isErr){ var m=document.getElementById('lp-msg'); m.textContent=t; m.style.color=isErr?'var(--bad)':'var(--ok)'; }
+
+  async function load(){
+    try { S = await Wren.api('/api/launch-prep/status'); render(); }
+    catch(e){ S = null; render(); msg('Status load failed: ' + (e.error||e.message||''), true); }
+  }
+
+  function wire(){
+    document.getElementById('btn-refresh').addEventListener('click', load);
+
+    document.getElementById('btn-derive').addEventListener('click', async function(){
+      this.disabled = true;
+      try {
+        await Wren.api('/api/bookings/derive-from-attendance', { method:'POST', body:{} });
+        msg('Bookings derivation re-run ✓'); load();
+      } catch(e){ msg('Derivation failed: ' + (e.error||e.message||''), true); }
+      this.disabled = false;
+    });
+
+    document.getElementById('btn-test-email').addEventListener('click', async function(){
+      this.disabled = true;
+      try {
+        var r = await Wren.api('/api/launch-prep/send-parent-onboarding', { method:'POST', body:{ mode:'test' } });
+        msg('Test email sent to ' + r.sent_to + ' — check the inbox before the real send.');
+      } catch(e){ msg('Test send failed: ' + (e.error||e.message||''), true); }
+      this.disabled = false;
+    });
+
+    document.getElementById('btn-send-all').addEventListener('click', async function(){
+      var btn = this; btn.disabled = true;
+      try {
+        var d = await Wren.api('/api/launch-prep/send-parent-onboarding', { method:'POST', body:{ mode:'dry_run' } });
+        var go = window.confirm('Send the portal onboarding email to ' + d.recipients + ' parents?\n\nSubject: ' + d.subject + '\n\nThis cannot be un-sent.');
+        if (go) {
+          var r = await Wren.api('/api/launch-prep/send-parent-onboarding', { method:'POST', body:{ mode:'send', confirm:'SEND-TO-ALL-PARENTS' } });
+          msg('Sent to ' + r.sent + ' parents' + (r.failed ? (' · ' + r.failed + ' failed') : '') + ' ✓');
+        } else { msg('Cancelled — nothing sent.'); }
+      } catch(e){ msg('Send failed: ' + (e.error||e.message||''), true); }
+      btn.disabled = false;
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  b307 — THE WREN TO DO LIST
+  //  Every ladn.tasks row with category='platform'. Same table the cockpit
+  //  reads; the category is the only thing that decides which list a task is
+  //  on, so sending one back to the nursery board is a single field change.
+  // ══════════════════════════════════════════════════════════════════════════
+  var TODOS = [];
+  var DONE_STATUSES = { done: 1, cancelled: 1 };
+
+  function todoMsg(t, isErr){
+    var m = document.getElementById('lp-todo-msg'); if (!m) return;
+    m.textContent = t || '';
+    m.style.color = isErr ? 'var(--bad)' : 'var(--ok)';
+  }
+  function isOverdue(t){
+    if (!t.due_date || DONE_STATUSES[t.status]) return false;
+    return String(t.due_date).slice(0,10) < new Date().toISOString().slice(0,10);
+  }
+  function fmtDue(d){
+    if (!d) return '';
+    var x = new Date(String(d).slice(0,10) + 'T12:00:00');
+    return isNaN(x) ? '' : x.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' });
+  }
+
+  function renderTodos(){
+    var host = document.getElementById('lp-todos');
+    var foot = document.getElementById('lp-todo-foot');
+    if (!host) return;
+    var open = TODOS.filter(function(t){ return !DONE_STATUSES[t.status]; });
+    var done = TODOS.filter(function(t){ return !!DONE_STATUSES[t.status]; });
+
+    if (!TODOS.length) {
+      host.innerHTML = '<div class="todo-empty">Nothing on the Wren list yet. Add one above, or tap ' +
+        '<strong>⤳&nbsp;Wren</strong> on a task on the Cockpit board to move it here.</div>';
+    } else {
+      host.innerHTML = open.map(row).join('') + done.map(row).join('');
+    }
+    if (foot) {
+      foot.innerHTML = open.length + ' open · ' + done.length + ' done · ' +
+        'nursery work lives on the <a href="/app.html#cockpit">Cockpit board</a>.';
+    }
+    wireDrag();
+  }
+
+  function row(t){
+    var isDone = !!DONE_STATUSES[t.status];
+    var prio = String(t.priority || 'medium');
+    return '<div class="todo' + (isDone ? ' is-done' : '') + '" data-id="' + t.id + '"' +
+             (isDone ? '' : ' draggable="true"') + '>' +
+      (isDone ? '<span class="grip" style="visibility:hidden">⠿</span>'
+              : '<span class="grip" title="Drag to reorder">⠿</span>') +
+      '<input type="checkbox" class="tick" data-act="done"' + (isDone ? ' checked' : '') +
+        ' aria-label="Mark done">' +
+      '<div class="body">' +
+        '<div class="todo-title" contenteditable="true" spellcheck="false" data-act="title" ' +
+          'role="textbox" aria-label="Task title">' + esc(t.title) + '</div>' +
+        '<div class="todo-meta">' +
+          '<select class="pill ' + esc(prio) + '" data-act="prio" aria-label="Priority">' +
+            ['low','medium','high','urgent'].map(function(p){
+              return '<option value="' + p + '"' + (prio === p ? ' selected' : '') + '>' + p + '</option>';
+            }).join('') +
+          '</select>' +
+          '<input type="date" class="pill' + (isOverdue(t) ? ' overdue' : '') + '" data-act="due" ' +
+            'value="' + (t.due_date ? String(t.due_date).slice(0,10) : '') + '" aria-label="Due date">' +
+          (isOverdue(t) ? '<span class="pill overdue">overdue</span>' : '') +
+          (t.due_date && !isOverdue(t) ? '<span class="pill">' + esc(fmtDue(t.due_date)) + '</span>' : '') +
+          '<button type="button" class="pill" data-act="to-nursery" ' +
+            'title="This is nursery work, not Wren work — send it back to the Cockpit board">↩ nursery</button>' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="rm" data-act="del" title="Delete">✕</button>' +
+    '</div>';
+  }
+
+  async function loadTodos(){
+    try {
+      TODOS = await Wren.api('/api/tasks?category=platform');
+      if (!Array.isArray(TODOS)) TODOS = [];
+      renderTodos();
+    } catch (e) {
+      var host = document.getElementById('lp-todos');
+      if (host) host.innerHTML = '<div class="todo-empty">Could not load the list' +
+        (e && e.error ? ' — ' + esc(e.error) : '') + '.</div>';
+    }
+  }
+
+  async function patchTodo(id, body){
+    await Wren.api('/api/tasks/' + id, { method:'PUT', body: body });
+  }
+
+  // ── in-place editing, done state, reclassify, delete ──────────────────────
+  function wireTodos(){
+    var host = document.getElementById('lp-todos');
+    var form = document.getElementById('lp-todo-add');
+    if (!host || !form) return;
+
+    form.addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      var ti = document.getElementById('lp-new-title');
+      var title = ti.value.trim();
+      if (!title) return;
+      try {
+        // category:'platform' is what makes this a Wren task rather than a
+        // nursery one — a task created HERE is software work by construction.
+        await Wren.api('/api/tasks', { method:'POST', body:{
+          title: title,
+          category: 'platform',
+          priority: document.getElementById('lp-new-prio').value,
+          due_date: document.getElementById('lp-new-due').value || null,
+          source: 'wren-todo'
+        }});
+        ti.value = ''; document.getElementById('lp-new-due').value = '';
+        todoMsg('Added ✓'); await loadTodos();
+      } catch (e) { todoMsg('Could not add it: ' + (e.error || e.message || ''), true); }
+    });
+
+    host.addEventListener('change', async function(ev){
+      var el = ev.target.closest('[data-act]'); if (!el) return;
+      var wrap = el.closest('.todo'); if (!wrap) return;
+      var id = wrap.dataset.id, act = el.dataset.act;
+      try {
+        if (act === 'done')      { await patchTodo(id, { status: el.checked ? 'done' : 'open' }); await loadTodos(); }
+        else if (act === 'prio') { await patchTodo(id, { priority: el.value }); await loadTodos(); }
+        else if (act === 'due')  { await patchTodo(id, { due_date: el.value || null }); await loadTodos(); }
+      } catch (e) { todoMsg('Save failed: ' + (e.error || e.message || ''), true); await loadTodos(); }
+    });
+
+    host.addEventListener('click', async function(ev){
+      var el = ev.target.closest('[data-act]'); if (!el) return;
+      var wrap = el.closest('.todo'); if (!wrap) return;
+      var id = wrap.dataset.id;
+      if (el.dataset.act === 'to-nursery') {
+        try {
+          await patchTodo(id, { category: 'nursery' });
+          todoMsg('Sent back to the Cockpit board ✓'); await loadTodos();
+        } catch (e) { todoMsg('Could not move it: ' + (e.error || e.message || ''), true); }
+      } else if (el.dataset.act === 'del') {
+        if (!window.confirm('Delete this task? It leaves both lists for good.')) return;
+        try { await Wren.api('/api/tasks/' + id, { method:'DELETE' }); todoMsg('Deleted'); await loadTodos(); }
+        catch (e) { todoMsg('Delete failed: ' + (e.error || e.message || ''), true); }
+      }
+    });
+
+    // Title edits commit on blur or Enter — never on every keystroke.
+    host.addEventListener('blur', async function(ev){
+      var el = ev.target.closest && ev.target.closest('[data-act="title"]'); if (!el) return;
+      var wrap = el.closest('.todo'); var id = wrap && wrap.dataset.id; if (!id) return;
+      var cur = (el.textContent || '').trim();
+      var was = (TODOS.find(function(t){ return String(t.id) === String(id); }) || {}).title || '';
+      if (!cur) { el.textContent = was; return; }          // an empty title is a slip, not a delete
+      if (cur === was) return;
+      try { await patchTodo(id, { title: cur }); todoMsg('Saved ✓'); await loadTodos(); }
+      catch (e) { todoMsg('Save failed: ' + (e.error || e.message || ''), true); await loadTodos(); }
+    }, true);
+    host.addEventListener('keydown', function(ev){
+      if (ev.key === 'Enter' && ev.target.closest && ev.target.closest('[data-act="title"]')) {
+        ev.preventDefault(); ev.target.blur();
+      }
+    });
+  }
+
+  // ── drag to reorder (open items only) ─────────────────────────────────────
+  var _dragId = null;
+  function wireDrag(){
+    var host = document.getElementById('lp-todos'); if (!host) return;
+    host.querySelectorAll('.todo[draggable="true"]').forEach(function(el){
+      el.addEventListener('dragstart', function(e){
+        _dragId = el.dataset.id; el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', _dragId); } catch (x) {}
+      });
+      el.addEventListener('dragend', function(){ el.classList.remove('dragging'); _dragId = null;
+        host.querySelectorAll('.drop-target').forEach(function(d){ d.classList.remove('drop-target'); }); });
+      el.addEventListener('dragover', function(e){ e.preventDefault(); el.classList.add('drop-target'); });
+      el.addEventListener('dragleave', function(){ el.classList.remove('drop-target'); });
+      el.addEventListener('drop', async function(e){
+        e.preventDefault(); el.classList.remove('drop-target');
+        var from = _dragId, to = el.dataset.id;
+        if (!from || !to || from === to) return;
+        var openIds = Array.prototype.map.call(
+          host.querySelectorAll('.todo[draggable="true"]'), function(d){ return d.dataset.id; });
+        var i = openIds.indexOf(from); if (i < 0) return;
+        openIds.splice(i, 1);
+        openIds.splice(openIds.indexOf(to), 0, from);
+        try {
+          await Wren.api('/api/tasks/reorder', { method:'POST', body:{ ids: openIds.map(Number) } });
+          await loadTodos();
+        } catch (err) { todoMsg('Reorder failed: ' + (err.error || err.message || ''), true); }
+      });
+    });
+  }
+
+  document.addEventListener('wren:ready', function(){ wire(); wireTodos(); load(); loadTodos(); });
+})();
+</script>
+</body></html>

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>Safety Checks — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🛡️ Safety Checks</div>
+      <div class="page-subtitle">Daily opening &amp; closing walk-round</div>
+    </div>
+  </div>
+
+  <!-- Today's opening / closing status cards -->
+  <div id="ra-today" style="display:grid;gap:12px;grid-template-columns:1fr 1fr;margin-bottom:18px">
+    <div class="loading-state" style="grid-column:1/-1"><div class="spinner"></div></div>
+  </div>
+
+  <!-- Checklist panel (hidden until a card is tapped) -->
+  <div id="ra-panel" style="display:none;margin-bottom:20px">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-weight:700" id="ra-panel-title">Checks</div>
+        <button class="btn btn-ghost" id="ra-panel-close" style="padding:4px 10px">✕</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Area / room</label>
+        <select class="form-control" id="ra-room">
+          <option value="Whole nursery">Whole nursery</option>
+          <option value="Baby Room">Baby Room</option>
+          <option value="Pre-school">Pre-school</option>
+          <option value="Garden">Garden</option>
+        </select>
+      </div>
+      <div style="font-size:12px;color:var(--c-muted);margin:2px 0 8px">Tap an item to flag it as a problem. Everything starts marked as OK.</div>
+      <div id="ra-items"></div>
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label">Notes / concerns (optional)</label>
+        <textarea class="form-control" id="ra-concerns" rows="2" placeholder="Anything to flag — e.g. broken gate latch, cold in baby room…"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button class="btn btn-primary" id="ra-submit">Save check</button>
+        <button class="btn btn-ghost" id="ra-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent checks -->
+  <div style="font-weight:700;margin:6px 2px 10px">Recent checks</div>
+  <div id="ra-recent"><div class="loading-state"><div class="spinner"></div></div></div>
+
+  <!-- Full risk-assessment library (collapsible, read-only) -->
+  <div style="margin-top:22px">
+    <button class="btn btn-ghost" id="ra-lib-toggle" style="padding:6px 10px">📁 Full risk assessments ▾</button>
+    <div id="ra-lib" style="display:none;margin-top:10px"></div>
+  </div>
+</div>
+
+<style>
+  .ra-item {
+    display:flex; align-items:center; gap:12px; padding:12px 12px; margin-bottom:8px;
+    border:2px solid var(--c-border); border-radius:12px; cursor:pointer;
+    transition:all .12s; background:transparent; text-align:left; width:100%;
+  }
+  .ra-item[data-ok="true"]  { border-color:#22c55e55; background:color-mix(in srgb,#22c55e 10%,transparent); }
+  .ra-item[data-ok="false"] { border-color:#ef444488; background:color-mix(in srgb,#ef4444 12%,transparent); }
+  .ra-item .ra-mark { font-size:1.3rem; width:28px; text-align:center; flex-shrink:0; }
+  .ra-item .ra-lbl  { flex:1; font-size:.92rem; font-weight:500; }
+  .ra-status-card {
+    padding:16px; border-radius:14px; border:2px solid var(--c-border);
+    cursor:pointer; transition:all .12s; background:var(--c-surface);
+  }
+  .ra-status-card:active { transform:scale(.99); }
+  .ra-status-card.done { border-color:#22c55e66; }
+  .ra-status-card.due  { border-color:#f59e0b88; }
+  .ra-badge { display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700 }
+</style>
+
+<script>
+let RA_CONFIG = null;   // { opening:{...}, closing:{...} }
+let RA_TODAY  = null;   // { opening, closing }
+let RA_ACTIVE = null;   // 'opening' | 'closing' while the panel is open
+
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtTime(ts){ try{ return new Date(ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}catch(_){return '';} }
+function fmtDate(d){ try{ return new Date(d).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});}catch(_){return d;} }
+
+async function loadToday(){
+  const data = await Wren.api('/api/risk-assessments/daily-checks/today');
+  RA_CONFIG = data.config;
+  RA_TODAY  = { opening: data.opening, closing: data.closing };
+  renderToday();
+  maybeRemind();
+}
+
+function statusCard(type){
+  const cfg = RA_CONFIG[type];
+  const rec = RA_TODAY[type];
+  const now = new Date();
+  const due = !rec && now.getHours() >= (cfg.remind_from_hour || 0);
+  const cls = rec ? 'done' : (due ? 'due' : '');
+  let inner;
+  if (rec){
+    const flagged = (rec.items||[]).filter(i => i && i.ok === false).length;
+    inner = `<span class="ra-badge" style="background:#22c55e22;color:#16a34a">✓ Done</span>
+      <div style="font-size:13px;color:var(--c-muted);margin-top:8px">${fmtTime(rec.created_at)} · ${esc(rec.completed_by_name||'Staff')}</div>
+      ${flagged ? `<div style="font-size:12px;color:#dc2626;margin-top:4px">⚠ ${flagged} item${flagged>1?'s':''} flagged</div>` : `<div style="font-size:12px;color:#16a34a;margin-top:4px">All clear</div>`}
+      <div style="font-size:12px;color:var(--c-primary);margin-top:8px">Record again ›</div>`;
+  } else {
+    inner = `<span class="ra-badge" style="background:${due?'#f59e0b22':'#8883'};color:${due?'#d97706':'var(--c-muted)'}">${due?'Due now':'Not done'}</span>
+      <div style="font-size:13px;color:var(--c-muted);margin-top:8px">Tap to complete</div>`;
+  }
+  return `<div class="ra-status-card ${cls}" data-type="${type}">
+    <div style="font-weight:700;font-size:1rem">${type==='opening'?'🌅':'🌙'} ${esc(cfg.label)}</div>
+    <div style="margin-top:8px">${inner}</div>
+  </div>`;
+}
+
+function renderToday(){
+  document.getElementById('ra-today').innerHTML = statusCard('opening') + statusCard('closing');
+}
+
+function openPanel(type){
+  RA_ACTIVE = type;
+  const cfg = RA_CONFIG[type];
+  document.getElementById('ra-panel-title').textContent = (type==='opening'?'🌅 ':'🌙 ') + cfg.label;
+  document.getElementById('ra-items').innerHTML = cfg.items.map(it =>
+    `<button type="button" class="ra-item" data-ok="true" data-key="${esc(it.key)}" data-label="${esc(it.label)}">
+       <span class="ra-mark">✓</span><span class="ra-lbl">${esc(it.label)}</span>
+     </button>`).join('');
+  document.getElementById('ra-concerns').value = '';
+  document.getElementById('ra-panel').style.display = 'block';
+  document.getElementById('ra-panel').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function closePanel(){
+  document.getElementById('ra-panel').style.display = 'none';
+  RA_ACTIVE = null;
+}
+
+async function submitCheck(){
+  if (!RA_ACTIVE) return;
+  const items = Array.from(document.querySelectorAll('#ra-items .ra-item')).map(el => ({
+    key:   el.dataset.key,
+    label: el.dataset.label,
+    ok:    el.dataset.ok === 'true',
+  }));
+  try {
+    await Wren.api('/api/risk-assessments/daily-checks', {
+      method:'POST',
+      body:{
+        check_type: RA_ACTIVE,
+        room: document.getElementById('ra-room').value || null,
+        items,
+        concerns: document.getElementById('ra-concerns').value.trim() || null,
+      },
+    });
+    // Clear today's reminder for this type so it won't nag again.
+    try { localStorage.setItem('ey.safetyCheck.'+RA_ACTIVE+'.done', new Date().toISOString().slice(0,10)); } catch(_){}
+    Wren.toast('Safety check saved ✓','success');
+    closePanel();
+    await loadToday();
+    await loadRecent();
+  } catch(e){
+    Wren.toast('Failed: ' + (e.error||e.message||'Unknown error'),'error');
+  }
+}
+
+async function loadRecent(){
+  try {
+    const rows = await Wren.api('/api/risk-assessments/daily-checks?days=7');
+    const box = document.getElementById('ra-recent');
+    if (!rows.length){
+      box.innerHTML = `<div class="empty-state"><div class="empty-icon">🛡️</div><div class="empty-title">No checks yet</div><div class="empty-body">Complete today's opening check to get started.</div></div>`;
+      return;
+    }
+    box.innerHTML = `<div style="display:grid;gap:8px">` + rows.map(r => {
+      const flagged = (r.items||[]).filter(i => i && i.ok === false);
+      const col = flagged.length ? '#ef4444' : '#22c55e';
+      return `<div class="card" style="border-left:4px solid ${col}">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div style="font-weight:700">${r.check_type==='opening'?'🌅 Opening':'🌙 Closing'} · ${esc(r.room||'Whole nursery')}</div>
+          <div style="font-size:12px;color:var(--c-muted)">${fmtDate(r.check_date)} · ${fmtTime(r.created_at)}</div>
+        </div>
+        <div style="font-size:12px;color:var(--c-muted);margin-top:4px">
+          By ${esc(r.completed_by_name||'Staff')} ·
+          ${flagged.length ? `<span style="color:#dc2626">⚠ ${flagged.map(f=>esc(f.label)).join(', ')}</span>` : '<span style="color:#16a34a">All clear</span>'}
+        </div>
+        ${r.concerns ? `<div style="font-size:13px;margin-top:6px">${esc(r.concerns)}</div>` : ''}
+      </div>`;
+    }).join('') + `</div>`;
+  } catch(e){
+    document.getElementById('ra-recent').innerHTML = '<div class="alert alert-danger">Failed to load recent checks</div>';
+  }
+}
+
+async function loadLibrary(){
+  const box = document.getElementById('ra-lib');
+  box.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const rows = await Wren.api('/api/risk-assessments');
+    if (!rows.length){
+      box.innerHTML = `<div class="empty-state" style="padding:20px"><div class="empty-body">No formal risk assessments on file yet. Managers create these on the Roost admin portal.</div></div>`;
+      return;
+    }
+    box.innerHTML = `<div style="display:grid;gap:8px">` + rows.map(r => {
+      const exp = r.is_expired ? '#ef4444' : (r.review_due_soon ? '#f59e0b' : '#22c55e');
+      return `<div class="card" style="border-left:4px solid ${exp}">
+        <div style="font-weight:700">${esc(r.title)}</div>
+        <div style="font-size:12px;color:var(--c-muted);margin-top:4px">
+          ${r.category?esc(r.category)+' · ':''}${r.hazard_count||0} hazard${(r.hazard_count==1)?'':'s'} ·
+          <span class="badge badge-grey">${esc((r.status||'').replace(/_/g,' '))}</span>
+          ${r.review_date?` · review ${new Date(r.review_date).toLocaleDateString('en-GB')}`:''}
+          ${r.is_expired?' <span style="color:#dc2626;font-weight:700">EXPIRED</span>':''}
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+  } catch(e){
+    box.innerHTML = '<div class="alert alert-danger">Failed to load risk assessments</div>';
+  }
+}
+
+/* Opening / closing reminder pop-up. Fires on first load of the day when a
+   check is due (past its remind_from_hour and not yet done). Shown at most
+   once per type per day (localStorage), then the status card stays flagged. */
+function maybeRemind(){
+  const today = new Date().toISOString().slice(0,10);
+  const now = new Date();
+  ['opening','closing'].forEach(type => {
+    const cfg = RA_CONFIG[type];
+    if (RA_TODAY[type]) return;                                   // already done
+    if (now.getHours() < (cfg.remind_from_hour||0)) return;       // not the window yet
+    let shown = null; try { shown = localStorage.getItem('ey.safetyCheck.'+type+'.reminded'); } catch(_){}
+    if (shown === today) return;                                  // already reminded today
+    try { localStorage.setItem('ey.safetyCheck.'+type+'.reminded', today); } catch(_){}
+    // Only pop the earliest due one now; the other stays flagged on its card.
+    if (!document.querySelector('[data-ra-reminder]')) showReminder(type);
+  });
+}
+
+function showReminder(type){
+  const cfg = RA_CONFIG[type];
+  const overlay = document.createElement('div');
+  overlay.setAttribute('data-ra-reminder','1');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:450;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML =
+    `<div role="dialog" aria-label="Safety check reminder" style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:16px;width:100%;max-width:400px;padding:22px;text-align:center">
+       <div style="font-size:2.2rem">${type==='opening'?'🌅':'🌙'}</div>
+       <div style="font-weight:700;font-size:1.05rem;margin-top:6px">${esc(cfg.label)} not done yet</div>
+       <div style="color:var(--c-muted);font-size:.9rem;margin-top:8px">Please complete today's ${type} safety walk-round.</div>
+       <div style="display:flex;gap:10px;margin-top:18px">
+         <button class="btn btn-ghost" id="ra-remind-later" style="flex:1">Later</button>
+         <button class="btn btn-primary" id="ra-remind-now" style="flex:1">Do it now</button>
+       </div>
+     </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#ra-remind-later').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#ra-remind-now').addEventListener('click', () => { overlay.remove(); openPanel(type); });
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+document.addEventListener('wren:ready', function(){
+  document.getElementById('ra-today').addEventListener('click', function(e){
+    const card = e.target.closest('.ra-status-card');
+    if (card) openPanel(card.dataset.type);
+  });
+  document.getElementById('ra-items').addEventListener('click', function(e){
+    const it = e.target.closest('.ra-item');
+    if (!it) return;
+    const ok = it.dataset.ok === 'true';
+    it.dataset.ok = ok ? 'false' : 'true';
+    it.querySelector('.ra-mark').textContent = ok ? '⚠' : '✓';
+  });
+  document.getElementById('ra-submit').addEventListener('click', submitCheck);
+  document.getElementById('ra-cancel').addEventListener('click', closePanel);
+  document.getElementById('ra-panel-close').addEventListener('click', closePanel);
+  document.getElementById('ra-lib-toggle').addEventListener('click', function(){
+    const lib = document.getElementById('ra-lib');
+    const show = lib.style.display === 'none';
+    lib.style.display = show ? 'block' : 'none';
+    this.textContent = show ? '📁 Full risk assessments ▴' : '📁 Full risk assessments ▾';
+    if (show && !lib.dataset.loaded){ lib.dataset.loaded = '1'; loadLibrary(); }
+  });
+
+  loadToday().catch(function(){
+    document.getElementById('ra-today').innerHTML = '<div class="alert alert-danger" style="grid-column:1/-1">Failed to load safety checks</div>';
+  });
+  loadRecent();
+});
+</script>
+</body>
+</html>

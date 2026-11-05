@@ -1,0 +1,226 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parent Enrolment · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<!-- ── b233: parent enrolment state for Wren ID ────────────────────────────────
+     Implements the "parent enrolment groundwork" half of b233. See
+     wren-docs/decisions/2026-08-26-authentik-own-idp.md.
+
+     WHAT THIS PAGE DELIBERATELY DOES NOT SHOW: any child. Not a name, not a
+     room, not a date of birth. A parent is listed here as an email address and
+     a state, because that is everything the person doing the comms needs and
+     nothing more. The API behind it (/api/auth/oidc/enrolment/parents) returns
+     the same narrow shape, so this is not merely a UI choice.
+
+     AND IT SENDS NOTHING. Generating an invitation writes a hashed token and
+     hands the links back to this screen once. Emailing them is a separate
+     switch (WREN_OIDC_INVITE_SEND) that this build never sets.
+─────────────────────────────────────────────────────────────────────────────── -->
+<style>
+ .pe-wrap{padding:18px;max-width:1100px;margin:0 auto;color:var(--c-text)}
+ .pe-wrap h1{font-size:1.3rem;margin:0 0 2px}
+ .pe-sub{color:var(--c-text-muted);font-size:.85rem;margin-bottom:14px;max-width:70ch;line-height:1.5}
+ .pe-panel{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px;margin-bottom:14px}
+ .pe-panel h3{margin:0 0 10px;font-size:.98rem}
+ .pe-counts{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+ .pe-count{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:12px 16px;min-width:120px}
+ .pe-count .n{font-size:1.6rem;font-weight:700;line-height:1.1}
+ .pe-count .l{color:var(--c-text-muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
+ .pe-note{border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:.85rem;line-height:1.5;
+          background:var(--c-orange-light);border:1px solid var(--c-amber);color:var(--c-navy)}
+ .pe-note strong{font-weight:700}
+ table{width:100%;border-collapse:collapse;font-size:.83rem}
+ th{color:var(--c-text-muted);text-align:left;padding:7px;border-bottom:1px solid var(--c-border);font-weight:600}
+ td{padding:7px;border-bottom:1px solid var(--c-border)}
+ .pill{display:inline-block;font-size:.72rem;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap}
+ .pill.never{background:var(--c-red-light);color:#7f1d1d}
+ .pill.invite_ready{background:var(--c-amber-light);color:#78350f}
+ .pill.invited{background:var(--c-blue-light);color:#1e3a8a}
+ .pill.enrolled{background:var(--c-green-light);color:#065f46}
+ .pill.revoked{background:var(--c-border);color:var(--c-text-muted)}
+ button{background:var(--c-blue);border:none;color:var(--c-navy);border-radius:6px;padding:7px 13px;
+        font-size:.82rem;font-weight:700;cursor:pointer}
+ button.ghost{background:transparent;border:1px solid var(--c-border);color:var(--c-text);font-weight:600}
+ button[disabled]{opacity:.45;cursor:not-allowed}
+ .pe-msg{font-size:.82rem;min-height:1em;margin:8px 0;color:var(--c-amber)}
+ .pe-links{background:var(--c-navy-mid);border:1px solid var(--c-amber);border-radius:8px;padding:10px;
+           font-family:ui-monospace,monospace;font-size:.74rem;word-break:break-all;max-height:340px;overflow:auto}
+ .pe-links div{padding:3px 0;border-bottom:1px solid var(--c-border)}
+ .pe-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+ label.pe-inline{font-size:.8rem;color:var(--c-text-muted)}
+ input[type=text]{background:var(--c-navy-mid);border:1px solid var(--c-border);color:var(--c-text);
+                  border-radius:6px;padding:6px 9px;font-size:.82rem}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="pe-wrap">
+  <h1>👪 Parent enrolment</h1>
+  <div class="pe-sub">
+    Which parents hold a <strong>Wren ID</strong> — an account in Wren's own identity provider — and which
+    are still signing in through Cloudflare Access. Addresses and states only; no child appears on this page.
+  </div>
+
+  <div id="pe-note" class="pe-note" style="display:none"></div>
+  <div class="pe-counts" id="pe-counts"></div>
+  <div class="pe-msg" id="pe-msg"></div>
+
+  <div class="pe-panel">
+    <h3>Prepare invitations</h3>
+    <div style="font-size:.83rem;color:var(--c-text-muted);line-height:1.5">
+      Generates one enrolment link per address and records it (hashed) against that parent.
+      The links are shown <strong>once, here</strong> — they are not stored in a form anyone can read back,
+      including this screen on a reload.
+    </div>
+    <div class="pe-actions">
+      <label class="pe-inline">Batch <input type="text" id="pe-batch" placeholder="baby-room-2026-09" size="22"></label>
+      <button id="pe-gen">Generate for everyone not enrolled</button>
+      <button class="ghost" id="pe-refresh">Refresh</button>
+    </div>
+    <div id="pe-links-wrap" style="display:none;margin-top:12px">
+      <div style="font-size:.8rem;color:var(--c-amber);margin-bottom:6px">
+        Copy these now. Nothing has been emailed.
+      </div>
+      <div class="pe-links" id="pe-links"></div>
+    </div>
+  </div>
+
+  <div class="pe-panel">
+    <h3>Parents <span id="pe-total" style="color:var(--c-text-muted);font-weight:400"></span></h3>
+    <table>
+      <thead><tr>
+        <th>Email</th><th>State</th><th>Children linked</th><th>Last Wren ID sign-in</th><th>Invitation</th>
+      </tr></thead>
+      <tbody id="pe-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function () {
+  'use strict';
+  var TOKEN = function () { return sessionStorage.getItem('wrenToken'); };
+  var $ = function (id) { return document.getElementById(id); };
+
+  var STATE_LABEL = {
+    never: 'No Wren ID',
+    invite_ready: 'Invitation ready',
+    invited: 'Invited',
+    enrolled: 'Enrolled',
+    revoked: 'Revoked'
+  };
+  var COUNT_ORDER = ['enrolled', 'invited', 'invite_ready', 'never', 'revoked'];
+
+  function msg(t, bad) {
+    $('pe-msg').textContent = t || '';
+    $('pe-msg').style.color = bad ? 'var(--c-red)' : 'var(--c-amber)';
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function when(v) {
+    if (!v) return '—';
+    var d = new Date(v);
+    return isNaN(d) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN() }, opts.headers || {});
+    return fetch(path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; })
+        .then(function (d) { return { ok: r.ok, status: r.status, d: d }; });
+    });
+  }
+
+  function render(data) {
+    var counts = data.counts || {};
+    $('pe-counts').innerHTML = COUNT_ORDER.map(function (k) {
+      return '<div class="pe-count"><div class="n">' + (counts[k] || 0) + '</div>' +
+             '<div class="l">' + esc(STATE_LABEL[k]) + '</div></div>';
+    }).join('');
+
+    $('pe-total').textContent = '(' + data.total + ' addresses)';
+    $('pe-rows').innerHTML = (data.parents || []).map(function (p) {
+      return '<tr>' +
+        '<td>' + esc(p.email) + '</td>' +
+        '<td><span class="pill ' + esc(p.state) + '">' + esc(STATE_LABEL[p.state] || p.state) + '</span></td>' +
+        '<td>' + p.access_rows + '</td>' +
+        '<td>' + when(p.last_login_at) + '</td>' +
+        '<td>' + (p.invite_status ? esc(p.invite_status) + ' · ' + when(p.invite_created_at) : '—') + '</td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="5" style="color:var(--c-text-muted)">No active parent addresses.</td></tr>';
+
+    // Say plainly what is switched on, rather than letting the screen imply
+    // that generating an invitation will send one.
+    var notes = [];
+    if (!data.provider_enabled) {
+      notes.push('<strong>Wren ID is not configured on this server yet</strong> — no parent can sign in with it. ' +
+                 'Set WREN_OIDC_ISSUER / WREN_OIDC_CLIENT_ID / WREN_OIDC_CLIENT_SECRET.');
+    } else if (!data.parent_sso_enabled) {
+      notes.push('<strong>Wren ID is off for the parents portal</strong> (WREN_OIDC_PARENTS is not "on"), ' +
+                 'so parents still sign in through Cloudflare Access. That is the intended phase-1 state.');
+    }
+    notes.push(data.send_enabled
+      ? 'Invitation email is <strong>enabled</strong> on this server.'
+      : '<strong>Nothing is emailed from this screen.</strong> Generating an invitation prepares a link and records it; ' +
+        'sending is a separate switch (WREN_OIDC_INVITE_SEND).');
+    $('pe-note').innerHTML = notes.join('<br>');
+    $('pe-note').style.display = '';
+  }
+
+  function load() {
+    msg('Loading…');
+    api('/api/auth/oidc/enrolment/parents').then(function (r) {
+      if (!r.ok) {
+        // 501 = this instance has no Wren ID schema (a demo edition picking the
+        // file up off the shared bind mount). Say that plainly rather than
+        // showing a manager an error they cannot act on.
+        msg(r.d.message || r.d.error || ('Could not load (HTTP ' + r.status + ')'), r.status !== 501);
+        return;
+      }
+      msg('');
+      render(r.d);
+    }).catch(function () { msg('Could not load parent enrolment state.', true); });
+  }
+
+  function generate() {
+    var btn = $('pe-gen');
+    btn.disabled = true;
+    msg('Generating…');
+    api('/api/auth/oidc/enrolment/invitations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all_unenrolled: true, batch: $('pe-batch').value.trim() || null })
+    }).then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) {
+        msg(r.d.message || r.d.error || ('Could not generate (HTTP ' + r.status + ')'), true);
+        return;
+      }
+      var inv = r.d.invitations || [];
+      msg(inv.length + ' invitation' + (inv.length === 1 ? '' : 's') + ' generated. ' + (r.d.note || ''));
+      $('pe-links').innerHTML = inv.map(function (i) {
+        return '<div>' + esc(i.email) + '<br>' + esc(i.link) + '</div>';
+      }).join('') || '<div>Everyone is already enrolled — nothing to generate.</div>';
+      $('pe-links-wrap').style.display = inv.length ? '' : 'none';
+      load();
+    }).catch(function () { btn.disabled = false; msg('Could not generate invitations.', true); });
+  }
+
+  $('pe-gen').addEventListener('click', generate);
+  $('pe-refresh').addEventListener('click', load);
+  // The shell fires wren:ready at the end of buildShell(); calling load()
+  // straight from here would run before the token/shell exist.
+  document.addEventListener('wren:ready', load);
+})();
+</script>
+</body></html>

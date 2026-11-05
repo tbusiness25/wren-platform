@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>SEND Register — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .sen-intro{background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:12px 14px;font-size:.82rem;color:#94a3b8;line-height:1.55;margin-bottom:14px}
+    .sen-intro b{color:#cbd5e1}
+    .sen-card{background:#1e293b;border:1px solid #2d3748;border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:border-color .15s}
+    .sen-card:hover{border-color:#4a9abf}
+    .sen-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+    .sen-child{font-weight:700;color:#f1f5f9;font-size:.95rem}
+    .sen-meta{color:#94a3b8;font-size:.76rem;margin-top:2px}
+    .sen-badge{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:6px;text-transform:uppercase;letter-spacing:.03em}
+    .status-diagnosed{background:#a855f722;color:#d8b4fe}
+    .status-monitoring{background:#f59e0b22;color:#fbbf24}
+    .type-ehcp{background:#ef444422;color:#fca5a5}
+    .sen-area{display:inline-block;font-size:.68rem;padding:3px 9px;border-radius:6px;background:#4a9abf22;color:#7dd3fc;margin:2px 4px 2px 0}
+    .review-soon{color:#f59e0b}
+    .review-overdue{color:#ef4444;font-weight:700}
+    .muted{color:#64748b;font-size:.8rem}
+    #sen-add-modal-body label{display:block;font-size:.78rem;color:#94a3b8;margin:10px 0 4px}
+    #sen-add-modal-body input,#sen-add-modal-body select,#sen-add-modal-body textarea{width:100%;box-sizing:border-box}
+    .sen-checks{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+    .sen-checks label{display:flex;align-items:center;gap:5px;font-size:.8rem;color:#cbd5e1;margin:0}
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🧩 SEND Register</div>
+      <div class="page-subtitle">SMART targets, APDR cycles and Play Plans</div>
+    </div>
+    <button class="btn btn-primary" id="btn-add-register" hidden>+ Add to register</button>
+  </div>
+
+  <div class="sen-intro">
+    <b>Diagnosed</b> vs <b>Monitoring</b> — Toby's distinction: use <i>diagnosed</i> once a formal diagnosis or EHCP
+    is in place, <i>monitoring</i> while the setting is watching and gathering evidence. Every child here has a
+    graduated-approach APDR cycle (Assess → Plan → Do → Review) and SMART targets by area, reviewed at least
+    termly. Practitioners see only their own key children here; the full register is SENCO/manager only.
+  </div>
+
+  <div id="sen-list"><p class="muted">Loading…</p></div>
+</div>
+
+<script>
+const api = (u,o)=>Wren.api(u,o);
+const esc = s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function ageStr(dob){
+  if(!dob) return '';
+  const d=new Date(dob), now=new Date();
+  let m=(now.getFullYear()-d.getFullYear())*12+(now.getMonth()-d.getMonth());
+  if(now.getDate()<d.getDate()) m--;
+  return Math.floor(m/12)+'y '+(m%12)+'m';
+}
+
+async function load(){
+  const list=document.getElementById('sen-list');
+  try{
+    const rows=await api('/api/sen');
+    if(!rows.length){ list.innerHTML='<p class="muted">No children on the SEND register yet.</p>'; return; }
+    list.innerHTML=rows.map(r=>{
+      const areas=(r.areas_of_need||[]).map(a=>`<span class="sen-area">${esc(a)}</span>`).join('');
+      let reviewCls='muted', reviewTxt='No review date set';
+      if(r.review_date){
+        const days=(new Date(r.review_date)-new Date())/86400000;
+        reviewTxt='Review '+new Date(r.review_date).toLocaleDateString('en-GB');
+        reviewCls = days<0 ? 'review-overdue' : (days<=28 ? 'review-soon' : 'muted');
+      }
+      return `
+      <div class="sen-card" data-child="${r.child_id}">
+        <div class="sen-card-head">
+          <div>
+            <div class="sen-child">${esc(r.child_name||('Child #'+r.child_id))} <span class="muted">${esc(r.room_name||'')} · ${ageStr(r.date_of_birth)}</span></div>
+            <div class="sen-meta">
+              <span class="sen-badge status-${esc(r.status||'monitoring')}">${esc(r.status||'monitoring')}</span>
+              ${r.sen_type==='ehcp'?'<span class="sen-badge type-ehcp">EHCP</span>':''}
+              <span class="${reviewCls}">${reviewTxt}</span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:8px">${areas}</div>
+        ${r.primary_need?`<div style="color:#e2e8f0;font-size:.85rem;margin-top:8px">${esc(r.primary_need)}</div>`:''}
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.sen-card').forEach(card=>{
+      card.addEventListener('click', ()=>{ location.href = '/ey/child/'+card.dataset.child+'#sen'; });
+    });
+  }catch(e){ list.innerHTML='<p class="muted">Could not load the register.</p>'; }
+}
+
+function addFormHtml(){
+  return `<div id="sen-add-modal-body">
+    <label>Child</label>
+    <select class="form-control" id="sen-add-child"><option value="">Select a child…</option></select>
+    <label>Status</label>
+    <select class="form-control" id="sen-add-status">
+      <option value="monitoring">Monitoring</option>
+      <option value="diagnosed">Diagnosed</option>
+    </select>
+    <label>SEN type</label>
+    <select class="form-control" id="sen-add-sentype">
+      <option value="sen_support">SEN Support</option>
+      <option value="ehcp">EHCP</option>
+      <option value="monitoring">Monitoring</option>
+    </select>
+    <label>Area(s) of need</label>
+    <div class="sen-checks" id="sen-add-areas">
+      <label><input type="checkbox" value="Communication & Interaction"> Communication &amp; Interaction</label>
+      <label><input type="checkbox" value="Cognition & Learning"> Cognition &amp; Learning</label>
+      <label><input type="checkbox" value="Social, Emotional & Mental Health"> Social, Emotional &amp; Mental Health</label>
+      <label><input type="checkbox" value="Sensory/Physical"> Sensory/Physical</label>
+    </div>
+    <label>Primary need (free text)</label>
+    <textarea class="form-control" id="sen-add-need" rows="2"></textarea>
+    <label>Outside agencies involved</label>
+    <div class="sen-checks" id="sen-add-agencies">
+      <label><input type="checkbox" value="EYSEND"> EYSEND</label>
+      <label><input type="checkbox" value="SALT"> SALT</label>
+      <label><input type="checkbox" value="OT"> OT</label>
+      <label><input type="checkbox" value="Paediatrician"> Paediatrician</label>
+      <label><input type="checkbox" value="Physio"> Physio</label>
+    </div>
+    <label><input type="checkbox" id="sen-add-consent"> Parental consent given</label>
+    <label>SENIF / EHCNA applied</label>
+    <div class="sen-checks">
+      <label><input type="checkbox" id="sen-add-senif"> SENIF applied</label>
+      <label><input type="checkbox" id="sen-add-ehcna"> EHCNA applied</label>
+    </div>
+    <div style="margin-top:14px;text-align:right">
+      <button class="btn btn-primary" id="sen-add-save">Add to register</button>
+    </div>
+  </div>`;
+}
+
+function openAddModal(){
+  Wren.modal('Add to SEND register', addFormHtml());
+  const overlay = document.querySelector('.wren-modal-overlay');
+  if (!overlay) return;
+  const sel = overlay.querySelector('#sen-add-child');
+  api('/api/children?is_active=true').then(rows=>{
+    const list = Array.isArray(rows) ? rows : (rows && rows.children) || [];
+    sel.innerHTML = '<option value="">Select a child…</option>' + list.map(c=>
+      `<option value="${c.id}">${esc((c.first_name||'')+' '+(c.last_name||''))}</option>`).join('');
+  }).catch(()=>{});
+  overlay.querySelector('#sen-add-save').addEventListener('click', async ()=>{
+    const childId = sel.value;
+    if(!childId){ Wren.toast('Select a child', 'warning'); return; }
+    const areas = Array.from(overlay.querySelectorAll('#sen-add-areas input:checked')).map(i=>i.value);
+    const agencies = {};
+    overlay.querySelectorAll('#sen-add-agencies input').forEach(i=>{ agencies[i.value] = i.checked; });
+    const body = {
+      child_id: childId,
+      status: overlay.querySelector('#sen-add-status').value,
+      sen_type: overlay.querySelector('#sen-add-sentype').value,
+      areas_of_need: areas,
+      primary_need: overlay.querySelector('#sen-add-need').value.trim() || null,
+      outside_agencies: agencies,
+      parental_consent: overlay.querySelector('#sen-add-consent').checked,
+      parental_consent_date: overlay.querySelector('#sen-add-consent').checked ? new Date().toISOString().slice(0,10) : null,
+      senif_applied: overlay.querySelector('#sen-add-senif').checked,
+      ehcna_applied: overlay.querySelector('#sen-add-ehcna').checked,
+    };
+    const res = await api('/api/sen', {method:'POST', body}).catch(e=>({error:e.message}));
+    if(res && res.id){
+      Wren.toast('Added to register', 'success');
+      const closeBtn = overlay.querySelector('.modal-close');
+      if (closeBtn) closeBtn.click();
+      load();
+    } else Wren.toast((res&&res.error)||'Could not add', 'error');
+  });
+}
+
+document.addEventListener('wren:ready', function () {
+  // Add-register button: shown for manager-tier roles. SENCO-tagged practitioners who
+  // aren't managers can still add via a manager, or ask one to flip their is_send_lead flag —
+  // the server-side guard (requireSenco) is what actually enforces this, not this UI check.
+  var user = Wren.getUser ? Wren.getUser() : (Wren.user || null);
+  var MGR = ['manager', 'deputy_manager', 'admin', 'business_manager'];
+  if (user && MGR.indexOf(user.role) !== -1) {
+    const b = document.getElementById('btn-add-register');
+    b.hidden = false;
+    b.addEventListener('click', openAddModal);
+  }
+  load();
+});
+</script>
+</body>
+</html>

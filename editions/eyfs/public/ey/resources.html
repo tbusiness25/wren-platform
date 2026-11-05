@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <title>Resources — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .res-chip { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid transparent; }
+    .res-cond-good    { background:#22c55e22; color:#22c55e; border-color:#22c55e44; }
+    .res-cond-worn    { background:#f59e0b22; color:#f59e0b; border-color:#f59e0b44; }
+    .res-cond-broken  { background:#ef444422; color:#ef4444; border-color:#ef444444; }
+    .res-cond-retired { background:#64748b22; color:#94a3b8; border-color:#64748b44; }
+    .res-need { background:#4a9abf22; color:#4a9abf; border:1px solid #4a9abf44; }
+    .res-filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .res-filters select, .res-filters input { max-width:180px; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🧸 Resources & Equipment</div>
+      <div class="page-subtitle">What we have, what's broken, what we need more of</div>
+    </div>
+    <button class="btn btn-primary" id="btn-add-item">+ Add item</button>
+  </div>
+
+  <div class="res-filters">
+    <select class="form-control" id="f-room">
+      <option value="">All rooms</option>
+      <option value="1">Baby Room</option>
+      <option value="2">Pre-school</option>
+      <option value="shared">Shared / whole nursery</option>
+    </select>
+    <select class="form-control" id="f-category">
+      <option value="">All categories</option>
+      <option value="toy">Toys</option>
+      <option value="equipment">Equipment</option>
+      <option value="furniture">Furniture</option>
+      <option value="book">Books</option>
+      <option value="consumable">Consumables</option>
+      <option value="outdoor">Outdoor</option>
+      <option value="other">Other</option>
+    </select>
+    <select class="form-control" id="f-condition">
+      <option value="">Any condition</option>
+      <option value="good">Good</option>
+      <option value="worn">Worn</option>
+      <option value="broken">Broken</option>
+    </select>
+    <input class="form-control" id="f-search" placeholder="Search…">
+  </div>
+
+  <div id="res-list"><div class="card" style="color:var(--c-muted)">Loading…</div></div>
+</div>
+
+<script>
+let items = [];
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+const CAT_ICON = { toy:'🧸', equipment:'🛠️', furniture:'🪑', book:'📚', consumable:'✂️', outdoor:'🌳', other:'📦' };
+
+async function loadItems() {
+  const p = new URLSearchParams();
+  const room = document.getElementById('f-room').value;
+  if (room) p.set('room_id', room);
+  const cat = document.getElementById('f-category').value;
+  if (cat) p.set('category', cat);
+  const cond = document.getElementById('f-condition').value;
+  if (cond) p.set('condition', cond);
+  const q = document.getElementById('f-search').value.trim();
+  if (q) p.set('q', q);
+  items = await Wren.api('/api/resource-inventory?' + p.toString()).catch(() => []);
+  render();
+}
+
+function render() {
+  const el = document.getElementById('res-list');
+  if (!items.length) {
+    el.innerHTML = '<div class="card" style="color:var(--c-muted)">Nothing here yet — tap <b>+ Add item</b> to start the inventory.</div>';
+    return;
+  }
+  // group by room
+  const groups = {};
+  items.forEach(r => {
+    const key = r.room_name || 'Shared / whole nursery';
+    (groups[key] = groups[key] || []).push(r);
+  });
+  el.innerHTML = Object.keys(groups).sort().map(g => `
+    <div style="font-weight:700;font-size:13px;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em;margin:16px 4px 8px">${escHtml(g)}</div>
+    <div style="display:grid;gap:8px">` +
+    groups[g].map(r => `
+      <div class="card" style="cursor:pointer" data-id="${r.id}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700">${CAT_ICON[r.category]||'📦'} ${escHtml(r.name)} <span style="color:var(--c-muted);font-weight:400">× ${r.quantity}</span></div>
+            <div style="font-size:12px;color:var(--c-muted);margin-top:4px">
+              ${r.last_replaced ? 'Last replaced ' + new Date(r.last_replaced).toLocaleDateString('en-GB') : 'Never replaced'}
+              ${r.open_requests ? ` · <span style="color:#f59e0b">${r.open_requests} open request${r.open_requests>1?'s':''}</span>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+            <span class="res-chip res-cond-${r.condition}">${r.condition}</span>
+            ${r.need_more ? '<span class="res-chip res-need">need more</span>' : ''}
+          </div>
+        </div>
+      </div>`).join('') + '</div>').join('');
+}
+
+function itemModal(r) {
+  Wren.modal(escHtml(r.name), `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <span class="res-chip res-cond-${r.condition}">${r.condition}</span>
+      <span class="badge badge-grey">${escHtml(r.category)}</span>
+      <span class="badge badge-grey">× ${r.quantity}</span>
+      ${r.need_more ? '<span class="res-chip res-need">need more</span>' : ''}
+    </div>
+    <div style="font-size:13px;color:var(--c-muted);line-height:1.7">
+      ${escHtml(r.room_name || 'Shared / whole nursery')}<br>
+      ${r.last_replaced ? 'Last replaced ' + new Date(r.last_replaced).toLocaleDateString('en-GB') : 'Never replaced'}
+      ${r.eyfs_areas ? `<br>EYFS: ${escHtml(r.eyfs_areas)}` : ''}
+      ${r.notes ? `<br><br>${escHtml(r.notes)}` : ''}
+    </div>
+  `, [
+    { label: '🔴 Report broken', class: 'btn-ghost', action: () => setTimeout(() => requestModal(r, 'broken'), 220) },
+    { label: '➕ Request more',  class: 'btn-ghost', action: () => setTimeout(() => requestModal(r, 'more'), 220) },
+    { label: 'Close', class: 'btn-ghost' },
+  ]);
+}
+
+function requestModal(r, kind) {
+  const label = kind === 'broken' ? 'Report broken' : 'Request more';
+  Wren.modal(`${label}: ${escHtml(r ? r.name : 'New item')}`, `
+    <div class="form-group">
+      <label class="form-label">${kind === 'broken' ? 'What happened / how bad is it?' : 'Why do we need more?'}</label>
+      <textarea class="form-control" id="req-details" rows="3" placeholder="Optional — a line of detail helps the manager"></textarea>
+    </div>
+  `, [
+    { label: 'Send', class: 'btn-primary', close: false, action: async () => {
+        try {
+          await Wren.api('/api/resource-inventory/requests', { method: 'POST', body: {
+            resource_id: r ? r.id : null, kind,
+            details: document.getElementById('req-details').value.trim() || (r ? r.name : ''),
+            room_id: r ? r.room_id : null,
+          }});
+          Wren.toast(kind === 'broken' ? 'Reported — the manager will see it ✓' : 'Request sent ✓', 'success');
+          document.querySelector('.wren-modal-overlay .modal-close')?.click();
+          loadItems();
+        } catch (e) { Wren.toast('Failed: ' + (e.error || e.message), 'error'); }
+      } },
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+function addItemModal() {
+  Wren.modal('Add an item', `
+    <div class="form-group"><label class="form-label">Name *</label>
+      <input class="form-control" id="a-name" placeholder="e.g. Wooden blocks set"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label class="form-label">Room</label>
+        <select class="form-control" id="a-room">
+          <option value="">Shared / whole nursery</option>
+          <option value="1">Baby Room</option>
+          <option value="2">Pre-school</option>
+        </select></div>
+      <div class="form-group"><label class="form-label">Category</label>
+        <select class="form-control" id="a-category">
+          <option value="toy">Toy</option><option value="equipment">Equipment</option>
+          <option value="furniture">Furniture</option><option value="book">Books</option>
+          <option value="consumable">Consumable</option><option value="outdoor">Outdoor</option>
+          <option value="other">Other</option>
+        </select></div>
+      <div class="form-group"><label class="form-label">Quantity</label>
+        <input class="form-control" id="a-qty" type="number" min="0" value="1"></div>
+      <div class="form-group"><label class="form-label">Condition</label>
+        <select class="form-control" id="a-cond">
+          <option value="good">Good</option><option value="worn">Worn</option>
+          <option value="broken">Broken</option>
+        </select></div>
+      <div class="form-group"><label class="form-label">Last replaced</label>
+        <input class="form-control" id="a-replaced" type="date"></div>
+      <div class="form-group"><label class="form-label">EYFS areas</label>
+        <input class="form-control" id="a-eyfs" placeholder="e.g. Physical, EAD"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label>
+      <input class="form-control" id="a-notes" placeholder="Optional"></div>
+  `, [
+    { label: 'Add', class: 'btn-primary', close: false, action: async () => {
+        const name = document.getElementById('a-name').value.trim();
+        if (!name) { Wren.toast('Name required', 'warning'); return; }
+        try {
+          await Wren.api('/api/resource-inventory', { method: 'POST', body: {
+            name,
+            room_id: document.getElementById('a-room').value || null,
+            category: document.getElementById('a-category').value,
+            quantity: document.getElementById('a-qty').value,
+            condition: document.getElementById('a-cond').value,
+            last_replaced: document.getElementById('a-replaced').value || null,
+            eyfs_areas: document.getElementById('a-eyfs').value.trim() || null,
+            notes: document.getElementById('a-notes').value.trim() || null,
+          }});
+          Wren.toast('Added ✓', 'success');
+          document.querySelector('.wren-modal-overlay .modal-close')?.click();
+          loadItems();
+        } catch (e) { Wren.toast('Failed: ' + (e.error || e.message), 'error'); }
+      } },
+    { label: 'Cancel', class: 'btn-ghost' },
+  ]);
+}
+
+document.addEventListener('wren:ready', function () {
+  document.getElementById('btn-add-item').addEventListener('click', addItemModal);
+  ['f-room','f-category','f-condition'].forEach(id =>
+    document.getElementById(id).addEventListener('change', loadItems));
+  let t = null;
+  document.getElementById('f-search').addEventListener('input', () => { clearTimeout(t); t = setTimeout(loadItems, 300); });
+  document.getElementById('res-list').addEventListener('click', e => {
+    const card = e.target.closest('[data-id]');
+    if (!card) return;
+    const r = items.find(x => x.id === parseInt(card.dataset.id));
+    if (r) itemModal(r);
+  });
+  loadItems();
+});
+</script>
+</body>
+</html>

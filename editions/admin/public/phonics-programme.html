@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Phonics Programme — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b411 (2026-10-08) — read-only view of the EY programme hub. The EY side
+   (/ey/phonics-programme) has the editable settings and "mark taught"; this
+   page is eyes on the same data for Toby/room leaders, not a second editor —
+   deliberately no save/edit controls anywhere here. Tokens only. */
+.pg-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px;
+           padding: 16px; margin-bottom: 16px; }
+.pg-h { font-size: 1rem; font-weight: 700; color: var(--c-text); margin: 0 0 10px; }
+.pg-muted { color: var(--c-muted); font-size: .82rem; line-height: 1.5; }
+.pg-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+select.pg-select { min-height: 36px; border-radius: 8px; border: 1px solid var(--c-border);
+           background: var(--c-bg, transparent); color: var(--c-text); padding: 5px 10px;
+           font-size: .85rem; font-family: inherit; }
+.pg-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.pg-rooms { width: 100%; min-width: 420px; border-collapse: collapse; font-size: .84rem; }
+table.pg-rooms th { text-align: left; color: var(--c-muted); font-size: .72rem; text-transform: uppercase;
+           letter-spacing: .04em; padding: 6px 10px; border-bottom: 2px solid var(--c-border); }
+table.pg-rooms td { padding: 8px 10px; border-bottom: 1px solid var(--c-border); color: var(--c-text); }
+.pg-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700;
+           background: var(--c-bg); border: 1px solid var(--c-border); color: var(--c-muted); }
+.pg-badge.pg-due { color: var(--c-danger); border-color: var(--c-danger); }
+.pg-today-title { font-size: .92rem; font-weight: 700; color: var(--c-text); }
+.pg-obj { font-size: .85rem; color: var(--c-text); margin: 6px 0; line-height: 1.5; }
+.pg-group { border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.pg-group-book { font-weight: 700; color: var(--c-text); font-size: .86rem; }
+.pg-group-kids { color: var(--c-muted); font-size: .78rem; margin-top: 4px; }
+.pg-taught-yes { color: var(--c-ok); font-weight: 700; font-size: .78rem; }
+
+/* Sound buttons — same dot/bar convention as the EY page */
+.pg-word { display: inline-flex; margin: 2px 6px 2px 0; font-weight: 700; color: var(--c-text); font-size: .92rem; }
+.pg-seg { position: relative; padding: 0 2px; }
+.pg-seg-bar::after { content: ''; position: absolute; left: 1px; right: 1px; bottom: -4px; height: 3px;
+           background: var(--c-blue); border-radius: 2px; }
+.pg-seg-dot::after { content: ''; position: absolute; left: 50%; bottom: -5px; width: 5px; height: 5px;
+           margin-left: -2.5px; background: var(--c-blue); border-radius: 50%; }
+.pg-word-linked { position: relative; }
+.pg-seg-arc { position: absolute; bottom: -9px; height: 2px; background: var(--c-blue); border-radius: 2px; pointer-events: none; }
+.pg-tricky { font-weight: 700; color: var(--c-text); border-bottom: 2px dashed var(--c-muted); padding-bottom: 1px; }
+.pg-chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.pg-chip { border: 1px solid var(--c-border); border-radius: 8px; padding: 3px 9px; font-size: .78rem; color: var(--c-text); }
+.pg-slide-section { margin-bottom: 10px; }
+.pg-slide-section h4 { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--c-muted); margin: 0 0 6px; }
+
+/* Modal (slide viewer / session card) */
+.pg-modal { position: fixed; inset: 0; background: var(--c-scrim); z-index: 200;
+           display: flex; align-items: center; justify-content: center; padding: 16px; }
+.pg-modal[hidden] { display: none; }
+.pg-modal-body { background: var(--c-surface-solid); border: 1px solid var(--c-border); border-radius: 14px;
+           width: 100%; max-width: 560px; max-height: 85vh; overflow-y: auto; padding: 18px; }
+.pg-modal-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.pg-slide-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.pg-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-border); display: inline-block; }
+.pg-dot.on { background: var(--c-blue); }
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div>
+      <div class="page-title">📅 Phonics Programme</div>
+      <div style="font-size:.78rem;color:var(--c-muted);margin-top:2px">
+        Read-only — which week each room is on, today's lesson, reading groups, who's due an assessment.
+        Set the week or mark a lesson taught on the EY tablets.
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-card">
+    <div class="pg-h">School setting</div>
+    <div class="pg-muted" id="pg-start-line" style="margin-bottom:10px"></div>
+    <div class="pg-scroll"><div id="pg-rooms-wrap"><p class="pg-muted">Loading rooms…</p></div></div>
+  </div>
+
+  <div class="pg-card">
+    <div class="pg-row">
+      <div class="pg-h" style="margin:0">Today's lesson</div>
+      <select id="pg-room-sel" class="pg-select"><option value="">Choose a room…</option></select>
+    </div>
+    <div id="pg-today-body"><p class="pg-muted">Choose a room to see today's lesson.</p></div>
+  </div>
+
+  <div class="pg-card">
+    <div class="pg-h">Reading groups (by matched book)</div>
+    <div id="pg-groups-body"><p class="pg-muted">Choose a room above.</p></div>
+  </div>
+
+  <div class="pg-card">
+    <div class="pg-h">Assessments due</div>
+    <div id="pg-assess-body"><p class="pg-muted">Choose a room above.</p></div>
+  </div>
+
+</div>
+
+<!-- Slide viewer modal -->
+<div class="pg-modal" id="pg-slide-modal" hidden>
+  <div class="pg-modal-body">
+    <div class="pg-modal-top">
+      <div class="pg-today-title" id="pg-slide-title">Lesson</div>
+      <button class="btn btn-sm btn-ghost" id="pg-slide-close">✕</button>
+    </div>
+    <div id="pg-slide-content"></div>
+    <div style="text-align:center;margin:10px 0" id="pg-slide-dots"></div>
+    <div class="pg-slide-nav">
+      <button class="btn btn-sm btn-ghost" id="pg-slide-prev">← Back</button>
+      <button class="btn btn-sm" id="pg-slide-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Session card modal -->
+<div class="pg-modal" id="pg-card-modal" hidden>
+  <div class="pg-modal-body">
+    <div class="pg-modal-top">
+      <div class="pg-today-title" id="pg-card-title">Reading practice</div>
+      <button class="btn btn-sm btn-ghost" id="pg-card-close">✕</button>
+    </div>
+    <div id="pg-card-content"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var ROOMS = [];
+  var CUR_ROOM = null;
+  var SLIDES = [];
+  var SLIDE_IDX = 0;
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  }); }
+
+  // Mirrors the EY page's split-digraph handling (b420 #4) — "a-e" in made
+  // (m·a-e·d) is one grapheme but two letters apart in print; each half gets
+  // its own dot, moved to its real position, linked by an arc once laid out.
+  var _wordLinkSeq = 0;
+  function wordHtml(word, segs) {
+    if (!segs || !segs.length) return '<span class="pg-word">' + esc(word) + '</span>';
+    var head = [], tail = [], linked = false;
+    segs.forEach(function (s) {
+      var dash = s.indexOf('-');
+      if (dash > -1) {
+        linked = true;
+        var id = 'wl' + (++_wordLinkSeq);
+        head.push({ t: s.slice(0, dash), cls: 'pg-seg-dot', link: id });
+        tail.push({ t: s.slice(dash + 1), cls: 'pg-seg-dot', link: id });
+      } else {
+        head.push({ t: s, cls: s.length > 1 ? 'pg-seg-bar' : 'pg-seg-dot' });
+      }
+    });
+    var units = head.concat(tail);
+    return '<span class="pg-word' + (linked ? ' pg-word-linked' : '') + '">' + units.map(function (u) {
+      return '<span class="pg-seg ' + u.cls + '"' + (u.link ? ' data-link="' + u.link + '"' : '') + '>' + esc(u.t) + '</span>';
+    }).join('') + '</span>';
+  }
+  function drawWordLinks(root) {
+    (root || document).querySelectorAll('.pg-word-linked').forEach(function (w) {
+      var byId = {};
+      w.querySelectorAll('[data-link]').forEach(function (el) { (byId[el.dataset.link] = byId[el.dataset.link] || []).push(el); });
+      Object.keys(byId).forEach(function (id) {
+        var pair = byId[id];
+        if (pair.length !== 2) return;
+        var wr = w.getBoundingClientRect(), a = pair[0].getBoundingClientRect(), b = pair[1].getBoundingClientRect();
+        if (!wr.width) return;
+        var arc = document.createElement('span');
+        arc.className = 'pg-seg-arc';
+        arc.style.left = (a.left - wr.left + a.width / 2) + 'px';
+        arc.style.width = Math.max(2, (b.left + b.width / 2) - (a.left + a.width / 2)) + 'px';
+        w.appendChild(arc);
+      });
+    });
+  }
+
+  // ── School setting (read-only) ───────────────────────────────────────
+
+  function renderRooms(data) {
+    ROOMS = data.rooms || [];
+    document.getElementById('pg-start-line').textContent = data.reception_start
+      ? 'Reception starts on ' + data.reception_start + ' (set on the EY tablets).'
+      : 'No "Reception starts on" date set yet (set on the EY tablets).';
+    var html = '<table class="pg-rooms"><thead><tr><th>Room</th><th>Phonics children</th><th>Year</th><th>Week set</th><th>Now</th></tr></thead><tbody>';
+    ROOMS.forEach(function (r) {
+      var p = r.programme;
+      var nowCell = (p && r.effective_global_week && r.effective_global_week !== p.global_week)
+        ? r.effective_global_week + ' <span class="pg-muted">(advanced)</span>' : '—';
+      html += '<tr><td>' + esc(r.display_name || r.name) + '</td><td>' + r.phonics_children + '</td>' +
+        '<td>' + (p ? (p.year_key === 'reception' ? 'Reception' : 'Year 1') : '—') + '</td>' +
+        '<td>' + (p ? p.global_week : '—') + '</td><td>' + nowCell + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('pg-rooms-wrap').innerHTML = html;
+
+    var sel = document.getElementById('pg-room-sel');
+    sel.innerHTML = '<option value="">Choose a room…</option>';
+    ROOMS.forEach(function (r) {
+      var o = document.createElement('option'); o.value = r.id; o.textContent = r.display_name || r.name;
+      sel.appendChild(o);
+    });
+  }
+
+  function loadRooms() {
+    Wren.api('/api/phonics/programme/rooms').then(renderRooms).catch(function () {
+      document.getElementById('pg-rooms-wrap').innerHTML = '<p class="pg-muted">Could not load rooms.</p>';
+    });
+  }
+
+  // ── Today's lesson (read-only — no mark-taught) ──────────────────────
+
+  function renderToday(data) {
+    var el = document.getElementById('pg-today-body');
+    if (!data.programme) {
+      el.innerHTML = '<p class="pg-muted">' + esc(data.message || 'No phonics week set for this room yet.') + '</p>';
+      return;
+    }
+    var w = data.week;
+    var yearLabel = w.year_key === 'reception' ? 'Reception' : 'Year 1';
+    var bookLine = '';
+    if (w.matched_book) {
+      bookLine = w.matched_book.title
+        ? 'Matched book: <b>' + esc(w.matched_book.title) + '</b>'
+        : 'Matched book: <i>not written yet</i>';
+    }
+    var html = '<div class="pg-today-title">' + yearLabel + ' · ' + esc(w.half_term) + ' · Week ' + w.week +
+      ' (global week ' + w.global_week + ') — ' + (data.is_weekend ? 'weekend, coming up Monday' : data.day_name) + '</div>';
+    html += '<div class="pg-muted" style="margin:6px 0">' + esc(w.week_focus || '') + '</div>';
+    if (bookLine) html += '<div class="pg-muted" style="margin:4px 0">' + bookLine + '</div>';
+    if (data.day) {
+      html += '<div class="pg-obj"><b>' + (data.is_weekend ? 'Monday:' : 'Today:') + '</b> ' + esc(data.day.objective) + '</div>';
+      html += '<div class="pg-row">' +
+        '<button class="btn btn-sm" id="pg-open-slides">📽️ View slides</button>' +
+        (data.is_weekend ? '' : (data.taught ? '<span class="pg-taught-yes">✓ Taught today</span>' : '<span class="pg-muted">Not yet taught today</span>')) +
+        '</div>';
+    }
+    el.innerHTML = html;
+    var openBtn = document.getElementById('pg-open-slides');
+    if (openBtn) openBtn.addEventListener('click', function () { openSlides(data.day); });
+  }
+
+  function loadToday() {
+    if (!CUR_ROOM) return;
+    document.getElementById('pg-today-body').innerHTML = '<p class="pg-muted">Loading…</p>';
+    Wren.api('/api/phonics/programme/today?room_id=' + CUR_ROOM).then(renderToday).catch(function () {
+      document.getElementById('pg-today-body').innerHTML = '<p class="pg-muted">Could not load today’s lesson.</p>';
+    });
+  }
+
+  // ── Slide viewer (view-only) ─────────────────────────────────────────
+
+  function buildSlides(day) {
+    var slides = [];
+    slides.push({ title: 'Warm up', body:
+      '<div class="pg-slide-section"><h4>Revisit</h4><div class="pg-chip-row">' +
+      (day.warm_up.revisit_graphemes || []).map(function (g) { return '<span class="pg-chip">' + esc(g) + '</span>'; }).join('') +
+      '</div></div><div class="pg-slide-section"><h4>Oral blending</h4>' +
+      // b420 #18 — heard, not read: a printed word with sound buttons turns
+      // this into a reading task. Matches the EY page's fix.
+      '<div class="pg-chip-row">' + (day.warm_up.oral_blend_words || []).map(function (w) {
+        return '<span class="pg-chip">Say: ' + esc((w.sound_buttons || [w.word]).join(' – ')) + '</span>';
+      }).join('') + '</div></div>' });
+    var ns = day.new_sound || day.new_alternative;
+    if (ns) {
+      // b420 #3 — new_alternative objects carry teaching_note/taught_as/new_phoneme,
+      // not pronunciation_note/explanation; every Phase 5b alternative day was blank.
+      var altLine = (!day.new_sound && ns.taught_as)
+        ? '<p class="pg-muted">Already know it as: ' + esc(ns.taught_as) +
+          (ns.new_phoneme ? ' — now also: ' + esc(ns.new_phoneme) : '') + '</p>' : '';
+      slides.push({ title: day.new_sound ? 'New sound' : 'New alternative', body:
+        '<div class="pg-slide-section"><h4>' + esc(ns.grapheme || ns.key || '') + (ns.ipa ? ' ' + esc(ns.ipa) : '') + '</h4>' +
+        altLine +
+        '<p class="pg-obj">' + esc(ns.pronunciation_note || ns.explanation || ns.teaching_note || '') + '</p></div>' +
+        '<div class="pg-slide-section"><h4>Model words</h4>' +
+        (ns.model_words || []).map(function (w) { return wordHtml(w.word, w.sound_buttons); }).join('') + '</div>' });
+    }
+    var hag = day.have_a_go || {};
+    slides.push({ title: 'Have a go', body:
+      '<div class="pg-slide-section"><h4>Word reading</h4>' +
+      (hag.word_reading || []).map(function (w) { return wordHtml(w.word, w.sound_buttons); }).join('') + '</div>' +
+      (hag.tricky_word ? '<div class="pg-slide-section"><h4>Tricky word</h4><span class="pg-tricky">' + esc(hag.tricky_word.word) +
+        '</span><p class="pg-obj">' + esc(hag.tricky_word.tip) + '</p></div>' : '') });
+    var ui = day.use_it || {};
+    slides.push({ title: 'Use it', body:
+      '<div class="pg-slide-section"><h4>Phrase</h4><p class="pg-obj">' + esc(ui.phrase || '') + '</p></div>' +
+      '<div class="pg-slide-section"><h4>Dictation sentence</h4><p class="pg-obj">' + esc(ui.dictation_sentence || '') + '</p></div>' +
+      '<div class="pg-slide-section"><h4>Same-day boost</h4><p class="pg-obj">' + esc(day.keep_up || '') + '</p></div>' });
+    return slides;
+  }
+
+  function renderSlide() {
+    var s = SLIDES[SLIDE_IDX];
+    document.getElementById('pg-slide-title').textContent = s.title;
+    var content = document.getElementById('pg-slide-content');
+    content.innerHTML = s.body;
+    document.getElementById('pg-slide-dots').innerHTML = SLIDES.map(function (_, i) {
+      return '<span class="pg-dot' + (i === SLIDE_IDX ? ' on' : '') + '" style="margin:0 3px"></span>';
+    }).join('');
+    document.getElementById('pg-slide-prev').disabled = SLIDE_IDX === 0;
+    document.getElementById('pg-slide-next').textContent = SLIDE_IDX === SLIDES.length - 1 ? 'Done' : 'Next →';
+    requestAnimationFrame(function () { drawWordLinks(content); });
+  }
+  function openSlides(day) {
+    if (!day) return;
+    SLIDES = buildSlides(day); SLIDE_IDX = 0;
+    document.getElementById('pg-slide-modal').hidden = false;
+    renderSlide();
+  }
+  document.getElementById('pg-slide-close').addEventListener('click', function () { document.getElementById('pg-slide-modal').hidden = true; });
+  document.getElementById('pg-slide-prev').addEventListener('click', function () { if (SLIDE_IDX > 0) { SLIDE_IDX--; renderSlide(); } });
+  document.getElementById('pg-slide-next').addEventListener('click', function () {
+    if (SLIDE_IDX < SLIDES.length - 1) { SLIDE_IDX++; renderSlide(); } else document.getElementById('pg-slide-modal').hidden = true;
+  });
+
+  // ── Reading groups ───────────────────────────────────────────────────
+
+  function renderGroups(groups) {
+    var el = document.getElementById('pg-groups-body');
+    if (!groups.length) { el.innerHTML = '<p class="pg-muted">No phonics-enabled children in this room.</p>'; return; }
+    var html = '';
+    groups.forEach(function (g) {
+      var kids = g.children.map(function (c) { return c.first_name + ' ' + (c.last_name || '').charAt(0) + '.'; }).join(', ');
+      html += '<div class="pg-group"><div class="pg-group-book">' + (g.book ? esc(g.book.title) : 'No book match yet') + '</div>' +
+        '<div class="pg-group-kids">' + esc(kids) + '</div>' +
+        (g.book && g.has_session_card ? '<button class="btn btn-sm btn-ghost" style="margin-top:8px" data-slug="' + esc(g.book.slug) + '">📖 Reading session card</button>' : '') +
+        '</div>';
+    });
+    el.innerHTML = html;
+    el.querySelectorAll('button[data-slug]').forEach(function (btn) {
+      btn.addEventListener('click', function () { openSessionCard(btn.dataset.slug); });
+    });
+  }
+  function loadGroups() {
+    if (!CUR_ROOM) return;
+    document.getElementById('pg-groups-body').innerHTML = '<p class="pg-muted">Loading…</p>';
+    Wren.api('/api/phonics/programme/groups?room_id=' + CUR_ROOM).then(renderGroups).catch(function () {
+      document.getElementById('pg-groups-body').innerHTML = '<p class="pg-muted">Could not load reading groups.</p>';
+    });
+  }
+  function openSessionCard(slug) {
+    Wren.api('/api/phonics/programme/reading-session/' + encodeURIComponent(slug)).then(function (card) {
+      document.getElementById('pg-card-title').textContent = card.title;
+      // Phase 1 cards carry listeningFocus/joinIn/talkPrompts, not checkpoint (b420 #5).
+      var html = '';
+      if (card.isPhase1) {
+        if (card.listeningFocus) html += '<div class="pg-slide-section"><h4>Listening focus</h4><p class="pg-obj">' + esc(card.listeningFocus) + '</p></div>';
+        if (card.joinIn && card.joinIn.length) {
+          html += '<div class="pg-slide-section"><h4>Join in</h4>' +
+            card.joinIn.map(function (j) { return '<p class="pg-obj">' + esc(j) + '</p>'; }).join('') + '</div>';
+        }
+        if (card.talkPrompts && card.talkPrompts.length) {
+          html += '<div class="pg-slide-section"><h4>Talk prompts</h4>' +
+            card.talkPrompts.map(function (t) { return '<p class="pg-obj">' + esc(t) + '</p>'; }).join('') + '</div>';
+        }
+      } else if (card.checkpoint) {
+        html += '<div class="pg-slide-section"><h4>Checkpoint</h4><p class="pg-obj">' + esc(card.checkpoint) + '</p></div>';
+      }
+      if (card.prosody) html += '<div class="pg-slide-section"><h4>Prosody</h4><p class="pg-obj">“' + esc(card.prosody.quote) + '” — ' + esc(card.prosody.how) + '</p></div>';
+      if (card.questions && card.questions.length) {
+        html += '<div class="pg-slide-section"><h4>Comprehension questions</h4>' +
+          card.questions.map(function (q) { return '<p class="pg-obj">' + esc(q.q) + '</p>'; }).join('') + '</div>';
+      }
+      document.getElementById('pg-card-content').innerHTML = html;
+      document.getElementById('pg-card-modal').hidden = false;
+    }).catch(function () { alert('Could not load the session card.'); });
+  }
+  document.getElementById('pg-card-close').addEventListener('click', function () { document.getElementById('pg-card-modal').hidden = true; });
+
+  // ── Assessments due ──────────────────────────────────────────────────
+
+  function article(s) { return /^[aeiou]/i.test(String(s || '')) ? 'an' : 'a'; }
+
+  function renderAssess(data) {
+    var el = document.getElementById('pg-assess-body');
+    if (!data.half_term) {
+      el.innerHTML = '<p class="pg-muted">' + esc(data.note || 'Set this room’s week on the EY tablets to see who’s due.') + '</p>';
+      return;
+    }
+    var yearLabel = data.year_key === 'reception' ? 'Reception' : 'Year 1';
+    if (!data.due.length) {
+      el.innerHTML = '<p class="pg-muted">Everyone has ' + esc(article(data.half_term)) + ' ' + esc(data.half_term) + ' (' + yearLabel + ') assessment recorded. <span class="pg-badge">0 due</span></p>';
+      return;
+    }
+    el.innerHTML = '<p class="pg-muted">' + esc(data.half_term) + ' (' + yearLabel + ') — <span class="pg-badge pg-due">' + data.due.length + ' due</span></p>' +
+      '<div class="pg-chip-row">' + data.due.map(function (c) { return '<span class="pg-chip">' + esc(c.first_name + ' ' + (c.last_name || '')) + '</span>'; }).join('') + '</div>';
+  }
+  function loadAssess() {
+    if (!CUR_ROOM) return;
+    document.getElementById('pg-assess-body').innerHTML = '<p class="pg-muted">Loading…</p>';
+    Wren.api('/api/phonics/programme/assessments-due?room_id=' + CUR_ROOM).then(renderAssess).catch(function () {
+      document.getElementById('pg-assess-body').innerHTML = '<p class="pg-muted">Could not load.</p>';
+    });
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────
+
+  document.getElementById('pg-room-sel').addEventListener('change', function () {
+    CUR_ROOM = this.value || null;
+    if (!CUR_ROOM) {
+      document.getElementById('pg-today-body').innerHTML = '<p class="pg-muted">Choose a room to see today’s lesson.</p>';
+      document.getElementById('pg-groups-body').innerHTML = '<p class="pg-muted">Choose a room above.</p>';
+      document.getElementById('pg-assess-body').innerHTML = '<p class="pg-muted">Choose a room above.</p>';
+      return;
+    }
+    loadToday(); loadGroups(); loadAssess();
+  });
+
+  function boot() { loadRooms(); }
+  if (window.Wren && Wren.user) boot(); else document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

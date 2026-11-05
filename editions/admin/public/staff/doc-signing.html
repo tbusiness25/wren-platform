@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Signatures &amp; Read Receipts — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .ds-tabs { display:flex;gap:4px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap; }
+    .ds-tab { flex:1;min-width:100px;padding:8px;border-radius:8px;border:none;background:transparent;color:var(--c-muted);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600; }
+    .ds-tab.active { background:var(--c-blue);color:#fff; }
+    .ds-pane { display:none; } .ds-pane.active { display:block; }
+    .ds-card { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:16px;margin-bottom:14px; }
+    .banner-info { background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted);border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.85rem;line-height:1.6; }
+    table.ds { width:100%;border-collapse:collapse;font-size:.85rem; }
+    table.ds th { text-align:left;color:var(--c-muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:8px; }
+    table.ds td { padding:8px;border-top:1px solid var(--c-border);color:var(--c-text);vertical-align:top; }
+    .pill { font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase; }
+    .pill-signed { background:var(--c-green-light);color:var(--c-green); }
+    .pill-read   { background:var(--c-blue-light);color:var(--c-blue-dark); }
+    .pill-open   { background:var(--c-amber-light);color:var(--c-amber); }
+    .ver { font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;color:var(--c-muted);word-break:break-all; }
+    .bar { height:8px;background:var(--c-bg);border-radius:4px;overflow:hidden;min-width:80px; }
+    .bar i { display:block;height:8px;background:var(--c-green);border-radius:4px; }
+    .empty { color:var(--c-muted);padding:26px;text-align:center;font-size:.88rem; }
+    .link-box { background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;padding:8px 10px;font-size:.72rem;
+                font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;color:var(--c-blue);margin-top:6px; }
+    .staff-pick { display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;max-height:280px;overflow-y:auto;
+                  border:1px solid var(--c-border);border-radius:8px;padding:10px;background:var(--c-bg); }
+    .staff-pick label { display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--c-text);cursor:pointer; }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Signatures &amp; Read Receipts</div>
+      <div class="page-subtitle">Who has signed what, when, and which version of it</div>
+    </div>
+    <a href="/admin/policies-workspace.html" class="btn btn-secondary btn-sm">Policies →</a>
+  </div>
+
+  <div class="banner-info">
+    A receipt records the <b>version</b>, not just the document. "Everyone signed the
+    safeguarding policy" means nothing if the policy has been edited since — so a policy
+    receipt pins <code>policy:v4</code> and a document receipt pins the file's upload
+    timestamp. Re-publish or re-upload and the old receipts visibly refer to the old version
+    instead of quietly appearing to cover the new one. Signing a policy here also writes the
+    usual <code>policy_acknowledgments</code> row, so the HR policies screen stays correct.
+  </div>
+
+  <div class="ds-tabs">
+    <button class="ds-tab active" data-pane="coverage">Coverage</button>
+    <button class="ds-tab" data-pane="outstanding">Outstanding</button>
+    <button class="ds-tab" data-pane="receipts">All receipts</button>
+    <button class="ds-tab" data-pane="send">Send for signature</button>
+  </div>
+
+  <div class="ds-pane active" id="pane-coverage"><div class="empty">Loading…</div></div>
+  <div class="ds-pane" id="pane-outstanding"><div class="empty">Loading…</div></div>
+  <div class="ds-pane" id="pane-receipts"><div class="empty">Loading…</div></div>
+
+  <div class="ds-pane" id="pane-send">
+    <div class="ds-card" style="max-width:640px">
+      <div class="form-group">
+        <label class="form-label">What are they signing?</label>
+        <select class="form-control" id="s-kind">
+          <option value="policy">A policy</option>
+          <option value="person_document">A staff document</option>
+        </select>
+      </div>
+      <!-- A staff document belongs to ONE person, so picking it means picking
+           them. /api/person-documents lists per subject and nothing else, which
+           is the right shape: there is no "all staff documents" view and there
+           should not be one. -->
+      <div class="form-group" id="s-owner-wrap" style="display:none">
+        <label class="form-label">Whose document</label>
+        <select class="form-control" id="s-owner"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Which one</label>
+        <select class="form-control" id="s-subject"><option>Loading…</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">What do you need back?</label>
+        <select class="form-control" id="s-req">
+          <option value="sign">A signature</option>
+          <option value="read">An acknowledgement that they have read it</option>
+        </select>
+      </div>
+      <div class="form-group" id="s-who-wrap">
+        <label class="form-label">Who</label>
+        <div style="margin-bottom:8px">
+          <button class="btn btn-ghost btn-sm" id="s-all">Select everyone</button>
+          <button class="btn btn-ghost btn-sm" id="s-none">Clear</button>
+        </div>
+        <div class="staff-pick" id="s-staff"></div>
+      </div>
+      <button class="btn btn-primary" id="s-send">Send</button>
+      <div id="s-result" style="margin-top:14px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const errText = e => (e && (e.error || e.message)) || 'Something went wrong';
+const when = t => (t ? new Date(t).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  document.querySelectorAll('.ds-tab').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.ds-tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.ds-pane').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('pane-' + b.dataset.pane).classList.add('active');
+  }));
+  document.getElementById('s-kind').addEventListener('change', loadSubjects);
+  document.getElementById('s-send').addEventListener('click', send);
+  document.getElementById('s-all').addEventListener('click', () => setAll(true));
+  document.getElementById('s-none').addEventListener('click', () => setAll(false));
+  await Promise.all([loadCoverage(), loadReceipts(), loadSubjects(), loadStaff()]);
+}
+
+async function loadCoverage() {
+  const host = document.getElementById('pane-coverage');
+  try {
+    const rows = await Wren.api('/api/doc-signing/coverage');
+    host.innerHTML = rows.length ? `<div class="ds-card"><table class="ds">
+      <thead><tr><th>Document</th><th>Version</th><th>Needs</th><th>Progress</th><th>Done</th><th>Outstanding</th><th>Last completed</th></tr></thead>
+      <tbody>${rows.map(r => {
+        const done = Number(r.signed) + Number(r.read_ack) - Number(r.signed && r.read_ack ? Math.min(r.signed, r.read_ack) : 0);
+        const complete = Number(r.requested) - Number(r.outstanding);
+        const pct = r.requested ? Math.round((complete / r.requested) * 100) : 0;
+        return `<tr>
+          <td>${esc(r.document_title)}</td>
+          <td class="ver">${esc(r.version_ref)}</td>
+          <td>${esc(r.requirement)}</td>
+          <td><div class="bar"><i style="width:${pct}%"></i></div><div style="font-size:.72rem;color:var(--c-muted);margin-top:3px">${pct}%</div></td>
+          <td>${complete} of ${r.requested}</td>
+          <td>${Number(r.outstanding) ? `<span class="pill pill-open">${r.outstanding}</span>` : '—'}</td>
+          <td style="color:var(--c-muted)">${when(r.last_completed)}</td></tr>`;
+      }).join('')}</tbody></table></div>`
+      : '<div class="empty">Nothing has been sent for signature yet.</div>';
+  } catch (e) { host.innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>'; }
+}
+
+async function loadReceipts() {
+  try {
+    const [all, out] = await Promise.all([
+      Wren.api('/api/doc-signing/receipts'),
+      Wren.api('/api/doc-signing/receipts?outstanding=true'),
+    ]);
+    document.getElementById('pane-receipts').innerHTML = table(all, false);
+    document.getElementById('pane-outstanding').innerHTML = table(out, true);
+    document.querySelectorAll('[data-revoke]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Withdraw this request?')) return;
+      try { await Wren.api('/api/doc-signing/' + b.dataset.revoke, { method: 'DELETE' });
+        Wren.toast('Withdrawn.', 'success'); loadReceipts(); loadCoverage(); }
+      catch (e) { Wren.toast(errText(e), 'error'); }
+    }));
+  } catch (e) {
+    document.getElementById('pane-receipts').innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>';
+  }
+}
+
+function table(rows, outstanding) {
+  if (!rows.length) return `<div class="empty">${outstanding ? 'Nothing outstanding.' : 'No receipts yet.'}</div>`;
+  return `<div class="ds-card"><table class="ds">
+    <thead><tr><th>Person</th><th>Document</th><th>Version</th><th>Needs</th><th>Sent</th><th>Opened</th><th>Completed</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td>${esc(r.staff_name)}</td>
+      <td>${esc(r.document_title)}</td>
+      <td class="ver">${esc(r.version_ref)}</td>
+      <td>${esc(r.requirement)}</td>
+      <td style="color:var(--c-muted)">${when(r.sent_at)}</td>
+      <td style="color:var(--c-muted)">${when(r.opened_at)}</td>
+      <td>${r.signed_at
+          ? `<span class="pill pill-signed">signed</span><br><span style="font-size:.75rem">${esc(r.signature_name || '')} · ${when(r.signed_at)}</span>`
+          : r.read_at ? `<span class="pill pill-read">read</span><br><span style="font-size:.75rem">${when(r.read_at)}</span>`
+          : '<span class="pill pill-open">waiting</span>'}</td>
+      <td>${!r.signed_at && !r.read_at ? `<button class="btn btn-ghost btn-sm" data-revoke="${r.id}">Withdraw</button>` : ''}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+let STAFF = [];
+
+async function loadSubjects() {
+  const kind = document.getElementById('s-kind').value;
+  const sel = document.getElementById('s-subject');
+  const isDoc = kind === 'person_document';
+  document.getElementById('s-owner-wrap').style.display = isDoc ? '' : 'none';
+  document.getElementById('s-who-wrap').style.display   = isDoc ? 'none' : '';
+  sel.innerHTML = '<option>Loading…</option>';
+  try {
+    if (!isDoc) {
+      const list = await Wren.api('/api/policies');
+      sel.innerHTML = (Array.isArray(list) ? list : [])
+        .map(x => `<option value="${x.id}">${esc(x.title)}${x.version ? ' — v' + x.version : ''}</option>`).join('')
+        || '<option value="">No policies</option>';
+    } else {
+      const owner = Number(document.getElementById('s-owner').value);
+      if (!owner) { sel.innerHTML = '<option value="">Pick a person first</option>'; return; }
+      const list = await Wren.api('/api/person-documents?subject_type=staff&subject_id=' + owner);
+      sel.innerHTML = (Array.isArray(list) ? list : [])
+        .map(x => `<option value="${x.id}">${esc(x.title || x.filename)}</option>`).join('')
+        || '<option value="">This person has no documents on file</option>';
+    }
+  } catch (e) { sel.innerHTML = '<option value="">' + esc(errText(e)) + '</option>'; }
+}
+
+async function loadStaff() {
+  try {
+    const s = await Wren.api('/api/staff');
+    STAFF = (Array.isArray(s) ? s : (s.staff || [])).filter(x => x.is_active !== false);
+    const name = x => esc(x.first_name ? x.first_name + ' ' + x.last_name : x.name);
+    document.getElementById('s-staff').innerHTML = STAFF.map(x =>
+      `<label><input type="checkbox" value="${x.id}"> ${name(x)}</label>`).join('');
+    document.getElementById('s-owner').innerHTML =
+      '<option value="">— pick —</option>' + STAFF.map(x => `<option value="${x.id}">${name(x)}</option>`).join('');
+    document.getElementById('s-owner').addEventListener('change', loadSubjects);
+  } catch (e) { document.getElementById('s-staff').innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>'; }
+}
+
+const setAll = on => document.querySelectorAll('#s-staff input').forEach(i => { i.checked = on; });
+
+async function send() {
+  const kind = document.getElementById('s-kind').value;
+  // A staff document goes to its owner and nobody else.
+  const ids = kind === 'person_document'
+    ? [Number(document.getElementById('s-owner').value)].filter(Boolean)
+    : [...document.querySelectorAll('#s-staff input:checked')].map(i => Number(i.value));
+  const subjectId = Number(document.getElementById('s-subject').value);
+  if (!subjectId) return Wren.toast('Pick a document.', 'warning');
+  if (!ids.length) return Wren.toast('Pick at least one person.', 'warning');
+  try {
+    const r = await Wren.api('/api/doc-signing/request', { method: 'POST', body: {
+      subject_kind: document.getElementById('s-kind').value,
+      subject_id: subjectId,
+      requirement: document.getElementById('s-req').value,
+      staff_ids: ids,
+    }});
+    const fresh = r.requests.filter(x => !x.reused).length;
+    document.getElementById('s-result').innerHTML =
+      `<div class="ds-card"><b style="color:var(--c-green)">Sent.</b> ${fresh} new request${fresh === 1 ? '' : 's'},
+       ${r.requests.length - fresh} already outstanding for this version.
+       <div style="font-size:.78rem;color:var(--c-muted);margin-top:8px">
+         Each person also has this waiting in the HR portal, so the link is a convenience, not the only way in.</div>
+       ${r.requests.slice(0, 40).map(x => `<div class="link-box">#${x.staff_id} → ${esc(x.link)}</div>`).join('')}</div>`;
+    Wren.toast('Sent.', 'success');
+    loadCoverage(); loadReceipts();
+  } catch (e) { Wren.toast(errText(e), 'error', 6000); }
+}
+</script>
+</body>
+</html>

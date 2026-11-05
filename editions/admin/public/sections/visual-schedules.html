@@ -1,0 +1,298 @@
+<div class="v2-section" data-section="visual-schedules">
+
+  <nav class="wren-tab-bar" role="tablist" aria-label="Visual Support tabs">
+    <div class="tab-bar-track">
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="0"  data-tab="builder" id="tab-vs-builder" aria-controls="panel-vs-builder">Builder</button>
+      <button class="wren-tab" role="tab" aria-selected="false" tabindex="-1" data-tab="saved"   id="tab-vs-saved"   aria-controls="panel-vs-saved">Saved</button>
+    </div>
+    <button class="tab-scroll-arrow left"  aria-hidden="true" tabindex="-1">‹</button>
+    <button class="tab-scroll-arrow right" aria-hidden="true" tabindex="-1">›</button>
+  </nav>
+
+  <div class="wren-tab-panels">
+
+    <!-- BUILDER -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-vs-builder" data-tab="builder" aria-labelledby="tab-vs-builder">
+      <p style="color:var(--c-muted);font-size:.85rem;margin-bottom:14px">
+        Build a <strong>visual timetable</strong> or <strong>now &amp; next</strong> board using picture symbols — for TEACCH-style structured routines and SEN/autism support. Save it to a child or keep it general, then print for the wall or a workstation.
+        <span style="display:block;margin-top:4px;font-size:.75rem">Symbols: Mulberry (CC BY-SA).</span>
+      </p>
+
+      <div class="vs-controls">
+        <select class="v2-sort-select" id="vs-kind" aria-label="Type">
+          <option value="timetable">📋 Visual timetable</option>
+          <option value="now_next">➡️ Now &amp; Next</option>
+        </select>
+        <select class="v2-sort-select" id="vs-child" aria-label="Child">
+          <option value="">General / room (no child)</option>
+        </select>
+        <input class="form-control" id="vs-title" placeholder="Title (e.g. Morning routine)" style="max-width:260px">
+      </div>
+
+      <div class="vs-search-wrap">
+        <input class="form-control" id="vs-search" placeholder="🔍 Search symbols to add (e.g. snack, tidy up, carpet, home time)…" autocomplete="off">
+        <div id="vs-search-results" class="vs-search-results" hidden></div>
+      </div>
+
+      <div id="vs-steps" class="vs-steps"></div>
+
+      <div class="vs-actions">
+        <button class="btn btn-primary" id="vs-save">💾 Save</button>
+        <button class="btn btn-ghost" id="vs-print">🖨️ Print</button>
+        <button class="btn btn-ghost" id="vs-clear" style="color:#ef4444">Clear</button>
+        <span id="vs-editing" style="font-size:.8rem;color:var(--c-muted);align-self:center"></span>
+      </div>
+    </div>
+
+    <!-- SAVED -->
+    <div class="wren-tab-panel" role="tabpanel" id="panel-vs-saved" data-tab="saved" aria-labelledby="tab-vs-saved" hidden>
+      <div id="vs-saved-list"><div class="vs-empty">Loading…</div></div>
+    </div>
+
+  </div><!-- /.wren-tab-panels -->
+</div><!-- /.v2-section -->
+
+<style>
+.vs-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.vs-search-wrap{position:relative;margin-bottom:16px;max-width:520px}
+.vs-search-results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:8px;max-height:320px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.vs-sym{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;border:1px solid transparent;border-radius:8px;cursor:pointer;text-align:center}
+.vs-sym:hover{border-color:var(--c-blue);background:var(--c-bg)}
+.vs-sym img{width:52px;height:52px;object-fit:contain}
+.vs-sym span{font-size:.68rem;color:var(--c-muted);line-height:1.1;word-break:break-word}
+.vs-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:16px;min-height:40px}
+.vs-step{display:flex;align-items:center;gap:12px;background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:10px 12px}
+.vs-step img{width:56px;height:56px;object-fit:contain;flex-shrink:0;background:#fff;border-radius:8px}
+.vs-step .vs-num{font-weight:800;color:var(--c-muted);min-width:22px;text-align:center}
+.vs-step input.vs-label{flex:1;min-width:80px}
+.vs-step input.vs-time{width:96px}
+.vs-step .vs-ord{display:flex;flex-direction:column;gap:2px}
+.vs-step .vs-ord button,.vs-step .vs-del{background:none;border:1px solid var(--c-border);border-radius:6px;cursor:pointer;color:var(--c-muted);width:26px;height:22px;line-height:1}
+.vs-step .vs-del{color:#ef4444;height:46px}
+.vs-empty{text-align:center;padding:36px 16px;color:var(--c-muted)}
+.vs-saved-card{display:flex;align-items:center;gap:12px;background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:12px 14px;margin-bottom:10px;flex-wrap:wrap}
+.vs-saved-card .vs-thumbs{display:flex;gap:4px}
+.vs-saved-card .vs-thumbs img{width:34px;height:34px;object-fit:contain;background:#fff;border-radius:5px}
+.vs-saved-meta{flex:1;min-width:160px}
+.vs-saved-title{font-weight:700;color:var(--c-text)}
+.vs-saved-sub{font-size:.78rem;color:var(--c-muted)}
+</style>
+
+<script>
+(function(){
+  const SYM_BASE = '/symbols/mulberry/';
+  let _steps = [];          // [{symbol, label, time}]
+  let _editingId = null;
+  let _children = [];
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  const kindEl  = () => document.getElementById('vs-kind');
+  const childEl = () => document.getElementById('vs-child');
+  const titleEl = () => document.getElementById('vs-title');
+
+  async function loadChildren(){
+    try{
+      _children = await Wren.api('/api/children').catch(()=>[]);
+      const sel = childEl(); if (!sel) return;
+      _children.forEach(c => { sel.innerHTML += `<option value="${c.id}">${esc(c.first_name+' '+c.last_name)}</option>`; });
+    }catch(e){}
+  }
+
+  // ── symbol search ──
+  let _t = null;
+  function onSearch(){
+    const q = document.getElementById('vs-search').value.trim();
+    const box = document.getElementById('vs-search-results');
+    clearTimeout(_t);
+    if (q.length < 2){ box.hidden = true; box.innerHTML=''; return; }
+    _t = setTimeout(async () => {
+      try{
+        const d = await Wren.api('/api/visual-schedules/symbols?q=' + encodeURIComponent(q));
+        if (!d.results || !d.results.length){ box.innerHTML = '<div style="grid-column:1/-1;color:var(--c-muted);font-size:.8rem;padding:6px">No symbols found</div>'; box.hidden=false; return; }
+        box.innerHTML = d.results.map(r =>
+          `<div class="vs-sym" data-sym="${esc(r.f)}" data-label="${esc(r.l)}" title="${esc(r.l)}">
+             <img src="${esc(r.url)}" alt="${esc(r.l)}" loading="lazy"><span>${esc(r.l)}</span></div>`).join('');
+        box.hidden = false;
+      }catch(e){ box.hidden = true; }
+    }, 200);
+  }
+
+  function addStep(symbol, label){
+    if (kindEl().value === 'now_next' && _steps.length >= 2){ Wren.toast('Now & Next has just two slots','info'); return; }
+    if (_steps.length >= 40){ Wren.toast('Maximum 40 steps','info'); return; }
+    _steps.push({ symbol, label: label || '', time: null });
+    renderSteps();
+  }
+
+  function renderSteps(){
+    const el = document.getElementById('vs-steps');
+    const nowNext = kindEl().value === 'now_next';
+    if (!_steps.length){ el.innerHTML = '<div class="vs-empty">Search above and tap symbols to build the '+(nowNext?'board':'timetable')+'.</div>'; return; }
+    el.innerHTML = _steps.map((s,i) => {
+      const slot = nowNext ? (i===0?'NOW':'NEXT') : (i+1);
+      return `<div class="vs-step" data-i="${i}">
+        <span class="vs-num">${slot}</span>
+        <img src="${esc(SYM_BASE+s.symbol)}" alt="">
+        <input class="form-control vs-label" value="${esc(s.label)}" placeholder="Label" data-i="${i}">
+        ${nowNext ? '' : `<input class="form-control vs-time" type="time" value="${esc(s.time||'')}" data-i="${i}">`}
+        <div class="vs-ord">
+          <button data-move="up" data-i="${i}" ${i===0?'disabled':''}>▲</button>
+          <button data-move="down" data-i="${i}" ${i===_steps.length-1?'disabled':''}>▼</button>
+        </div>
+        <button class="vs-del" data-del="${i}" title="Remove">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  function collect(){
+    // pull latest label/time values from inputs
+    document.querySelectorAll('#vs-steps .vs-step').forEach(row => {
+      const i = +row.dataset.i;
+      const lab = row.querySelector('.vs-label'); const tm = row.querySelector('.vs-time');
+      if (_steps[i]){ if (lab) _steps[i].label = lab.value; _steps[i].time = tm ? (tm.value||null) : null; }
+    });
+    return _steps;
+  }
+
+  async function save(){
+    collect();
+    const title = titleEl().value.trim();
+    if (!title){ Wren.toast('Give it a title','error'); return; }
+    if (!_steps.length){ Wren.toast('Add at least one symbol','error'); return; }
+    const body = { child_id: childEl().value || null, title, kind: kindEl().value, items: _steps };
+    try{
+      if (_editingId){ await Wren.api('/api/visual-schedules/'+_editingId, { method:'PUT', body }); }
+      else { const r = await Wren.api('/api/visual-schedules', { method:'POST', body }); _editingId = r.id; }
+      document.getElementById('vs-editing').textContent = 'Saved ✓';
+      Wren.toast('Saved ✓','success');
+    }catch(e){ Wren.toast('Save failed','error'); }
+  }
+
+  function clearBuilder(){
+    _steps = []; _editingId = null;
+    titleEl().value=''; childEl().value=''; kindEl().value='timetable';
+    document.getElementById('vs-editing').textContent='';
+    renderSteps();
+  }
+
+  function loadInto(sched){
+    _editingId = sched.id;
+    _steps = (sched.items||[]).map(it => ({ symbol: it.symbol, label: it.label||'', time: it.time||null }));
+    titleEl().value = sched.title||'';
+    kindEl().value = sched.kind === 'now_next' ? 'now_next' : 'timetable';
+    childEl().value = sched.child_id || '';
+    document.getElementById('vs-editing').textContent = 'Editing "'+ (sched.title||'') +'"';
+    renderSteps();
+    document.getElementById('tab-vs-builder')?.click();
+  }
+
+  // ── print (opens a clean printable window) ──
+  function printSchedule(title, kind, items, childName){
+    collect();
+    const nowNext = kind === 'now_next';
+    const cell = (it, i) => `
+      <div class="p-cell">
+        <div class="p-slot">${nowNext ? (i===0?'NOW':'NEXT') : (it.time ? esc(it.time) : (i+1))}</div>
+        <img src="${location.origin + SYM_BASE + esc(it.symbol)}">
+        <div class="p-label">${esc(it.label||'')}</div>
+      </div>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+      <style>
+        body{font-family:system-ui,Arial,sans-serif;margin:24px;color:#111}
+        h1{font-size:26px;margin:0 0 4px} .sub{color:#555;margin-bottom:20px}
+        .grid{display:grid;gap:14px;grid-template-columns:${nowNext?'1fr 1fr':'repeat(3,1fr)'}}
+        .p-cell{border:3px solid #111;border-radius:14px;padding:14px;text-align:center;break-inside:avoid}
+        .p-slot{font-weight:800;font-size:${nowNext?'26px':'18px'};margin-bottom:8px}
+        .p-cell img{width:100%;max-width:${nowNext?'220px':'150px'};height:${nowNext?'200px':'140px'};object-fit:contain}
+        .p-label{font-size:${nowNext?'26px':'20px'};font-weight:700;margin-top:8px}
+        .foot{margin-top:24px;color:#888;font-size:11px}
+        @media print{.noprint{display:none}}
+      </style></head><body>
+      <h1>${esc(title)}</h1>
+      <div class="sub">${childName?esc(childName)+' · ':''}${nowNext?'Now &amp; Next':'Visual timetable'}</div>
+      <div class="grid">${items.map(cell).join('')}</div>
+      <div class="foot">Symbols: Mulberry Symbols (CC BY-SA). Made with Wren.</div>
+      <button class="noprint" onclick="window.print()" style="margin-top:20px;padding:10px 18px;font-size:15px">🖨️ Print</button>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w){ Wren.toast('Allow pop-ups to print','error'); return; }
+    w.document.write(html); w.document.close();
+  }
+
+  // ── saved list ──
+  async function loadSaved(){
+    const el = document.getElementById('vs-saved-list');
+    try{
+      const list = await Wren.api('/api/visual-schedules');
+      if (!list.length){ el.innerHTML = '<div class="vs-empty">No saved boards yet — build one and hit Save.</div>'; return; }
+      el.innerHTML = list.map(s => {
+        const thumbs = (s.items||[]).slice(0,5).map(it => `<img src="${esc(SYM_BASE+it.symbol)}" alt="">`).join('');
+        return `<div class="vs-saved-card" data-id="${s.id}">
+          <div class="vs-thumbs">${thumbs}</div>
+          <div class="vs-saved-meta">
+            <div class="vs-saved-title">${esc(s.title)}</div>
+            <div class="vs-saved-sub">${s.kind==='now_next'?'Now &amp; Next':'Timetable'} · ${(s.items||[]).length} steps${s.child_name?' · '+esc(s.child_name):''}${s.created_by_name?' · '+esc(s.created_by_name):''}</div>
+          </div>
+          <button class="btn btn-sm btn-primary" data-open="${s.id}">Open</button>
+          <button class="btn btn-sm btn-ghost" data-print="${s.id}">🖨️</button>
+          <button class="btn btn-sm btn-ghost" data-del="${s.id}" style="color:#ef4444">Delete</button>
+        </div>`;
+      }).join('');
+      window.__vsSaved = list;
+    }catch(e){ el.innerHTML = '<div class="vs-empty">Failed to load</div>'; }
+  }
+
+  function wire(){
+    document.getElementById('vs-search')?.addEventListener('input', onSearch);
+    document.getElementById('vs-kind')?.addEventListener('change', () => {
+      if (kindEl().value==='now_next' && _steps.length>2){ _steps = _steps.slice(0,2); }
+      renderSteps();
+    });
+    document.getElementById('vs-save')?.addEventListener('click', save);
+    document.getElementById('vs-clear')?.addEventListener('click', clearBuilder);
+    document.getElementById('vs-print')?.addEventListener('click', () => {
+      const cn = childEl().selectedOptions[0] && childEl().value ? childEl().selectedOptions[0].textContent : '';
+      if (!_steps.length){ Wren.toast('Nothing to print yet','info'); return; }
+      printSchedule(titleEl().value||'Visual schedule', kindEl().value, collect(), cn);
+    });
+
+    // symbol result click
+    document.getElementById('vs-search-results')?.addEventListener('click', e => {
+      const c = e.target.closest('.vs-sym'); if (!c) return;
+      addStep(c.dataset.sym, c.dataset.label);
+      document.getElementById('vs-search').value=''; e.currentTarget.hidden=true; e.currentTarget.innerHTML='';
+    });
+
+    // step reorder / delete
+    document.getElementById('vs-steps')?.addEventListener('click', e => {
+      const del = e.target.closest('[data-del]'); const mv = e.target.closest('[data-move]');
+      if (del){ collect(); _steps.splice(+del.dataset.del,1); renderSteps(); return; }
+      if (mv){ collect(); const i=+mv.dataset.i; const j = mv.dataset.move==='up'?i-1:i+1;
+        if (j>=0 && j<_steps.length){ [_steps[i],_steps[j]]=[_steps[j],_steps[i]]; renderSteps(); } }
+    });
+
+    // saved list actions
+    const wireSaved = () => document.getElementById('vs-saved-list')?.addEventListener('click', async e => {
+      const open=e.target.closest('[data-open]'), pr=e.target.closest('[data-print]'), del=e.target.closest('[data-del]');
+      const list = window.__vsSaved||[];
+      if (open){ const s=list.find(x=>x.id==open.dataset.open); if(s) loadInto(s); }
+      else if (pr){ const s=list.find(x=>x.id==pr.dataset.print); if(s){ const cn=s.child_name||''; printSchedule(s.title,s.kind,s.items||[],cn); } }
+      else if (del){ if(!confirm('Delete this board?'))return; try{ await Wren.api('/api/visual-schedules/'+del.dataset.del,{method:'DELETE'}); Wren.toast('Deleted','info'); loadSaved(); }catch(_){ Wren.toast('Failed','error'); } }
+    });
+    wireSaved();
+    document.getElementById('tab-vs-saved')?.addEventListener('click', loadSaved);
+  }
+
+  function init(){
+    loadChildren();
+    renderSteps();
+    wire();
+  }
+
+  document.addEventListener('wren:section-loaded', e => {
+    if (e.detail?.section !== 'visual-schedules') return;
+    init();
+  });
+  if (document.querySelector('.v2-section[data-section="visual-schedules"]')) init();
+})();
+</script>

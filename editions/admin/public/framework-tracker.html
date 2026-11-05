@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Tracker Grid — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- fledge-off (2026-10-26): the one Fledge switch, before anything paints -->
+<script src="/js/wren-fledge.js?v=fledgeoff1"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<script src="/js/wren-security-rating.js?v=b291"></script>
+<style>
+/* b255 — the tracker grid, EyLog-shaped.
+   Toby: "For the trackers, keep them the same as eylog." So this reproduces
+   EyLog's layout rather than improving on it: children down the left, one very
+   wide grid of area -> aspect -> range across the top, and cells that are colour
+   blocks with no text in them.
+
+   The width IS the design. Birth to 5 Matters is 16 aspects x 6 ranges = 96
+   columns; Fledge is 41. Both scroll sideways INSIDE .ft-scroll — the page body
+   never does, which is what keeps the shell's sidebar and topbar where they are.
+
+   Tokens only. The three state colours are anchored to --c-green/--c-amber (which
+   wren-theme.js deliberately leaves alone when it repaints the accent set) and the
+   tint is mixed off them, so the same rule holds light and dark. The plain
+   -light tokens are declared first as the fallback for anything without color-mix.
+
+   ── b291 (2026-09-08): DENSITY, and a security rating on the range ──────────
+   Toby: "only do a single line with their name, not age underneath. Make sure it
+   is in a small font size so it takes up less space. Maybe their age can just go
+   in a column next to the data. Ideally I want to see as many children on the
+   page as possible."
+
+   So the child cell is ONE line and carries the name only. Age (and room, and
+   key person) became their own columns. Row height went 47px -> 22px and the
+   page chrome above the scroller was trimmed, which took a 1920x950 screen from
+   12 visible children to 30.
+
+   Everything that eats vertical space is now optional and folded away by
+   default: the filters live behind a disclosure, the legend behind another.
+   Nothing that was on the page has been removed — it has been given a lid. */
+:root {
+  --ft-col: 78px;          /* one range column — 72 clipped "36-48 months" */
+  --ft-name: 158px;        /* the frozen child column — name only, one line */
+  --ft-age: 48px;          /* b291 — age is its own column, not a second line */
+  --ft-room: 92px;
+  --ft-kp: 104px;
+  --ft-judge: 62px;        /* b291 — one recorded range judgement, per area */
+  --ft-row: 20px;
+  /* Header row heights are FIXED, because the sticky offsets below are absolute
+     and a wrapped aspect name would otherwise slide row 3 under row 2. */
+  --ft-h1: 26px;           /* area */
+  --ft-h2: 38px;           /* aspect — Fledge's aspects get ONE column, so they wrap */
+  --ft-h3: 38px;           /* band */
+  --ft-green: var(--c-green-light);
+  --ft-amber: var(--c-amber-light);
+  --ft-grey:  var(--c-navy-light);
+}
+@supports (color: color-mix(in srgb, red 50%, white)) {
+  :root {
+    --ft-green: color-mix(in srgb, var(--c-green) 62%, transparent);
+    --ft-amber: color-mix(in srgb, var(--c-amber) 62%, transparent);
+    --ft-grey:  color-mix(in srgb, var(--c-muted) 24%, transparent);
+  }
+}
+
+.ft-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+/* A <select> is sized by its longest OPTION, and the framework labels carry their
+   statement counts — 424px wide, which pushed the page body sideways at 390.
+   The one thing on this page allowed to scroll sideways is .ft-scroll. */
+.ft-bar select { max-width: 100%; min-width: 0; }
+#ft-framework { flex: 0 1 auto; max-width: min(100%, 340px); }
+.ft-bar label { font-size: .76rem; color: var(--c-muted); display: inline-flex; align-items: center; gap: 6px; }
+.ft-bar input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--c-blue); }
+
+/* ── The filter drawer (b291) ─────────────────────────────────────────────
+   Folded away by default. Every pixel it does not occupy is another child on
+   the screen, and most sessions use no filter at all. */
+.ft-panel { display: none; border: 1px solid var(--c-border); border-radius: 10px;
+            background: var(--c-surface); padding: 9px 11px; margin-bottom: 8px; }
+.ft-panel.open { display: block; }
+.ft-fset { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.ft-fset + .ft-fset { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--c-border); }
+.ft-fset > span.ft-fhead { font-size: .7rem; font-weight: 700; color: var(--c-muted);
+                           text-transform: uppercase; letter-spacing: .4px; min-width: 92px; }
+.ft-fset select { font-size: .76rem; padding: 3px 6px; }
+.ft-fset label { font-size: .76rem; color: var(--c-muted); display: inline-flex; align-items: center; gap: 5px; }
+.ft-none { opacity: .45; }
+.ft-pill { font-size: .68rem; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+           border: 1px solid var(--c-blue); color: var(--c-text); background: transparent; }
+
+.ft-legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+             font-size: .72rem; color: var(--c-muted); margin: 0 0 8px; }
+.ft-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ft-legend i { width: 13px; height: 13px; border-radius: 4px; display: inline-block;
+               border: 1px solid var(--c-border); }
+.ft-legend i.green { background: var(--ft-green); }
+.ft-legend i.amber { background: var(--ft-amber); }
+.ft-legend i.grey  { background: var(--ft-grey); }
+.ft-legend i.blank { background: transparent; }
+
+/* ── The scroller. The ONLY thing on this page that scrolls sideways. ─────── */
+.ft-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 178px);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  background: var(--c-surface);
+  /* A 7,000px-wide grid on a trackpad is a lot of momentum — contain it so an
+     over-scroll never bubbles up and rubber-bands the whole page sideways. */
+  overscroll-behavior: contain;
+}
+.ft-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+
+.ft-table th, .ft-table td {
+  border-right: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border);
+  padding: 0; margin: 0;
+}
+.ft-table thead th {
+  position: sticky; z-index: 3;
+  background: var(--c-navy-mid, var(--c-surface));
+  color: var(--c-text);
+  font-size: .66rem; font-weight: 700; line-height: 1.2;
+  padding: 4px 5px; text-align: center; vertical-align: middle;
+}
+.ft-table thead tr:nth-child(1) th { top: 0; }
+.ft-table thead tr:nth-child(2) th { top: var(--ft-h1); }
+.ft-table thead tr:nth-child(3) th { top: calc(var(--ft-h1) + var(--ft-h2)); }
+.ft-h-area   { height: var(--ft-h1); font-size: .7rem; letter-spacing: .2px;
+               border-bottom: 2px solid var(--c-blue) !important;
+               overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ft-h-aspect { height: var(--ft-h2); color: var(--c-muted); font-weight: 600;
+               font-size: .6rem; letter-spacing: 0; overflow: hidden; }
+/* Birth to 5's aspects span 6 columns and fit on one line. Fledge's are ONE
+   column wide, so they must wrap rather than ellipsis away to "BAND 1 …".
+   The clamp lives on an inner <span>, NOT on the <th>: `display:-webkit-box`
+   on a table cell destroys its table-cell role and the whole header collapses
+   into a single stacked column (caught by the screenshot, not by the DOM
+   assertions — which is why b255-render-probe.js now measures thead height). */
+.ft-h-aspect > span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+                      overflow: hidden; white-space: normal; overflow-wrap: break-word;
+                      line-height: 1.12; }
+.ft-h-band   { height: var(--ft-h3); font-weight: 600; color: var(--c-text); }
+.ft-h-band small { display: block; font-weight: 400; font-size: .56rem; letter-spacing: 0;
+                    text-transform: none; color: var(--c-muted); white-space: nowrap; }
+.ft-h-band.empty { background: transparent; }
+
+/* Every header that sorts. The arrow is the second carrier — a sorted column is
+   never signalled by colour alone. */
+.ft-table thead th[data-sort] { cursor: pointer; user-select: none; }
+.ft-table thead th[data-sort]:hover { color: var(--c-blue); }
+.ft-table thead th[data-sort]:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+.ft-sort-mark { font-size: .6rem; opacity: .9; margin-left: 2px; }
+.ft-table thead th.ft-sorted { box-shadow: inset 0 -2px 0 0 var(--c-blue); }
+
+/* The frozen identity columns: sticky in BOTH directions, so they survive a
+   two-axis scroll. z-index 5 in the header corner, 4 in the body.
+   b291 — Child and Age are the pair that identifies a row, so both are frozen.
+   Room and key person scroll: they are there to filter and sort by. */
+.ft-c-name, .ft-c-age {
+  position: sticky; z-index: 4;
+  background: var(--c-navy-mid, var(--c-surface));
+}
+.ft-c-name {
+  left: 0;
+  width: var(--ft-name); min-width: var(--ft-name); max-width: var(--ft-name);
+  text-align: left !important; padding: 0 8px !important;
+}
+.ft-c-age {
+  left: var(--ft-name);
+  width: var(--ft-age); min-width: var(--ft-age); max-width: var(--ft-age);
+  text-align: center !important; padding: 0 4px !important;
+  border-right: 2px solid var(--c-border) !important;
+}
+.ft-table thead .ft-c-name, .ft-table thead .ft-c-age { z-index: 5; }
+/* ONE line, name only, small. No avatar block, no second line, no wrap — that
+   is what took the row from 47px to 22px. */
+.ft-c-name .ft-kid { font-size: .74rem; font-weight: 600; color: var(--c-text);
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                     line-height: var(--ft-row); }
+.ft-c-age span { font-size: .68rem; color: var(--c-muted); white-space: nowrap;
+                 line-height: var(--ft-row); }
+
+.ft-c-meta { width: var(--ft-room); min-width: var(--ft-room); max-width: var(--ft-room);
+             font-size: .66rem; color: var(--c-muted); text-align: left !important;
+             padding: 0 6px !important; white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; line-height: var(--ft-row); }
+.ft-c-meta.kp { width: var(--ft-kp); min-width: var(--ft-kp); max-width: var(--ft-kp); }
+
+/* ── b291: the recorded RANGE judgement, one column per area ──────────────── */
+.ft-h-jgroup { height: var(--ft-h1); border-bottom: 2px solid var(--c-blue) !important;
+               white-space: nowrap; overflow: hidden; }
+.ft-h-judge  { height: var(--ft-h2); font-size: .6rem; color: var(--c-muted); }
+.ft-h-jsub   { height: var(--ft-h3); font-size: .56rem; color: var(--c-muted); font-weight: 500; }
+.ft-c-judge  { width: var(--ft-judge); min-width: var(--ft-judge); max-width: var(--ft-judge);
+               text-align: center !important; padding: 0 2px !important;
+               white-space: nowrap; line-height: var(--ft-row); }
+.ft-c-judge .ft-r { font-size: .64rem; font-weight: 700; color: var(--c-text); margin-right: 3px; }
+.ft-c-judge .ft-r-none { font-size: .64rem; color: var(--c-muted); }
+/* The mini rating chip is an inline-flex box. Sitting on the text baseline it
+   adds descender space under the line and pushed every row 2px taller — which,
+   over 30 rows, is a whole child. Centre it on the line instead. */
+.ft-c-judge > * { vertical-align: middle; }
+.ft-c-judge .wsec-mini { height: 15px; width: 15px; }
+/* Every body cell is exactly one --ft-row tall. Stated once, so a cell that
+   gains content later cannot quietly grow the whole grid. */
+.ft-table tbody td { height: var(--ft-row); vertical-align: middle; }
+.ft-jsep { border-right: 2px solid var(--c-border) !important; }
+
+.ft-cell { width: var(--ft-col); min-width: var(--ft-col); height: var(--ft-row);
+           cursor: pointer; background: transparent; }
+.ft-cell[data-c="green"] { background: var(--ft-green); }
+.ft-cell[data-c="amber"] { background: var(--ft-amber); }
+.ft-cell[data-c="grey"]  { background: var(--ft-grey); }
+.ft-cell.dead { cursor: default; background: repeating-linear-gradient(
+  135deg, transparent, transparent 5px, var(--c-border) 5px, var(--c-border) 6px); }
+.ft-cell:not(.dead):hover { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+.ft-cell:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+.ft-table tbody tr:hover .ft-c-name,
+.ft-table tbody tr:hover .ft-c-age { background: var(--c-navy-light); }
+
+.ft-na { text-align: center; color: var(--c-muted); font-size: .7rem;
+         letter-spacing: .4px; background: repeating-linear-gradient(
+           135deg, transparent, transparent 7px, var(--c-border) 7px, var(--c-border) 8px); }
+
+.ft-note { font-size: .74rem; color: var(--c-muted); margin-top: 8px; line-height: 1.45; }
+.ft-empty { padding: 40px; text-align: center; color: var(--c-muted); }
+
+/* ── The cell drawer ─────────────────────────────────────────────────────── */
+#ft-drawer { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 9000;
+             display: none; align-items: center; justify-content: center; padding: 16px; }
+#ft-drawer.open { display: flex; }
+#ft-sheet { background: var(--c-navy-mid, var(--c-surface)); border: 1px solid var(--c-border);
+            border-radius: 14px; width: 100%; max-width: 720px; max-height: 84vh;
+            overflow-y: auto; padding: 16px 18px; }
+#ft-sheet h3 { margin: 0 0 2px; font-size: 1rem; color: var(--c-text); }
+#ft-sheet .ft-sheet-sub { font-size: .78rem; color: var(--c-muted); margin-bottom: 12px; }
+.ft-stmt { border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.ft-stmt p { margin: 0 0 8px; font-size: .84rem; color: var(--c-text); line-height: 1.5; }
+.ft-stmt .ft-code { font-size: .68rem; color: var(--c-muted); }
+.ft-sts { display: flex; gap: 6px; flex-wrap: wrap; }
+.ft-sts button { border: 1px solid var(--c-border); background: transparent; color: var(--c-muted);
+                 border-radius: 8px; padding: 5px 10px; font-size: .74rem; font-weight: 600;
+                 cursor: pointer; font-family: inherit; min-height: 30px; }
+.ft-sts button.on { color: var(--c-text); border-color: var(--c-blue); background: var(--c-navy-light); }
+.ft-sts button[data-s="secure"].on     { border-color: var(--c-green); }
+.ft-sts button[data-s="developing"].on { border-color: var(--c-amber); }
+.ft-sts button[disabled] { opacity: .5; cursor: default; }
+/* The range judgement behind a cell, shown at the top of the drawer. */
+.ft-sheet-range { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+                  border: 1px solid var(--c-border); border-radius: 10px;
+                  padding: 8px 10px; margin-bottom: 10px; font-size: .78rem; color: var(--c-muted); }
+
+@media (max-width: 780px) {
+  /* On a phone or tablet the grid is tapped, not clicked, so the rows go back
+     up to a touchable height. Density is a big-screen goal — Toby's "as many
+     children as possible" is about the 1080p screen he plans on. */
+  :root { --ft-name: 118px; --ft-age: 42px; --ft-row: 30px; }
+  .ft-scroll { max-height: calc(100vh - 230px); }
+}
+@media (pointer: coarse) and (min-width: 781px) {
+  :root { --ft-row: 28px; }
+}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+    <div>
+      <div class="page-title" style="font-size:1.05rem">📈 Tracker Grid</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      
+      <a class="btn btn-sm btn-ghost" href="/phonics-tracker.html">🔤 Phonics tracker</a>
+    </div>
+  </div>
+
+  <div class="ft-bar">
+    <select class="v2-sort-select" id="ft-framework" aria-label="Framework"></select>
+    <select class="v2-sort-select" id="ft-scope" aria-label="Which children">
+      <option value="group">All children</option>
+      <option value="room">One room…</option>
+      <option value="mine">My key children</option>
+    </select>
+    <select class="v2-sort-select" id="ft-room" aria-label="Room" style="display:none"></select>
+    <button class="btn btn-sm" id="ft-view">View</button>
+    <button class="btn btn-sm btn-ghost" id="ft-filters-btn" type="button" aria-expanded="false">
+      Filters &amp; columns <span id="ft-filters-count"></span>
+    </button>
+    <button class="btn btn-sm btn-ghost" id="ft-legend-btn" type="button" aria-expanded="false">Key</button>
+    <span id="ft-count" style="font-size:.74rem;color:var(--c-muted)"></span>
+  </div>
+
+  <!-- b291 — filters, sorting reset and the optional columns. Folded away by
+       default: vertical space here is children not shown. -->
+  <div class="ft-panel" id="ft-panel">
+    <div class="ft-fset">
+      <span class="ft-fhead">Child</span>
+      <label>Age
+        <select class="v2-sort-select" id="ff-age">
+          <option value="">any</option>
+          <option value="0-11">under 1</option>
+          <option value="12-23">1–2 years</option>
+          <option value="24-35">2–3 years</option>
+          <option value="36-47">3–4 years</option>
+          <option value="48-999">4+ years</option>
+        </select>
+      </label>
+      <label>Room <select class="v2-sort-select" id="ff-room"><option value="">any</option></select></label>
+      <label>Key person <select class="v2-sort-select" id="ff-kp"><option value="">any</option></select></label>
+      <label>SEN
+        <select class="v2-sort-select" id="ff-sen">
+          <option value="">any</option>
+          <option value="yes">on SEN support</option>
+          <option value="no">not on SEN support</option>
+        </select>
+      </label>
+    </div>
+    <div class="ft-fset">
+      <span class="ft-fhead">Demographics</span>
+      <label id="ff-eal-w"><input type="checkbox" id="ff-eal"> EAL</label>
+      <label id="ff-eypp-w"><input type="checkbox" id="ff-eypp"> EYPP</label>
+      <label id="ff-funded-w"><input type="checkbox" id="ff-funded"> funded</label>
+      <label id="ff-gender-w">Gender
+        <select class="v2-sort-select" id="ff-gender">
+          <option value="">any</option><option value="F">girls</option><option value="M">boys</option>
+        </select>
+      </label>
+      <label>Range rating
+        <select class="v2-sort-select" id="ff-rated">
+          <option value="">any</option>
+          <option value="rated">has a security rating</option>
+          <option value="unrated">not yet rated</option>
+        </select>
+      </label>
+    </div>
+    <div class="ft-fset">
+      <span class="ft-fhead">Columns</span>
+      <label><input type="checkbox" id="fc-judge" checked> recorded range + how secure</label>
+      <label><input type="checkbox" id="fc-room" checked> room</label>
+      <label><input type="checkbox" id="fc-kp"> key person</label>
+      <!-- EyLog's own wording, kept verbatim (b255) — this control both swaps the
+           age column for date of birth AND orders the children by it. -->
+      <label><input type="checkbox" id="ft-dob"> View By Child DOB?</label>
+      <button class="btn btn-sm btn-ghost" id="ff-reset" type="button">Clear filters &amp; sort</button>
+    </div>
+  </div>
+
+  <div class="ft-panel" id="ft-legend-panel">
+    <div class="ft-legend">
+      <span><i class="green"></i> secure across the band</span>
+      <span><i class="amber"></i> some evidence</span>
+      <span><i class="grey"></i> recorded as not yet</span>
+      <span><i class="blank"></i> nothing recorded</span>
+      <span>N/A — framework not used for that child</span>
+    </div>
+    <div id="ft-sec-legend" style="margin-top:6px"></div>
+    <p class="ft-note" style="margin-top:6px">
+      Click any header to sort by it — the child columns, the recorded range, and
+      every band column. Click again to reverse. Filters and sort are remembered
+      on this device.
+    </p>
+  </div>
+
+  <div class="ft-scroll" id="ft-scroll">
+    <div class="ft-empty" id="ft-status">Loading the grid…</div>
+  </div>
+
+  <p class="ft-note" id="ft-foot"></p>
+
+</div>
+
+<!-- One cell, opened -->
+<div id="ft-drawer" role="dialog" aria-modal="true" aria-label="Statements in this band">
+  <div id="ft-sheet">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <div style="flex:1">
+        <h3 id="ft-sheet-title">…</h3>
+        <div class="ft-sheet-sub" id="ft-sheet-sub"></div>
+      </div>
+      <button class="btn btn-sm btn-ghost" id="ft-sheet-close" type="button">Close</button>
+    </div>
+    <div id="ft-sheet-range"></div>
+    <div id="ft-sheet-body"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+(function () {
+
+  var STORE = 'wren.b291.tracker';
+
+  var STATE = {
+    data: null, frameworks: [], framework: null, rooms: [], cell: null,
+    leaves: [], jareas: [],
+    // b291 — filters, columns and sort, all persisted (see saveState).
+    filters: { age: '', room: '', kp: '', sen: '', eal: false, eypp: false,
+               funded: false, gender: '', rated: '' },
+    cols: { judge: true, room: true, kp: false, dob: false },
+    sort: { key: 'name', dir: 1 },
+    // What the sort was before the DOB toggle took it over, so unticking puts
+    // it back exactly rather than dumping the user on an arbitrary order.
+    sortBeforeDob: null,
+  };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  function toast(m, k) { if (window.Wren && Wren.toast) Wren.toast(m, k || 'info'); }
+  function SEC() { return window.WrenSecurity || null; }
+
+  /* ── Persistence ───────────────────────────────────────────────────────────
+     Toby: "Filters and sort survive a page reload." localStorage, per device,
+     no server row. A stored framework only wins if it is still one the server
+     offers — a framework that has been removed must not wedge the page. */
+  function saveState() {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({
+        v: 1, framework: STATE.framework,
+        scope: document.getElementById('ft-scope').value,
+        room_id: document.getElementById('ft-room').value,
+        filters: STATE.filters, cols: STATE.cols, sort: STATE.sort,
+      }));
+    } catch (e) { /* private mode / quota — the grid still works, it just forgets */ }
+  }
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(STORE);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || o.v !== 1) return null;
+      if (o.filters) Object.keys(STATE.filters).forEach(function (k) {
+        if (o.filters[k] !== undefined) STATE.filters[k] = o.filters[k];
+      });
+      if (o.cols) Object.keys(STATE.cols).forEach(function (k) {
+        if (o.cols[k] !== undefined) STATE.cols[k] = !!o.cols[k];
+      });
+      if (o.sort && o.sort.key) STATE.sort = { key: o.sort.key, dir: o.sort.dir === -1 ? -1 : 1 };
+      return o;
+    } catch (e) { return null; }
+  }
+
+  // "Range 3 (18-24 months)" -> big line "Range 3", small line "18-24 months".
+  // Anything that is not shaped like that is shown whole on the big line.
+  function splitBand(label) {
+    var m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(String(label || ''));
+    return m ? { top: m[1], sub: m[2] } : { top: String(label || ''), sub: '' };
+  }
+  /* Age in the column has to be SHORT — "32m", "2y 8m". The old subline could
+     afford "32 months"; a 48px column cannot. */
+  function ageLabel(child) {
+    if (child.age_months == null) return '—';
+    var m = child.age_months;
+    if (m < 24) return m + 'm';
+    return Math.floor(m / 12) + 'y ' + (m % 12) + 'm';
+  }
+  function dobLabel(child) {
+    if (!child.dob) return '—';
+    var p = child.dob.split('-');
+    return p[2] + '/' + p[1] + '/' + p[0].slice(2);
+  }
+  /* An area's initials, for the 62px judgement header: "Personal, Social and
+     Emotional Development" -> PSED. Derived from the framework's own area
+     names, never a hard-coded list of the seven EYFS areas. */
+  function areaAbbr(area) {
+    var words = String(area || '').split(/[\s,&/-]+/)
+      .filter(function (w) { return w && !/^(and|the|of|in|a)$/i.test(w); });
+    if (!words.length) return '—';
+    var ab = words.map(function (w) { return w[0].toUpperCase(); }).join('');
+    return ab.length > 5 ? ab.slice(0, 5) : ab;
+  }
+
+  // ── Filtering ────────────────────────────────────────────────────────────
+  // Every predicate reads a field the server supplied off ladn.children. A
+  // filter never invents a value: a child with no gender recorded is excluded
+  // by the gender filter rather than being guessed into one.
+  function passesFilters(k) {
+    var f = STATE.filters;
+    if (f.age) {
+      var p = f.age.split('-'), lo = +p[0], hi = +p[1];
+      if (k.age_months == null || k.age_months < lo || k.age_months > hi) return false;
+    }
+    if (f.room && String(k.room_id || '') !== String(f.room)) return false;
+    if (f.kp && String(k.key_person_id || '') !== String(f.kp)) return false;
+    if (f.sen === 'yes' && !k.sen) return false;
+    if (f.sen === 'no' && k.sen) return false;
+    if (f.eal && !k.eal) return false;
+    if (f.eypp && !k.eypp) return false;
+    if (f.funded && !k.funded) return false;
+    if (f.gender && String(k.gender || '') !== f.gender) return false;
+    if (f.rated) {
+      var any = STATE.jareas.some(function (a) {
+        var j = STATE.data.ranges[k.id + '|' + a];
+        return j && j.security;
+      });
+      if (f.rated === 'rated' && !any) return false;
+      if (f.rated === 'unrated' && any) return false;
+    }
+    return true;
+  }
+  function activeFilterCount() {
+    var f = STATE.filters, n = 0;
+    ['age', 'room', 'kp', 'sen', 'gender', 'rated'].forEach(function (k) { if (f[k]) n++; });
+    ['eal', 'eypp', 'funded'].forEach(function (k) { if (f[k]) n++; });
+    return n;
+  }
+
+  // ── Sorting ──────────────────────────────────────────────────────────────
+  // One comparable value per (child, column). Nulls always sort last whichever
+  // direction is chosen, so "no data" never masquerades as a low score.
+  var CELL_RANK = { green: 3, amber: 2, grey: 1, blank: 0 };
+
+  function sortValue(k, key) {
+    var d = STATE.data;
+    if (key === 'name') return (k.name || '').toLowerCase();
+    if (key === 'age')  return k.age_months == null ? null : k.age_months;
+    if (key === 'dob')  return k.dob || null;
+    if (key === 'room') return (k.room_name || '').toLowerCase() || null;
+    if (key === 'kp')   return (k.key_person_name || '').toLowerCase() || null;
+    if (key.indexOf('judge:') === 0) {
+      // Range first, then how secure inside it — the natural reading of
+      // "who is furthest on". Unrated ranks 0, below Emerging's 1.
+      var j = d.ranges[k.id + '|' + key.slice(6)];
+      if (!j) return null;
+      var S = SEC();
+      return j.ordinal * 10 + (S ? S.rank(j.security) : 0);
+    }
+    if (key.indexOf('cell:') === 0) {
+      var leaf = STATE.leaves[Number(key.slice(5))];
+      if (!leaf || leaf.empty) return null;
+      var c = d.cells[k.id + '|' + leaf.area + '|' + (leaf.aspect_raw || '') + '|' + (leaf.age_range || '')];
+      return c ? CELL_RANK[c.c] : 0;
+    }
+    if (key.indexOf('area:') === 0 || key.indexOf('aspect:') === 0) {
+      // How much of this area/aspect is green for this child. An area header is
+      // a column too, and this is the only thing it could usefully mean.
+      var isArea = key.indexOf('area:') === 0;
+      var want = key.slice(isArea ? 5 : 7);
+      var n = 0;
+      STATE.leaves.forEach(function (l) {
+        if (l.empty) return;
+        if (isArea ? l.area !== want : (l.area + '␟' + l.aspect) !== want) return;
+        var cc = d.cells[k.id + '|' + l.area + '|' + (l.aspect_raw || '') + '|' + (l.age_range || '')];
+        if (cc) n += CELL_RANK[cc.c];
+      });
+      return n;
+    }
+    return null;
+  }
+  function sortKids(kids) {
+    var key = STATE.sort.key, dir = STATE.sort.dir;
+    return kids.slice().sort(function (a, b) {
+      var va = sortValue(a, key), vb = sortValue(b, key);
+      if (va === null && vb === null) return (a.name || '').localeCompare(b.name || '');
+      if (va === null) return 1;         // nulls last, both directions
+      if (vb === null) return -1;
+      if (va < vb) return -1 * dir;
+      if (va > vb) return  1 * dir;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }
+  function sortMark(key) {
+    if (STATE.sort.key !== key) return '';
+    return '<span class="ft-sort-mark">' + (STATE.sort.dir === 1 ? '▲' : '▼') + '</span>';
+  }
+  function sortAttrs(key, label) {
+    return ' data-sort="' + esc(key) + '" tabindex="0" role="columnheader"' +
+           ' aria-sort="' + (STATE.sort.key === key
+             ? (STATE.sort.dir === 1 ? 'ascending' : 'descending') : 'none') + '"' +
+           ' title="Sort by ' + esc(label) + '"' +
+           (STATE.sort.key === key ? '' : '');
+  }
+  function thClass(base, key) {
+    return base + (STATE.sort.key === key ? ' ft-sorted' : '');
+  }
+
+  // ── The grid ─────────────────────────────────────────────────────────────
+  function render() {
+    var d = STATE.data, host = document.getElementById('ft-scroll');
+    if (!d || !d.areas.length) {
+      host.innerHTML = '<div class="ft-empty">This framework has no statements to draw.</div>';
+      return;
+    }
+    var byDob = STATE.cols.dob;
+
+    // Leaf columns, in order, carrying everything a cell needs to identify itself.
+    var leaves = [];
+    d.areas.forEach(function (a) {
+      a.aspects.forEach(function (asp) {
+        asp.bands.forEach(function (b) {
+          leaves.push({ area: a.area, aspect: asp.aspect, aspect_raw: asp.aspect_raw,
+                        age_range: b.age_range, empty: !!b.empty, span: b.span,
+                        statements: b.statements, label: b.label });
+        });
+      });
+    });
+    STATE.leaves = leaves;
+    STATE.jareas = d.areas.map(function (a) { return a.area; });
+
+    var kids = d.children.filter(passesFilters);
+    kids = sortKids(kids);
+
+    document.getElementById('ft-count').textContent =
+      kids.length + (kids.length === d.children.length ? '' : ' of ' + d.children.length) +
+      ' children · ' + leaves.reduce(function (n, l) { return n + l.span; }, 0) +
+      ' columns · ' + d.label;
+
+    if (!kids.length) {
+      host.innerHTML = '<div class="ft-empty">' +
+        (d.children.length ? 'No children match these filters.' : 'No children in this view.') +
+        '</div>';
+      return;
+    }
+
+    var totalCols = leaves.reduce(function (n, l) { return n + l.span; }, 0);
+    var showJudge = STATE.cols.judge && STATE.jareas.length;
+    var nJudge = showJudge ? STATE.jareas.length : 0;
+    var metaCols = (STATE.cols.room ? 1 : 0) + (STATE.cols.kp ? 1 : 0);
+
+    // table-layout:fixed takes its widths from the colgroup, not from the first
+    // row — which is all colspans here. Without this the 96 columns get squeezed
+    // to fit the viewport and the grid stops being a grid.
+    var widthExpr = 'calc(var(--ft-name) + var(--ft-age)' +
+      (STATE.cols.room ? ' + var(--ft-room)' : '') +
+      (STATE.cols.kp ? ' + var(--ft-kp)' : '') +
+      (nJudge ? ' + ' + nJudge + ' * var(--ft-judge)' : '') +
+      ' + ' + totalCols + ' * var(--ft-col))';
+
+    var h = '<table class="ft-table" style="width:' + widthExpr + '">' +
+            '<colgroup><col style="width:var(--ft-name)"><col style="width:var(--ft-age)">' +
+            (STATE.cols.room ? '<col style="width:var(--ft-room)">' : '') +
+            (STATE.cols.kp ? '<col style="width:var(--ft-kp)">' : '') +
+            (nJudge ? '<col span="' + nJudge + '" style="width:var(--ft-judge)">' : '') +
+            '<col span="' + totalCols + '" style="width:var(--ft-col)"></colgroup><thead>';
+
+    // ── Row 1 — identity columns (rowspan 3), then the judgement group, then areas
+    h += '<tr>' +
+         '<th class="' + thClass('ft-c-name', 'name') + '" rowspan="3"' + sortAttrs('name', 'name') + '>Child' + sortMark('name') + '</th>' +
+         '<th class="' + thClass('ft-c-age', byDob ? 'dob' : 'age') + '" rowspan="3"' +
+           sortAttrs(byDob ? 'dob' : 'age', byDob ? 'date of birth' : 'age') + '>' +
+           (byDob ? 'DOB' : 'Age') + sortMark(byDob ? 'dob' : 'age') + '</th>';
+    if (STATE.cols.room) {
+      h += '<th class="' + thClass('ft-c-meta', 'room') + '" rowspan="3"' + sortAttrs('room', 'room') + '>Room' + sortMark('room') + '</th>';
+    }
+    if (STATE.cols.kp) {
+      h += '<th class="' + thClass('ft-c-meta kp', 'kp') + '" rowspan="3"' + sortAttrs('kp', 'key person') + '>Key person' + sortMark('kp') + '</th>';
+    }
+    if (showJudge) {
+      h += '<th class="ft-h-jgroup" colspan="' + nJudge + '" ' +
+           'title="The range recorded for this child in each area, and how secure they are in it">' +
+           'Range recorded · how secure</th>';
+    }
+    d.areas.forEach(function (a) {
+      h += '<th class="' + thClass('ft-h-area', 'area:' + a.area) + '" colspan="' + a.span + '"' +
+           sortAttrs('area:' + a.area, a.area + ' overall') + ' title="' + esc(a.area) + '">' +
+           esc(a.area) + sortMark('area:' + a.area) + '</th>';
+    });
+    h += '</tr>';
+
+    // ── Row 2 — judgement areas, then aspects
+    h += '<tr>';
+    if (showJudge) {
+      STATE.jareas.forEach(function (area, i) {
+        h += '<th class="' + thClass('ft-h-judge' + (i === nJudge - 1 ? ' ft-jsep' : ''), 'judge:' + area) + '"' +
+             sortAttrs('judge:' + area, 'recorded range in ' + area) +
+             ' title="' + esc(area) + ' — recorded range and how secure">' +
+             esc(areaAbbr(area)) + sortMark('judge:' + area) + '</th>';
+      });
+    }
+    d.areas.forEach(function (a) {
+      a.aspects.forEach(function (asp) {
+        var k = 'aspect:' + a.area + '␟' + asp.aspect;
+        h += '<th class="' + thClass('ft-h-aspect', k) + '" colspan="' + asp.span + '"' +
+             sortAttrs(k, asp.aspect) + ' title="' + esc(asp.aspect) + '">' +
+             '<span>' + esc(asp.aspect) + sortMark(k) + '</span></th>';
+      });
+    });
+    h += '</tr>';
+
+    // ── Row 3 — judgement sub-label, then bands
+    h += '<tr>';
+    if (showJudge) {
+      STATE.jareas.forEach(function (area, i) {
+        h += '<th class="ft-h-jsub' + (i === nJudge - 1 ? ' ft-jsep' : '') + '">range</th>';
+      });
+    }
+    leaves.forEach(function (l, i) {
+      if (l.empty) { h += '<th class="ft-h-band empty" title="no statements in this range"></th>'; return; }
+      var s = splitBand(l.label);
+      var k = 'cell:' + i;
+      h += '<th class="' + thClass('ft-h-band', k) + '" colspan="' + l.span + '"' + sortAttrs(k, l.label) +
+           ' title="' + esc(l.label) + ' — ' + l.statements + ' statement' + (l.statements === 1 ? '' : 's') +
+           ' (click to sort the grid by this band)">' +
+           esc(s.top) + sortMark(k) + (s.sub ? '<small>' + esc(s.sub) + '</small>' : '') + '</th>';
+    });
+    h += '</tr></thead><tbody>';
+
+    // One row per child — ONE line, name only (b291). A child the framework is
+    // not used for gets EyLog's full-width N/A band instead of 96 empty cells.
+    var S = SEC();
+    kids.forEach(function (k) {
+      h += '<tr data-child="' + k.id + '">';
+      h += '<td class="ft-c-name"><div class="ft-kid" title="' + esc(k.name) +
+             (k.room_name ? ' · ' + esc(k.room_name) : '') + '">' + esc(k.name) + '</div></td>' +
+           '<td class="ft-c-age"><span title="' + esc(byDob ? (k.dob || '') : ageLabel(k)) + '">' +
+             esc(byDob ? dobLabel(k) : ageLabel(k)) + '</span></td>';
+      if (STATE.cols.room) h += '<td class="ft-c-meta" title="' + esc(k.room_name || '') + '">' + esc(k.room_name || '—') + '</td>';
+      if (STATE.cols.kp)   h += '<td class="ft-c-meta kp" title="' + esc(k.key_person_name || '') + '">' + esc(k.key_person_name || '—') + '</td>';
+
+      if (showJudge) {
+        STATE.jareas.forEach(function (area, i) {
+          var j = d.ranges[k.id + '|' + area];
+          var sep = (i === nJudge - 1 ? ' ft-jsep' : '');
+          if (!j) {
+            h += '<td class="ft-c-judge' + sep + '" title="' + esc(area) +
+                 ' — no range recorded yet"><span class="ft-r-none">—</span></td>';
+            return;
+          }
+          /* The word/initial always rides with the colour, and an unrated
+             judgement says so — it is never drawn as Emerging. */
+          var short = splitBand(j.label).top || ('R' + j.ordinal);
+          var tip = area + ' — ' + j.label + ' · ' +
+                    (S ? S.label(j.security) : (j.security || 'Not yet rated')) +
+                    ' (recorded ' + (j.judged_on || '') + ')';
+          h += '<td class="ft-c-judge' + sep + '" title="' + esc(tip) + '">' +
+               '<span class="ft-r">' + esc(short.replace(/^Range\s*/i, 'R')) + '</span>' +
+               (S ? S.chip(j.security, { mini: true, title: tip }) : '') + '</td>';
+        });
+      }
+
+      if (k.na) {
+        h += '<td class="ft-na" colspan="' + totalCols + '" title="' +
+             esc(k.na_reason || 'This framework is not used for this child') + '">N/A</td></tr>';
+        return;
+      }
+      leaves.forEach(function (l, i) {
+        if (l.empty) { h += '<td class="ft-cell dead"></td>'; return; }
+        var cell = d.cells[k.id + '|' + l.area + '|' + (l.aspect_raw || '') + '|' + (l.age_range || '')];
+        var c = cell ? cell.c : 'blank';
+        h += '<td class="ft-cell" colspan="' + l.span + '" data-c="' + c + '" data-leaf="' + i + '"' +
+             ' tabindex="0" role="button" title="' + esc(k.name + ' — ' + l.aspect + ' · ' + l.label) +
+             (cell ? ' (' + cell.g + ' of ' + cell.n + ' secure)' : ' (nothing recorded)') + '"></td>';
+      });
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    host.innerHTML = h;
+
+    document.getElementById('ft-foot').textContent = d.numbered
+      ? 'Every aspect shows all ' + d.positions + ' ranges, so the columns line up across the grid. ' +
+        'A hatched cell means this framework has no statement in that range for that aspect.'
+      : 'This framework does not number its bands, so each area shows exactly the bands it has.';
+  }
+
+  // ── One cell, opened ─────────────────────────────────────────────────────
+  var STATUSES = [
+    { key: 'secure',     label: 'Secure' },
+    { key: 'developing', label: 'Developing' },
+    { key: 'not_yet',    label: 'Not yet' },
+  ];
+
+  function openCell(childId, leaf) {
+    var kid = (STATE.data.children || []).find(function (c) { return String(c.id) === String(childId); });
+    STATE.cell = { childId: Number(childId), leaf: leaf };
+    document.getElementById('ft-sheet-title').textContent = (kid ? kid.name : 'Child') + ' — ' + leaf.aspect;
+    document.getElementById('ft-sheet-sub').textContent =
+      leaf.area + ' · ' + leaf.label + ' · ' + STATE.data.label;
+
+    /* b291 — the range judgement for this area, above the statements, so the
+       practitioner can see what was recorded and how secure they judged it. */
+    var jhost = document.getElementById('ft-sheet-range');
+    var j = STATE.data.ranges[childId + '|' + leaf.area];
+    var S = SEC();
+    jhost.innerHTML = j
+      ? '<div class="ft-sheet-range"><span>Recorded range for ' + esc(leaf.area) + ':</span>' +
+        '<strong style="color:var(--c-text)">' + esc(j.label) + '</strong>' +
+        (S ? S.chip(j.security) : '') +
+        '<span>· ' + esc(j.context.replace(/_/g, ' ')) + ', ' + esc(j.judged_on || '') + '</span></div>'
+      : '<div class="ft-sheet-range"><span>No range has been recorded for ' + esc(leaf.area) +
+        ' yet — ranges are recorded on a progress update, a progress report or a 2-year check.</span></div>';
+
+    document.getElementById('ft-sheet-body').innerHTML = '<p class="ft-note">Loading the statements…</p>';
+    document.getElementById('ft-drawer').classList.add('open');
+
+    var q = '/api/observations/tracker-cell?framework=' + encodeURIComponent(STATE.framework) +
+            '&child_id=' + childId + '&area=' + encodeURIComponent(leaf.area) +
+            (leaf.aspect_raw ? '&aspect=' + encodeURIComponent(leaf.aspect_raw) : '') +
+            (leaf.age_range ? '&age_range=' + encodeURIComponent(leaf.age_range) : '');
+    Wren.api(q).then(function (r) {
+      var rows = (r && r.statements) || [];
+      if (!rows.length) {
+        document.getElementById('ft-sheet-body').innerHTML =
+          '<p class="ft-note">No statements in this band.</p>';
+        return;
+      }
+      document.getElementById('ft-sheet-body').innerHTML = rows.map(function (s) {
+        return '<div class="ft-stmt" data-stmt="' + s.statement_id + '"' +
+               (s.tracker_id ? ' data-tracker="' + s.tracker_id + '"' : '') + '>' +
+               '<p>' + esc(s.statement_text) + '</p>' +
+               '<div class="ft-code">' + esc(s.statement_code || '') +
+               (s.assessed_by_name ? ' · last set by ' + esc(s.assessed_by_name) : '') + '</div>' +
+               '<div class="ft-sts">' + STATUSES.map(function (st) {
+                 return '<button type="button" data-s="' + st.key + '"' +
+                        (s.status === st.key ? ' class="on"' : '') + '>' + st.label + '</button>';
+               }).join('') + '</div></div>';
+      }).join('');
+    }).catch(function (e) {
+      document.getElementById('ft-sheet-body').innerHTML =
+        '<p class="ft-note">Could not load the statements. ' + esc((e && e.message) || '') + '</p>';
+    });
+  }
+
+  // Writing a status reuses the routes that already exist — PUT for a statement
+  // that already has a tracker row, POST /framework-tracker/link to create one.
+  // Nothing new writes to framework_tracker.
+  function setStatus(box, status) {
+    var btns = box.querySelectorAll('.ft-sts button');
+    Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
+    var trackerId = box.getAttribute('data-tracker');
+    var stmtId = Number(box.getAttribute('data-stmt'));
+    var p = trackerId
+      ? Wren.api('/api/observations/framework/' + trackerId, { method: 'PUT', body: { status: status } })
+      : Wren.api('/api/observations/framework-tracker/link',
+          { method: 'POST', body: { child_id: STATE.cell.childId, statement_ids: [stmtId], status: status } });
+    p.then(function (r) {
+      if (!trackerId) {
+        var made = r && r.linked && r.linked[0];
+        if (made) box.setAttribute('data-tracker', made.id);
+        // link() only upgrades a row that was 'not_yet'; a freshly created row
+        // takes the status directly, so nothing more is needed here.
+      }
+      Array.prototype.forEach.call(btns, function (b) {
+        b.disabled = false; b.classList.toggle('on', b.getAttribute('data-s') === status);
+      });
+      toast('Saved', 'success');
+      load(true);   // the cell colour is an aggregate — reload it from the server
+    }).catch(function (e) {
+      Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
+      toast((e && (e.error || e.message)) || 'Could not save', 'error');
+    });
+  }
+
+  // ── Loading ──────────────────────────────────────────────────────────────
+  function load(quiet) {
+    var scope = document.getElementById('ft-scope').value;
+    var room  = document.getElementById('ft-room').value;
+    if (!quiet) document.getElementById('ft-scroll').innerHTML =
+      '<div class="ft-empty">Loading the grid…</div>';
+    var q = '/api/observations/tracker-grid?framework=' + encodeURIComponent(STATE.framework) +
+            '&scope=' + encodeURIComponent(scope) +
+            (scope === 'room' && room ? '&room_id=' + encodeURIComponent(room) : '');
+    return Wren.api(q).then(function (d) {
+      STATE.data = d;
+      // b278/b291 may not have run on this instance — keep the grid drawable.
+      if (!d.ranges) d.ranges = {};
+      buildFilterOptions(d);
+      render();
+      saveState();
+    }).catch(function (e) {
+      document.getElementById('ft-scroll').innerHTML =
+        '<div class="ft-empty">Could not load the grid. ' + esc((e && (e.error || e.message)) || '') + '</div>';
+    });
+  }
+
+  /* Room and key-person option lists come from the children actually in view,
+     so the filter can never offer a room that would return nothing. Demographic
+     filters with no data behind them are dimmed and say so, rather than looking
+     broken when they select nobody. */
+  function buildFilterOptions(d) {
+    var rooms = [], kps = [], seenR = {}, seenK = {};
+    (d.children || []).forEach(function (c) {
+      if (c.room_id && !seenR[c.room_id]) { seenR[c.room_id] = 1; rooms.push({ id: c.room_id, name: c.room_name || ('Room ' + c.room_id) }); }
+      if (c.key_person_id && !seenK[c.key_person_id]) { seenK[c.key_person_id] = 1; kps.push({ id: c.key_person_id, name: c.key_person_name || ('Staff ' + c.key_person_id) }); }
+    });
+    rooms.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    kps.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var rs = document.getElementById('ff-room'), ks = document.getElementById('ff-kp');
+    rs.innerHTML = '<option value="">any</option>' + rooms.map(function (r) {
+      return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
+    ks.innerHTML = '<option value="">any</option>' + kps.map(function (k) {
+      return '<option value="' + k.id + '">' + esc(k.name) + '</option>'; }).join('');
+    rs.value = STATE.filters.room || '';
+    ks.value = STATE.filters.kp || '';
+
+    var fc = d.filter_counts || {};
+    [['eal', 'ff-eal-w'], ['eypp', 'ff-eypp-w'], ['funded', 'ff-funded-w'], ['gender', 'ff-gender-w']]
+      .forEach(function (pair) {
+        var el = document.getElementById(pair[1]);
+        if (!el) return;
+        var n = fc[pair[0]];
+        var none = (n === 0);
+        el.classList.toggle('ft-none', none);
+        el.title = none
+          ? 'No child in this view has ' + pair[0].toUpperCase() + ' recorded'
+          : n + ' of ' + (d.children || []).length + ' children';
+      });
+  }
+
+  function syncControls() {
+    var f = STATE.filters;
+    document.getElementById('ff-age').value = f.age || '';
+    document.getElementById('ff-sen').value = f.sen || '';
+    document.getElementById('ff-gender').value = f.gender || '';
+    document.getElementById('ff-rated').value = f.rated || '';
+    document.getElementById('ff-eal').checked = !!f.eal;
+    document.getElementById('ff-eypp').checked = !!f.eypp;
+    document.getElementById('ff-funded').checked = !!f.funded;
+    document.getElementById('fc-judge').checked = !!STATE.cols.judge;
+    document.getElementById('fc-room').checked = !!STATE.cols.room;
+    document.getElementById('fc-kp').checked = !!STATE.cols.kp;
+    document.getElementById('ft-dob').checked = !!STATE.cols.dob;
+    var n = activeFilterCount();
+    var badge = document.getElementById('ft-filters-count');
+    badge.innerHTML = n ? '<span class="ft-pill">' + n + '</span>' : '';
+  }
+
+  function onFilterChange() {
+    var f = STATE.filters;
+    f.age = document.getElementById('ff-age').value;
+    f.room = document.getElementById('ff-room').value;
+    f.kp = document.getElementById('ff-kp').value;
+    f.sen = document.getElementById('ff-sen').value;
+    f.gender = document.getElementById('ff-gender').value;
+    f.rated = document.getElementById('ff-rated').value;
+    f.eal = document.getElementById('ff-eal').checked;
+    f.eypp = document.getElementById('ff-eypp').checked;
+    f.funded = document.getElementById('ff-funded').checked;
+    STATE.cols.judge = document.getElementById('fc-judge').checked;
+    STATE.cols.room = document.getElementById('fc-room').checked;
+    STATE.cols.kp = document.getElementById('fc-kp').checked;
+    STATE.cols.dob = document.getElementById('ft-dob').checked;
+    syncControls(); render(); saveState();
+  }
+
+  function boot() {
+    var sel = document.getElementById('ft-framework');
+    var saved = loadState();
+
+    var secLegend = document.getElementById('ft-sec-legend');
+    if (secLegend && SEC()) secLegend.innerHTML = SEC().legend();
+
+    document.getElementById('ft-scope').addEventListener('change', function () {
+      document.getElementById('ft-room').style.display = this.value === 'room' ? '' : 'none';
+      saveState();
+    });
+    document.getElementById('ft-view').addEventListener('click', function () { load(); });
+    sel.addEventListener('change', function () { STATE.framework = this.value; load(); });
+
+    document.getElementById('ft-filters-btn').addEventListener('click', function () {
+      var p = document.getElementById('ft-panel');
+      p.classList.toggle('open');
+      this.setAttribute('aria-expanded', p.classList.contains('open') ? 'true' : 'false');
+    });
+    document.getElementById('ft-legend-btn').addEventListener('click', function () {
+      var p = document.getElementById('ft-legend-panel');
+      p.classList.toggle('open');
+      this.setAttribute('aria-expanded', p.classList.contains('open') ? 'true' : 'false');
+    });
+    ['ff-age', 'ff-room', 'ff-kp', 'ff-sen', 'ff-gender', 'ff-rated',
+     'ff-eal', 'ff-eypp', 'ff-funded', 'fc-judge', 'fc-room', 'fc-kp']
+      .forEach(function (id) {
+        document.getElementById(id).addEventListener('change', onFilterChange);
+      });
+    /* "View By Child DOB?" is EyLog's control and does what EyLog's does: it
+       swaps the age column for date of birth AND orders the children by it.
+       b255 asserts both halves, so the explicit column sorting added in b291
+       sits alongside it rather than replacing it. */
+    document.getElementById('ft-dob').addEventListener('change', function () {
+      var was = STATE.cols.dob;
+      STATE.cols.dob = this.checked;
+      if (STATE.cols.dob && !was) {
+        STATE.sortBeforeDob = { key: STATE.sort.key, dir: STATE.sort.dir };
+        STATE.sort = { key: 'dob', dir: 1 };
+      } else if (!STATE.cols.dob && was) {
+        STATE.sort = STATE.sortBeforeDob || { key: 'name', dir: 1 };
+        STATE.sortBeforeDob = null;
+      }
+      syncControls(); render(); saveState();
+    });
+    document.getElementById('ff-reset').addEventListener('click', function () {
+      STATE.filters = { age: '', room: '', kp: '', sen: '', eal: false, eypp: false,
+                        funded: false, gender: '', rated: '' };
+      STATE.sort = { key: 'name', dir: 1 };
+      document.getElementById('ff-room').value = '';
+      document.getElementById('ff-kp').value = '';
+      syncControls(); render(); saveState();
+    });
+
+    // Sorting: any header carrying data-sort. Clicking the sorted column again
+    // reverses it — "every column sorts both ways".
+    function doSort(th) {
+      var key = th.getAttribute('data-sort');
+      if (!key) return;
+      if (STATE.sort.key === key) STATE.sort.dir = STATE.sort.dir === 1 ? -1 : 1;
+      else STATE.sort = { key: key, dir: 1 };
+      render(); saveState();
+    }
+    var scroll = document.getElementById('ft-scroll');
+    scroll.addEventListener('click', function (e) {
+      var th = e.target.closest ? e.target.closest('th[data-sort]') : null;
+      if (th) { doSort(th); return; }
+      var td = e.target.closest ? e.target.closest('.ft-cell') : null;
+      if (!td || td.classList.contains('dead')) return;
+      var tr = td.closest('tr');
+      openCell(tr.getAttribute('data-child'), STATE.leaves[Number(td.getAttribute('data-leaf'))]);
+    });
+    scroll.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var th = e.target.closest ? e.target.closest('th[data-sort]') : null;
+      if (th) { e.preventDefault(); doSort(th); return; }
+      var td = e.target.closest ? e.target.closest('.ft-cell') : null;
+      if (!td || td.classList.contains('dead')) return;
+      e.preventDefault();
+      var tr = td.closest('tr');
+      openCell(tr.getAttribute('data-child'), STATE.leaves[Number(td.getAttribute('data-leaf'))]);
+    });
+    document.getElementById('ft-sheet-close').addEventListener('click', function () {
+      document.getElementById('ft-drawer').classList.remove('open');
+    });
+    document.getElementById('ft-drawer').addEventListener('click', function (e) {
+      if (e.target.id === 'ft-drawer') this.classList.remove('open');
+    });
+    document.getElementById('ft-sheet-body').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.ft-sts button') : null;
+      if (b && !b.disabled) setStatus(b.closest('.ft-stmt'), b.getAttribute('data-s'));
+    });
+
+    if (saved && saved.scope) {
+      document.getElementById('ft-scope').value = saved.scope;
+      document.getElementById('ft-room').style.display = saved.scope === 'room' ? '' : 'none';
+    }
+    syncControls();
+
+    Wren.api('/api/staff/rooms').then(function (rooms) {
+      STATE.rooms = Array.isArray(rooms) ? rooms : [];
+      document.getElementById('ft-room').innerHTML =
+        STATE.rooms.map(function (r) { return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
+      if (saved && saved.room_id) document.getElementById('ft-room').value = saved.room_id;
+    }).catch(function () { /* room filter simply stays empty */ });
+
+    Wren.api('/api/observations/grid-frameworks').then(function (r) {
+      // Only frameworks anyone could actually track against — one with no
+      // statements has no grid to draw.
+      STATE.frameworks = (r.frameworks || []).filter(function (f) { return f.statements > 0; });
+      var url = new URLSearchParams(window.location.search);
+      var want = url.get('framework') || (saved && saved.framework) || r.default_framework;
+      if (!STATE.frameworks.some(function (f) { return f.framework === want; })) {
+        // Birth to 5 Matters is the one with real assessment behind it, so it is
+        // the fallback rather than "whatever sorts first".
+        want = STATE.frameworks.some(function (f) { return f.framework === 'birth_to_5_la'; })
+          ? 'birth_to_5_la' : (STATE.frameworks[0] && STATE.frameworks[0].framework);
+      }
+      STATE.framework = want;
+      sel.innerHTML = STATE.frameworks.map(function (f) {
+        return '<option value="' + esc(f.framework) + '"' + (f.framework === want ? ' selected' : '') + '>' +
+               esc(f.label) + ' — ' + f.statements + ' statements' +
+               (f.assessments ? ', ' + f.assessments + ' assessed' : '') +
+               (f.is_default ? ' (default)' : '') + '</option>';
+      }).join('');
+      return load();
+    }).catch(function (e) {
+      document.getElementById('ft-scroll').innerHTML =
+        '<div class="ft-empty">Could not load the frameworks. ' + esc((e && (e.error || e.message)) || '') + '</div>';
+    });
+  }
+
+  if (window.Wren && Wren.user) boot(); else document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,838 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New-Starter Induction · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf;--orange:#e07820}
+ .io-wrap{padding:18px;max-width:1200px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:16px}
+ .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+ .spacer{flex:1}
+ .btn{background:var(--blue);border:1px solid var(--blue);color:#04121b;border-radius:9px;padding:9px 16px;
+   font-size:.85rem;font-weight:700;cursor:pointer;min-height:40px}
+ .btn:hover{filter:brightness(1.08)}
+ .btn.ghost{background:transparent;color:var(--txt);border-color:var(--bd)}
+ .btn.orange{background:var(--orange);border-color:var(--orange);color:#1a0d02}
+ .btn.green{background:var(--ok);border-color:var(--ok);color:#04210f}
+ .btn.sm{padding:6px 12px;font-size:.78rem;min-height:34px}
+ select,input{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:8px;
+   padding:9px 10px;font-size:.85rem;font-family:inherit}
+ label{display:block;font-size:.72rem;color:var(--mut);font-weight:700;text-transform:uppercase;
+   letter-spacing:.04em;margin:10px 0 4px}
+ .empty{text-align:center;color:var(--mut);padding:40px 0;font-size:.9rem}
+ .starter-card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px 18px;
+   margin-bottom:10px;cursor:pointer;transition:.15s}
+ .starter-card:hover{border-color:var(--blue)}
+ .starter-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+ .starter-name{font-weight:800;font-size:.98rem;flex:1;min-width:140px}
+ .starter-meta{color:var(--mut);font-size:.78rem;margin-top:2px}
+ .badge{font-size:.66rem;font-weight:800;padding:3px 10px;border-radius:10px;text-transform:uppercase;
+   letter-spacing:.03em;white-space:nowrap}
+ .badge.in_progress{background:rgba(74,154,191,.18);color:var(--blue)}
+ .badge.complete{background:rgba(34,197,94,.16);color:var(--ok)}
+ .badge.paused{background:rgba(148,163,184,.15);color:var(--mut)}
+ .badge.overdue{background:rgba(239,68,68,.18);color:var(--bad)}
+ .bar{background:#0b1428;border-radius:6px;height:8px;overflow:hidden;margin-top:10px;flex-basis:100%}
+ .bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--orange));border-radius:6px}
+ .row-stats{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:.78rem;color:var(--mut)}
+
+ /* modal */
+ .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:none;overflow-y:auto}
+ .modal-backdrop.open{display:flex;align-items:flex-start;justify-content:center;padding:30px 16px}
+ .modal{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px;max-width:680px;width:100%}
+ .modal h2{margin:0 0 4px;font-size:1.05rem}
+ .close-x{background:none;border:none;color:var(--mut);cursor:pointer;font-size:1.2rem}
+ .week-lbl{font-size:.75rem;font-weight:800;color:var(--orange);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px}
+ .mi-item{background:#0b1428;border:1px solid var(--bd);border-radius:9px;padding:10px 12px;margin-bottom:7px;
+   display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+ .mi-item.status-done,.mi-item.status-signed_off{border-color:rgba(34,197,94,.4)}
+ .mi-title{flex:1;font-size:.85rem;min-width:150px}
+ .mi-actions{display:flex;gap:6px}
+ .pchip{font-size:.62rem;font-weight:800;padding:2px 8px;border-radius:9px;text-transform:uppercase}
+ .pchip.pending{background:rgba(148,163,184,.15);color:var(--mut)}
+ .pchip.in_progress{background:rgba(74,154,191,.18);color:var(--blue)}
+ .pchip.done{background:rgba(245,158,11,.16);color:var(--warn)}
+ .pchip.signed_off{background:rgba(34,197,94,.16);color:var(--ok)}
+ .probation-box{background:#0b1428;border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-top:16px}
+ .probation-box .pr{display:flex;justify-content:space-between;font-size:.8rem;padding:4px 0;color:var(--mut)}
+ .probation-box .pr b{color:var(--txt)}
+ .banner{font-size:.82rem;color:var(--mut);margin:6px 0;min-height:1em}
+
+ /* b275 — onboard-by-email. Uses this page's own palette vars (declared in the
+    :root above): the page is dark-only by design and loads no theme token set,
+    so introducing var(--c-*) here would resolve to nothing. No new bare hex. */
+ .sec-h{font-size:.95rem;margin:22px 0 2px;font-weight:800}
+ .inv-card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:9px}
+ .inv-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+ .inv-name{font-weight:800;font-size:.92rem;flex:1;min-width:130px}
+ .inv-meta{color:var(--mut);font-size:.76rem;margin-top:3px}
+ .inv-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+ .stage{font-size:.64rem;font-weight:800;padding:3px 10px;border-radius:10px;text-transform:uppercase;
+   letter-spacing:.03em;white-space:nowrap;background:rgba(148,163,184,.15);color:var(--mut)}
+ .stage.sent{background:rgba(74,154,191,.18);color:var(--blue)}
+ .stage.opened{background:rgba(245,158,11,.16);color:var(--warn)}
+ .stage.submitted{background:rgba(224,120,32,.18);color:var(--orange)}
+ .stage.approved{background:rgba(34,197,94,.16);color:var(--ok)}
+ .stage.expired,.stage.failed{background:rgba(239,68,68,.18);color:var(--bad)}
+ .linkbox{margin-top:10px;background:#0b1428;border:1px solid var(--bd);border-radius:9px;padding:10px 12px}
+ .linkbox code{display:block;font-size:.72rem;color:var(--blue);word-break:break-all;margin-bottom:8px}
+ .hintbox{background:#0b1428;border:1px solid var(--bd);border-left:3px solid var(--orange);
+   border-radius:9px;padding:11px 13px;font-size:.78rem;line-height:1.55;color:var(--mut);margin-top:14px}
+ .hintbox b{color:var(--txt)}
+ .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+ /* wren.css sets display on headings; an inline/UA display beats the hidden
+    attribute (memory/reference_hidden_attr_loses_to_inline_display.md), so
+    make hidden win outright for the two b275 sections. */
+ [hidden]{display:none!important}
+ @media(max-width:560px){.row2{grid-template-columns:1fr}}
+
+ /* b288 — the starter pack. Same reasoning as b275 above: this page declares
+    its own dark palette and loads no --c-* token set, so these reuse the vars
+    at the top of this file. No new bare hex. */
+ .pk-card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:13px 15px;margin-bottom:9px}
+ .pk-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+ .pk-name{font-weight:800;font-size:.9rem;flex:1;min-width:150px}
+ .pk-meta{color:var(--mut);font-size:.76rem;margin-top:3px;line-height:1.5}
+ .pk-off{opacity:.55}
+ .pk-tag{font-size:.62rem;font-weight:800;padding:3px 9px;border-radius:9px;text-transform:uppercase;
+   letter-spacing:.03em;white-space:nowrap;background:rgba(148,163,184,.15);color:var(--mut)}
+ .pk-tag.on{background:rgba(34,197,94,.16);color:var(--ok)}
+ .pk-tag.ack{background:rgba(224,120,32,.18);color:var(--orange)}
+ .pk-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+ /* per-starter completion, on the invite card and in the detail modal */
+ .pkst{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+ .pkchip{font-size:.66rem;font-weight:700;padding:3px 9px;border-radius:9px;white-space:nowrap;
+   background:rgba(148,163,184,.15);color:var(--mut);border:1px solid transparent}
+ .pkchip.done{background:rgba(34,197,94,.16);color:var(--ok)}
+ .pkchip.part{background:rgba(245,158,11,.16);color:var(--warn)}
+</style>
+</head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="io-wrap page-content">
+  <h1>🌱 New-Starter Induction</h1>
+  <div class="sub">Assign the 4-week induction workbook, track progress, and manage probation check-ins.</div>
+
+  <div class="toolbar">
+    <button class="btn green" id="btn-onboard">✉️ Onboard new starter by email</button>
+    <button class="btn orange" id="btn-assign">+ Assign template to starter</button>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="banner" id="msg"></div>
+
+  <!-- b275 — invites sent to people who don't work here yet. Kept above the
+       workbook list because a starter who hasn't opened their email is the thing
+       a manager needs to act on; a starter mid-workbook is already moving. -->
+  <div id="invite-section" hidden>
+    <h2 class="sec-h">Invited starters</h2>
+    <div class="sub" style="margin-bottom:10px">People emailed a welcome + induction link who aren't active staff yet.</div>
+    <div id="invite-list"></div>
+  </div>
+
+  <!-- b288 — what a new starter is actually sent. A table, not a list in the
+       code: switching a document off here changes the NEXT welcome email, with
+       no deploy and without re-mailing anybody. -->
+  <div id="pack-section" hidden>
+    <h2 class="sec-h">What a new starter receives</h2>
+    <div class="sub" style="margin-bottom:10px">Sent with the welcome email, as links they can open
+      without logging in. Changing this affects the next starter you onboard — nothing is re-sent.</div>
+    <div id="pack-list"></div>
+  </div>
+
+  <h2 class="sec-h" id="wb-h" hidden>Induction workbooks</h2>
+  <div id="starter-list"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- b288 — edit one document in the starter pack -->
+<div class="modal-backdrop" id="pack-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 id="pkm-title">Document</h2>
+      <button class="close-x" onclick="closeModal('pack-modal')">✕</button>
+    </div>
+    <div class="sub" id="pkm-source" style="margin-bottom:0"></div>
+
+    <label>Title the starter sees</label>
+    <input id="pkm-name" style="width:100%" autocomplete="off">
+    <label>One line explaining what it is</label>
+    <input id="pkm-summary" style="width:100%" autocomplete="off">
+    <div class="row2">
+      <div><label>Order in the email</label><input type="number" id="pkm-order" style="width:100%" min="0" step="1"></div>
+      <div><label>Include in the pack</label>
+        <select id="pkm-active" style="width:100%">
+          <option value="true">Yes — send it</option>
+          <option value="false">No — leave it out</option>
+        </select></div>
+    </div>
+    <label>Ask the starter to tick "I have read this"</label>
+    <select id="pkm-ack" style="width:100%">
+      <option value="false">No</option>
+      <option value="true">Yes</option>
+    </select>
+    <label id="pkm-item-lbl">Record that tick against this induction item</label>
+    <select id="pkm-item" style="width:100%"></select>
+
+    <div class="hintbox">
+      <b>Where a tick goes.</b> An acknowledgement is recorded on the starter's own induction
+      workbook — the same item a room leader signs off — so there is one record of it, not two.
+      A document with no induction item behind it can't ask for a tick.
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+      <button class="btn ghost" onclick="closeModal('pack-modal')">Cancel</button>
+      <button class="btn orange" id="pkm-save">Save</button>
+    </div>
+    <div class="banner" id="pkm-msg"></div>
+  </div>
+</div>
+
+<!-- Assign template modal -->
+<div class="modal-backdrop" id="assign-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2>Assign induction workbook</h2>
+      <button class="close-x" onclick="closeModal('assign-modal')">✕</button>
+    </div>
+    <label>Starter</label>
+    <select id="af-staff" style="width:100%"></select>
+    <label>Template</label>
+    <select id="af-template" style="width:100%"></select>
+    <label>Room leader (oversees day-to-day sign-off)</label>
+    <select id="af-leader" style="width:100%"></select>
+    <label>Start date</label>
+    <input type="date" id="af-start" style="width:100%">
+    <label>Target completion date</label>
+    <input type="date" id="af-target" style="width:100%">
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+      <button class="btn ghost" onclick="closeModal('assign-modal')">Cancel</button>
+      <button class="btn orange" id="af-save">Assign</button>
+    </div>
+  </div>
+</div>
+
+<!-- b275 — Onboard a new starter by email -->
+<div class="modal-backdrop" id="onboard-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2>Onboard a new starter</h2>
+      <button class="close-x" onclick="closeModal('onboard-modal')">✕</button>
+    </div>
+    <div class="sub" style="margin-bottom:0">Put their email in and Wren creates their (inactive) staff
+      record, assigns the induction workbook, and emails them a welcome with a link to read week 1
+      before day one.</div>
+
+    <div class="row2">
+      <div><label>First name</label><input id="ob-first" style="width:100%" autocomplete="off"></div>
+      <div><label>Last name</label><input id="ob-last" style="width:100%" autocomplete="off"></div>
+    </div>
+    <label>Email address</label>
+    <input id="ob-email" type="email" style="width:100%" placeholder="name@example.com" autocomplete="off">
+    <div class="row2">
+      <div><label>Role</label>
+        <select id="ob-role" style="width:100%">
+          <option value="apprentice">Apprentice</option>
+          <option value="practitioner" selected>Early Years Practitioner</option>
+          <option value="room_leader">Room Leader</option>
+          <option value="cook">Cook</option>
+        </select></div>
+      <div><label>Employment type</label>
+        <select id="ob-emp" style="width:100%">
+          <option value="">— not set —</option>
+          <option>Full-time</option><option>Part-time</option>
+          <option>Bank / casual</option><option>Apprentice</option>
+        </select></div>
+    </div>
+    <div class="row2">
+      <div><label>Start date</label><input type="date" id="ob-start" style="width:100%"></div>
+      <div><label>Room</label><select id="ob-room" style="width:100%"></select></div>
+    </div>
+    <label>Room leader (signs off their induction)</label>
+    <select id="ob-leader" style="width:100%"></select>
+
+    <div class="hintbox" id="ob-pack-hint" style="margin-bottom:0"></div>
+
+    <div class="hintbox">
+      <b>What the email says.</b> A warm welcome, what Wren is, and their own induction link — plus,
+      because this is a safeguarding-relevant account, that Wren holds children's personal data and
+      that their access is logged. <b>No PIN is ever emailed.</b> You set their PIN with them in
+      person on their first day, and their account stays inactive until you approve it.
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+      <button class="btn ghost" onclick="closeModal('onboard-modal')">Cancel</button>
+      <button class="btn green" id="ob-save">Create &amp; send welcome</button>
+    </div>
+    <div id="ob-result"></div>
+  </div>
+</div>
+
+<!-- Starter detail modal -->
+<div class="modal-backdrop" id="detail-modal">
+  <div class="modal" style="max-width:720px">
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<!-- b317 — the shared workbook logic (setStatus + the off-the-job offer).
+     Listed BEFORE wren-shell-v2.js: the shell dispatches wren:ready from its
+     own execution, so anything loaded after it is undefined inside init().
+     (memory/reference_wren_ready_fires_before_later_defer.md) -->
+<script src="/js/wren-induction-workbook.js?v=b317"></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function () {
+  'use strict';
+  var STATE = { staff: [], templates: [], assignments: [], probation: [], invites: [], rooms: [], pack: [] };
+
+  document.addEventListener('wren:ready', init);
+
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmtDate(d) { if (!d) return '—'; try { return new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); } catch(_) { return d; } }
+  function todayISO() { var d = new Date(); return d.toISOString().slice(0,10); }
+  function addDays(iso, n) { var d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+  function msg(t, isErr) { var el = document.getElementById('msg'); el.textContent = t || ''; el.style.color = isErr ? 'var(--bad)' : 'var(--mut)'; }
+
+  async function init() {
+    document.getElementById('btn-assign').addEventListener('click', openAssignModal);
+    document.getElementById('af-save').addEventListener('click', saveAssignment);
+    document.getElementById('btn-onboard').addEventListener('click', openOnboardModal);
+    document.getElementById('ob-save').addEventListener('click', saveOnboard);
+    document.getElementById('pkm-save').addEventListener('click', savePackDoc);
+    document.getElementById('pkm-ack').addEventListener('change', packAckToggle);
+    document.querySelectorAll('.modal-backdrop').forEach(function (bd) {
+      bd.addEventListener('click', function (e) { if (e.target === bd) bd.classList.remove('open'); });
+    });
+    await loadAll();
+    // b316 — /induction-oversight.html?onboard=1 opens the onboard form straight
+    // away. The Staff page's "Add staff" modal links here, so a manager who went
+    // looking for "add a new member of staff" lands on the one flow that sends the
+    // handbook, the HMRC checklist, the inductions and the workbook. Opened AFTER
+    // loadAll() because the form's room and room-leader lists come from it.
+    try {
+      if (new URLSearchParams(location.search).get('onboard') === '1') openOnboardModal();
+    } catch (e) { /* the button is still on the page */ }
+  }
+
+  async function loadAll() {
+    try {
+      var results = await Promise.all([
+        Wren.api('/api/staff'),
+        Wren.api('/api/induction/templates'),
+        Wren.api('/api/induction/assignments'),
+        Wren.api('/api/induction/probation'),
+        // b275 — invited starters + rooms. Both tolerate failure: an older server
+        // without the b275 routes must still render the workbook list above.
+        Wren.api('/api/induction/starters').catch(function () { return []; }),
+        Wren.api('/api/staff/rooms').catch(function () { return []; }),
+        // b288 — the configurable document set. Tolerates a server without the
+        // b288 routes, or a tenant that hasn't run the migration.
+        Wren.api('/api/induction/starter-pack').catch(function () { return []; }),
+      ]);
+      STATE.staff = (results[0] || []).filter(function (s) { return Number(s.id) !== 1; });
+      STATE.templates = results[1] || [];
+      STATE.assignments = results[2] || [];
+      STATE.probation = results[3] || [];
+      STATE.invites = results[4] || [];
+      STATE.rooms = results[5] || [];
+      STATE.pack = results[6] || [];
+      renderInvites();
+      renderPack();
+      renderList();
+    } catch (e) {
+      document.getElementById('starter-list').innerHTML = '<div class="empty">Could not load induction data: ' + esc(e.message||'') + '</div>';
+    }
+  }
+
+  function probationFor(staffId) {
+    return (STATE.probation || []).find(function (p) { return Number(p.staff_id) === Number(staffId); });
+  }
+
+  // ── b275 — invited starters ─────────────────────────────────────────────
+  function stageClass(stage) {
+    if (!stage) return '';
+    if (stage === 'details submitted') return 'submitted';
+    if (stage.indexOf('failed') > -1) return 'failed';
+    if (stage.indexOf('not emailed') > -1) return 'failed';
+    return stage.replace(/\s+/g, '-');
+  }
+
+  function renderInvites() {
+    var sec = document.getElementById('invite-section');
+    var el = document.getElementById('invite-list');
+    // Only the ones still in flight — once approved they appear in the workbook
+    // list below as a normal starter, and repeating them here is just noise.
+    var live = (STATE.invites || []).filter(function (i) { return i.stage !== 'approved'; });
+    document.getElementById('wb-h').hidden = !live.length;
+    if (!live.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    el.innerHTML = live.map(function (i) {
+      var name = ((i.first_name || '') + ' ' + (i.last_name || '')).trim() || i.email || 'Unnamed starter';
+      var canResend = i.stage !== 'details submitted';
+      var bits = [];
+      if (i.role) bits.push(esc(String(i.role).replace('_', ' ')));
+      if (i.room_name) bits.push(esc(i.room_name));
+      if (i.start_date) bits.push('starts ' + fmtDate(i.start_date));
+      if (i.expires_at) bits.push('link expires ' + fmtDate(i.expires_at));
+      if (i.send_count > 1) bits.push('sent ' + i.send_count + '×');
+      return '<div class="inv-card">' +
+        '<div class="inv-top">' +
+          '<div style="flex:1;min-width:130px">' +
+            '<div class="inv-name">' + esc(name) + '</div>' +
+            '<div class="inv-meta">' + esc(i.email || '') + '</div>' +
+            '<div class="inv-meta">' + bits.join(' · ') + '</div>' +
+          '</div>' +
+          '<span class="stage ' + stageClass(i.stage) + '">' + esc(i.stage) + '</span>' +
+        '</div>' +
+        (i.total_items
+          ? '<div class="inv-meta" style="margin-top:8px">Induction ' + i.pct_complete + '% (' + i.done_items + '/' + i.total_items + ')</div>'
+          : '') +
+        packChips(i.pack) +
+        '<div class="inv-actions">' +
+          (canResend ? '<button class="btn sm ghost" onclick="resendWelcome(' + i.id + ')">Resend welcome email</button>' : '') +
+          (i.assignment_id ? '<button class="btn sm ghost" onclick="openDetail(' + i.assignment_id + ')">Open workbook</button>' : '') +
+          (i.stage === 'details submitted' ? '<button class="btn sm green" onclick="approveInvite(' + i.id + ')">Approve &amp; activate</button>' : '') +
+        '</div>' +
+        '<div id="inv-link-' + i.id + '"></div>' +
+      '</div>';
+    }).join('');
+  }
+
+  window.resendWelcome = async function (inviteId) {
+    var box = document.getElementById('inv-link-' + inviteId);
+    try {
+      var r = await Wren.api('/api/induction/starters/' + inviteId + '/resend', { method: 'POST', body: {} });
+      showLink(box, r.induction_url, r.email);
+      msg(r.email && r.email.sent ? 'Welcome email re-sent.' : 'New link created — see below.');
+      await loadAll();
+    } catch (e) { msg('Could not resend: ' + (e.error || e.message || 'error'), true); }
+  };
+
+  window.approveInvite = async function (inviteId) {
+    try {
+      await Wren.api('/api/onboarding-invites/approve/' + inviteId, { method: 'POST', body: {} });
+      msg('Starter approved and activated. Set their PIN with them in person.');
+      await loadAll();
+    } catch (e) { msg('Could not approve: ' + (e.error || e.message || 'error'), true); }
+  };
+
+  // Always surface the link, even on a successful send: on a test environment
+  // mail is hard-disabled, and on prod a manager may want to read it out.
+  function showLink(box, url, email) {
+    if (!box || !url) return;
+    var note = email && email.sent ? 'Emailed. The same link, if you need it:'
+      : email && email.disabled ? 'Mail is disabled in this environment — nothing was sent. Share this link by hand:'
+      : 'The email could not be sent. Share this link by hand:';
+    box.innerHTML = '<div class="linkbox"><div class="inv-meta" style="margin-bottom:6px">' + esc(note) + '</div>' +
+      '<code>' + esc(url) + '</code>' +
+      '<button class="btn sm ghost" onclick="copyLink(this,\'' + esc(url).replace(/'/g, "\\'") + '\')">Copy link</button></div>';
+  }
+
+  // ── b288 — the starter pack ─────────────────────────────────────────────
+  // Two views of one thing: what we send (editable), and where each starter
+  // has got to with it (read from their induction workbook, never a second
+  // record of the same fact).
+
+  function packChips(pack) {
+    if (!pack || !pack.length) return '';
+    return '<div class="pkst">' + pack.map(function (d) {
+      var st = String(d.state || '');
+      var done = st === 'done' || st.indexOf('acknowledged') === 0;
+      var part = !done && st === 'in progress';
+      var when = d.at ? ' · ' + fmtDate(d.at) : '';
+      var count = (!done && d.total_items > 1) ? ' ' + (d.done_items || 0) + '/' + d.total_items : '';
+      return '<span class="pkchip' + (done ? ' done' : part ? ' part' : '') + '">' +
+        (done ? '✓ ' : '') + esc(shortDoc(d.title)) + ': ' + esc(st) + count + esc(when) + '</span>';
+    }).join('') + '</div>';
+  }
+
+  // The chips sit in a row on a phone — the full title of each document is on
+  // the document itself, and the manager knows which three these are.
+  function shortDoc(title) {
+    return String(title || '')
+      .replace(/^New Staff /, '').replace(/ \(Manager\)$/, '')
+      .replace(/^Employee /, '');
+  }
+
+  function renderPack() {
+    var sec = document.getElementById('pack-section');
+    var el = document.getElementById('pack-list');
+    if (!STATE.pack.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    el.innerHTML = STATE.pack.map(function (d) {
+      var bits = [];
+      if (d.item_count) bits.push(d.item_count + ' points');
+      if (d.template_name) bits.push('tracked on "' + esc(d.template_name) + '"');
+      else if (d.has_body) bits.push('read in full on the page');
+      if (d.source_file) bits.push(esc(d.source_file));
+      return '<div class="pk-card' + (d.is_active ? '' : ' pk-off') + '">' +
+        '<div class="pk-top">' +
+          '<div style="flex:1;min-width:150px">' +
+            '<div class="pk-name">' + esc(d.title) + '</div>' +
+            (d.summary ? '<div class="pk-meta">' + esc(d.summary) + '</div>' : '') +
+            '<div class="pk-meta">' + bits.join(' · ') + '</div>' +
+          '</div>' +
+          '<span class="pk-tag' + (d.is_active ? ' on' : '') + '">' + (d.is_active ? 'sent' : 'not sent') + '</span>' +
+          (d.requires_ack ? '<span class="pk-tag ack">needs a tick</span>' : '') +
+        '</div>' +
+        '<div class="pk-actions">' +
+          '<button class="btn sm ghost" onclick="editPackDoc(' + d.id + ')">Edit</button>' +
+          '<button class="btn sm ghost" onclick="togglePackDoc(' + d.id + ',' + (d.is_active ? 'false' : 'true') + ')">' +
+            (d.is_active ? 'Leave out of the pack' : 'Include in the pack') + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  window.togglePackDoc = async function (id, on) {
+    try {
+      await Wren.api('/api/induction/starter-pack/' + id, { method: 'PATCH', body: { is_active: !!on } });
+      msg(on ? 'Added to the pack. The next starter you onboard will get it.'
+             : 'Left out of the pack. Nobody already invited is affected.');
+      await loadAll();
+    } catch (e) { msg('Could not change that: ' + (e.error || e.message || 'error'), true); }
+  };
+
+  window.editPackDoc = async function (id) {
+    var d = STATE.pack.find(function (x) { return Number(x.id) === Number(id); });
+    if (!d) return;
+    document.getElementById('pkm-title').textContent = d.title;
+    document.getElementById('pkm-source').textContent = d.source_file ? 'From ' + d.source_file : '';
+    document.getElementById('pkm-name').value = d.title || '';
+    document.getElementById('pkm-summary').value = d.summary || '';
+    document.getElementById('pkm-order').value = d.sort_order == null ? 0 : d.sort_order;
+    document.getElementById('pkm-active').value = d.is_active ? 'true' : 'false';
+    document.getElementById('pkm-ack').value = d.requires_ack ? 'true' : 'false';
+    document.getElementById('pkm-save').dataset.id = id;
+
+    // Every induction item, so a manager can point a new acknowledgement at the
+    // right line of the right workbook rather than inventing a place for it.
+    var sel = document.getElementById('pkm-item');
+    sel.innerHTML = '<option value="">— none —</option>';
+    try {
+      var full = await Promise.all(STATE.templates.map(function (t) {
+        return Wren.api('/api/induction/templates/' + t.id).catch(function () { return null; });
+      }));
+      sel.innerHTML = '<option value="">— none —</option>' + full.filter(Boolean).map(function (t) {
+        return '<optgroup label="' + esc(t.name) + '">' + (t.items || []).map(function (it) {
+          return '<option value="' + it.id + '"' + (Number(it.id) === Number(d.ack_item_id) ? ' selected' : '') +
+            '>' + esc(it.title) + '</option>';
+        }).join('') + '</optgroup>';
+      }).join('');
+    } catch (_) { /* the select stays at "none" — the save will explain why */ }
+    packAckToggle();
+    document.getElementById('pack-modal').classList.add('open');
+  };
+
+  function packAckToggle() {
+    var on = document.getElementById('pkm-ack').value === 'true';
+    document.getElementById('pkm-item').hidden = !on;
+    document.getElementById('pkm-item-lbl').hidden = !on;
+  }
+
+  async function savePackDoc() {
+    var btn = document.getElementById('pkm-save');
+    var id = btn.dataset.id;
+    var out = document.getElementById('pkm-msg');
+    var ack = document.getElementById('pkm-ack').value === 'true';
+    var body = {
+      title: document.getElementById('pkm-name').value.trim(),
+      summary: document.getElementById('pkm-summary').value.trim(),
+      sort_order: parseInt(document.getElementById('pkm-order').value, 10) || 0,
+      is_active: document.getElementById('pkm-active').value === 'true',
+      requires_ack: ack,
+      ack_item_id: ack ? (document.getElementById('pkm-item').value || null) : null,
+    };
+    if (!body.title) { out.textContent = 'A document needs a title.'; out.style.color = 'var(--bad)'; return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await Wren.api('/api/induction/starter-pack/' + id, { method: 'PATCH', body: body });
+      closeModal('pack-modal');
+      msg('Saved. The next starter you onboard gets the pack as it is now.');
+      await loadAll();
+    } catch (e) {
+      out.textContent = e.error || e.message || 'Could not save';
+      out.style.color = 'var(--bad)';
+    } finally { btn.disabled = false; btn.textContent = 'Save'; }
+  }
+
+  window.copyLink = function (btn, url) {
+    try {
+      navigator.clipboard.writeText(url);
+      btn.textContent = 'Copied ✓';
+      setTimeout(function () { btn.textContent = 'Copy link'; }, 2000);
+    } catch (_) { msg('Could not copy — select the link above instead.', true); }
+  };
+
+  function openOnboardModal() {
+    document.getElementById('ob-first').value = '';
+    document.getElementById('ob-last').value = '';
+    document.getElementById('ob-email').value = '';
+    document.getElementById('ob-role').value = 'practitioner';
+    document.getElementById('ob-emp').value = '';
+    document.getElementById('ob-start').value = '';
+    document.getElementById('ob-result').innerHTML = '';
+    document.getElementById('ob-room').innerHTML = '<option value="">— not set —</option>' +
+      (STATE.rooms || []).map(function (r) { return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
+    document.getElementById('ob-leader').innerHTML = '<option value="">— none —</option>' +
+      STATE.staff.filter(function (s) { return ['manager','deputy_manager','admin','room_leader'].indexOf(s.role) > -1; })
+        .map(function (s) { return '<option value="' + s.id + '">' + esc(s.first_name + ' ' + s.last_name) + '</option>'; }).join('');
+    // b288 — say plainly, at the moment of sending, exactly what will go out.
+    var live = (STATE.pack || []).filter(function (d) { return d.is_active; });
+    document.getElementById('ob-pack-hint').innerHTML = live.length
+      ? '<b>What they will be sent.</b> ' + live.map(function (d) { return esc(d.title); }).join(', ') +
+        ' — as links, on the same one-off token as their workbook. Nothing else goes out, and nothing goes out later on its own.'
+      : '<b>No documents are in the starter pack yet.</b> They will get their induction workbook link only.';
+    document.getElementById('onboard-modal').classList.add('open');
+  }
+
+  async function saveOnboard() {
+    var btn = document.getElementById('ob-save');
+    var out = document.getElementById('ob-result');
+    var body = {
+      first_name: document.getElementById('ob-first').value.trim(),
+      last_name: document.getElementById('ob-last').value.trim(),
+      email: document.getElementById('ob-email').value.trim(),
+      role: document.getElementById('ob-role').value,
+      employment_type: document.getElementById('ob-emp').value || null,
+      start_date: document.getElementById('ob-start').value || null,
+      room_id: document.getElementById('ob-room').value ? parseInt(document.getElementById('ob-room').value, 10) : null,
+      room_leader_id: document.getElementById('ob-leader').value ? parseInt(document.getElementById('ob-leader').value, 10) : null,
+      template_id: STATE.templates.length ? STATE.templates[0].id : 1,
+    };
+    if (!body.first_name || !body.last_name) { out.innerHTML = '<div class="banner" style="color:var(--bad)">First and last name are required.</div>'; return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) { out.innerHTML = '<div class="banner" style="color:var(--bad)">A valid email address is required.</div>'; return; }
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try {
+      var r = await Wren.api('/api/induction/starters', { method: 'POST', body: body });
+      out.innerHTML = '<div id="ob-linkbox"></div>';
+      showLink(document.getElementById('ob-linkbox'), r.induction_url, r.email);
+      msg(r.email && r.email.sent
+        ? 'Welcome email sent. Their record stays inactive until you approve it — set the PIN in person.'
+        : 'Starter created. The welcome email was not sent — share the link below by hand.');
+      await loadAll();
+    } catch (e) {
+      out.innerHTML = '<div class="banner" style="color:var(--bad)">' + esc(e.error || e.message || 'Could not create starter') + '</div>';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Create & send welcome';
+    }
+  }
+
+  function renderList() {
+    var el = document.getElementById('starter-list');
+    if (!STATE.assignments.length) {
+      el.innerHTML = '<div class="empty">No starters have an induction workbook assigned yet.</div>';
+      return;
+    }
+    var today = todayISO();
+    el.innerHTML = STATE.assignments.map(function (a) {
+      var overdue = a.status === 'in_progress' && a.target_complete_date && a.target_complete_date < today;
+      var prob = probationFor(a.staff_id);
+      var statusBadge = overdue
+        ? '<span class="badge overdue">Overdue</span>'
+        : '<span class="badge ' + a.status + '">' + a.status.replace('_',' ') + '</span>';
+      return '<div class="starter-card" onclick="openDetail(' + a.id + ')">' +
+        '<div class="starter-top">' +
+          '<div>' +
+            '<div class="starter-name">' + esc(a.staff_name) + '</div>' +
+            '<div class="starter-meta">' + esc(a.room_name||'—') + ' · ' + esc(a.template_name||'') +
+              (a.room_leader_name ? ' · Room leader ' + esc(a.room_leader_name) : '') + '</div>' +
+          '</div>' +
+          statusBadge +
+          '<div class="bar"><div class="bar-fill" style="width:' + (a.pct_complete||0) + '%"></div></div>' +
+          '<div class="row-stats">' +
+            '<span>' + (a.pct_complete||0) + '% complete (' + a.done_items + '/' + a.total_items + ')</span>' +
+            '<span>' + (a.pct_signed_off||0) + '% signed off</span>' +
+            (a.target_complete_date ? '<span>Target ' + fmtDate(a.target_complete_date) + '</span>' : '') +
+            (prob ? '<span>Probation: ' + prob.status + (prob.status==='active' ? ' · next review ' + fmtDate(nextReviewDate(prob)) : '') + '</span>' : '<span>No probation period started</span>') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function nextReviewDate(p) {
+    if (p.status !== 'active') return null;
+    if (p.review_1_date && p.reviews_completed === 0) return p.review_1_date;
+    if (p.review_2_date && p.reviews_completed <= 1) return p.review_2_date;
+    return p.final_review_date;
+  }
+
+  // ── Assign modal ────────────────────────────────────────────────────────
+  function openAssignModal() {
+    var sSel = document.getElementById('af-staff');
+    var tSel = document.getElementById('af-template');
+    var lSel = document.getElementById('af-leader');
+    sSel.innerHTML = STATE.staff.map(function (s) { return '<option value="'+s.id+'">'+esc(s.first_name+' '+s.last_name)+' ('+esc(s.role)+')</option>'; }).join('');
+    tSel.innerHTML = STATE.templates.map(function (t) { return '<option value="'+t.id+'">'+esc(t.name)+' ('+t.item_count+' items)</option>'; }).join('');
+    lSel.innerHTML = '<option value="">— none —</option>' + STATE.staff.filter(function(s){return ['manager','deputy_manager', 'admin','room_leader'].indexOf(s.role) > -1;})
+      .map(function (s) { return '<option value="'+s.id+'">'+esc(s.first_name+' '+s.last_name)+'</option>'; }).join('');
+    document.getElementById('af-start').value = todayISO();
+    document.getElementById('af-target').value = addDays(todayISO(), 28);
+    document.getElementById('assign-modal').classList.add('open');
+  }
+
+  async function saveAssignment() {
+    var btn = document.getElementById('af-save');
+    var body = {
+      staff_id: parseInt(document.getElementById('af-staff').value, 10),
+      template_id: parseInt(document.getElementById('af-template').value, 10),
+      room_leader_id: document.getElementById('af-leader').value ? parseInt(document.getElementById('af-leader').value, 10) : null,
+      start_date: document.getElementById('af-start').value,
+      target_complete_date: document.getElementById('af-target').value,
+    };
+    btn.disabled = true; btn.textContent = 'Assigning…';
+    try {
+      await Wren.api('/api/induction/assignments', { method: 'POST', body: body });
+      closeModal('assign-modal');
+      msg('Induction workbook assigned.');
+      await loadAll();
+    } catch (e) {
+      msg('Could not assign: ' + (e.error || e.message || 'error'), true);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Assign';
+    }
+  }
+
+  // ── Starter detail modal (popup-first: act on the row without navigating) ─
+  window.openDetail = async function (assignmentId) {
+    var modal = document.getElementById('detail-modal');
+    var content = document.getElementById('detail-content');
+    modal.classList.add('open');
+    content.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      var d = await Wren.api('/api/induction/assignments/' + assignmentId);
+      renderDetail(d);
+    } catch (e) {
+      content.innerHTML = '<div class="empty">Could not load: ' + esc(e.message||'') + '</div>';
+    }
+  };
+
+  function renderDetail(d) {
+    var content = document.getElementById('detail-content');
+    var weeks = {}; var order = [];
+    (d.items || []).forEach(function (it) {
+      var w = it.week_number != null ? it.week_number : 0;
+      if (!weeks[w]) { weeks[w] = []; order.push(w); }
+      weeks[w].push(it);
+    });
+    order.sort(function (a,b) { return a-b; });
+
+    var prob = probationFor(d.staff_id);
+    var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+      '<div><h2>' + esc(d.staff_name) + '</h2><div class="sub" style="margin-bottom:0">' + esc(d.template_name||'') + ' · ' + (d.pct_complete||0) + '% complete</div></div>' +
+      '<button class="close-x" onclick="closeModal(\'detail-modal\')">✕</button>' +
+    '</div>';
+
+    order.forEach(function (w) {
+      html += '<div class="week-lbl">' + (w ? 'Week ' + w : 'Other') + '</div>';
+      html += weeks[w].map(function (it) { return oversightItemHTML(it, d.id); }).join('');
+    });
+
+    // b288 — the pack, for this starter. Read off the invite the manager list
+    // already loaded, so opening a workbook costs no extra request.
+    var inv = (STATE.invites || []).find(function (i) { return Number(i.staff_id) === Number(d.staff_id); });
+    if (inv && inv.pack && inv.pack.length) {
+      html += '<div class="probation-box">' +
+        '<div style="font-weight:800;margin-bottom:6px">Starter pack</div>' +
+        inv.pack.map(function (p) {
+          var st = String(p.state || '');
+          var extra = (p.total_items > 1 && st !== 'done') ? ' (' + (p.done_items || 0) + '/' + p.total_items + ')' : '';
+          return '<div class="pr"><span>' + esc(p.title) + '</span><b>' + esc(st) + extra +
+            (p.at ? ' · ' + fmtDate(p.at) : '') + '</b></div>';
+        }).join('') +
+      '</div>';
+    }
+
+    html += '<div class="probation-box">' +
+      '<div style="font-weight:800;margin-bottom:6px">Probation</div>' +
+      (prob
+        ? ('<div class="pr"><span>Status</span><b>' + esc(prob.status) + '</b></div>' +
+           '<div class="pr"><span>Review 1</span><b>' + fmtDate(prob.review_1_date) + '</b></div>' +
+           '<div class="pr"><span>Review 2</span><b>' + fmtDate(prob.review_2_date) + '</b></div>' +
+           '<div class="pr"><span>Final review</span><b>' + fmtDate(prob.final_review_date) + '</b></div>')
+        : ('<div class="sub" style="margin-bottom:8px">No probation period started for this starter yet.</div>' +
+           '<button class="btn sm orange" onclick="startProbation(' + d.staff_id + ',\'' + (d.start_date||todayISO()) + '\')">Start probation period</button>')
+      ) +
+    '</div>';
+
+    content.innerHTML = html;
+  }
+
+  function oversightItemHTML(it, assignmentId) {
+    var st = it.status || 'pending';
+    var doneOrSigned = (st === 'done' || st === 'signed_off');
+    var actions = '';
+    // b317 — these pass the TEMPLATE ITEM id (it.item_id). oversightMark() now
+    // sends it through the id-agnostic PUT, which is what makes that correct;
+    // see the comment on oversightMark below for what it used to do.
+    if (!doneOrSigned) {
+      actions += '<button class="btn sm ghost" onclick="oversightMark(' + it.item_id + ',\'done\',' + assignmentId + ')">Mark done</button>';
+      actions += '<button class="btn sm green" onclick="oversightMark(' + it.item_id + ',\'signed_off\',' + assignmentId + ')">Sign off</button>';
+    } else if (st === 'done') {
+      actions += '<button class="btn sm green" onclick="oversightMark(' + it.item_id + ',\'signed_off\',' + assignmentId + ')">Sign off</button>';
+    }
+    return '<div class="mi-item status-' + st + '">' +
+      '<div class="mi-title">' + esc(it.title) + '</div>' +
+      '<span class="pchip ' + st + '">' + st.replace('_',' ') + '</span>' +
+      '<div class="mi-actions">' + actions + '</div>' +
+    '</div>';
+  }
+
+  /* b317 (2026-09-11) — this was DEAD, and b313 fixed the same bug on the other
+     two windows without reaching this one.
+
+     The argument is the TEMPLATE ITEM id (oversightItemHTML passes it.item_id).
+     It was being sent to PATCH /api/induction/item-progress/:id, which wants the
+     induction_item_progress ROW id. Proved on wren_dev before this build:
+
+       PATCH /api/induction/item-progress/84   -> 404 {"error":"Progress row not found"}
+       PATCH /api/induction/item-progress/2504 -> 200      (the same item, the right id)
+
+     So every "Mark done" and every "Sign off" on this screen failed, and the
+     message read "Could not update: Progress row not found" — which nobody would
+     read as "this button has never worked". Worse where the two id ranges happen
+     to overlap: the PATCH would then land on a DIFFERENT starter's progress row
+     and silently sign off the wrong person's workbook.
+
+     Now it goes through the id-agnostic PUT b313 added (WrenInduction.setStatus),
+     which upserts on (assignment, item) — and so also reaches an item added to
+     the template after the assignment was created, which had no progress row to
+     address at all.
+
+     The sign-off then offers to record the teaching as off-the-job training.
+     That offer is the point of b317: it appears at the moment the room leader
+     finished teaching, not on a screen they would have to remember to open. The
+     server decides whether there is anything to offer — it is silent for anyone
+     who is not an apprentice, for an item that is not eligible, and for one that
+     is already recorded. */
+  window.oversightMark = async function (templateItemId, status, assignmentId) {
+    try {
+      var row = await WrenInduction.setStatus(assignmentId, templateItemId, status);
+      if (row && row.id && (status === 'done' || status === 'signed_off')) {
+        await WrenInduction.offerOtj(row.id);
+      }
+      var d = await Wren.api('/api/induction/assignments/' + assignmentId);
+      renderDetail(d);
+      await loadAll();
+    } catch (e) { msg('Could not update: ' + (e.error||e.message||'error'), true); }
+  };
+
+  window.startProbation = async function (staffId, startDate) {
+    try {
+      await Wren.api('/api/induction/probation', { method: 'POST', body: { staff_id: staffId, start_date: startDate, length_weeks: 26 } });
+      await loadAll();
+      var openA = STATE.assignments.find(function (a) { return Number(a.staff_id) === Number(staffId); });
+      if (openA) window.openDetail(openA.id);
+    } catch (e) { msg('Could not start probation: ' + (e.error||e.message||'error'), true); }
+  };
+
+  window.closeModal = function (id) { document.getElementById(id).classList.remove('open'); };
+})();
+</script>
+</body></html>

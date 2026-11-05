@@ -1,0 +1,440 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Competitor Intelligence · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--blue:#4a9abf}
+ .ci-wrap{padding:18px;max-width:1300px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--bd)}
+ .tab{padding:8px 14px;cursor:pointer;font-size:.85rem;color:var(--mut);border-bottom:2px solid transparent}
+ .tab.active{color:var(--txt);border-bottom-color:var(--blue);font-weight:700}
+ .panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+ .panel h3{margin:0 0 10px;font-size:.98rem}
+ button{background:var(--blue);border:none;color:#06121f;border-radius:6px;padding:7px 13px;font-size:.82rem;font-weight:700;cursor:pointer}
+ button:hover{opacity:.9}
+ button.ghost{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600}
+ button.sm{padding:4px 9px;font-size:.75rem}
+ table{width:100%;border-collapse:collapse;font-size:.83rem}
+ th{color:var(--mut);font-weight:600;text-align:left;padding:8px;border-bottom:1px solid var(--bd)}
+ td{padding:8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top}
+ .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:8px}
+ .c{background:#0b1428;border:1px solid var(--bd);border-radius:9px;padding:11px}
+ .c .n{font-size:1.4rem;font-weight:800}.c .l{color:var(--mut);font-size:.72rem;text-transform:uppercase}
+ .badge{display:inline-block;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:999px}
+ .b-pos{background:rgba(34,197,94,.15);color:var(--ok)}.b-neg{background:rgba(239,68,68,.15);color:var(--bad)}
+ .b-neu{background:rgba(148,163,184,.15);color:var(--mut)}
+ .grade{font-weight:700}
+ .g-out{color:var(--ok)}.g-good{color:#4ade80}.g-ri{color:var(--warn)}.g-inad{color:var(--bad)}
+ input,textarea{background:#0b1428;border:1px solid var(--bd);color:var(--txt);border-radius:6px;padding:7px 9px;font-size:.82rem}
+ .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;align-items:end}
+ .form label{font-size:.72rem;color:var(--mut);display:flex;flex-direction:column;gap:3px}
+ .msg{font-size:.8rem;color:var(--warn);min-height:1em;margin:8px 0}
+ .chips{display:flex;flex-wrap:wrap;gap:4px}
+ .chip{background:#0b1428;border:1px solid var(--bd);border-radius:5px;padding:2px 7px;font-size:.72rem}
+ .mention{border-left:3px solid var(--bd);padding:8px 10px;margin-bottom:8px;background:#0b1428;border-radius:0 8px 8px 0}
+ .mention a{color:var(--blue);text-decoration:none;font-weight:600}
+ .mention .meta{color:var(--mut);font-size:.72rem;margin-top:3px}
+ .hide{display:none}
+ .note{font-size:.72rem;color:var(--mut);margin-top:6px}
+ /* b203 — fee comparison + April review */
+ .gap-up{color:var(--ok);font-weight:700}    /* market dearer than us = headroom */
+ .gap-dn{color:var(--warn);font-weight:700}  /* we are dearer than the market   */
+ .conf{font-size:.66rem;padding:1px 6px;border-radius:999px;text-transform:uppercase;font-weight:700}
+ .conf-high{background:rgba(34,197,94,.15);color:var(--ok)}
+ .conf-medium{background:rgba(245,158,11,.15);color:var(--warn)}
+ .conf-low{background:rgba(239,68,68,.15);color:var(--bad)}
+ .st{font-size:.68rem;padding:2px 7px;border-radius:999px;font-weight:700}
+ .st-parsed{background:rgba(34,197,94,.15);color:var(--ok)}
+ .st-low_confidence{background:rgba(245,158,11,.15);color:var(--warn)}
+ .st-gated,.st-not_published,.st-robots_blocked{background:rgba(148,163,184,.15);color:var(--mut)}
+ .st-unreachable{background:rgba(239,68,68,.15);color:var(--bad)}
+ .quote{font-size:.7rem;color:var(--mut);font-style:italic;max-width:420px}
+ .quote a{color:var(--blue);text-decoration:none}
+ .band-h{font-size:.9rem;font-weight:700;margin:14px 0 6px}
+ .rec{background:#0b1428;border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:10px}
+ .rec h4{margin:0 0 4px;font-size:.9rem}
+ .rec .pct{font-size:1.6rem;font-weight:800;color:var(--blue)}
+ .rec ul{margin:6px 0 0 16px;padding:0;font-size:.78rem;color:#cbd5e1}
+ .rec li{margin:3px 0}
+ .rec li.warn{color:var(--warn);font-weight:600}
+ .cav{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:10px 12px;margin-top:10px}
+ .cav li{font-size:.76rem;color:#fcd34d;margin:4px 0}
+ .ctrl{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px}
+ .ctrl label{font-size:.72rem;color:var(--mut);display:flex;flex-direction:column;gap:3px}
+ .ctrl input{width:110px}
+ .disclaim{font-size:.72rem;color:var(--mut);font-style:italic;margin-top:8px}
+</style></head>
+<body data-portal="admin">
+<div id="wren-shell"></div>
+<div class="ci-wrap">
+  <h1>🔭 Competitor Intelligence</h1>
+  <div class="sub">Local nursery pricing, Ofsted &amp; reputation — public data only. Compare against us. <span class="note">No competitor is ever contacted; pricing gaps are surfaced for you to act on.</span></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">Us vs Local</div>
+    <div class="tab" data-tab="fees">Fees</div>
+    <div class="tab" data-tab="review">April fee review</div>
+    <div class="tab" data-tab="manage">Competitors</div>
+    <div class="tab" data-tab="reputation">Our Reputation</div>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <!-- OVERVIEW -->
+  <div id="tab-overview">
+    <div class="panel">
+      <h3>Your Nursery (us)</h3>
+      <div class="cards" id="usStats"></div>
+      <div id="usRooms" class="chips"></div>
+    </div>
+    <div class="panel">
+      <h3>Local competitors <button class="ghost sm" id="btnRefreshAll" style="float:right">↻ Refresh all</button></h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Nursery</th><th>Ofsted</th><th>Fees (extracted)</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="compTable"></tbody>
+      </table></div>
+      <div class="note">Fees are best-effort LLM extraction from each nursery's own website — point the website at their fees page for best results. Ofsted is most accurate when a URN is set.</div>
+    </div>
+  </div>
+
+  <!-- FEES (b203) -->
+  <div id="tab-fees" class="hide">
+    <div class="panel">
+      <h3>Published fees near us
+        <button class="ghost sm" id="btnScrapeFees" style="float:right">↻ Scrape now</button></h3>
+      <div class="note">Read weekly from each nursery's own public fee page — the same Monday
+        job that refreshes the rest of this module. Public pages only, robots.txt respected,
+        and no competitor is ever contacted: where a provider hides fees behind an enquiry
+        form we record that and stop, rather than filling it in.</div>
+      <div id="feeSources" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Us vs the local market, per day</h3>
+      <div class="note">Every fee is converted to a per-day equivalent using the provider's own
+        stated weeks-per-year factor. Anything that could not be converted honestly is left out
+        of the median rather than estimated. Hover a quote to see the sentence it came from.</div>
+      <div id="feeCompare" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Needs checking <span class="note" style="font-weight:400">— rows the scraper was not confident about</span></h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Provider</th><th>Band</th><th>What it read</th><th>Fee</th><th>Why flagged</th></tr></thead>
+        <tbody id="feeReviewQueue"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- APRIL FEE REVIEW (b203) -->
+  <div id="tab-review" class="hide">
+    <div class="panel">
+      <h3>Suggested April increase</h3>
+      <div class="ctrl">
+        <label>April of<input id="r-year" type="number" step="1"></label>
+        <label>Expected pay award %<input id="r-wage" type="number" step="0.1" placeholder="proxy"></label>
+        <label>Employer on-costs %<input id="r-oncost" type="number" step="0.5" placeholder="18"></label>
+        <button id="btnRunReview">Recalculate</button>
+        <button class="ghost" id="btnSaveReview">Save this review</button>
+        <button class="ghost" id="btnExportReview">Open one-page export</button>
+      </div>
+      <div id="reviewSummary"></div>
+      <div class="disclaim">This is a recommendation with its workings. Wren never applies a fee
+        change — nothing here writes to your fee list.</div>
+    </div>
+    <div class="panel">
+      <h3>How each number was reached</h3>
+      <div id="reviewRecs"></div>
+      <div id="reviewCaveats"></div>
+    </div>
+  </div>
+
+  <!-- MANAGE -->
+  <div id="tab-manage" class="hide">
+    <div class="panel">
+      <h3>Add / edit a competitor</h3>
+      <div class="form">
+        <label>Name<input id="f-name" placeholder="Monkey Puzzle Ealing"></label>
+        <label>Postcode<input id="f-postcode" placeholder="W13 9xx"></label>
+        <label>Website<input id="f-website" placeholder="https://…"></label>
+        <label>Ofsted URN<input id="f-urn" placeholder="EY123456"></label>
+        <label>Distance<input id="f-distance" placeholder="0.4 mi"></label>
+        <label>Notes<input id="f-notes" placeholder="chain / Montessori…"></label>
+        <button id="btnAddComp">Add competitor</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Tracked competitors</h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>Name</th><th>Postcode</th><th>Website</th><th>Intel</th><th></th></tr></thead>
+        <tbody id="manageTable"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- REPUTATION -->
+  <div id="tab-reputation" class="hide">
+    <div class="panel">
+      <h3>What people say about us <button class="ghost sm" id="btnRefreshMentions" style="float:right">↻ Scan now</button></h3>
+      <div class="note" id="mentionsNote">Searches the public web (via SearXNG) for mentions of Your Nursery and scores sentiment locally. “Scan now” takes ~30–60s.</div>
+      <div id="mentionsList" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/competitor-intel';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  function api(p,opts){opts=opts||{};return fetch(API+p,{method:opts.method||'GET',
+    headers:{'Authorization':'Bearer '+TOKEN(),'Content-Type':'application/json'},
+    body:opts.body?JSON.stringify(opts.body):undefined}).then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};}).catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function msg(t,c){var m=el('msg');m.textContent=t||'';m.style.color=c==='ok'?'var(--ok)':c==='bad'?'var(--bad)':'var(--warn)';}
+  function esc(s){return (s||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
+  function gradeClass(g){g=(g||'').toLowerCase();return g.indexOf('outstand')>=0?'g-out':g.indexOf('good')>=0?'g-good':g.indexOf('requires')>=0?'g-ri':g.indexOf('inad')>=0?'g-inad':'';}
+
+  // tabs
+  document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active');});
+    t.classList.add('active');
+    ['overview','fees','review','manage','reputation'].forEach(function(n){el('tab-'+n).classList.toggle('hide',n!==t.getAttribute('data-tab'));});
+    if(t.getAttribute('data-tab')==='reputation') loadMentions();
+    if(t.getAttribute('data-tab')==='manage') loadManage();
+    if(t.getAttribute('data-tab')==='fees') loadFees();
+    if(t.getAttribute('data-tab')==='review') loadReview();
+  });});
+
+  function loadUs(){
+    api('/us').then(function(r){
+      if(!r.ok)return;
+      var s=r.j.staff||{};
+      el('usStats').innerHTML=[
+        ['Rooms',(r.j.rooms||[]).length],['Staff',s.total],['Level 3',s.level3],['½+ L2',s.level2plus],['First aiders',s.first_aiders]
+      ].map(function(x){return '<div class="c"><div class="n">'+(x[1]!=null?x[1]:'–')+'</div><div class="l">'+x[0]+'</div></div>';}).join('');
+      el('usRooms').innerHTML=(r.j.rooms||[]).map(function(rm){return '<span class="chip">'+esc(rm.name)+': '+(rm.monthly_fee||'—')+'/mo · cap '+rm.capacity+'</span>';}).join('');
+    });
+  }
+  function loadCompetitors(){
+    Promise.all([api('/competitors')]).then(function(res){
+      var comps=res[0].j||[];
+      if(!comps.length){el('compTable').innerHTML='<tr><td colspan="5" style="color:var(--mut)">No competitors yet — add some in the Competitors tab.</td></tr>';return;}
+      Promise.all(comps.map(function(c){return api('/competitors/'+c.id+'/intel').then(function(r){return{c:c,intel:r.j||[]};});})).then(function(rows){
+        el('compTable').innerHTML=rows.map(function(row){
+          var of=row.intel.find(function(i){return i.kind==='ofsted';});
+          var fees=row.intel.filter(function(i){return i.kind==='fee';}).map(function(i){return esc(i.value);});
+          return '<tr><td><b>'+esc(row.c.name)+'</b><br><span style="color:var(--mut);font-size:.72rem">'+esc(row.c.postcode||'')+(row.c.distance_note?' · '+esc(row.c.distance_note):'')+'</span></td>'+
+            '<td>'+(of?'<span class="grade '+gradeClass(of.value)+'">'+esc(of.value)+'</span>':'<span style="color:var(--mut)">—</span>')+'</td>'+
+            '<td>'+(fees.length?'<div class="chips">'+fees.slice(0,4).map(function(f){return '<span class="chip">'+f+'</span>';}).join('')+'</div>':'<span style="color:var(--mut)">—</span>')+'</td>'+
+            '<td style="color:var(--mut);font-size:.76rem">'+esc(row.c.notes||'')+'</td>'+
+            '<td><button class="ghost sm" data-refresh="'+row.c.id+'">↻</button></td></tr>';
+        }).join('');
+      });
+    });
+  }
+  el('compTable').addEventListener('click',function(e){
+    var id=e.target.getAttribute&&e.target.getAttribute('data-refresh');if(!id)return;
+    e.target.textContent='…';msg('Refreshing competitor (fetch + extract)…');
+    api('/competitors/'+id+'/refresh',{method:'POST'}).then(function(r){msg(r.ok?('Updated ('+r.j.added+' data points).'):'Refresh failed','ok');loadCompetitors();});
+  });
+  el('btnRefreshAll').addEventListener('click',function(){
+    msg('Refreshing all competitors…');
+    api('/competitors').then(function(r){
+      var comps=r.j||[];var i=0;
+      (function next(){if(i>=comps.length){msg('All refreshed.','ok');loadCompetitors();return;}
+        api('/competitors/'+comps[i].id+'/refresh',{method:'POST'}).then(function(){i++;msg('Refreshed '+i+'/'+comps.length+'…');next();});})();
+    });
+  });
+
+  function loadManage(){
+    api('/competitors').then(function(r){
+      var comps=r.j||[];
+      el('manageTable').innerHTML=comps.length?comps.map(function(c){
+        return '<tr><td><b>'+esc(c.name)+'</b></td><td>'+esc(c.postcode||'')+'</td>'+
+          '<td>'+(c.website?'<a href="'+esc(c.website)+'" target="_blank" style="color:var(--blue)">link</a>':'—')+'</td>'+
+          '<td>'+c.intel_count+'</td>'+
+          '<td><button class="ghost sm" data-del="'+c.id+'">Delete</button></td></tr>';
+      }).join(''):'<tr><td colspan="5" style="color:var(--mut)">None yet.</td></tr>';
+    });
+  }
+  el('manageTable').addEventListener('click',function(e){
+    var id=e.target.getAttribute&&e.target.getAttribute('data-del');if(!id)return;
+    if(!confirm('Remove this competitor?'))return;
+    api('/competitors/'+id,{method:'DELETE'}).then(function(){loadManage();loadCompetitors();});
+  });
+  el('btnAddComp').addEventListener('click',function(){
+    var name=el('f-name').value.trim();if(!name){msg('Name required','bad');return;}
+    api('/competitors',{method:'POST',body:{name:name,postcode:el('f-postcode').value,website:el('f-website').value,ofsted_urn:el('f-urn').value,distance_note:el('f-distance').value,notes:el('f-notes').value}})
+      .then(function(r){if(!r.ok){msg('Add failed','bad');return;}
+        ['f-name','f-postcode','f-website','f-urn','f-distance','f-notes'].forEach(function(id){el(id).value='';});
+        msg('Added.','ok');loadManage();loadCompetitors();});
+  });
+
+  var mentionsLoaded=false;
+  function loadMentions(){
+    api('/mentions').then(function(r){
+      var m=r.j||[];mentionsLoaded=true;
+      el('mentionsList').innerHTML=m.length?m.map(function(x){
+        var b=x.sentiment==='positive'?'b-pos':x.sentiment==='negative'?'b-neg':'b-neu';
+        return '<div class="mention"><a href="'+esc(x.url)+'" target="_blank">'+esc(x.title||x.url)+'</a> <span class="badge '+b+'">'+esc(x.sentiment||'?')+'</span>'+
+          '<div>'+esc((x.snippet||'').slice(0,180))+'</div><div class="meta">'+esc(x.source||'')+' · '+(x.captured_at||'').slice(0,10)+'</div></div>';
+      }).join(''):'<div style="color:var(--mut)">No mentions scanned yet — click “Scan now”.</div>';
+    });
+  }
+  el('btnRefreshMentions').addEventListener('click',function(){
+    el('mentionsNote').textContent='Scanning… this runs web search + local sentiment scoring, ~30–60s.';
+    api('/mentions/refresh',{method:'POST'}).then(function(r){
+      el('mentionsNote').textContent=r.ok?('Scan complete — '+r.j.new+' new of '+r.j.found+' results.'):'Scan failed.';
+      loadMentions();
+    });
+  });
+
+  // ── b203: fee comparison + April review ────────────────────────────────────
+  function money(p){return p==null?'—':'£'+(p/100).toFixed(2);}
+  function gbp(n){return n==null?'—':'£'+Number(n).toFixed(2);}
+  function gapCell(pct){
+    if(pct==null) return '<span style="color:var(--mut)">—</span>';
+    // Positive = the market charges more than we do = headroom for us.
+    var cls = pct>0?'gap-up':pct<0?'gap-dn':'';
+    return '<span class="'+cls+'">'+(pct>0?'+':'')+pct+'%</span>';
+  }
+
+  var feesLoaded=false;
+  function loadFees(force){
+    if(feesLoaded && !force) return; feesLoaded=true;
+
+    api('/fees/sources').then(function(r){
+      var rows=r.j||[];
+      el('feeSources').innerHTML='<div style="overflow-x:auto"><table>'+
+        '<thead><tr><th>Source</th><th>Last read</th><th>Outcome</th><th>Prices</th><th>What happened</th><th></th></tr></thead><tbody>'+
+        rows.map(function(x){
+          var st=x.last_status||'never';
+          return '<tr><td><b>'+esc(x.provider_name)+'</b><br><a href="'+esc(x.url)+'" target="_blank" style="color:var(--blue);font-size:.7rem">'+esc(x.url.replace(/^https?:\/\//,'').slice(0,52))+'</a></td>'+
+            '<td style="font-size:.74rem;color:var(--mut)">'+(x.last_checked_at?String(x.last_checked_at).slice(0,10):'—')+'</td>'+
+            '<td><span class="st st-'+esc(st)+'">'+esc(st.replace(/_/g,' '))+'</span></td>'+
+            '<td class="n">'+x.fee_points+'</td>'+
+            '<td class="quote">'+esc((x.note||'').slice(0,190))+'</td>'+
+            '<td><button class="ghost sm" data-rescrape="'+esc(x.provider_key)+'">↻</button></td></tr>';
+        }).join('')+'</tbody></table></div>';
+    });
+
+    api('/fees/comparison').then(function(r){
+      var d=r.j||{};
+      if(!d.available){el('feeCompare').innerHTML='<div style="color:var(--mut)">'+esc(d.note||'No scrape yet.')+'</div>';return;}
+      el('feeCompare').innerHTML=(d.bands||[]).map(function(b){
+        var ours=b.ours?gbp(b.ours.day_gbp):'not set';
+        var head='<div class="band-h">'+esc(b.label)+
+          ' — us <b>'+ours+'</b>/day · local median <b>'+gbp(b.median_day_gbp)+'</b> · gap '+gapCell(b.gap_to_median_pct)+'</div>';
+        if(!b.competitors.length) return head+'<div class="note">No comparable published rate for this band.</div>';
+        return head+'<div style="overflow-x:auto"><table><thead><tr><th>Provider</th><th>Per day</th><th>vs us</th><th>Basis</th><th>Read from</th></tr></thead><tbody>'+
+          b.competitors.map(function(c){
+            return '<tr><td>'+esc(c.provider)+(c.not_like_for_like?'<br><span style="color:var(--warn);font-size:.68rem">'+esc(c.not_like_for_like)+'</span>':'')+'</td>'+
+              '<td class="n"><b>'+gbp(c.day_gbp)+'</b></td><td class="n">'+gapCell(c.gap_pct)+'</td>'+
+              '<td style="font-size:.74rem">'+esc(c.basis)+(c.quoted_for?'<br><span style="color:var(--mut);font-size:.68rem">'+esc(c.quoted_for)+'</span>':'')+
+              ' <span class="conf conf-'+esc(c.confidence)+'">'+esc(c.confidence)+'</span></td>'+
+              '<td class="quote"><a href="'+esc(c.url)+'" target="_blank" title="'+esc(c.source_quote)+'">'+esc((c.source_quote||'').slice(0,90))+'…</a></td></tr>';
+          }).join('')+'</tbody></table></div>';
+      }).join('')+'<div class="note">'+esc(d.note||'')+'</div>';
+    });
+
+    api('/fees/latest?needs_review=1').then(function(r){
+      var f=(r.j&&r.j.fees)||[];
+      el('feeReviewQueue').innerHTML=f.length?f.slice(0,60).map(function(x){
+        return '<tr><td>'+esc(x.provider)+'</td><td>'+esc(x.age_band||'')+'<br><span style="color:var(--mut);font-size:.68rem">'+esc(x.room_label||'')+'</span></td>'+
+          '<td class="quote">'+esc((x.source_quote||'').slice(0,120))+'</td>'+
+          '<td class="n">'+money(x.fee_pence)+(x.period?'<br><span style="color:var(--mut);font-size:.68rem">/'+esc(x.period)+'</span>':'')+'</td>'+
+          '<td class="quote">'+esc((x.parse_note||'').slice(0,160))+'</td></tr>';
+      }).join(''):'<tr><td colspan="5" style="color:var(--mut)">Nothing flagged — every fee in the last scrape parsed cleanly.</td></tr>';
+    });
+  }
+
+  el('feeSources').addEventListener('click',function(e){
+    var k=e.target.getAttribute&&e.target.getAttribute('data-rescrape'); if(!k)return;
+    e.target.textContent='…'; msg('Re-reading '+k+'…');
+    api('/fees/scrape',{method:'POST',body:{provider_key:k}}).then(function(r){
+      msg(r.ok?('Re-read '+k+' — '+r.j.fees_written+' price point(s).'):'Scrape failed','ok');
+      loadFees(true);
+    });
+  });
+  el('btnScrapeFees').addEventListener('click',function(){
+    msg('Reading every fee page — this takes a minute or two (one polite request per site)…');
+    api('/fees/scrape',{method:'POST',body:{}}).then(function(r){
+      msg(r.ok?('Scrape done: '+r.j.parsed+' parsed, '+r.j.low_confidence+' needing review, '+r.j.unreadable+' unreadable.'):'Scrape failed','ok');
+      loadFees(true);
+    });
+  });
+
+  var reviewLoaded=false;
+  function loadReview(force){
+    if(reviewLoaded && !force) return; reviewLoaded=true;
+    if(!el('r-year').value) el('r-year').value=new Date().getFullYear()+1;
+    var q='?year='+encodeURIComponent(el('r-year').value);
+    if(el('r-wage').value) q+='&wage_inflation_pct='+encodeURIComponent(el('r-wage').value);
+    if(el('r-oncost').value) q+='&oncost_pct='+encodeURIComponent(el('r-oncost').value);
+
+    el('reviewSummary').innerHTML='<div style="color:var(--mut)">Working it out…</div>';
+    api('/fee-review'+q).then(function(r){
+      if(!r.ok){
+        el('reviewSummary').innerHTML='<div style="color:var(--bad)">'+
+          (r.status===403?'The April review uses payroll data, so it is manager-only.':esc((r.j&&r.j.error)||'Failed to build the review.'))+'</div>';
+        el('reviewRecs').innerHTML=''; el('reviewCaveats').innerHTML=''; return;
+      }
+      var d=r.j, w=d.workings;
+      el('reviewSummary').innerHTML='<div class="cards">'+[
+        ['Extra per year', money(w.extra_annual_pence)],
+        ['Margin now', w.margin_now_pct==null?'—':w.margin_now_pct+'%'],
+        ['Margin after', w.margin_after_pct==null?'—':w.margin_after_pct+'%'],
+        ['Staff = % of income', w.staff_share_of_revenue_pct==null?'—':w.staff_share_of_revenue_pct+'%'],
+        ['Occupancy', d.inputs.occupancy.overall_occupancy_pct==null?'—':d.inputs.occupancy.overall_occupancy_pct+'%']
+      ].map(function(x){return '<div class="c"><div class="n">'+x[1]+'</div><div class="l">'+x[0]+'</div></div>';}).join('')+'</div>'+
+      '<div class="note">Pay award assumed: '+esc(d.meta.wage_inflation_source)+'</div>';
+
+      el('reviewRecs').innerHTML=(d.recommendation||[]).map(function(x){
+        return '<div class="rec"><h4>'+esc(x.label)+' <span class="pct">'+x.suggested_pct+'%</span> '+
+          '<span style="color:var(--mut);font-size:.8rem">'+gbp(x.current_day_gbp)+' → <b style="color:var(--txt)">'+gbp(x.suggested_day_gbp)+'</b>/day'+
+          (x.extra_annual_pence!=null?' · +'+money(x.extra_annual_pence)+'/yr at today\'s bookings':'')+'</span></h4>'+
+          '<ul>'+x.reasoning.map(function(l){return '<li'+(/^WARNING/.test(l)?' class="warn"':'')+'>'+esc(l)+'</li>';}).join('')+'</ul></div>';
+      }).join('');
+
+      el('reviewCaveats').innerHTML=(d.caveats&&d.caveats.length)
+        ? '<div class="cav"><b style="font-size:.8rem;color:#fcd34d">Read before deciding</b><ul>'+
+          d.caveats.map(function(c){return '<li>'+esc(c)+'</li>';}).join('')+'</ul></div>'
+        : '<div class="note">Every input was available — no caveats.</div>';
+    });
+  }
+  el('btnRunReview').addEventListener('click',function(){loadReview(true);});
+  el('btnSaveReview').addEventListener('click',function(){
+    api('/fee-review/save',{method:'POST',body:{
+      year:parseInt(el('r-year').value)||undefined,
+      wage_inflation_pct:el('r-wage').value?parseFloat(el('r-wage').value):null,
+      oncost_pct:el('r-oncost').value?parseFloat(el('r-oncost').value):undefined}})
+      .then(function(r){msg(r.ok?'Saved — this version of the evidence is kept with today\'s date.':'Save failed',r.ok?'ok':'bad');});
+  });
+  el('btnExportReview').addEventListener('click',function(){
+    // The export is a normal authed GET, so fetch it and hand the browser a blob rather
+    // than opening a tab that has no Authorization header.
+    var q='?year='+encodeURIComponent(el('r-year').value||(new Date().getFullYear()+1));
+    if(el('r-wage').value) q+='&wage_inflation_pct='+encodeURIComponent(el('r-wage').value);
+    msg('Building the one-page review…');
+    fetch(API+'/fee-review/export'+q,{headers:{'Authorization':'Bearer '+TOKEN()}})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+      .then(function(html){
+        var w=window.open('','_blank');
+        if(!w){msg('Pop-up blocked — allow pop-ups to open the export.','bad');return;}
+        w.document.write(html); w.document.close(); msg('');
+      })
+      .catch(function(e){msg('Export failed: '+e.message,'bad');});
+  });
+
+  function init(){ loadUs(); loadCompetitors(); }
+  document.addEventListener('wren:ready', init);
+})();
+</script>
+</body></html>

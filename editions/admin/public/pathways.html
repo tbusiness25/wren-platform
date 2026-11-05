@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Pathways — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b335 (2026-09-15) — the concern pathway. One child at a time: search, start
+   a pathway, see the stages as a timeline, tick one off with its evidence.
+   Same card / pill vocabulary as duties.html so it reads as one family of
+   screen. Tokens only, checked light + dark. */
+.pw-search { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.pw-search input { flex: 1; min-width: 200px; }
+.pw-results { border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-surface);
+              max-height: 260px; overflow-y: auto; margin-bottom: 12px; display: none; }
+.pw-results.open { display: block; }
+.pw-result { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--c-border); font-size: .86rem; }
+.pw-result:last-child { border-bottom: none; }
+.pw-result:hover { background: var(--c-bg, var(--c-navy-light)); }
+.pw-result small { display: block; color: var(--c-muted); font-size: .74rem; }
+
+.pw-child-card { border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface);
+                  padding: 14px; margin-bottom: 14px; display: none; }
+.pw-child-card.open { display: block; }
+.pw-child-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.pw-child-head h3 { margin: 0; font-size: 1.05rem; color: var(--c-text); }
+.pw-child-head .pw-muted { color: var(--c-muted); font-size: .8rem; }
+
+.pw-empty { padding: 30px; text-align: center; color: var(--c-muted); }
+.pw-pathway { border: 1px solid var(--c-border); border-radius: 12px; padding: 12px; margin-top: 12px; }
+.pw-pathway-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+.pw-pathway-head b { font-size: .92rem; color: var(--c-text); }
+.pw-pathway-meta { font-size: .74rem; color: var(--c-muted); margin-top: 2px; }
+
+.pw-stage { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--c-border); align-items: flex-start; }
+.pw-stage:first-of-type { border-top: none; }
+.pw-stage-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; flex-shrink: 0;
+                border: 2px solid var(--c-border); }
+.pw-stage-dot.done           { background: var(--c-green); border-color: var(--c-green); }
+.pw-stage-dot.overdue        { background: var(--c-red);   border-color: var(--c-red); }
+.pw-stage-dot.due_soon       { background: var(--c-amber, var(--c-orange)); border-color: var(--c-amber, var(--c-orange)); }
+.pw-stage-dot.not_applicable { background: transparent; opacity: .4; }
+.pw-stage-body { flex: 1; min-width: 0; }
+.pw-stage-body b { font-size: .88rem; color: var(--c-text); }
+.pw-stage-body .pw-what { font-size: .78rem; color: var(--c-muted); margin-top: 2px; }
+.pw-stage-body .pw-meta { font-size: .72rem; color: var(--c-muted); margin-top: 4px; }
+.pw-star { color: var(--c-amber-dark, var(--c-amber)); }
+.pw-pill { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: .68rem; font-weight: 700; }
+.pw-pill.done           { background: var(--c-green-light);  color: var(--c-green-dark, var(--c-text)); }
+.pw-pill.overdue        { background: var(--c-red-light);    color: var(--c-red-dark, var(--c-text)); }
+.pw-pill.due_soon       { background: var(--c-amber-light);  color: var(--c-amber-dark, var(--c-text)); }
+.pw-pill.pending        { background: transparent; border: 1px solid var(--c-border); color: var(--c-muted); }
+.pw-pill.not_applicable { background: transparent; border: 1px solid var(--c-border); color: var(--c-muted); }
+.pw-stage-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+.pw-form { border: 1px solid var(--c-border); border-radius: 10px; padding: 10px; margin-top: 8px; display: none; background: var(--c-bg, transparent); }
+.pw-form.open { display: block; }
+.pw-form label { display: block; font-size: .76rem; color: var(--c-muted); margin: 6px 0 2px; }
+.pw-form input, .pw-form select, .pw-form textarea { width: 100%; box-sizing: border-box; }
+.pw-form textarea { min-height: 50px; resize: vertical; }
+
+.pw-start-block { border: 1px dashed var(--c-border); border-radius: 12px; padding: 12px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+    <div>
+      <div class="page-title" style="font-size:1.05rem">🧭 Pathways</div>
+      <div style="font-size:.78rem;color:var(--c-muted);margin-top:2px">
+        From an initial concern to a leaving summary — one child, one timeline. ⭐ marks a statutory stage.
+      </div>
+    </div>
+  </div>
+
+  <div class="pw-search">
+    <input type="text" id="pw-child-search" placeholder="Search a child by name…" autocomplete="off">
+  </div>
+  <div class="pw-results" id="pw-results"></div>
+
+  <div class="pw-child-card" id="pw-card">
+    <div class="pw-child-head">
+      <div>
+        <h3 id="pw-child-name"></h3>
+        <div class="pw-muted" id="pw-child-room"></div>
+      </div>
+      <button class="btn btn-sm btn-ghost" id="pw-change-child" type="button">Change child</button>
+    </div>
+
+    <div id="pw-pathways-list"><div class="pw-empty">Loading…</div></div>
+
+    <div class="pw-start-block" id="pw-start-block">
+      <button class="btn btn-sm" id="pw-open-start" type="button">+ Start a pathway</button>
+      <div class="pw-form" id="pw-start-form">
+        <label for="pw-start-template">Pathway</label>
+        <select class="v2-sort-select" id="pw-start-template"></select>
+        <label for="pw-start-source">Started from</label>
+        <select class="v2-sort-select" id="pw-start-source">
+          <option value="">By hand</option>
+          <option value="safeguarding_concerns">A safeguarding concern (enter its reference #)</option>
+          <option value="sen_register">A SEN register entry (enter its reference #)</option>
+        </select>
+        <div id="pw-start-source-id-wrap" hidden>
+          <label for="pw-start-source-id">Reference #</label>
+          <input type="number" id="pw-start-source-id" min="1">
+        </div>
+        <label for="pw-start-reason">Why now</label>
+        <textarea id="pw-start-reason" placeholder="What was noticed, and by whom"></textarea>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn btn-sm" id="pw-start-save" type="button">Start pathway</button>
+          <button class="btn btn-sm btn-ghost" id="pw-start-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pw-empty" id="pw-no-child">Search for a child above to see or start their pathway.</div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function d(v) { if (!v) return '—'; return String(v).slice(0, 10); }
+
+  var STATE_LABEL = { done: 'Done', overdue: 'Overdue', due_soon: 'Due soon', pending: 'Pending', not_applicable: 'N/A' };
+  var STATE = { childId: null, childName: '', templates: [] };
+
+  function searchChildren(term) {
+    if (!term || term.length < 2) { $('pw-results').classList.remove('open'); $('pw-results').innerHTML = ''; return; }
+    Wren.api('/api/duties/matrix?scope=child').then(function (r) {
+      var q = term.toLowerCase();
+      var matches = (r.subjects || []).filter(function (c) { return c.name.toLowerCase().indexOf(q) !== -1; }).slice(0, 12);
+      $('pw-results').innerHTML = matches.map(function (c) {
+        return '<div class="pw-result" data-id="' + c.id + '" data-name="' + esc(c.name) + '" data-room="' + esc(c.room_name || '') + '">'
+          + esc(c.name) + (c.room_name ? '<small>' + esc(c.room_name) + '</small>' : '') + '</div>';
+      }).join('') || '<div class="pw-result">No match</div>';
+      $('pw-results').classList.add('open');
+    }).catch(function () {});
+  }
+
+  function loadChild(id, name, room) {
+    STATE.childId = id; STATE.childName = name;
+    $('pw-results').classList.remove('open');
+    $('pw-child-search').value = '';
+    $('pw-no-child').hidden = true;
+    $('pw-card').classList.add('open');
+    $('pw-child-name').textContent = name;
+    $('pw-child-room').textContent = room || '';
+    $('pw-start-form').classList.remove('open');
+    loadPathways();
+  }
+
+  function stageActionsHtml(pathway, stage) {
+    if (stage.effective_status === 'done' || stage.effective_status === 'not_applicable') return '';
+    var actions = '<button class="btn btn-sm" data-act="complete" data-pw="' + pathway.id + '" data-stage="' + stage.id + '" type="button">Mark done</button>';
+    if (stage.can_skip) {
+      actions += ' <button class="btn btn-sm btn-ghost" data-act="skip" data-pw="' + pathway.id + '" data-stage="' + stage.id + '" type="button">Not needed</button>';
+    }
+    return '<div class="pw-stage-actions">' + actions + '</div>'
+      + '<div class="pw-form" id="pw-complete-form-' + stage.id + '">'
+      + '<label>Evidence — what proves it (an observation, a meeting note, a letter)</label>'
+      + '<input type="text" id="pw-evidence-' + stage.id + '" placeholder="e.g. Observation #4821, or “letter posted 12 Sep”">'
+      + '<label>Notes</label><textarea id="pw-notes-' + stage.id + '"></textarea>'
+      + '<div style="margin-top:8px;display:flex;gap:8px">'
+      + '<button class="btn btn-sm" data-act="save-complete" data-pw="' + pathway.id + '" data-stage="' + stage.id + '" type="button">Save</button>'
+      + '<button class="btn btn-sm btn-ghost" data-act="cancel-complete" data-stage="' + stage.id + '" type="button">Cancel</button>'
+      + '</div></div>';
+  }
+
+  function stageHtml(pathway, stage) {
+    var eff = stage.effective_status;
+    return '<div class="pw-stage">'
+      + '<div class="pw-stage-dot ' + eff + '"></div>'
+      + '<div class="pw-stage-body">'
+      + '<b>' + esc(stage.title) + (stage.is_statutory ? ' <span class="pw-star" title="Statutory">⭐</span>' : '') + '</b> '
+      + '<span class="pw-pill ' + eff + '">' + esc(STATE_LABEL[eff] || eff) + '</span>'
+      + '<div class="pw-what">' + esc(stage.what_must_happen) + '</div>'
+      + '<div class="pw-meta">Owner: ' + esc(stage.owner_role || '') + (stage.due_date ? ' · Due ' + d(stage.due_date) : '')
+      + (stage.done_at ? ' · Done ' + d(stage.done_at) + (stage.done_by_name ? ' by ' + esc(stage.done_by_name) : '') : '')
+      + (stage.citation ? '<br>' + esc(stage.citation) : '')
+      + (stage.notes ? '<br>' + esc(stage.notes) : '')
+      + (stage.evidence_note ? '<br>Evidence: ' + esc(stage.evidence_note) : '') + '</div>'
+      + stageActionsHtml(pathway, stage)
+      + '</div></div>';
+  }
+
+  function pathwayHtml(p) {
+    var overdueCount = (p.stages || []).filter(function (s) { return s.effective_status === 'overdue'; }).length;
+    return '<div class="pw-pathway">'
+      + '<div class="pw-pathway-head"><b>' + esc(p.template_label) + '</b>'
+      + (p.status === 'closed' ? '<span class="pw-pill not_applicable">Closed</span>' : (overdueCount ? '<span class="pw-pill overdue">' + overdueCount + ' overdue</span>' : '<span class="pw-pill done">On track</span>'))
+      + '</div>'
+      + '<div class="pw-pathway-meta">Started ' + d(p.started_at) + (p.started_reason ? ' — ' + esc(p.started_reason) : '')
+      + (p.source_table ? ' · from ' + esc(p.source_table) + ' #' + p.source_id : '') + '</div>'
+      + (p.stages || []).map(function (s) { return stageHtml(p, s); }).join('')
+      + (p.status === 'open' ? '<div style="margin-top:10px"><button class="btn btn-sm btn-ghost" data-act="close-pathway" data-pw="' + p.id + '" type="button">Close this pathway</button></div>' : '')
+      + '</div>';
+  }
+
+  function loadPathways() {
+    $('pw-pathways-list').innerHTML = '<div class="pw-empty">Loading…</div>';
+    Wren.api('/api/pathways/child/' + STATE.childId + '?include_closed=1').then(function (r) {
+      var pathways = r.pathways || [];
+      $('pw-pathways-list').innerHTML = pathways.length
+        ? pathways.map(pathwayHtml).join('')
+        : '<div class="pw-empty">No pathway started for this child yet.</div>';
+    }).catch(function (e) {
+      $('pw-pathways-list').innerHTML = '<div class="pw-empty">Could not load. ' + esc((e && (e.error || e.message)) || '') + '</div>';
+    });
+  }
+
+  function loadTemplates() {
+    return Wren.api('/api/pathways/templates').then(function (r) {
+      STATE.templates = r || [];
+      $('pw-start-template').innerHTML = STATE.templates.map(function (t) {
+        return '<option value="' + esc(t.key) + '">' + esc(t.label) + '</option>';
+      }).join('');
+    }).catch(function () {});
+  }
+
+  function boot() {
+    loadTemplates();
+
+    $('pw-child-search').addEventListener('input', function () { searchChildren(this.value.trim()); });
+    $('pw-results').addEventListener('click', function (e) {
+      var row = e.target.closest ? e.target.closest('.pw-result[data-id]') : null;
+      if (!row) return;
+      loadChild(Number(row.dataset.id), row.dataset.name, row.dataset.room);
+    });
+    $('pw-change-child').addEventListener('click', function () {
+      $('pw-card').classList.remove('open'); $('pw-no-child').hidden = false; STATE.childId = null;
+    });
+
+    $('pw-open-start').addEventListener('click', function () { $('pw-start-form').classList.add('open'); });
+    $('pw-start-cancel').addEventListener('click', function () { $('pw-start-form').classList.remove('open'); });
+    $('pw-start-source').addEventListener('change', function () {
+      $('pw-start-source-id-wrap').hidden = !this.value;
+    });
+    $('pw-start-save').addEventListener('click', function () {
+      var body = {
+        child_id: STATE.childId,
+        template_key: $('pw-start-template').value || 'child_concern',
+        started_reason: $('pw-start-reason').value || null,
+        source_table: $('pw-start-source').value || null,
+        source_id: $('pw-start-source-id').value ? Number($('pw-start-source-id').value) : null,
+      };
+      Wren.api('/api/pathways/start', { method: 'POST', body: body }).then(function () {
+        Wren.toast && Wren.toast('Pathway started', 'success');
+        $('pw-start-form').classList.remove('open');
+        $('pw-start-reason').value = ''; $('pw-start-source').value = ''; $('pw-start-source-id-wrap').hidden = true;
+        loadPathways();
+      }).catch(function (e) { Wren.toast && Wren.toast((e && (e.error || e.message)) || 'Could not start', 'error'); });
+    });
+
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('button[data-act]') : null;
+      if (!btn) return;
+      var act = btn.dataset.act;
+      if (act === 'complete') {
+        var f = $('pw-complete-form-' + btn.dataset.stage);
+        if (f) f.classList.add('open');
+      } else if (act === 'cancel-complete') {
+        var f2 = $('pw-complete-form-' + btn.dataset.stage);
+        if (f2) f2.classList.remove('open');
+      } else if (act === 'save-complete') {
+        var stageId = btn.dataset.stage, pwId = btn.dataset.pw;
+        var evText = $('pw-evidence-' + stageId).value || null;
+        var notes = $('pw-notes-' + stageId).value || null;
+        Wren.api('/api/pathways/' + pwId + '/stages/' + stageId + '/complete', { method: 'POST', body: {
+          notes: notes, evidence_note: evText,
+        } }).then(function () {
+          Wren.toast && Wren.toast('Stage marked done', 'success');
+          loadPathways();
+        }).catch(function (e) { Wren.toast && Wren.toast((e && (e.error || e.message)) || 'Could not save', 'error'); });
+      } else if (act === 'skip') {
+        var stageId2 = btn.dataset.stage, pwId2 = btn.dataset.pw;
+        Wren.api('/api/pathways/' + pwId2 + '/stages/' + stageId2 + '/skip', { method: 'POST', body: {
+          notes: 'Marked not needed from Roost pathways screen',
+        } }).then(function () {
+          Wren.toast && Wren.toast('Marked not needed', 'success');
+          loadPathways();
+        }).catch(function (e) { Wren.toast && Wren.toast((e && (e.error || e.message)) || 'Could not save', 'error'); });
+      } else if (act === 'close-pathway') {
+        var pwId3 = btn.dataset.pw;
+        var reason = window.prompt('Close this pathway — why? (e.g. resolved, child left)');
+        if (reason === null) return;
+        Wren.api('/api/pathways/' + pwId3 + '/close', { method: 'POST', body: { reason: reason } }).then(function () {
+          Wren.toast && Wren.toast('Pathway closed', 'success');
+          loadPathways();
+        }).catch(function (e) { Wren.toast && Wren.toast((e && (e.error || e.message)) || 'Manager only', 'error'); });
+      }
+    });
+  }
+
+  if (window.Wren && Wren.user) boot(); else document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

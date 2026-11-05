@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Overtime — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .ot-tabs { display:flex;gap:4px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap; }
+    .ot-tab { flex:1;min-width:90px;padding:8px;border-radius:8px;border:none;background:transparent;color:var(--c-muted);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600; }
+    .ot-tab.active { background:var(--c-blue);color:#fff; }
+    .ot-pane { display:none; } .ot-pane.active { display:block; }
+    .ot-card { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;padding:14px 16px;margin-bottom:10px; }
+    .ot-top { display:flex;gap:12px;align-items:center;flex-wrap:wrap; }
+    .ot-who { font-weight:700;color:var(--c-text);flex:1;min-width:140px; }
+    .ot-hours { font-size:1.35rem;font-weight:800;color:var(--c-blue); }
+    .ot-meta { font-size:.8rem;color:var(--c-muted);margin-top:6px;line-height:1.5; }
+    .ot-acts { display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center; }
+    .pill { font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em; }
+    .pill-pending  { background:var(--c-amber-light);color:var(--c-amber); }
+    .pill-approved { background:var(--c-green-light);color:var(--c-green); }
+    .pill-declined { background:var(--c-red-light);color:var(--c-red); }
+    .pill-cancelled{ background:var(--c-bg);color:var(--c-muted); }
+    .pill-imported { background:var(--c-purple-light);color:var(--c-purple); }
+    .pill-paid     { background:var(--c-blue-light);color:var(--c-blue-dark); }
+    .ot-stats { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:18px; }
+    .ot-stat { background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:12px;text-align:center; }
+    .ot-stat b { display:block;font-size:1.5rem;color:var(--c-text);line-height:1; }
+    .ot-stat span { font-size:10px;color:var(--c-muted);text-transform:uppercase;letter-spacing:.04em; }
+    .self-note { background:var(--c-amber-light);color:var(--c-navy);border-radius:8px;padding:8px 10px;font-size:.78rem;margin-top:10px;font-weight:600; }
+    .empty { color:var(--c-muted);padding:26px;text-align:center;font-size:.88rem; }
+    .banner-info { background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted);border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.85rem;line-height:1.6; }
+    table.ot { width:100%;border-collapse:collapse;font-size:.85rem; }
+    table.ot th { text-align:left;color:var(--c-muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:8px; }
+    table.ot td { padding:8px;border-top:1px solid var(--c-border);color:var(--c-text); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Overtime</div>
+      <div class="page-subtitle">Claim → approve → paid or taken back as time off in lieu</div>
+    </div>
+    <a href="/admin/staff/toil.html" class="btn btn-secondary btn-sm">TOIL →</a>
+  </div>
+
+  <div class="banner-info">
+    Nobody approves their own overtime. A manager can raise a claim for themselves, but the
+    decision has to come from someone else — the server refuses it, not just the button.
+    Approving as <b>time off in lieu</b> credits the hours straight into that person's TOIL bank.
+  </div>
+
+  <div class="ot-stats" id="stats"></div>
+
+  <div class="ot-tabs">
+    <button class="ot-tab active" data-pane="pending">Awaiting decision</button>
+    <button class="ot-tab" data-pane="all">All claims</button>
+    <button class="ot-tab" data-pane="summary">By person</button>
+    <button class="ot-tab" data-pane="new">Record overtime</button>
+  </div>
+
+  <div class="ot-pane active" id="pane-pending"><div class="empty">Loading…</div></div>
+  <div class="ot-pane" id="pane-all"><div class="empty">Loading…</div></div>
+  <div class="ot-pane" id="pane-summary"><div class="empty">Loading…</div></div>
+
+  <div class="ot-pane" id="pane-new">
+    <div class="ot-card" style="max-width:520px">
+      <div class="form-group">
+        <label class="form-label">Staff member</label>
+        <select class="form-control" id="n-staff"></select>
+      </div>
+      <div class="form-group"><label class="form-label">Date</label>
+        <input type="date" class="form-control" id="n-date"></div>
+      <div class="form-group"><label class="form-label">Hours</label>
+        <input type="number" class="form-control" id="n-hours" min="0.25" step="0.25" placeholder="e.g. 2.5"></div>
+      <div class="form-group"><label class="form-label">Settle as</label>
+        <select class="form-control" id="n-settlement">
+          <option value="">Decide at approval</option>
+          <option value="pay">Payment</option>
+          <option value="toil">Time off in lieu</option>
+        </select></div>
+      <div class="form-group"><label class="form-label">Reason</label>
+        <input type="text" class="form-control" id="n-reason" placeholder="e.g. covered late pickup, pre-school"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--c-muted);margin-bottom:14px">
+        <input type="checkbox" id="n-approve"> Approve it now
+      </label>
+      <button class="btn btn-primary" id="n-save">Record</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let PENDING = [], ALL = [], SUMMARY = [], ME = null;
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const errText = e => (e && (e.error || e.message)) || 'Something went wrong';
+const fmt = n => (n == null ? '—' : (Math.round(Number(n) * 100) / 100).toString());
+const dstr = d => (d ? String(d).slice(0, 10) : '—');
+
+document.addEventListener('wren:ready', init);
+
+async function init() {
+  document.querySelectorAll('.ot-tab').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.ot-tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.ot-pane').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('pane-' + b.dataset.pane).classList.add('active');
+  }));
+  document.getElementById('n-save').addEventListener('click', createOne);
+  document.getElementById('n-date').value = new Date().toISOString().slice(0, 10);
+  try { ME = await Wren.api('/api/auth/me'); } catch (_) { ME = null; }
+  await Promise.all([loadPending(), loadAll(), loadSummary(), loadStaff()]);
+}
+
+async function loadStaff() {
+  try {
+    const staff = await Wren.api('/api/staff');
+    const list = Array.isArray(staff) ? staff : (staff.staff || []);
+    document.getElementById('n-staff').innerHTML = list
+      .filter(s => s.is_active !== false)
+      .map(s => `<option value="${s.id}">${esc(s.first_name ? s.first_name + ' ' + s.last_name : s.name)}</option>`).join('');
+  } catch (_) { /* the select stays empty and Record will say so */ }
+}
+
+async function loadPending() {
+  const host = document.getElementById('pane-pending');
+  try {
+    PENDING = await Wren.api('/api/overtime/pending');
+    host.innerHTML = PENDING.length ? PENDING.map(card).join('')
+      : '<div class="empty">Nothing waiting for a decision.</div>';
+    wire();
+  } catch (e) { host.innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>'; }
+}
+
+async function loadAll() {
+  const host = document.getElementById('pane-all');
+  try {
+    ALL = await Wren.api('/api/overtime/all');
+    host.innerHTML = ALL.length ? ALL.map(card).join('') : '<div class="empty">No overtime recorded.</div>';
+    wire();
+    renderStats();
+  } catch (e) { host.innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>'; }
+}
+
+async function loadSummary() {
+  const host = document.getElementById('pane-summary');
+  try {
+    SUMMARY = await Wren.api('/api/overtime/summary');
+    host.innerHTML = `<div class="ot-card"><table class="ot">
+      <thead><tr><th>Person</th><th>Pending</th><th>Approved</th><th>As pay</th><th>As TOIL</th><th>Paid</th><th>Imported</th></tr></thead>
+      <tbody>${SUMMARY.map(s => `<tr>
+        <td>${esc(s.name)}</td><td>${fmt(s.pending_hours)}h</td><td>${fmt(s.approved_hours)}h</td>
+        <td>${fmt(s.pay_hours)}h</td><td>${fmt(s.toil_hours)}h</td><td>${fmt(s.paid_hours)}h</td>
+        <td style="color:var(--c-muted)">${fmt(s.imported_hours)}h</td></tr>`).join('')}</tbody></table>
+      <div style="font-size:.75rem;color:var(--c-muted);margin-top:10px">
+        "Imported" is the BrightHR history this build did not touch — 10 rows that never went through Wren's approval flow.
+      </div></div>`;
+  } catch (e) { host.innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>'; }
+}
+
+function renderStats() {
+  const sum = f => ALL.filter(f).reduce((a, r) => a + (Number(r.hours) || 0), 0);
+  document.getElementById('stats').innerHTML = [
+    ['Awaiting decision', PENDING.length, ''],
+    ['Hours pending',  fmt(sum(r => r.status === 'pending')) + 'h', ''],
+    ['Approved as pay', fmt(sum(r => r.status === 'approved' && r.settlement === 'pay')) + 'h', ''],
+    ['Approved as TOIL', fmt(sum(r => r.status === 'approved' && r.settlement === 'toil')) + 'h', ''],
+    ['Imported (BrightHR)', fmt(sum(r => r.status === 'imported')) + 'h', ''],
+  ].map(([l, v]) => `<div class="ot-stat"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('');
+}
+
+function card(r) {
+  const isSelf = ME && Number(ME.id) === Number(r.staff_id);
+  const acts = r.status === 'pending' ? (isSelf
+    ? `<div class="self-note">This is your own claim. Another manager has to decide it — approving your own overtime is blocked on the server.</div>`
+    : `<button class="btn btn-green btn-sm" data-approve="${r.id}" data-settle="pay">Approve — pay</button>
+       <button class="btn btn-primary btn-sm" data-approve="${r.id}" data-settle="toil">Approve — TOIL</button>
+       <button class="btn btn-danger btn-sm" data-decline="${r.id}">Decline</button>`)
+    : (r.status === 'approved' && r.settlement === 'pay' && !r.paid
+      ? `<button class="btn btn-ghost btn-sm" data-paid="${r.id}">Mark paid</button>` : '');
+
+  return `<div class="ot-card">
+    <div class="ot-top">
+      <div class="ot-who">${esc(r.staff_name)}
+        <span class="pill pill-${esc(r.status)}">${esc(r.status)}</span>
+        ${r.settlement ? `<span class="pill pill-${r.settlement === 'toil' ? 'approved' : 'paid'}">${r.settlement === 'toil' ? 'TOIL' : 'pay'}</span>` : ''}
+        ${!r.settlement && r.settlement_preference
+          ? `<span class="pill pill-imported">asked for ${r.settlement_preference === 'toil' ? 'TOIL' : 'pay'}</span>` : ''}
+        ${r.paid ? '<span class="pill pill-paid">paid</span>' : ''}
+      </div>
+      <div class="ot-hours">${fmt(r.hours)}h</div>
+    </div>
+    <div class="ot-meta">
+      ${dstr(r.date)}${r.reason ? ' — ' + esc(r.reason) : ''}
+      ${r.approved_by_name ? ` · decided by ${esc(r.approved_by_name)} on ${dstr(r.approved_at)}` : ''}
+      ${r.decided_note ? ` · “${esc(r.decided_note)}”` : ''}
+      ${r.toil_entry_id ? ` · credited to the TOIL bank (entry #${r.toil_entry_id})` : ''}
+      ${r.source === 'brighthr' ? ' · imported from BrightHR, never went through Wren' : ''}
+    </div>
+    ${acts ? `<div class="ot-acts">${acts}</div>` : ''}
+  </div>`;
+}
+
+function wire() {
+  document.querySelectorAll('[data-approve]').forEach(b => b.addEventListener('click', () => act(b.dataset.approve, 'approve', b.dataset.settle)));
+  document.querySelectorAll('[data-decline]').forEach(b => b.addEventListener('click', () => act(b.dataset.decline, 'decline')));
+  document.querySelectorAll('[data-paid]').forEach(b => b.addEventListener('click', () => act(b.dataset.paid, 'paid')));
+}
+
+async function act(id, what, settlement) {
+  let note = null;
+  if (what === 'decline') { note = prompt('Why is this being declined? (optional)') || null; }
+  try {
+    await Wren.api(`/api/overtime/${id}/${what}`, { method: 'POST', body: { settlement, note } });
+    Wren.toast('Done.', 'success');
+    loadPending(); loadAll(); loadSummary();
+  } catch (e) { Wren.toast(errText(e), 'error', 6000); }
+}
+
+async function createOne() {
+  const body = {
+    staff_id: Number(document.getElementById('n-staff').value),
+    date: document.getElementById('n-date').value,
+    hours: Number(document.getElementById('n-hours').value),
+    settlement: document.getElementById('n-settlement').value || undefined,
+    reason: document.getElementById('n-reason').value.trim() || undefined,
+    approve: document.getElementById('n-approve').checked,
+  };
+  if (!body.staff_id || !body.date || !(body.hours > 0)) return Wren.toast('Person, date and hours are all needed.', 'warning');
+  try {
+    const r = await Wren.api('/api/overtime', { method: 'POST', body });
+    Wren.toast(r.note || 'Recorded.', r.note ? 'warning' : 'success', r.note ? 7000 : 3500);
+    document.getElementById('n-hours').value = '';
+    document.getElementById('n-reason').value = '';
+    loadPending(); loadAll(); loadSummary();
+  } catch (e) { Wren.toast(errText(e), 'error', 6000); }
+}
+</script>
+</body>
+</html>

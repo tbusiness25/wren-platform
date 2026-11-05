@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Apprenticeships — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b317 — var(--c-*) tokens only, no bare hex. Checked light and dark. */
+.ap-intro{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:13px 15px;
+  font-size:.83rem;color:var(--c-muted);line-height:1.6;margin-bottom:16px;max-width:980px}
+.ap-intro b{color:var(--c-text)}
+.ap-intro a{color:var(--c-blue)}
+
+.ap-card{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;
+  padding:14px 16px;margin-bottom:12px;border-left:4px solid var(--c-border)}
+.ap-card.s-on_track{border-left-color:var(--c-green,var(--c-blue))}
+.ap-card.s-complete{border-left-color:var(--c-green,var(--c-blue))}
+.ap-card.s-slipping{border-left-color:var(--c-amber)}
+.ap-card.s-behind,.ap-card.s-overdue{border-left-color:var(--c-red)}
+.ap-card.s-unknown,.ap-card.s-no_plan{border-left-color:var(--c-muted)}
+.ap-card.inactive{opacity:.68}
+
+.ap-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ap-name{font-weight:700;color:var(--c-text);font-size:1rem;flex:1 1 220px;line-height:1.35}
+.ap-sub{font-size:.78rem;color:var(--c-muted);margin-top:3px;line-height:1.5}
+.ap-badge{font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  border-radius:999px;padding:3px 9px;border:1px solid currentColor;white-space:nowrap}
+.b-on_track,.b-complete{color:var(--c-green,var(--c-blue))}
+.b-slipping{color:var(--c-amber)}
+.b-behind,.b-overdue{color:var(--c-red)}
+.b-unknown,.b-no_plan{color:var(--c-muted)}
+.b-young{color:var(--c-amber)}
+
+.ap-bar{background:var(--c-bg);border-radius:6px;height:9px;overflow:hidden;margin:11px 0 7px}
+.ap-bar-fill{height:100%;border-radius:6px;background:var(--c-blue);transition:.4s}
+.ap-bar-fill.warn{background:var(--c-amber)}
+.ap-bar-fill.bad{background:var(--c-red)}
+
+.ap-nums{display:flex;gap:18px;flex-wrap:wrap;font-size:.79rem;color:var(--c-muted);margin-top:4px}
+.ap-nums b{color:var(--c-text);font-weight:700}
+.ap-note{font-size:.82rem;color:var(--c-text);line-height:1.6;margin-top:9px;
+  border-left:2px solid var(--c-border);padding-left:11px}
+.ap-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px;align-items:center}
+.ap-btn{background:transparent;border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;
+  padding:6px 12px;font-size:.77rem;cursor:pointer;font-family:inherit;min-height:36px}
+.ap-btn:hover{border-color:var(--c-blue)}
+.ap-btn.primary{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-navy)}
+.ap-btn[disabled]{opacity:.5;cursor:default}
+/* An export is "per apprentice, per date range" — Swift may ask for one term
+   rather than the whole programme. Blank means everything. */
+.ap-range{display:inline-flex;gap:5px;align-items:center}
+.ap-range input{background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-muted);
+  border-radius:9px;padding:5px 8px;font-size:.74rem;font-family:inherit;min-height:36px}
+.ap-range input:focus{color:var(--c-text);border-color:var(--c-blue)}
+
+.ap-panel{background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;
+  padding:14px 16px;margin-top:20px}
+.ap-panel h2{font-size:.98rem;margin:0 0 9px;color:var(--c-text)}
+.muted{color:var(--c-muted);font-size:.85rem;line-height:1.6}
+
+.ap-detail{display:none;margin-top:12px;padding-top:12px;border-top:1px dashed var(--c-border)}
+.ap-detail.open{display:block}
+.ap-scroll{overflow-x:auto}
+table.ap-tbl{width:100%;border-collapse:collapse;font-size:.79rem;min-width:760px}
+table.ap-tbl th{text-align:left;font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--c-muted);padding:6px 8px;border-bottom:1px solid var(--c-border);font-weight:800}
+table.ap-tbl td{padding:7px 8px;border-bottom:1px solid var(--c-border);color:var(--c-text);vertical-align:top}
+table.ap-tbl tr.unverified td{background:color-mix(in srgb, var(--c-amber) 8%, transparent)}
+.ap-src{font-size:.66rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:.04em}
+
+.ap-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:11px;margin-top:11px}
+.ap-form label{font-size:.69rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--c-muted);display:block;margin-bottom:4px}
+.ap-form input,.ap-form select,.ap-form textarea{width:100%;background:var(--c-bg);border:1px solid var(--c-border);
+  color:var(--c-text);border-radius:8px;padding:8px 10px;font-size:.84rem;font-family:inherit;
+  min-height:40px;box-sizing:border-box}
+.ap-form textarea{min-height:74px;resize:vertical;line-height:1.5}
+.ap-form .wide{grid-column:1/-1}
+.ap-hint{font-size:.73rem;color:var(--c-muted);margin-top:4px;line-height:1.5}
+.ap-err{color:var(--c-red);font-size:.82rem;margin-top:9px;line-height:1.6}
+.ap-ok{color:var(--c-green,var(--c-blue));font-size:.82rem;margin-top:9px}
+.ap-check{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--c-text);min-height:40px}
+.ap-check input{width:auto;min-height:auto}
+
+.ap-rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:10px}
+.ap-rules ul{margin:6px 0 0;padding-left:18px;font-size:.8rem;color:var(--c-muted);line-height:1.7}
+.ap-rules li b{color:var(--c-text)}
+.ap-rules h3{font-size:.8rem;margin:0;color:var(--c-text);text-transform:uppercase;letter-spacing:.05em}
+</style>
+</head>
+<body>
+<div class="v2-page">
+  <h1 class="page-title">🎓 Apprenticeships</h1>
+
+  <div class="ap-intro">
+    Off-the-job training <b>recorded at the moment it happens</b>, rather than reconstructed at the end of
+    the year. In childcare most of the teaching is a room leader showing an apprentice something on the
+    floor — and <b>practical training, shadowing and mentoring all count</b>, provided the learning is new
+    and it is written down.
+    <br><br>
+    <b>The 20% rule ended on 1 August 2025.</b> Each standard now publishes its own minimum, and Wren stores
+    that figure with the page it came from rather than working it out as a percentage of anybody's hours.
+    Recognition of prior learning may reduce it, but never below <b>187 hours</b>.
+    <br><br>
+    <span id="ap-swift"></span>
+  </div>
+
+  <div class="ap-acts" style="margin-bottom:14px">
+    <button class="ap-btn primary" id="ap-new">Add an apprentice</button>
+    <button class="ap-btn" id="ap-refresh">Refresh</button>
+    <span class="muted" id="ap-note"></span>
+  </div>
+
+  <div class="ap-panel" id="ap-new-panel" style="display:none">
+    <h2>Start an apprentice record</h2>
+    <p class="muted" style="margin:0">
+      Pick the standard and Wren takes the target hours from it. If the standard is not listed, add it
+      below with the figure and the URL it came from — never a guess.
+    </p>
+    <div class="ap-form">
+      <div><label for="nf-staff">Who</label><select id="nf-staff"></select></div>
+      <div><label for="nf-standard">Standard</label><select id="nf-standard"></select></div>
+      <div><label for="nf-provider">Provider</label><input id="nf-provider" value="Swift"></div>
+      <div><label for="nf-start">Start date</label><input id="nf-start" type="date"></div>
+      <div><label for="nf-end">Expected end date</label><input id="nf-end" type="date"></div>
+      <div><label for="nf-prior">Prior learning (hours)</label><input id="nf-prior" type="number" min="0" step="0.5" value="0">
+        <div class="ap-hint">Documented only. It reduces the target, but never below 187.</div></div>
+      <div><label for="nf-weekly">Planned hours a week</label><input id="nf-weekly" type="number" min="0" step="0.5">
+        <div class="ap-hint">From the training plan. This is what "behind" is judged against.</div></div>
+      <div><label for="nf-mentor">Mentor</label><select id="nf-mentor"></select>
+        <div class="ap-hint">Leave blank to use the room leader on their induction.</div></div>
+      <div class="wide" id="nf-target-note"></div>
+    </div>
+    <div class="ap-acts">
+      <button class="ap-btn primary" id="nf-save">Create</button>
+      <button class="ap-btn" id="nf-cancel">Cancel</button>
+    </div>
+    <div id="nf-msg"></div>
+  </div>
+
+  <div id="ap-list"><p class="muted">Loading…</p></div>
+
+  <!-- ── what counts, what does not ───────────────────────────────────── -->
+  <div class="ap-panel">
+    <h2>What counts as off-the-job training</h2>
+    <p class="muted" style="margin:0">
+      These are the rules Wren enforces, not a summary of them: an entry of a kind on the right-hand list
+      is refused, with the reason, rather than quietly accepted.
+    </p>
+    <div class="ap-rules">
+      <div><h3>Counts</h3><ul id="ap-counts"></ul></div>
+      <div><h3>Does not count</h3><ul id="ap-excluded"></ul></div>
+    </div>
+    <p class="muted" id="ap-sources" style="margin-top:12px"></p>
+  </div>
+
+  <!-- ── the standards ────────────────────────────────────────────────── -->
+  <div class="ap-panel">
+    <h2>Published standards</h2>
+    <p class="muted" style="margin:0">
+      The figure each standard publishes as its minimum off-the-job hours, with the page it was read from
+      and the date it was read. If a standard is missing, add it here.
+    </p>
+    <div class="ap-scroll"><div id="ap-standards"><p class="muted">Loading…</p></div></div>
+    <div class="ap-form">
+      <div><label for="sf-code">Code</label><input id="sf-code" placeholder="ST0135"></div>
+      <div><label for="sf-title">Title</label><input id="sf-title" placeholder="Early years educator"></div>
+      <div><label for="sf-level">Level</label><input id="sf-level" type="number" min="1" max="7"></div>
+      <div><label for="sf-hours">Minimum hours</label><input id="sf-hours" type="number" min="1"></div>
+      <div class="wide"><label for="sf-url">Source URL</label><input id="sf-url" placeholder="https://skillsengland.education.gov.uk/apprenticeships/…">
+        <div class="ap-hint">Required with the hours. On the standard's page the figure is labelled "Minimum hours for compliance".</div></div>
+    </div>
+    <div class="ap-acts"><button class="ap-btn" id="sf-save">Add or update standard</button><span id="sf-msg"></span></div>
+  </div>
+
+  <!-- ── under-18s ────────────────────────────────────────────────────── -->
+  <div class="ap-panel">
+    <h2>Staff under 18</h2>
+    <p class="muted" style="margin:0">
+      A worker under 18 has tighter limits than an adult: <b>8 hours a day and 40 a week</b>, a
+      <b>30-minute break</b> once the day is over four and a half hours, <b>12 hours' rest</b> between days
+      and <b>48 hours</b> in the week. The rota warns when a shift breaks one — it never refuses to save it.
+      Anyone with no date of birth on file cannot be checked.
+    </p>
+    <div id="ap-young"><p class="muted">Loading…</p></div>
+  </div>
+</div>
+
+<script>
+/* ── b317 — the Roost window on apprenticeships ─────────────────────────────
+   Every rule shown on this page is fetched from GET /api/apprenticeships/rules
+   rather than written here. That is deliberate: the eligible list, the reasons
+   an activity is refused and the 187-hour floor are the SAME strings the API
+   enforces with, so the page cannot drift into describing a rule the server
+   does not apply. If a rule changes, it changes in src/lib/otj-rules.js once. */
+
+const api = (u, o) => Wren.api(u, o);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Wren.api rejects with the response BODY, not an Error — e.message is undefined
+// (memory: wren api rejects with body).
+const errText = (e, fb) => (e && (e.error || e.message)) || fb || 'Something went wrong';
+
+let RULES = null, LIST = [], STANDARDS = [], STAFF = [];
+const OPEN = new Set();      // apprenticeship ids whose log is expanded
+
+const STATUS_WORD = {
+  on_track: 'On track', complete: 'Target reached', slipping: 'Slipping',
+  behind: 'Behind', overdue: 'End date passed', no_plan: 'No weekly plan',
+  unknown: 'No target set',
+};
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(String(d).slice(0, 10) + 'T12:00:00');
+  return isNaN(dt) ? esc(d) : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function hrs(mins) { return (Math.round((mins / 60) * 100) / 100).toFixed(2); }
+
+// ── the cards ───────────────────────────────────────────────────────────────
+function cardFor(a) {
+  const p = a.progress || {};
+  const st = p.status || 'unknown';
+  const pct = p.pct == null ? 0 : p.pct;
+  const fillCls = st === 'behind' || st === 'overdue' ? 'bad' : (st === 'slipping' ? 'warn' : '');
+  const std = a.standard_name || a.standard_title || 'Apprenticeship';
+
+  return `<div class="ap-card s-${esc(st)} ${a.status === 'active' ? '' : 'inactive'}" data-id="${a.id}">
+    <div class="ap-head">
+      <div>
+        <div class="ap-name">${esc(a.staff_name)}</div>
+        <div class="ap-sub">${esc(std)}${a.level ? ' · Level ' + esc(a.level) : ''} · ${esc(a.provider)}
+          · ${fmtDate(a.start_date)} to ${fmtDate(a.expected_end_date)}
+          ${a.mentor_name ? ' · mentor ' + esc(a.mentor_name) : ' · <b>no mentor named</b>'}</div>
+      </div>
+      ${a.is_young_worker ? `<span class="ap-badge b-young">Under 18 · ${esc(a.staff_age)}</span>` : ''}
+      <span class="ap-badge b-${esc(st)}">${esc(STATUS_WORD[st] || st)}</span>
+    </div>
+
+    <div class="ap-bar"><div class="ap-bar-fill ${fillCls}" style="width:${Math.max(1, pct)}%"></div></div>
+    <div class="ap-nums">
+      <span><b>${esc(p.logged == null ? 0 : p.logged)}</b> hours logged${p.target ? ' of <b>' + esc(p.target) + '</b>' : ''}</span>
+      ${p.remaining != null ? `<span><b>${esc(p.remaining)}</b> to go</span>` : ''}
+      ${p.weeks_left != null ? `<span><b>${esc(p.weeks_left)}</b> weeks left</span>` : ''}
+      ${p.per_week_needed != null ? `<span><b>${esc(p.per_week_needed)}</b> hours a week needed from here</span>` : ''}
+      <span>${esc(a.entry_count || 0)} entries</span>
+    </div>
+    ${p.note ? `<div class="ap-note">${esc(p.note)}</div>` : ''}
+
+    <div class="ap-acts">
+      <button class="ap-btn primary" data-act="log" data-id="${a.id}">Record training</button>
+      <button class="ap-btn" data-act="toggle" data-id="${a.id}">${OPEN.has(a.id) ? 'Hide' : 'Show'} the log</button>
+      <button class="ap-btn" data-act="edit" data-id="${a.id}">Edit</button>
+      <button class="ap-btn" data-act="csv" data-id="${a.id}">Export CSV</button>
+      <button class="ap-btn" data-act="pdf" data-id="${a.id}">Export PDF</button>
+      <span class="ap-range">
+        <input type="date" id="from-${a.id}" aria-label="Export from" title="Export from (optional)">
+        <input type="date" id="to-${a.id}" aria-label="Export to" title="Export to (optional)">
+      </span>
+    </div>
+
+    <div class="ap-detail ${OPEN.has(a.id) ? 'open' : ''}" id="det-${a.id}"></div>
+  </div>`;
+}
+
+function render() {
+  const box = document.getElementById('ap-list');
+  if (!LIST.length) {
+    box.innerHTML = '<p class="muted">No apprentice records yet. Add one and the off-the-job log starts from there.</p>';
+    return;
+  }
+  box.innerHTML = LIST.map(cardFor).join('');
+  LIST.filter(a => OPEN.has(a.id)).forEach(a => loadLog(a.id));
+}
+
+// ── the log ─────────────────────────────────────────────────────────────────
+async function loadLog(id) {
+  const box = document.getElementById('det-' + id);
+  if (!box) return;
+  box.innerHTML = '<p class="muted">Loading the log…</p>';
+  try {
+    const d = await api('/api/apprenticeships/' + id + '/entries');
+    if (!d.entries.length) {
+      box.innerHTML = '<p class="muted">Nothing recorded yet. Every workbook item a room leader signs off '
+        + 'offers to become an entry here — that is where most of it should come from.</p>';
+      return;
+    }
+    const typeLabel = k => {
+      const t = (RULES && RULES.activity_types || []).find(x => x.key === k);
+      return t ? t.label : k;
+    };
+    box.innerHTML = `<div class="ap-scroll"><table class="ap-tbl">
+      <thead><tr><th>Date</th><th>Hours</th><th>Activity</th><th>KSB / area</th>
+        <th>What was new</th><th>Delivered by</th><th>Paid hrs</th><th>Verified</th><th></th></tr></thead>
+      <tbody>${d.entries.map(e => `<tr class="${e.verified_at ? '' : 'unverified'}">
+        <td>${fmtDate(e.entry_date)}</td>
+        <td>${hrs(e.minutes)}</td>
+        <td>${esc(typeLabel(e.activity_type))}<div class="ap-src">${e.source === 'workbook' ? 'from workbook' : 'entered'}</div></td>
+        <td>${esc(e.ksb_ref || '—')}</td>
+        <td>${esc(e.what_was_new)}${e.in_paid_hours ? '' : '<div class="ap-src">compensated: ' + esc(e.compensation_note || 'yes') + '</div>'}</td>
+        <td>${esc(e.delivered_by_name || '—')}</td>
+        <td>${e.in_paid_hours ? 'Yes' : 'No'}</td>
+        <td>${e.verified_by_name ? esc(e.verified_by_name) : '<span class="muted">not yet</span>'}</td>
+        <td>${e.verified_at ? '' : `<button class="ap-btn" data-act="verify" data-entry="${e.id}" data-app="${id}">Verify</button>`}</td>
+      </tr>`).join('')}</tbody>
+      <tfoot><tr><td><b>Total</b></td><td><b>${hrs(d.total_minutes)}</b></td><td colspan="7">${d.count} entries</td></tr></tfoot>
+    </table></div>`;
+  } catch (e) {
+    box.innerHTML = `<p class="muted">Could not load the log: ${esc(errText(e))}</p>`;
+  }
+}
+
+// ── record a session ────────────────────────────────────────────────────────
+function logForm(a) {
+  const opts = (RULES.activity_types || [])
+    .map(t => `<option value="${esc(t.key)}">${esc(t.label)}</option>`).join('');
+  const staffOpts = ['<option value="">—</option>'].concat(
+    STAFF.map(s => `<option value="${s.id}">${esc(s.name)}</option>`)).join('');
+  const today = new Date().toLocaleDateString('en-CA');
+  return `<div class="ap-panel" style="margin-top:0">
+    <h2>Record off-the-job training — ${esc(a.staff_name)}</h2>
+    <div class="ap-form">
+      <div><label for="lf-date">Date</label><input id="lf-date" type="date" value="${today}"></div>
+      <div><label for="lf-mins">Minutes</label><input id="lf-mins" type="number" min="1" step="5" value="30"></div>
+      <div><label for="lf-type">What kind of training</label><select id="lf-type">${opts}</select>
+        <div class="ap-hint" id="lf-hint"></div></div>
+      <div><label for="lf-by">Delivered by</label><select id="lf-by">${staffOpts}</select></div>
+      <div><label for="lf-ksb">KSB / area of the standard</label><input id="lf-ksb" placeholder="K7, S12, safeguarding…"></div>
+      <div><label for="lf-method">How it was delivered</label><input id="lf-method" placeholder="Taught on the floor"></div>
+      <div class="wide"><label for="lf-new">What was NEW</label>
+        <textarea id="lf-new" placeholder="What could they not do before this? A few words is enough, but it has to say what changed."></textarea>
+        <div class="ap-hint">This line is the evidence. An auditor reads it to see the apprentice learned
+          something they could not already do.</div></div>
+      <div class="ap-check"><input type="checkbox" id="lf-paid" checked>
+        <label for="lf-paid" style="margin:0;text-transform:none;letter-spacing:0;font-size:.82rem;font-weight:600">In normal working hours</label></div>
+      <div id="lf-comp-wrap" style="display:none">
+        <label for="lf-comp">How it was compensated</label>
+        <input id="lf-comp" placeholder="2 hours TOIL taken Friday">
+        <div class="ap-hint">Outside working hours only counts where they agreed and were compensated.</div>
+      </div>
+    </div>
+    <div class="ap-acts">
+      <button class="ap-btn primary" id="lf-save">Record it</button>
+      <button class="ap-btn" id="lf-cancel">Cancel</button>
+    </div>
+    <div id="lf-msg"></div>
+  </div>`;
+}
+
+function openLogForm(a) {
+  const card = document.querySelector(`.ap-card[data-id="${a.id}"]`);
+  if (!card) return;
+  let host = card.querySelector('.ap-logform');
+  if (host) { host.remove(); return; }
+  host = document.createElement('div');
+  host.className = 'ap-logform';
+  host.innerHTML = logForm(a);
+  card.appendChild(host);
+
+  const typeSel = host.querySelector('#lf-type');
+  const hint = host.querySelector('#lf-hint');
+  const showHint = () => {
+    const t = (RULES.activity_types || []).find(x => x.key === typeSel.value);
+    hint.textContent = t ? t.hint : '';
+  };
+  typeSel.addEventListener('change', showHint); showHint();
+
+  const paid = host.querySelector('#lf-paid');
+  const compWrap = host.querySelector('#lf-comp-wrap');
+  paid.addEventListener('change', () => { compWrap.style.display = paid.checked ? 'none' : ''; });
+
+  host.querySelector('#lf-cancel').addEventListener('click', () => host.remove());
+  host.querySelector('#lf-save').addEventListener('click', async () => {
+    const msg = host.querySelector('#lf-msg');
+    msg.innerHTML = '';
+    const body = {
+      entry_date: host.querySelector('#lf-date').value,
+      minutes: Number(host.querySelector('#lf-mins').value),
+      activity_type: typeSel.value,
+      delivered_by: host.querySelector('#lf-by').value || null,
+      ksb_ref: host.querySelector('#lf-ksb').value,
+      delivery_method: host.querySelector('#lf-method').value,
+      what_was_new: host.querySelector('#lf-new').value,
+      in_paid_hours: paid.checked,
+      compensated: !paid.checked,
+      compensation_note: host.querySelector('#lf-comp').value,
+    };
+    try {
+      await api('/api/apprenticeships/' + a.id + '/entries', { method: 'POST', body: JSON.stringify(body) });
+      OPEN.add(a.id);
+      await load();
+    } catch (e) {
+      // The API's refusal IS the explanation — show it as written rather than
+      // replacing it with "could not save".
+      msg.innerHTML = `<div class="ap-err">${esc(errText(e))}</div>`;
+    }
+  });
+}
+
+// ── edit ────────────────────────────────────────────────────────────────────
+function openEdit(a) {
+  const card = document.querySelector(`.ap-card[data-id="${a.id}"]`);
+  if (!card) return;
+  let host = card.querySelector('.ap-editform');
+  if (host) { host.remove(); return; }
+  const staffOpts = ['<option value="">—</option>'].concat(
+    STAFF.map(s => `<option value="${s.id}" ${Number(a.mentor_staff_id) === s.id ? 'selected' : ''}>${esc(s.name)}</option>`)).join('');
+  const stdOpts = ['<option value="">— not listed —</option>'].concat(
+    STANDARDS.map(s => `<option value="${esc(s.code)}" ${a.standard_code === s.code ? 'selected' : ''}>${esc(s.code)} · ${esc(s.title)} (L${esc(s.level)})</option>`)).join('');
+  host = document.createElement('div');
+  host.className = 'ap-editform';
+  host.innerHTML = `<div class="ap-panel" style="margin-top:0"><h2>Edit — ${esc(a.staff_name)}</h2>
+    <div class="ap-form">
+      <div><label for="ef-std">Standard</label><select id="ef-std">${stdOpts}</select></div>
+      <div><label for="ef-provider">Provider</label><input id="ef-provider" value="${esc(a.provider || '')}"></div>
+      <div><label for="ef-start">Start date</label><input id="ef-start" type="date" value="${esc(a.start_date || '')}"></div>
+      <div><label for="ef-end">Expected end</label><input id="ef-end" type="date" value="${esc(a.expected_end_date || '')}"></div>
+      <div><label for="ef-target">Target hours</label><input id="ef-target" type="number" min="187" step="1" value="${a.otj_target_hours == null ? '' : esc(a.otj_target_hours)}">
+        <div class="ap-hint">Cannot be set below 187.</div></div>
+      <div><label for="ef-prior">Prior learning (hours)</label><input id="ef-prior" type="number" min="0" step="0.5" value="${esc(a.prior_learning_hours || 0)}"></div>
+      <div><label for="ef-weekly">Planned hours a week</label><input id="ef-weekly" type="number" min="0" step="0.5" value="${a.planned_weekly_hours == null ? '' : esc(a.planned_weekly_hours)}"></div>
+      <div><label for="ef-mentor">Mentor</label><select id="ef-mentor">${staffOpts}</select></div>
+      <div><label for="ef-eport">Provider e-portfolio</label><input id="ef-eport" value="${esc(a.eportfolio || '')}" placeholder="OneFile / Aptem / Bud…"></div>
+      <div><label for="ef-status">Status</label><select id="ef-status">
+        ${['active', 'paused', 'completed', 'withdrawn'].map(s =>
+          `<option value="${s}" ${a.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+    </div>
+    <div class="ap-acts">
+      <button class="ap-btn primary" id="ef-save">Save</button>
+      <button class="ap-btn" id="ef-recompute">Set target from the standard</button>
+      <button class="ap-btn" id="ef-cancel">Cancel</button>
+    </div><div id="ef-msg"></div></div>`;
+  card.appendChild(host);
+
+  host.querySelector('#ef-cancel').addEventListener('click', () => host.remove());
+  host.querySelector('#ef-recompute').addEventListener('click', async () => {
+    const msg = host.querySelector('#ef-msg');
+    try {
+      const r = await api('/api/apprenticeships/' + a.id + '/recompute-target', { method: 'POST' });
+      msg.innerHTML = `<div class="ap-ok">Target set to ${esc(r.target.hours)} hours.`
+        + (r.target.note ? ' ' + esc(r.target.note) : '') + '</div>';
+      await load();
+    } catch (e) { msg.innerHTML = `<div class="ap-err">${esc(errText(e))}</div>`; }
+  });
+  host.querySelector('#ef-save').addEventListener('click', async () => {
+    const msg = host.querySelector('#ef-msg');
+    const v = id => host.querySelector(id).value;
+    try {
+      await api('/api/apprenticeships/' + a.id, { method: 'PATCH', body: JSON.stringify({
+        standard_code: v('#ef-std') || null,
+        provider: v('#ef-provider'),
+        start_date: v('#ef-start') || null,
+        expected_end_date: v('#ef-end') || null,
+        otj_target_hours: v('#ef-target') === '' ? null : Number(v('#ef-target')),
+        prior_learning_hours: Number(v('#ef-prior') || 0),
+        planned_weekly_hours: v('#ef-weekly') === '' ? null : Number(v('#ef-weekly')),
+        mentor_staff_id: v('#ef-mentor') || null,
+        eportfolio: v('#ef-eport'),
+        status: v('#ef-status'),
+      }) });
+      await load();
+    } catch (e) { msg.innerHTML = `<div class="ap-err">${esc(errText(e))}</div>`; }
+  });
+}
+
+// ── export ──────────────────────────────────────────────────────────────────
+/* Wren's auth is header-only — Bearer or X-Wren-Token, never a cookie (see
+   src/middleware/auth.js). A plain <a href="/api/…"> download therefore arrives
+   unauthenticated and saves a 401 body to the user's Downloads folder. Fetch it
+   with the token and hand the browser a blob instead, exactly as rota.html does
+   for the payroll export. */
+async function download(id, fmt, btn) {
+  const orig = btn ? btn.textContent : '';
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    const token = Wren.getToken ? Wren.getToken() : sessionStorage.getItem('wrenToken');
+    const q = new URLSearchParams();
+    const from = document.getElementById('from-' + id);
+    const to = document.getElementById('to-' + id);
+    if (from && from.value) q.set('from', from.value);
+    if (to && to.value) q.set('to', to.value);
+    const qs = q.toString() ? '?' + q.toString() : '';
+    const resp = await fetch(`/api/apprenticeships/${id}/export.${fmt}${qs}`,
+      { headers: { Authorization: 'Bearer ' + token } });
+    if (!resp.ok) { alert(`Export failed (${resp.status}).`); return; }
+    const a = LIST.find(x => x.id === id) || {};
+    const slug = String(a.staff_name || 'apprentice').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const blob = await resp.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    const stamp = (from && from.value ? from.value + '_' : '')
+      + (to && to.value ? to.value : new Date().toLocaleDateString('en-CA'));
+    link.download = `otj-${slug}-${stamp}.${fmt}`;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+  } catch (e) {
+    alert('Export error');
+  } finally { if (btn) { btn.disabled = false; btn.textContent = orig; } }
+}
+
+// ── the reference panels ────────────────────────────────────────────────────
+function renderRules() {
+  document.getElementById('ap-counts').innerHTML = (RULES.activity_types || [])
+    .map(t => `<li><b>${esc(t.label)}</b> — ${esc(t.hint)}</li>`).join('');
+  document.getElementById('ap-excluded').innerHTML = (RULES.excluded_types || [])
+    .map(t => `<li><b>${esc(t.label)}</b> — ${esc(t.reason)}</li>`).join('');
+  document.getElementById('ap-sources').innerHTML = 'Sources: '
+    + (RULES.sources || []).map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.what)}</a>`).join(' · ');
+  document.getElementById('ap-swift').innerHTML = esc(RULES.provider_note);
+}
+
+function renderStandards() {
+  document.getElementById('ap-standards').innerHTML = `<table class="ap-tbl" style="min-width:620px">
+    <thead><tr><th>Code</th><th>Title</th><th>Level</th><th>Minimum hours</th><th>Typical length</th><th>Source</th></tr></thead>
+    <tbody>${STANDARDS.map(s => `<tr>
+      <td>${esc(s.code)}</td><td>${esc(s.title)}</td><td>${esc(s.level == null ? '—' : s.level)}</td>
+      <td>${s.min_otj_hours == null ? '<span class="muted">not verified</span>' : '<b>' + esc(s.min_otj_hours) + '</b>'}</td>
+      <td>${s.typical_duration_months ? esc(s.typical_duration_months) + ' months' : '—'}</td>
+      <td>${s.source_url ? `<a href="${esc(s.source_url)}" target="_blank" rel="noopener">read ${esc(s.retrieved_on || '')}</a>` : '<span class="muted">none</span>'}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function loadYoung() {
+  const box = document.getElementById('ap-young');
+  try {
+    const d = await api('/api/apprenticeships/young-workers');
+    if (!d.staff.length) { box.innerHTML = '<p class="muted">Nobody on the payroll is under 18.</p>'; return; }
+    box.innerHTML = `<table class="ap-tbl" style="min-width:480px">
+      <thead><tr><th>Name</th><th>Age</th><th>Role</th><th>Room</th><th>Turns 18</th></tr></thead>
+      <tbody>${d.staff.map(s => `<tr><td>${esc(s.name)}</td><td>${esc(s.age)}</td>
+        <td>${esc(s.role || '—')}</td><td>${esc(s.room_name || '—')}</td><td>${fmtDate(s.eighteenth)}</td></tr>`).join('')}</tbody></table>`;
+  } catch (e) {
+    box.innerHTML = `<p class="muted">Could not load: ${esc(errText(e))}</p>`;
+  }
+}
+
+// ── new-record form ─────────────────────────────────────────────────────────
+function fillNewForm() {
+  document.getElementById('nf-staff').innerHTML = STAFF
+    .map(s => `<option value="${s.id}">${esc(s.name)}${s.role ? ' · ' + esc(s.role) : ''}</option>`).join('');
+  document.getElementById('nf-mentor').innerHTML = ['<option value="">— use the induction room leader —</option>']
+    .concat(STAFF.map(s => `<option value="${s.id}">${esc(s.name)}</option>`)).join('');
+  const stdSel = document.getElementById('nf-standard');
+  stdSel.innerHTML = ['<option value="">— not listed —</option>'].concat(
+    STANDARDS.map(s => `<option value="${esc(s.code)}" data-hours="${s.min_otj_hours == null ? '' : s.min_otj_hours}" data-months="${s.typical_duration_months || ''}">`
+      + `${esc(s.code)} · ${esc(s.title)} (Level ${esc(s.level)})</option>`)).join('');
+
+  const noteBox = document.getElementById('nf-target-note');
+  const showTarget = () => {
+    const opt = stdSel.selectedOptions[0];
+    const hours = opt && opt.dataset.hours;
+    const prior = Number(document.getElementById('nf-prior').value || 0);
+    if (!hours) {
+      noteBox.innerHTML = '<div class="ap-hint">No published figure on file for that standard — the target will be '
+        + '<b>blank</b> until you enter it from the training plan. Wren will not assume a percentage.</div>';
+      return;
+    }
+    const reduced = Number(hours) - prior;
+    const target = Math.max(187, reduced);
+    noteBox.innerHTML = `<div class="ap-hint">Target will be <b>${target} hours</b> — ${hours} published`
+      + (prior > 0 ? `, less ${prior} of prior learning` : '')
+      + (reduced < 187 ? ', floored at the 187-hour minimum' : '') + '.</div>';
+  };
+  stdSel.addEventListener('change', showTarget);
+  document.getElementById('nf-prior').addEventListener('input', showTarget);
+  showTarget();
+}
+
+// ── boot ────────────────────────────────────────────────────────────────────
+async function load() {
+  try {
+    const [list, std, staff] = await Promise.all([
+      api('/api/apprenticeships'),
+      api('/api/apprenticeships/standards'),
+      api('/api/staff').catch(() => null),
+    ]);
+    LIST = list.apprenticeships || [];
+    STANDARDS = std.standards || [];
+    const raw = Array.isArray(staff) ? staff : (staff && (staff.staff || staff.rows)) || [];
+    STAFF = raw.map(s => ({
+      id: s.id,
+      name: s.name || [s.first_name, s.last_name].filter(Boolean).join(' '),
+      role: s.role,
+    })).filter(s => s.id && s.name).sort((a, b) => a.name.localeCompare(b.name));
+    render();
+    renderStandards();
+    document.getElementById('ap-note').textContent =
+      LIST.filter(a => a.status === 'active').length + ' active';
+  } catch (e) {
+    document.getElementById('ap-list').innerHTML =
+      `<p class="muted">Could not load: ${esc(errText(e))}</p>`;
+  }
+}
+
+document.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('[data-act]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const a = LIST.find(x => x.id === id);
+  if (btn.dataset.act === 'toggle') {
+    if (OPEN.has(id)) { OPEN.delete(id); } else { OPEN.add(id); }
+    render();
+  } else if (btn.dataset.act === 'log' && a) {
+    openLogForm(a);
+  } else if (btn.dataset.act === 'edit' && a) {
+    openEdit(a);
+  } else if (btn.dataset.act === 'csv' || btn.dataset.act === 'pdf') {
+    await download(id, btn.dataset.act, btn);
+  } else if (btn.dataset.act === 'verify') {
+    const entryId = Number(btn.dataset.entry);
+    btn.disabled = true;
+    try {
+      await api('/api/apprenticeships/entries/' + entryId, { method: 'PATCH', body: JSON.stringify({ verified: true }) });
+      await loadLog(Number(btn.dataset.app));
+    } catch (e) { btn.disabled = false; alert(errText(e)); }
+  }
+});
+
+document.addEventListener('wren:ready', async () => {
+  try {
+    RULES = await api('/api/apprenticeships/rules');
+    renderRules();
+  } catch (e) { /* the rest of the page still works without the reference panel */ }
+  await load();
+  fillNewForm();
+  await loadYoung();
+
+  document.getElementById('ap-refresh').addEventListener('click', load);
+  document.getElementById('ap-new').addEventListener('click', () => {
+    const p = document.getElementById('ap-new-panel');
+    p.style.display = p.style.display === 'none' ? '' : 'none';
+  });
+  document.getElementById('nf-cancel').addEventListener('click', () => {
+    document.getElementById('ap-new-panel').style.display = 'none';
+  });
+  document.getElementById('nf-save').addEventListener('click', async () => {
+    const msg = document.getElementById('nf-msg');
+    msg.innerHTML = '';
+    const v = id => document.getElementById(id).value;
+    try {
+      await api('/api/apprenticeships', { method: 'POST', body: JSON.stringify({
+        staff_id: v('nf-staff'),
+        standard_code: v('nf-standard') || null,
+        level: (STANDARDS.find(s => s.code === v('nf-standard')) || {}).level,
+        provider: v('nf-provider'),
+        start_date: v('nf-start') || null,
+        expected_end_date: v('nf-end') || null,
+        prior_learning_hours: Number(v('nf-prior') || 0),
+        planned_weekly_hours: v('nf-weekly') === '' ? null : Number(v('nf-weekly')),
+        mentor_staff_id: v('nf-mentor') || null,
+      }) });
+      document.getElementById('ap-new-panel').style.display = 'none';
+      await load();
+    } catch (e) { msg.innerHTML = `<div class="ap-err">${esc(errText(e))}</div>`; }
+  });
+  document.getElementById('sf-save').addEventListener('click', async () => {
+    const msg = document.getElementById('sf-msg');
+    const v = id => document.getElementById(id).value;
+    try {
+      await api('/api/apprenticeships/standards', { method: 'POST', body: JSON.stringify({
+        code: v('sf-code'), title: v('sf-title'),
+        level: v('sf-level') === '' ? null : Number(v('sf-level')),
+        min_otj_hours: v('sf-hours') === '' ? null : Number(v('sf-hours')),
+        source_url: v('sf-url'),
+      }) });
+      msg.innerHTML = '<span class="ap-ok">Saved.</span>';
+      const std = await api('/api/apprenticeships/standards');
+      STANDARDS = std.standards || [];
+      renderStandards(); fillNewForm();
+    } catch (e) { msg.innerHTML = `<span class="ap-err">${esc(errText(e))}</span>`; }
+  });
+});
+</script>
+</body>
+</html>

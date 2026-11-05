@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="wren-edition" content="admin">
+  <title>Staffing by Week — Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+  <style>
+    .sw-toolbar { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    .sw-field { display:flex; flex-direction:column; gap:4px; }
+    .sw-field label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; }
+    .sw-field input, .sw-field select {
+      background:#0f172a; border:1px solid #2d3748; color:#e2e8f0;
+      border-radius:8px; padding:7px 10px; font-size:13px;
+    }
+    .sw-cards { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+    .sw-card { background:#1e293b; border:1px solid #2d3748; border-radius:12px; padding:14px 18px; min-width:170px; }
+    .sw-card .k { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; }
+    .sw-card .v { font-size:22px; font-weight:800; color:#f1f5f9; margin-top:4px; }
+    .sw-card .s { font-size:12px; color:#94a3b8; margin-top:2px; }
+    .sw-ratios { font-size:12px; color:#94a3b8; margin-bottom:14px; }
+    .sw-table-wrap { overflow-x:auto; border:1px solid #2d3748; border-radius:12px; }
+    table.sw { border-collapse:collapse; width:100%; font-size:13px; }
+    table.sw th, table.sw td { padding:8px 12px; text-align:left; border-bottom:1px solid #23324a; white-space:nowrap; }
+    table.sw thead th { background:#0f172a; color:#94a3b8; font-size:11px; text-transform:uppercase; letter-spacing:.05em; position:sticky; top:0; }
+    table.sw td.wk { color:#cbd5e1; font-weight:600; }
+    .cell { display:inline-flex; flex-direction:column; gap:1px; border-radius:8px; padding:5px 9px; min-width:130px; }
+    .cell .line { font-size:12px; color:#e2e8f0; }
+    .cell .line b { color:#fff; }
+    .cell.ok    { background:rgba(34,197,94,.12);  border:1px solid rgba(34,197,94,.35); }
+    .cell.under { background:rgba(239,68,68,.14);  border:1px solid rgba(239,68,68,.45); }
+    .cell.over  { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); }
+    .cell.none  { background:#0f172a; border:1px solid #23324a; color:#64748b; }
+    .var { font-size:11px; font-weight:700; }
+    .var.under { color:#ef4444; } .var.over { color:#f59e0b; } .var.ok { color:#22c55e; }
+    .sw-empty { color:#64748b; padding:30px; text-align:center; }
+    .legend { display:flex; gap:16px; font-size:12px; color:#94a3b8; margin:12px 2px; flex-wrap:wrap; }
+    .legend span::before { content:''; display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+    .legend .l-ok::before { background:rgba(34,197,94,.6); }
+    .legend .l-under::before { background:rgba(239,68,68,.7); }
+    .legend .l-over::before { background:rgba(245,158,11,.6); }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Staffing by Week</div>
+      <div class="page-subtitle" style="color:#94a3b8">Booked children · required staff · who's on the rota — per room, per week</div>
+    </div>
+    <div class="sw-toolbar" id="sw-actions">
+      <div class="sw-field">
+        <label for="sw-from">From</label>
+        <input type="date" id="sw-from">
+      </div>
+      <div class="sw-field">
+        <label for="sw-to">To</label>
+        <input type="date" id="sw-to">
+      </div>
+      <div class="sw-field">
+        <label for="sw-room">Room</label>
+        <select id="sw-room"><option value="">All rooms</option></select>
+      </div>
+      <button class="btn btn-primary btn-sm" id="sw-run">Apply</button>
+      <button class="btn btn-ghost btn-sm" id="sw-csv">⬇ CSV</button>
+    </div>
+  </div>
+
+  <div class="sw-ratios" id="sw-ratios"></div>
+  <div class="sw-cards" id="sw-cards"></div>
+  <div class="legend">
+    <span class="l-ok">On or above ratio</span>
+    <span class="l-under">Under ratio (short-staffed)</span>
+    <span class="l-over">Over-staffed (2+ above)</span>
+  </div>
+  <div id="sw-body"><div class="sw-empty">Loading…</div></div>
+</div>
+
+<script>
+let LAST = null;   // last payload, for CSV
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// Default range: current-ish academic year Sep 1 → next Sep 1 (matches the API default
+// spirit but forward-looking for planning). Overridable by the pickers.
+function defaultRange(){
+  const now = new Date();
+  const y = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // month 8 = Sep
+  return { from: `${y}-09-01`, to: `${y+1}-09-01` };
+}
+
+function cellClass(w){
+  if (w.on_rota === 0 && w.booked === 0) return 'none';
+  if (w.on_rota === 0) return 'none';              // no rota built yet for this week
+  if (w.variance < 0) return 'under';
+  if (w.variance >= 2) return 'over';
+  return 'ok';
+}
+
+async function load(){
+  const body = document.getElementById('sw-body');
+  const from = document.getElementById('sw-from').value;
+  const to   = document.getElementById('sw-to').value;
+  const room = document.getElementById('sw-room').value;
+  body.innerHTML = '<div class="sw-empty">Loading…</div>';
+  try {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    if (room) qs.set('room', room);
+    const data = await Wren.api('/api/staffing/weeks?' + qs.toString());
+    LAST = data;
+    populateRooms(data.weeks);
+
+    // Ratios line
+    const r = data.ratios || {};
+    document.getElementById('sw-ratios').textContent =
+      `Ratios in use: under-2 1:${r.under2 ?? '?'} · 2-year-olds 1:${r.two ?? '?'} · 3-year-olds+ 1:${r.threePlus ?? '?'}  (age recomputed at the start of each week).`;
+
+    // Headline cards
+    const peak = data.summary?.peak_week;
+    document.getElementById('sw-cards').innerHTML = [
+      `<div class="sw-card"><div class="k">Weeks shown</div><div class="v">${(new Set(data.weeks.map(w=>w.week_start))).size}</div><div class="s">${esc(data.from)} → ${esc(data.to)}</div></div>`,
+      peak ? `<div class="sw-card"><div class="k">Peak week (most staff needed)</div><div class="v">${peak.required}</div><div class="s">${esc(peak.week_start)} · ${esc(peak.room_name)} (${peak.booked} booked)</div></div>` : '',
+      `<div class="sw-card"><div class="k">Under-ratio weeks</div><div class="v" style="color:${data.summary.under_ratio_weeks?'#ef4444':'#22c55e'}">${data.summary.under_ratio_weeks}</div><div class="s">room-weeks below ratio (rota built)</div></div>`,
+    ].join('');
+
+    if (!data.weeks.length){ body.innerHTML = '<div class="sw-empty">No weeks in this range.</div>'; return; }
+
+    // Pivot: rows = weeks, columns = rooms
+    const rooms = [];
+    const seen = new Set();
+    for (const w of data.weeks){ if(!seen.has(w.room_id)){ seen.add(w.room_id); rooms.push({id:w.room_id, name:w.room_name}); } }
+    const byWeek = {};
+    for (const w of data.weeks){ (byWeek[w.week_start] = byWeek[w.week_start] || {})[w.room_id] = w; }
+    const weekKeys = Object.keys(byWeek).sort();
+
+    let html = '<div class="sw-table-wrap"><table class="sw"><thead><tr><th>Week (Mon)</th>';
+    for (const rm of rooms) html += `<th>${esc(rm.name)}</th>`;
+    html += '</tr></thead><tbody>';
+    for (const wk of weekKeys){
+      html += `<tr><td class="wk">${esc(wk)}</td>`;
+      for (const rm of rooms){
+        const w = byWeek[wk][rm.id];
+        if (!w){ html += '<td><span class="cell none"><span class="line">—</span></span></td>'; continue; }
+        const cls = cellClass(w);
+        const vcls = w.variance < 0 ? 'under' : (w.variance >= 2 ? 'over' : 'ok');
+        html += `<td><span class="cell ${cls}">`
+          + `<span class="line">needed <b>${w.required}</b> · booked ${w.booked} · on-rota ${w.on_rota}</span>`
+          + `<span class="var ${vcls}">variance ${w.variance>=0?'+':''}${w.variance}${w.on_rota===0?' (no rota)':''}</span>`
+          + `</span></td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+  } catch(e){
+    body.innerHTML = `<div class="sw-empty">Failed to load: ${esc(e && e.error || e)}</div>`;
+  }
+}
+
+function exportCsv(){
+  if (!LAST || !LAST.weeks.length){ alert('Nothing to export yet.'); return; }
+  const cols = ['week_start','week_end','room_name','booked','under2','two','threePlus','required','on_rota','variance'];
+  const lines = [cols.join(',')];
+  for (const w of LAST.weeks) lines.push(cols.map(c => `"${String(w[c]??'').replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob([lines.join('\n')], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `staffing-by-week_${LAST.from}_to_${LAST.to}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Fill the room dropdown from the returned data (no dedicated /api/rooms endpoint),
+// preserving the current selection. Only adds rooms not already listed.
+let _roomsPopulated = false;
+function populateRooms(weeks){
+  if (_roomsPopulated || !weeks || !weeks.length) return;
+  const sel = document.getElementById('sw-room');
+  const cur = sel.value;
+  const seen = new Set();
+  for (const w of weeks){
+    if (seen.has(w.room_id)) continue; seen.add(w.room_id);
+    const o = document.createElement('option'); o.value = w.room_id; o.textContent = w.room_name; sel.appendChild(o);
+  }
+  sel.value = cur;
+  _roomsPopulated = true;
+}
+
+document.addEventListener('wren:ready', () => {
+  const dr = defaultRange();
+  document.getElementById('sw-from').value = dr.from;
+  document.getElementById('sw-to').value = dr.to;
+  document.getElementById('sw-run').addEventListener('click', load);
+  document.getElementById('sw-csv').addEventListener('click', exportCsv);
+  document.getElementById('sw-room').addEventListener('change', load);
+  load();
+});
+</script>
+</body>
+</html>

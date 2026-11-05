@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="My Tasks">
+  <meta name="wren-app-chat"  content="on">
+  <title>My Tasks · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* b209 — staff task list on the EY tablet. Matches the my-shifts.html house
+       style: dark navy, #1e293b cards, 44px minimum tap targets. */
+    #ey-tasks-page { padding: 12px 12px env(safe-area-inset-bottom, 16px); }
+
+    .tk-summary { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tk-chip {
+      flex: 1; background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 14px; padding: 12px 8px; text-align: center;
+    }
+    .tk-chip .n { font-size: 24px; font-weight: 800; color: var(--c-text); line-height: 1; }
+    .tk-chip .l { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: .05em; color: var(--c-text-dim, #94a3b8); margin-top: 4px; }
+    .tk-chip.overdue { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.08); }
+    .tk-chip.overdue .n { color: #ef4444; }
+    .tk-chip.today   { border-color: rgba(74,154,191,.45); background: rgba(74,154,191,.08); }
+    .tk-chip.today .n { color: #4a9abf; }
+
+    .tk-section-title {
+      font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+      margin: 20px 0 10px; color: var(--c-text-dim, #94a3b8);
+    }
+    .tk-section-title.overdue { color: #ef4444; }
+
+    .tk-card {
+      background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+      padding: 14px; margin-bottom: 10px;
+    }
+    .tk-card.is-overdue { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.06); }
+    .tk-card.is-today   { border-color: #4a9abf; background: rgba(74,154,191,.06); }
+    .tk-card.is-done    { opacity: .62; }
+    .tk-top { display: flex; align-items: flex-start; gap: 10px; }
+    .tk-title { flex: 1; font-size: 16px; font-weight: 700; color: var(--c-text); line-height: 1.3; }
+    .tk-desc { font-size: 13px; color: var(--c-text-dim, #94a3b8); margin-top: 6px; line-height: 1.45; }
+    .tk-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+    .tk-pill {
+      font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9px;
+      background: rgba(148,163,184,.14); color: var(--c-text-dim, #94a3b8);
+    }
+    .tk-pill.due     { background: rgba(74,154,191,.18);  color: #4a9abf; }
+    .tk-pill.late    { background: rgba(239,68,68,.18);   color: #ef4444; }
+    .tk-pill.urgent  { background: rgba(239,68,68,.18);   color: #ef4444; }
+    .tk-pill.high    { background: rgba(245,158,11,.18);  color: #f59e0b; }
+    .tk-pill.repeat  { background: rgba(224,120,32,.16);  color: #e07820; }
+    .tk-pill.files   { background: rgba(34,197,94,.16);   color: #22c55e; }
+
+    .tk-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .tk-btn {
+      border: none; border-radius: 12px; font-size: 14px; font-weight: 700;
+      padding: 12px 18px; cursor: pointer; min-height: 44px; transition: .2s ease;
+    }
+    .tk-done  { background: #22c55e; color: #06281a; }
+    .tk-ghost { background: rgba(148,163,184,.12); color: var(--c-text);
+                border: 1px solid var(--c-border); }
+    .tk-primary { background: #e07820; color: #1a0e02; }
+
+    .tk-empty {
+      background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+      padding: 36px 20px; text-align: center;
+    }
+
+    /* Bottom-sheet: acting on a row happens in place, never on another page. */
+    .tk-sheet-bg {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 900;
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .tk-sheet {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 18px 18px 0 0; width: 100%; max-width: 620px;
+      padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+      max-height: 88vh; overflow-y: auto;
+    }
+    .tk-sheet h3 { margin: 0 0 4px; font-size: 18px; color: var(--c-text); }
+    .tk-sheet label {
+      display: block; font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; color: var(--c-text-dim, #94a3b8); margin: 14px 0 6px;
+    }
+    .tk-sheet input, .tk-sheet select, .tk-sheet textarea {
+      width: 100%; padding: 12px; min-height: 44px; border-radius: 12px;
+      border: 1px solid var(--c-border); background: var(--c-bg, #0f172a);
+      color: var(--c-text); font-size: 15px; font-family: inherit;
+    }
+    .tk-sheet textarea { min-height: 88px; resize: vertical; }
+    .tk-note-required { border-color: rgba(239,68,68,.6) !important; }
+    .tk-hint { font-size: 12px; color: var(--c-text-dim, #94a3b8); margin-top: 6px; line-height: 1.4; }
+    .tk-hint.warn { color: #f59e0b; }
+    .tk-staff-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tk-staff-opt {
+      padding: 10px 14px; min-height: 44px; display: flex; align-items: center;
+      border-radius: 12px; border: 1px solid var(--c-border);
+      background: rgba(148,163,184,.08); color: var(--c-text); font-size: 14px; cursor: pointer;
+    }
+    .tk-staff-opt.on { background: rgba(74,154,191,.2); border-color: #4a9abf; color: #4a9abf; font-weight: 700; }
+    .tk-file-row {
+      display: flex; align-items: center; gap: 10px; padding: 10px;
+      border: 1px solid var(--c-border); border-radius: 12px; margin-bottom: 8px;
+    }
+    .tk-file-row a { color: #4a9abf; text-decoration: none; font-size: 14px; flex: 1; }
+    .tk-assign-fab {
+      position: fixed; right: 16px; bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+      background: #e07820; color: #1a0e02; border: none; border-radius: 28px;
+      padding: 14px 20px; font-size: 15px; font-weight: 800; min-height: 52px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.4); cursor: pointer; z-index: 500;
+    }
+  </style>
+</head>
+<body data-portal="ey">
+
+<div id="ey-tasks-page">
+  <div class="tk-summary" id="tk-summary"></div>
+  <div id="tk-body"><div style="color:var(--c-text-dim,#64748b);padding:16px 0">Loading…</div></div>
+</div>
+
+<button class="tk-assign-fab" id="tk-assign-fab" hidden>+ Assign a task</button>
+<div id="tk-sheet-host"></div>
+
+<script src="/js/wren-core.js?v=20260704"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  'use strict';
+  var DATA = null, ASSIGNABLE = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      function (c) { return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]; });
+  }
+  function fmtDate(d) {
+    if (!d) return 'No due date';
+    var dt = new Date(String(d).split('T')[0] + 'T00:00:00');
+    return dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  function fmtTime(t) {
+    var m = String(t || '').match(/(\d{1,2})[:.](\d{2})/);
+    return m ? (('0' + m[1]).slice(-2) + ':' + m[2]) : '';
+  }
+
+  function card(t) {
+    var cls = 'tk-card' + (t.my_status === 'done' ? ' is-done'
+                        : t.is_overdue ? ' is-overdue' : t.is_today ? ' is-today' : '');
+    var pills = '';
+    if (t.is_overdue)                pills += '<span class="tk-pill late">Overdue</span>';
+    pills += '<span class="tk-pill due">' + esc(fmtDate(t.due_date))
+           + (t.time_of_day && fmtTime(t.time_of_day) ? ' · ' + esc(fmtTime(t.time_of_day)) : '') + '</span>';
+    if (t.priority === 'urgent')     pills += '<span class="tk-pill urgent">Urgent</span>';
+    else if (t.priority === 'high')  pills += '<span class="tk-pill high">High</span>';
+    if (t.repeat_rule)               pills += '<span class="tk-pill repeat">Repeats ' + esc(t.repeat_rule) + '</span>';
+    if (t.room_name)                 pills += '<span class="tk-pill">' + esc(t.room_name) + '</span>';
+    if (t.attachment_count)          pills += '<span class="tk-pill files">📎 ' + t.attachment_count + '</span>';
+    if (t.created_by_name)           pills += '<span class="tk-pill">from ' + esc(t.created_by_name) + '</span>';
+
+    var actions = t.my_status === 'done'
+      ? '<div class="tk-hint">✓ Completed' + (t.my_note ? ' — ' + esc(t.my_note) : '') + '</div>'
+      : '<div class="tk-actions">'
+        + '<button class="tk-btn tk-done" data-act="complete" data-id="' + t.id + '">Mark complete</button>'
+        + (t.attachment_count
+            ? '<button class="tk-btn tk-ghost" data-act="files" data-id="' + t.id + '">📎 Files</button>' : '')
+        + '<button class="tk-btn tk-ghost" data-act="attach" data-id="' + t.id + '">Add file</button>'
+        + '</div>';
+
+    return '<div class="' + cls + '">'
+      + '<div class="tk-top"><div class="tk-title">' + esc(t.title) + '</div></div>'
+      + (t.description ? '<div class="tk-desc">' + esc(t.description) + '</div>' : '')
+      + '<div class="tk-meta">' + pills + '</div>'
+      + actions + '</div>';
+  }
+
+  function section(title, list, cls) {
+    if (!list || !list.length) return '';
+    return '<div class="tk-section-title ' + (cls || '') + '">' + esc(title)
+      + ' (' + list.length + ')</div>' + list.map(card).join('');
+  }
+
+  function render() {
+    var c = DATA.counts;
+    document.getElementById('tk-summary').innerHTML =
+        '<div class="tk-chip overdue"><div class="n">' + c.overdue + '</div><div class="l">Overdue</div></div>'
+      + '<div class="tk-chip today"><div class="n">' + c.today + '</div><div class="l">Due today</div></div>'
+      + '<div class="tk-chip"><div class="n">' + c.upcoming + '</div><div class="l">Upcoming</div></div>';
+
+    var html = section('Overdue', DATA.overdue, 'overdue')
+             + section('Due today', DATA.today)
+             + section('Upcoming', DATA.upcoming)
+             + section('No due date', DATA.no_due)
+             + section('Completed this week', DATA.recently_done);
+    if (!html) {
+      html = '<div class="tk-empty"><div style="font-size:2.2rem;margin-bottom:10px">✅</div>'
+        + '<div style="font-weight:700;color:var(--c-text)">Nothing on your list</div>'
+        + '<div style="color:var(--c-text-dim,#64748b);font-size:13px;margin-top:4px">'
+        + 'Tasks assigned to you will appear here.</div></div>';
+    }
+    document.getElementById('tk-body').innerHTML = html;
+  }
+
+  async function load() {
+    try {
+      DATA = await Wren.api('/api/tasks/mine');
+      render();
+    } catch (e) {
+      document.getElementById('tk-body').innerHTML =
+        '<div class="tk-empty" style="color:#ef4444">Could not load your tasks: '
+        + esc(e.message || e.error || 'unknown error') + '</div>';
+    }
+  }
+
+  // ── Bottom sheet ──────────────────────────────────────────────────────────
+  function closeSheet() { document.getElementById('tk-sheet-host').innerHTML = ''; }
+  function openSheet(html) {
+    document.getElementById('tk-sheet-host').innerHTML =
+      '<div class="tk-sheet-bg" data-sheet-bg><div class="tk-sheet">' + html + '</div></div>';
+  }
+  function findTask(id) {
+    var all = [].concat(DATA.overdue, DATA.today, DATA.upcoming, DATA.no_due, DATA.recently_done);
+    for (var i = 0; i < all.length; i++) if (String(all[i].id) === String(id)) return all[i];
+    return null;
+  }
+
+  function completeSheet(t) {
+    openSheet(
+      '<h3>' + esc(t.title) + '</h3>'
+      + '<div class="tk-hint">' + esc(fmtDate(t.due_date)) + '</div>'
+      + '<label for="tk-note">Note' + (t.is_overdue ? ' (required — this task is overdue)' : ' (optional)') + '</label>'
+      + '<textarea id="tk-note" placeholder="'
+      + (t.is_overdue ? 'This was due already — what happened?' : 'Anything worth recording?')
+      + '"></textarea>'
+      + (t.is_overdue
+          ? '<div class="tk-hint warn">A short note is needed because the deadline has passed.</div>' : '')
+      + '<div class="tk-actions">'
+      + '<button class="tk-btn tk-done" id="tk-confirm" data-id="' + t.id + '">Mark complete</button>'
+      + '<button class="tk-btn tk-ghost" data-act="close">Cancel</button></div>'
+      + '<div class="tk-hint" id="tk-err" style="color:#ef4444"></div>');
+  }
+
+  async function doComplete(id) {
+    var note = (document.getElementById('tk-note').value || '').trim();
+    var btn = document.getElementById('tk-confirm');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await Wren.api('/api/tasks/' + id + '/complete', { method: 'POST', body: { note: note } });
+      closeSheet();
+      Wren.toast('Task marked complete', 'success');
+      load();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = 'Mark complete';
+      if (err && err.error === 'note_required_overdue') {
+        document.getElementById('tk-note').classList.add('tk-note-required');
+        document.getElementById('tk-err').textContent = err.message;
+      } else {
+        document.getElementById('tk-err').textContent =
+          'Could not save: ' + ((err && (err.error || err.message)) || 'unknown error');
+      }
+    }
+  }
+
+  async function filesSheet(t) {
+    openSheet('<h3>Files on “' + esc(t.title) + '”</h3><div id="tk-files">Loading…</div>'
+      + '<div class="tk-actions"><button class="tk-btn tk-ghost" data-act="close">Close</button></div>');
+    try {
+      var files = await Wren.api('/api/tasks/' + t.id + '/attachments');
+      document.getElementById('tk-files').innerHTML = files.length
+        ? files.map(function (f) {
+            return '<div class="tk-file-row"><span>📎</span>'
+              + '<a href="' + f.file_url + '?download=1" target="_blank" rel="noopener">'
+              + esc(f.title || f.filename) + '</a>'
+              + '<span class="tk-pill">' + Math.max(1, Math.round((f.size_bytes || 0) / 1024)) + ' KB</span></div>';
+          }).join('')
+        : '<div class="tk-hint">No files attached.</div>';
+    } catch (e) {
+      document.getElementById('tk-files').innerHTML =
+        '<div class="tk-hint" style="color:#ef4444">Could not load files.</div>';
+    }
+  }
+
+  function attachSheet(t) {
+    openSheet('<h3>Add a file to “' + esc(t.title) + '”</h3>'
+      + '<label for="tk-file">Document or photo</label>'
+      + '<input type="file" id="tk-file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.heic,.mp4">'
+      + '<label for="tk-file-title">Title (optional)</label>'
+      + '<input type="text" id="tk-file-title" placeholder="e.g. Signed drill record">'
+      + '<div class="tk-hint">Files stay inside Wren and are only visible to staff on this task. '
+      + 'Never upload anything you would not put in a child’s record.</div>'
+      + '<div class="tk-actions"><button class="tk-btn tk-primary" id="tk-upload" data-id="' + t.id + '">Upload</button>'
+      + '<button class="tk-btn tk-ghost" data-act="close">Cancel</button></div>'
+      + '<div class="tk-hint" id="tk-err" style="color:#ef4444"></div>');
+  }
+
+  async function doUpload(id) {
+    var input = document.getElementById('tk-file');
+    var err = document.getElementById('tk-err');
+    if (!input.files || !input.files[0]) { err.textContent = 'Choose a file first.'; return; }
+    var btn = document.getElementById('tk-upload');
+    btn.disabled = true; btn.textContent = 'Uploading…';
+    var fd = new FormData();
+    fd.append('file', input.files[0]);
+    var title = (document.getElementById('tk-file-title').value || '').trim();
+    if (title) fd.append('title', title);
+    try {
+      // Raw fetch, not Wren.api: Wren.api forces Content-Type: application/json,
+      // which would destroy the multipart boundary.
+      var res = await fetch('/api/tasks/' + id + '/attachments', {
+        method: 'POST', body: fd,
+        headers: { Authorization: 'Bearer ' + Wren.getToken() },
+      });
+      if (!res.ok) { var d = await res.json().catch(function () { return {}; }); throw new Error(d.error || ('HTTP ' + res.status)); }
+      closeSheet();
+      Wren.toast('File attached', 'success');
+      load();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Upload';
+      err.textContent = 'Upload failed: ' + (e.message || 'unknown error');
+    }
+  }
+
+  // ── Assign (managers + room leaders) ──────────────────────────────────────
+  async function assignSheet() {
+    openSheet('<h3>Assign a task</h3>'
+      + '<label for="tk-a-title">What needs doing?</label>'
+      + '<input type="text" id="tk-a-title" placeholder="e.g. Weekly fire-drill check">'
+      + '<label for="tk-a-desc">Detail (optional)</label>'
+      + '<textarea id="tk-a-desc" placeholder="Anything the person needs to know"></textarea>'
+      + '<label>Who is it for?</label>'
+      + '<div class="tk-staff-grid" id="tk-a-staff">Loading…</div>'
+      + '<label for="tk-a-due">Due date</label>'
+      + '<input type="date" id="tk-a-due">'
+      + '<label for="tk-a-time">Due time</label>'
+      + '<input type="time" id="tk-a-time" value="09:00" step="300">'
+      + '<label for="tk-a-pri">Priority</label>'
+      + '<select id="tk-a-pri"><option value="low">Low</option>'
+      + '<option value="medium" selected>Medium</option><option value="high">High</option>'
+      + '<option value="urgent">Urgent</option></select>'
+      + '<label for="tk-a-rep">Repeat</label>'
+      + '<select id="tk-a-rep"><option value="">Does not repeat</option>'
+      + '<option value="daily">Daily</option><option value="weekly">Weekly</option>'
+      + '<option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option>'
+      + '<option value="termly">Termly</option><option value="yearly">Yearly</option></select>'
+      + '<div class="tk-hint">Reminders go out 24 hours and 1 hour before the deadline, '
+      + 'on whichever channels each person has turned on.</div>'
+      + '<div class="tk-actions"><button class="tk-btn tk-primary" id="tk-a-save">Assign</button>'
+      + '<button class="tk-btn tk-ghost" data-act="close">Cancel</button></div>'
+      + '<div class="tk-hint" id="tk-err" style="color:#ef4444"></div>');
+
+    var d = new Date(); d.setDate(d.getDate() + 1);
+    document.getElementById('tk-a-due').value = d.toISOString().split('T')[0];
+
+    var host = document.getElementById('tk-a-staff');
+    try {
+      if (!ASSIGNABLE) ASSIGNABLE = await Wren.api('/api/tasks/assignable-staff');
+      host.innerHTML = ASSIGNABLE.staff.map(function (s) {
+        return '<div class="tk-staff-opt" data-staff="' + s.id + '">'
+          + esc(s.first_name + ' ' + s.last_name)
+          + (s.room_name ? ' · ' + esc(s.room_name) : '') + '</div>';
+      }).join('') || '<div class="tk-hint">No staff available to assign.</div>';
+    } catch (e) {
+      host.innerHTML = '<div class="tk-hint" style="color:#ef4444">Could not load the staff list.</div>';
+    }
+  }
+
+  async function doAssign() {
+    var err = document.getElementById('tk-err');
+    var title = (document.getElementById('tk-a-title').value || '').trim();
+    var picked = [].slice.call(document.querySelectorAll('.tk-staff-opt.on'))
+      .map(function (el) { return parseInt(el.dataset.staff, 10); });
+    if (!title)        { err.textContent = 'Give the task a title.'; return; }
+    if (!picked.length) { err.textContent = 'Choose at least one person.'; return; }
+    var btn = document.getElementById('tk-a-save');
+    btn.disabled = true; btn.textContent = 'Assigning…';
+    try {
+      await Wren.api('/api/tasks', { method: 'POST', body: {
+        title: title,
+        description: (document.getElementById('tk-a-desc').value || '').trim() || null,
+        due_date: document.getElementById('tk-a-due').value || null,
+        time_of_day: document.getElementById('tk-a-time').value || null,
+        priority: document.getElementById('tk-a-pri').value,
+        repeat_rule: document.getElementById('tk-a-rep').value || null,
+        assignees: picked,
+      }});
+      closeSheet();
+      Wren.toast('Task assigned', 'success');
+      load();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Assign';
+      err.textContent = (e && (e.error || e.message)) || 'Could not assign that task.';
+    }
+  }
+
+  function onClick(e) {
+    var bg = e.target.closest('[data-sheet-bg]');
+    if (bg && e.target === bg) return closeSheet();
+    var el = e.target.closest('[data-act], #tk-confirm, #tk-upload, #tk-a-save, .tk-staff-opt, #tk-assign-fab');
+    if (!el) return;
+    if (el.id === 'tk-assign-fab') return assignSheet();
+    if (el.id === 'tk-confirm')    return doComplete(el.dataset.id);
+    if (el.id === 'tk-upload')     return doUpload(el.dataset.id);
+    if (el.id === 'tk-a-save')     return doAssign();
+    if (el.classList.contains('tk-staff-opt')) { el.classList.toggle('on'); return; }
+    var act = el.dataset.act;
+    if (act === 'close')    return closeSheet();
+    var t = findTask(el.dataset.id);
+    if (!t) return;
+    if (act === 'complete') return completeSheet(t);
+    if (act === 'files')    return filesSheet(t);
+    if (act === 'attach')   return attachSheet(t);
+  }
+
+  // The EY login stores only the token — it never calls Wren.setUser, so
+  // Wren.getUser() is null on this portal (it is populated on HR only, by the
+  // app shell). Read the role straight out of the signed JWT, the same way
+  // wren-app-shell.js does. This is display gating only: the API re-checks the
+  // role on every assign, and a forged role here still gets a 403.
+  function myRole() {
+    var u = Wren.getUser();
+    if (u && u.role) return u.role;
+    try {
+      var t = Wren.getToken();
+      return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role || '';
+    } catch (e) { return ''; }
+  }
+
+  document.addEventListener('wren:ready', function () {
+    document.body.addEventListener('click', onClick);
+    if (['manager', 'deputy_manager', 'room_leader'].indexOf(myRole()) >= 0) {
+      document.getElementById('tk-assign-fab').hidden = false;
+    }
+    load();
+  });
+}());
+</script>
+</body>
+</html>

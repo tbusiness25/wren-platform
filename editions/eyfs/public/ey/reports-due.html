@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"           content="eyfs">
+  <meta name="wren-app-page"          content="reports-due">
+  <meta name="wren-app-title"         content="Reports due">
+  <meta name="wren-app-chat"          content="on">
+  <meta name="wren-app-no-bottom-nav" content="true">
+  <title>Reports due · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    /* Tokens only — no bare hex. Checked in light and dark. */
+    #rd-wrap { padding:16px; max-width:820px; margin:0 auto; display:flex; flex-direction:column; gap:14px;
+               padding-bottom:calc(env(safe-area-inset-bottom,0px) + 90px); }
+    .rd-card { background:var(--c-surface); border:1px solid var(--c-border); border-radius:14px; padding:14px; }
+    .rd-h  { font-size:1rem; margin:0 0 4px; color:var(--c-text); }
+    .rd-muted { color:var(--c-muted); font-size:.85rem; margin:0; }
+
+    /* Counts strip */
+    .rd-counts { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .rd-count { flex:1 1 90px; border:1px solid var(--c-border); border-radius:12px; padding:10px 12px;
+                background:var(--c-bg,transparent); }
+    .rd-count b { display:block; font-size:1.35rem; color:var(--c-text); line-height:1.1; }
+    .rd-count span { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--c-muted);
+                     font-weight:700; }
+    .rd-count.overdue b { color:var(--c-red,#c0392b); }
+    .rd-count.due b     { color:var(--c-orange,#e07820); }
+
+    /* Filters */
+    .rd-filters { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; }
+    .rd-chip { border:1px solid var(--c-border); background:transparent; color:var(--c-muted);
+               border-radius:999px; padding:7px 13px; font-size:.8rem; font-weight:600; cursor:pointer;
+               min-height:36px; font-family:inherit; }
+    .rd-chip[aria-pressed="true"] { background:var(--c-blue); border-color:var(--c-blue); color:#fff; }
+
+    /* Rows */
+    .rd-row { display:flex; align-items:flex-start; gap:12px; padding:12px 0; }
+    .rd-row + .rd-row { border-top:1px solid var(--c-border); }
+    .rd-row-main { flex:1 1 auto; min-width:0; }
+    .rd-row-main b { color:var(--c-text); font-size:.95rem; }
+    .rd-row-main small { display:block; color:var(--c-muted); font-size:.8rem; margin-top:2px; }
+    .rd-row-side { flex:0 0 auto; text-align:right; display:flex; flex-direction:column; gap:6px;
+                   align-items:flex-end; }
+
+    .rd-pill { display:inline-block; border-radius:999px; padding:3px 10px; font-size:.72rem; font-weight:700;
+               border:1px solid var(--c-border); color:var(--c-muted); white-space:nowrap; }
+    .rd-pill.overdue     { background:var(--c-red,#c0392b);    border-color:var(--c-red,#c0392b);    color:#fff; }
+    .rd-pill.due         { background:var(--c-orange,#e07820); border-color:var(--c-orange,#e07820); color:#fff; }
+    .rd-pill.in_progress { background:var(--c-blue);           border-color:var(--c-blue);           color:#fff; }
+    .rd-pill.upcoming    { background:transparent; }
+    .rd-pill.done        { background:var(--c-green,#2d7a4a);  border-color:var(--c-green,#2d7a4a);  color:#fff; }
+
+    .rd-fmt { font-size:.78rem; color:var(--c-muted); font-weight:600; }
+    .rd-empty { color:var(--c-muted); text-align:center; padding:18px 0; }
+    .rd-note { border-left:3px solid var(--c-orange,#e07820); padding:8px 12px; border-radius:0 8px 8px 0;
+               font-size:.84rem; color:var(--c-text); background:var(--c-bg,transparent); }
+    .rd-note.info { border-left-color:var(--c-blue); }
+    .rd-hidden { display:none !important; }
+    .rd-btn { border:1px solid var(--c-border); background:transparent; color:var(--c-text);
+              border-radius:10px; padding:8px 12px; font-size:.82rem; font-weight:600; cursor:pointer;
+              min-height:38px; font-family:inherit; }
+    .rd-btn:hover { border-color:var(--c-blue); }
+
+    /* Key-person split */
+    .rd-kp { display:flex; justify-content:space-between; gap:10px; padding:8px 0; font-size:.86rem; }
+    .rd-kp + .rd-kp { border-top:1px solid var(--c-border); }
+    .rd-kp b { color:var(--c-text); font-weight:600; }
+    .rd-kp span { color:var(--c-muted); white-space:nowrap; }
+  </style>
+</head>
+<body>
+<div id="rd-wrap">
+
+  <div class="rd-card">
+    <h2 class="rd-h">Reports due</h2>
+    <p class="rd-muted" id="rd-sub">Settling in, six-month chats, termly updates and the progress check
+      at age two — scheduled from each child's own start date and birthday. Overdue first.</p>
+    <div class="rd-counts" id="rd-counts"></div>
+    <div class="rd-filters" id="rd-filters"></div>
+  </div>
+
+  <div class="rd-card" id="rd-list-card">
+    <div id="rd-list"></div>
+    <div id="rd-empty" class="rd-empty rd-hidden">Nothing overdue. Everything due in the next eight weeks
+      is under “Coming up”.</div>
+  </div>
+
+  <div class="rd-card rd-hidden" id="rd-kp-card">
+    <h2 class="rd-h">By key person</h2>
+    <p class="rd-muted">Who is carrying what.</p>
+    <div id="rd-kp" style="margin-top:8px"></div>
+  </div>
+
+  <div class="rd-card rd-hidden" id="rd-warn-card">
+    <div class="rd-note" id="rd-warn"></div>
+  </div>
+
+  <div class="rd-card">
+    <h2 class="rd-h">The cycle</h2>
+    <div id="rd-cycle" class="rd-muted" style="margin-top:6px"></div>
+  </div>
+
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  // Wren.api() is the shell's authed fetch. Everything below waits for
+  // wren:ready — the shell has not built the session before that fires, so an
+  // early call gets a 401 and the page silently shows nothing (rule 7).
+  var STATE = { rows: [], counts: {}, byKp: [], formats: null, filter: null,
+                upcoming: false, unassignedOnly: false };
+
+  var STATE_LABEL = {
+    overdue: 'Overdue', due: 'Due now', in_progress: 'Draft started',
+    upcoming: 'Coming up', done: 'Done', not_applicable: 'N/A'
+  };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // 'YYYY-MM-DD' → '14 Sept 2026'. Parsed with local getters: new Date(iso)
+  // gives UTC midnight, which prints the day before for anyone west of UTC.
+  function pretty(iso) {
+    if (!iso) return '—';
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+    if (!m) return iso;
+    var d = new Date(+m[1], +m[2] - 1, +m[3]);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function overdueText(row) {
+    if (row.days_over == null) return '';
+    if (row.state === 'overdue' || row.state === 'due') {
+      var n = row.days_over;
+      if (n >= 14) return Math.floor(n / 7) + ' weeks over';
+      if (n > 0) return n + (n === 1 ? ' day over' : ' days over');
+      return 'due today';
+    }
+    if (row.state === 'upcoming' && row.days_over != null) {
+      var away = -row.days_over;
+      return 'in ' + (away >= 14 ? Math.floor(away / 7) + ' weeks' : away + (away === 1 ? ' day' : ' days'));
+    }
+    return '';
+  }
+
+  function renderCounts() {
+    var c = STATE.counts || {};
+    var cells = [
+      { k: 'overdue', label: 'Overdue' },
+      { k: 'due', label: 'Due now' },
+      { k: 'in_progress', label: 'Drafts' }
+    ];
+    if (STATE.upcoming) cells.push({ k: 'upcoming', label: 'Coming up' });
+    document.getElementById('rd-counts').innerHTML = cells.map(function (x) {
+      return '<div class="rd-count ' + x.k + '"><b>' + (c[x.k] || 0) + '</b><span>' + x.label + '</span></div>';
+    }).join('');
+  }
+
+  function renderFilters() {
+    if (!STATE.formats) return;
+    var html = '<button class="rd-chip" data-fmt="" aria-pressed="' + (!STATE.filter) + '">All</button>';
+    STATE.formats.formats.forEach(function (f) {
+      html += '<button class="rd-chip" data-fmt="' + esc(f.key) + '" aria-pressed="'
+            + (STATE.filter === f.key) + '">' + esc(f.label) + '</button>';
+    });
+    html += '<button class="rd-chip" id="rd-upcoming" aria-pressed="' + STATE.upcoming + '">Coming up</button>';
+    var el = document.getElementById('rd-filters');
+    el.innerHTML = html;
+    el.querySelectorAll('[data-fmt]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        STATE.filter = b.getAttribute('data-fmt') || null;
+        renderFilters(); renderList();
+      });
+    });
+    document.getElementById('rd-upcoming').addEventListener('click', function () {
+      STATE.upcoming = !STATE.upcoming;
+      load();
+    });
+  }
+
+  function renderList() {
+    var rows = STATE.rows.filter(function (r) {
+      if (STATE.filter && r.format !== STATE.filter) return false;
+      // ?unassigned=1 — the deep link from the Cockpit's "overdue reports with no
+      // key person" item. Without this the link lands on an unfiltered board and
+      // the reader has to find the rows the item was about.
+      if (STATE.unassignedOnly && r.key_person_id != null) return false;
+      return true;
+    });
+    var list = document.getElementById('rd-list');
+    document.getElementById('rd-empty').classList.toggle('rd-hidden', rows.length > 0);
+    list.innerHTML = rows.map(function (r) {
+      var over = overdueText(r);
+      // The child page is where a practitioner acts — every one of these is
+      // "go and write it", and the writing happens on the child's own record.
+      var href = '/ey/child/' + encodeURIComponent(r.child_id);
+      if (r.format === 'two_year_check' && r.report_id && r.report_table === 'reports') {
+        href = '/ey/two-year-check/review?id=' + encodeURIComponent(r.report_id);
+      }
+      // b246 — a termly update is written on its own screen, not on the child's
+      // profile: it carries five sections, a card picker and the tracker. Link to
+      // the draft if one is open, otherwise to the child's row on the queue,
+      // which offers to start it.
+      if (r.format === 'termly_update') {
+        href = (r.report_id && r.report_table === 'reports')
+          ? '/ey/termly-update?id=' + encodeURIComponent(r.report_id)
+          : '/ey/termly-update?child=' + encodeURIComponent(r.child_id);
+      }
+      return '<a class="rd-row" href="' + href + '" style="text-decoration:none">'
+        + '<div class="rd-row-main">'
+        +   '<b>' + esc(r.child_name) + '</b>'
+        +   '<small><span class="rd-fmt">' + esc(r.format_label) + '</span>'
+        +     ' · due ' + pretty(r.due_on) + (over ? ' · ' + esc(over) : '')
+        +     (r.key_person_name ? ' · ' + esc(r.key_person_name) : ' · <i>no key person</i>')
+        +     (r.room_name ? ' · ' + esc(r.room_name) : '')
+        +   '</small>'
+        + '</div>'
+        + '<div class="rd-row-side">'
+        +   '<span class="rd-pill ' + esc(r.state) + '">' + esc(STATE_LABEL[r.state] || r.state) + '</span>'
+        + '</div>'
+        + '</a>';
+    }).join('');
+  }
+
+  function renderKeyPeople() {
+    var card = document.getElementById('rd-kp-card');
+    var rows = (STATE.byKp || []).filter(function (k) { return k.overdue || k.due; });
+    card.classList.toggle('rd-hidden', rows.length === 0);
+    document.getElementById('rd-kp').innerHTML = rows.map(function (k) {
+      return '<div class="rd-kp"><b>' + esc(k.key_person_name) + '</b>'
+        + '<span>' + (k.overdue ? k.overdue + ' overdue' : '')
+        + (k.overdue && k.due ? ' · ' : '') + (k.due ? k.due + ' due' : '') + '</span></div>';
+    }).join('');
+  }
+
+  function renderCycle() {
+    if (!STATE.formats) return;
+    var f = STATE.formats;
+    var cfg = f.config || {};
+    var lines = [
+      '<b>Baby room:</b> ' + f.room_cycles.baby.map(labelOf).join(' → '),
+      '<b>Pre-school:</b> ' + f.room_cycles.preschool.map(labelOf).join(' → ') + ' (2-year check only if it has not already been done)',
+      '',
+      'Settling in is due ' + (cfg.settling_due_weeks || 4) + ' weeks after a child starts and overdue after '
+        + (cfg.settling_overdue_weeks || 8) + '. Six-month chats run every ' + (cfg.chat_months || 6)
+        + ' months from the last one. The progress check at age two is due at '
+        + (cfg.two_year_due_months || 30) + ' months — 2½ years — so it is in the family\'s hand for the '
+        + 'health visitor review; it can be written any time between 24 and 36 months.',
+      '',
+      'A child moving from baby room to pre-school does not restart anything: every date here comes from '
+        + 'their start date and their birthday, never from which room they are in.',
+      '',
+      // b246 — the one format on this board that is NOT anchored to the child.
+      'Termly updates are the exception: they follow <b>Ealing\'s school term dates</b>, one per half-term, '
+        + 'so the whole room lands together and the half-term breaks fall where ours do. '
+        + (STATE.termlyCycle
+            ? 'This half-term is <b>' + esc(STATE.termlyCycle.label) + '</b>, due ' + pretty(STATE.termlyCycle.due_on) + '.'
+            : '')
+    ];
+    document.getElementById('rd-cycle').innerHTML = lines.map(function (l) {
+      return l ? '<p style="margin:0 0 8px">' + l + '</p>' : '';
+    }).join('');
+  }
+
+  function labelOf(key) {
+    var hit = (STATE.formats.formats || []).filter(function (f) { return f.key === key; })[0];
+    return esc(hit ? hit.label : key);
+  }
+
+  function renderWarning(data) {
+    var msgs = [];
+    var un = data.unmapped || {};
+    var total = (un.reports || 0) + (un.parent_reports || 0);
+    if (total) {
+      msgs.push(total + ' report' + (total === 1 ? '' : 's') + ' on file could not be matched to one of '
+        + 'the four formats, so they are not counted as done. Ask for the titles to be tidied up.');
+    }
+    if (data.termly_available === false) {
+      msgs.push('Termly-update status is unavailable, so those rows are not shown.');
+    }
+    var card = document.getElementById('rd-warn-card');
+    card.classList.toggle('rd-hidden', msgs.length === 0);
+    document.getElementById('rd-warn').innerHTML = msgs.map(esc).join('<br>');
+  }
+
+  function load() {
+    var qs = STATE.upcoming ? '?upcoming=1' : '';
+    return Wren.api('/api/report-cycle/due' + qs).then(function (data) {
+      STATE.rows = data.rows || [];
+      STATE.counts = data.counts || {};
+      STATE.byKp = data.by_key_person || [];
+      // b246 — which half-term the termly rows were judged against, so the "how
+      // the cycle works" card can name it rather than describing a rule in the abstract.
+      if (data.termly_cycle) { STATE.termlyCycle = data.termly_cycle; renderCycle(); }
+      renderCounts(); renderFilters(); renderList(); renderKeyPeople(); renderWarning(data);
+      var sub = document.getElementById('rd-sub');
+      if (data.children_considered != null) {
+        sub.textContent = sub.textContent.replace(/\s*\(\d+ children\)$/, '')
+          + ' (' + data.children_considered + ' children)';
+      }
+    }).catch(function (e) {
+      document.getElementById('rd-list').innerHTML =
+        '<p class="rd-muted">Could not load the schedule: ' + esc(e && e.message) + '</p>';
+    });
+  }
+
+  function boot() {
+    // The deep link the Cockpit board uses: /ey/reports-due?format=two_year_check
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('format')) STATE.filter = params.get('format');
+    STATE.unassignedOnly = params.get('unassigned') === '1';
+
+    Wren.api('/api/report-cycle/formats').then(function (f) {
+      STATE.formats = f;
+      renderFilters(); renderCycle();
+    }).catch(function () { /* the board still works without the reference data */ });
+
+    load();
+  }
+
+  document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Notifications — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script>
+    // b488 (2026-10-12): this page has no editions/hr copy, so it falls through
+    // to the shared static mount on every portal and wren-shell-v2.js defaulted
+    // EDITION to 'admin' here with no meta to override it — on HR that rendered
+    // the Roost nav (/admin links) and fired the messages-envelope's
+    // GET /api/messages/threads, which HR_DENY now blocks (H4/L14).
+    if (/^hr\.example-nursery\.co\.uk$|^(cc|htps)-hr\.getwren\.co\.uk$/i.test(location.hostname)) {
+      window.WREN_EDITION = 'hr';
+    }
+    // 2026-10-29 (a practitioner, feedback 36): on the room tablets this page drew Roost's sidebar, so
+    // "Comms" went to /admin/... and the tablet bounced to My Morning. The "forgot to clock in"
+    // and task-reminder notifications link here; the tablets' own notifications page is /ey/inbox.
+    if (/^ey\.example-nursery\.co\.uk$/i.test(location.hostname)) {
+      location.replace('/ey/inbox');
+    }
+  </script>
+  <!-- v1 wren-shell.js retired here 2026-07-04 — last live reference; v2 matches every other legacy page -->
+  <script src="/js/wren-shell-v2.js" defer></script>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🔔 Notifications</div>
+      <div class="page-subtitle" id="notif-subtitle">Loading…</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="markAllRead()">Mark all read</button>
+      <button class="btn btn-ghost" onclick="clearAllNotifs()">Clear all</button>
+    </div>
+  </div>
+
+  <!-- Tabs (b149) -->
+  <div class="notif-tabs" id="notif-tabs" style="margin-bottom:16px">
+    <button class="notif-tab active" id="tab-btn-inbox" onclick="switchTab('inbox')">Inbox</button>
+    <button class="notif-tab" id="tab-btn-settings" onclick="switchTab('settings')">⚙️ Settings</button>
+  </div>
+
+  <div id="tab-inbox">
+    <!-- Filter bar -->
+    <div class="filter-bar" style="margin-bottom:16px">
+      <select class="form-control" id="cat-filter" onchange="loadNotifs()" style="flex:0 0 180px">
+        <option value="">All categories</option>
+        <option value="repair">🔧 Repairs</option>
+        <option value="message">💬 Messages</option>
+        <option value="calendar">📅 Calendar</option>
+        <option value="action-plan">📋 Action plans</option>
+        <option value="safeguarding">🛡️ Safeguarding</option>
+        <option value="medicine">💊 Medicine</option>
+        <option value="incident">🚨 Incidents</option>
+        <option value="enquiry">📩 Enquiries</option>
+        <option value="waiting-list">📝 Waiting list</option>
+        <option value="gmail">📧 Gmail</option>
+        <option value="system">ℹ️ System</option>
+      </select>
+      <select class="form-control" id="read-filter" onchange="loadNotifs()" style="flex:0 0 140px">
+        <option value="unread">Unread only</option>
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <div id="notif-list"><div class="loading-state"><div class="spinner"></div></div></div>
+
+    <div id="notif-pagination" style="display:none;text-align:center;margin-top:16px">
+      <button class="btn btn-ghost" id="load-more-btn" onclick="loadMore()">Load more</button>
+    </div>
+  </div>
+
+  <div id="tab-settings" style="display:none">
+  <!-- b212: managers configure any member of staff from here. Hidden entirely
+       for everyone else, who only ever sees their own preferences. -->
+  <div class="card" id="settings-whose" style="padding:16px;margin-bottom:16px;display:none">
+    <div style="font-weight:700;margin-bottom:4px">👤 Whose notifications?</div>
+    <div style="font-size:.82rem;color:var(--c-muted);margin-bottom:10px">
+      You are a manager, so you can set these up on behalf of any member of staff —
+      useful for getting a new starter's alerts right before their first shift.
+    </div>
+    <select class="form-control" id="settings-staff" style="max-width:320px"></select>
+    <span id="settings-whose-note" style="font-size:.8rem;color:var(--c-muted);margin-left:10px"></span>
+  </div>
+    <div class="card" style="padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;margin-bottom:4px">🔕 Quiet hours</div>
+      <div style="font-size:.82rem;color:var(--c-muted);margin-bottom:12px">
+        Defers push notifications during this window — in-app items still arrive, they just won't buzz your phone. Compliance-critical alerts (safeguarding etc.) always come through in-app regardless.
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="qh-enabled" style="accent-color:#4a9abf;width:18px;height:18px">
+          Enabled
+        </label>
+        <label style="display:flex;align-items:center;gap:6px">From
+          <input type="time" class="form-control" id="qh-start" style="width:120px">
+        </label>
+        <label style="display:flex;align-items:center;gap:6px">To
+          <input type="time" class="form-control" id="qh-end" style="width:120px">
+        </label>
+      </div>
+    </div>
+
+    <div class="card" style="padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;margin-bottom:4px">📱 Push notifications</div>
+      <div style="font-size:.82rem;color:var(--c-muted);margin-bottom:10px">
+        Turn on push for this device so "In-app + push" and "Daily digest" categories can actually buzz you.
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btn-enable-push" onclick="enablePushClick()">Enable notifications on this device</button>
+      <span id="push-status" style="font-size:.8rem;color:var(--c-muted);margin-left:10px"></span>
+    </div>
+
+    <div class="card" style="padding:16px">
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-weight:700">Per-category preferences</div>
+        <button class="btn btn-primary btn-sm" onclick="saveMySettings()">Save</button>
+      </div>
+      <div id="settings-cats"><div class="loading-state"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<style>
+.notif-card {
+  display:flex; gap:12px; align-items:flex-start;
+  padding:14px 16px; border-radius:12px; background:var(--c-card);
+  border:1px solid var(--c-border); margin-bottom:8px; cursor:pointer;
+  transition:background .15s;
+}
+.notif-card:hover { background:#243347; }
+.notif-card.read { opacity:.65; }
+.notif-card .notif-icon { font-size:24px; flex-shrink:0; margin-top:2px; }
+.notif-card .notif-body { flex:1; min-width:0; }
+.notif-card .notif-title { font-weight:700; font-size:14px; color:var(--c-text); }
+.notif-card.read .notif-title { font-weight:400; }
+.notif-card .notif-text { font-size:13px; color:var(--c-muted); margin-top:2px; }
+.notif-card .notif-meta { font-size:11px; color:#64748b; margin-top:4px; }
+.notif-actions { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.notif-tabs { display:flex; gap:4px; border-bottom:1px solid var(--c-border); }
+.notif-tab { background:none; border:none; color:var(--c-muted); padding:10px 16px;
+  font-size:.88rem; font-weight:600; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
+.notif-tab.active { color:#4a9abf; border-bottom-color:#4a9abf; }
+.mysettings-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06); flex-wrap:wrap; }
+.mysettings-row:last-child { border-bottom:none; }
+.mysettings-label { flex:1; min-width:160px; font-weight:600; font-size:.88rem; }
+.mysettings-lock { font-size:.7rem; color:#f59e0b; margin-left:6px; }
+.mysettings-mode { background:#1e293b; border:1px solid #334155; color:var(--c-text);
+  border-radius:6px; padding:5px 8px; font-size:.82rem; }
+</style>
+
+<script>
+const CAT_ICON = {
+  repair:'🔧', message:'💬', calendar:'📅', 'action-plan':'📋',
+  safeguarding:'🛡️', medicine:'💊', incident:'🚨', system:'ℹ️',
+  gmail:'📧', enquiry:'📩', 'waiting-list':'📝', 'parent-comment':'💬',
+};
+const PRIORITY_BADGE = {
+  urgent: '<span style="background:#ef444422;color:#ef4444;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid #ef444444">URGENT</span>',
+  high:   '<span style="background:#f59e0b22;color:#f59e0b;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid #f59e0b44">HIGH</span>',
+};
+
+let page = 0;
+let items = [];
+
+async function loadNotifs(reset = true) {
+  if (reset) { page = 0; items = []; }
+  const cat    = document.getElementById('cat-filter').value;
+  const onlyUnread = document.getElementById('read-filter').value !== 'all';
+  let url = `/api/notifications?page=${page}`;
+  if (cat) url += `&category=${encodeURIComponent(cat)}`;
+  try {
+    const rows = await Wren.api(url);
+    const filtered = onlyUnread ? rows.filter(n => !n.read_at) : rows;
+    if (reset) items = filtered; else items = items.concat(filtered);
+    renderNotifs();
+    document.getElementById('load-more-btn').parentElement.style.display = rows.length === 40 ? 'block' : 'none';
+  } catch {
+    document.getElementById('notif-list').innerHTML = '<div class="alert alert-danger">Failed to load</div>';
+  }
+}
+
+function renderNotifs() {
+  const list = document.getElementById('notif-list');
+  const unread = items.filter(n => !n.read_at).length;
+  document.getElementById('notif-subtitle').textContent = `${unread} unread`;
+
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🔔</div><div class="empty-title">No notifications</div></div>`;
+    return;
+  }
+  list.innerHTML = items.map(n => {
+    const icon = CAT_ICON[n.category] || '🔔';
+    const pri  = PRIORITY_BADGE[n.priority] || '';
+    return `<div class="notif-card${n.read_at?' read':''}" onclick="openNotif(${n.id}, ${JSON.stringify(n.link||'')})" data-id="${n.id}">
+      <div class="notif-icon">${icon}</div>
+      <div class="notif-body">
+        <div class="notif-title">${escHtml(n.title)} ${pri}</div>
+        ${n.body ? `<div class="notif-text">${escHtml(n.body)}</div>` : ''}
+        <div class="notif-meta">${relTime(n.created_at)} · ${n.category}</div>
+        <div class="notif-actions">
+          ${!n.read_at ? `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();markRead(${n.id})">Mark read</button>` : ''}
+          <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();dismiss(${n.id})">Dismiss</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openNotif(id, link) {
+  await markRead(id);
+  if (link) window.location.href = link;
+}
+
+async function markRead(id) {
+  try { await Wren.api(`/api/notifications/${id}/read`, { method: 'POST' }); } catch {}
+  items = items.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n);
+  renderNotifs();
+}
+
+async function markAllRead() {
+  try {
+    await Wren.api('/api/notifications/read-all', { method: 'POST' });
+    items = items.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() }));
+    renderNotifs();
+    Wren.toast('All marked as read', 'success');
+  } catch { Wren.toast('Failed', 'error'); }
+}
+
+async function dismiss(id) {
+  try { await Wren.api(`/api/notifications/${id}/dismiss`, { method: 'POST' }); } catch {}
+  items = items.filter(n => n.id !== id);
+  renderNotifs();
+}
+
+function loadMore() {
+  page++;
+  loadNotifs(false);
+}
+
+function relTime(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'Just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7)  return `${d}d ago`;
+  return new Date(ts).toLocaleDateString('en-GB');
+}
+
+async function clearAllNotifs() {
+  if (!confirm('Dismiss all notifications? This just clears your list — nothing is deleted.')) return;
+  try {
+    await Wren.api('/api/notifications/dismiss-all', { method: 'POST' });
+    items = [];
+    renderNotifs();
+    Wren.toast('Cleared', 'success');
+  } catch { Wren.toast('Failed', 'error'); }
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── b149: Settings tab (per-category mode + quiet hours + push opt-in) ───────
+
+const MODE_LABELS = { off: 'Off', inapp: 'In-app only', inapp_push: 'In-app + push', digest: 'Daily digest' };
+let mySettings = null;
+let settingsLoaded = false;
+
+function switchTab(tab) {
+  document.getElementById('tab-inbox').style.display = tab === 'inbox' ? '' : 'none';
+  document.getElementById('tab-settings').style.display = tab === 'settings' ? '' : 'none';
+  document.getElementById('tab-btn-inbox').classList.toggle('active', tab === 'inbox');
+  document.getElementById('tab-btn-settings').classList.toggle('active', tab === 'settings');
+  if (tab === 'settings' && !settingsLoaded) loadMySettings();
+}
+
+async function loadMySettings(staffId) {
+  try {
+    const q = staffId ? ('?staff_id=' + encodeURIComponent(staffId)) : '';
+    mySettings = await Wren.api('/api/notification-matrix' + q);
+    settingsLoaded = true;
+    renderMySettings();
+    refreshPushStatus();
+  } catch (e) {
+    document.getElementById('settings-cats').innerHTML = '<div class="alert alert-danger">Failed to load settings</div>';
+  }
+}
+
+/* b212: one row per category, grouped by the portal the category belongs to.
+   62 categories as a single flat list was unreadable, which is most of why
+   nobody ever changed these. Each group gets bulk controls so a whole portal
+   can be set in one go. */
+function renderMySettings() {
+  const qh = mySettings.quiet_hours || {};
+  document.getElementById('qh-enabled').checked = qh.quiet_hours_enabled !== false;
+  document.getElementById('qh-start').value = String(qh.quiet_hours_start || '20:00').slice(0, 5);
+  document.getElementById('qh-end').value   = String(qh.quiet_hours_end   || '07:00').slice(0, 5);
+
+  const whose = document.getElementById('settings-whose');
+  const sel   = document.getElementById('settings-staff');
+  if (mySettings.can_edit_others && (mySettings.staff_list || []).length) {
+    whose.style.display = '';
+    if (!sel.dataset.built) {
+      sel.innerHTML = mySettings.staff_list.map(st =>
+        `<option value="${st.id}">${escHtml(st.name)} \u2014 ${escHtml(String(st.role).replace(/_/g, ' '))}</option>`).join('');
+      sel.dataset.built = '1';
+      sel.addEventListener('change', () => { settingsLoaded = false; loadMySettings(sel.value); });
+    }
+    sel.value = String(mySettings.staff.id);
+    document.getElementById('settings-whose-note').textContent =
+      mySettings.is_self ? 'These are your own settings.' : ('Editing on behalf of ' + mySettings.staff.name + '.');
+  } else {
+    whose.style.display = 'none';
+  }
+
+  const SCOPE_LABELS = { all: 'Everything', my_room: 'My room only', my_keychildren: 'My key children only' };
+  const el = document.getElementById('settings-cats');
+  el.innerHTML = (mySettings.portals || []).map(p => `
+    <div class="settings-portal" data-portal="${p.key}" style="margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;background:var(--c-surface-2,rgba(127,127,127,.08));border-radius:8px;margin-bottom:8px">
+        <div>
+          <div style="font-weight:700">${escHtml(p.label)}</div>
+          <div style="font-size:.75rem;color:var(--c-muted)">${escHtml(p.hint)} \u00b7 ${p.categories.length} alerts</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="bulkPortal('${p.key}','inapp_push')">All in-app + push</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="bulkPortal('${p.key}','inapp')">All in-app</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="bulkPortal('${p.key}','off')">All off</button>
+        </div>
+      </div>
+      ${p.categories.map(c => `
+      <div class="mysettings-row" data-cat="${c.key}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 4px">
+        <div class="mysettings-label" style="flex:1 1 220px">${escHtml(c.label)}
+          ${c.urgent ? '<span class="urgent-badge" style="background:#ef444422;color:#ef4444;border-radius:3px;padding:1px 5px;font-size:.65rem;font-weight:700;margin-left:6px">URGENT</span>' : ''}
+          ${c.locked ? '<span class="mysettings-lock" style="font-size:.7rem;color:var(--c-muted);margin-left:6px">\ud83d\udd12 always at least in-app</span>' : ''}
+        </div>
+        <select class="mysettings-mode" data-cat="${c.key}" style="min-width:150px">
+          ${['off','inapp','inapp_push','digest'].map(m =>
+            `<option value="${m}" ${m === c.mode ? 'selected' : ''} ${(m === 'off' || m === 'digest') && c.locked ? 'disabled' : ''}>${MODE_LABELS[m]}</option>`
+          ).join('')}
+        </select>
+        <select class="mysettings-scope" data-cat="${c.key}" style="min-width:150px" title="Which children or staff this alert should cover">
+          ${['all','my_room','my_keychildren'].map(sc =>
+            `<option value="${sc}" ${sc === c.scope ? 'selected' : ''}>${SCOPE_LABELS[sc]}</option>`).join('')}
+        </select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:.78rem;color:var(--c-muted);cursor:pointer" title="Also send this one to Telegram">
+          <input type="checkbox" class="mysettings-tg" data-cat="${c.key}" ${c.telegram ? 'checked' : ''} style="accent-color:#4a9abf">
+          Telegram
+        </label>
+      </div>`).join('')}
+    </div>`).join('');
+}
+
+/* Set every category in one portal at once. Compliance-locked rows refuse 'off'
+   and 'digest' at the database too, so they are skipped rather than forced. */
+function bulkPortal(portalKey, mode) {
+  const box = document.querySelector(`.settings-portal[data-portal="${portalKey}"]`);
+  if (!box) return;
+  let skipped = 0;
+  box.querySelectorAll('.mysettings-mode').forEach(sel => {
+    const opt = Array.from(sel.options).find(o => o.value === mode);
+    if (!opt || opt.disabled) { skipped++; return; }
+    sel.value = mode;
+  });
+  Wren.toast(skipped ? `Set \u2014 ${skipped} compliance alert(s) left on` : 'Set \u2014 remember to Save', 'info');
+}
+
+async function saveMySettings() {
+  const tg = {}, sc = {};
+  document.querySelectorAll('.mysettings-tg').forEach(i => { tg[i.dataset.cat] = i.checked; });
+  document.querySelectorAll('.mysettings-scope').forEach(i => { sc[i.dataset.cat] = i.value; });
+  const categories = Array.from(document.querySelectorAll('.mysettings-mode')).map(sel => ({
+    key: sel.dataset.cat, mode: sel.value,
+    telegram: !!tg[sel.dataset.cat], scope: sc[sel.dataset.cat] || 'all',
+  }));
+  const quiet_hours = {
+    quiet_hours_enabled: document.getElementById('qh-enabled').checked,
+    quiet_hours_start: document.getElementById('qh-start').value || '20:00',
+    quiet_hours_end: document.getElementById('qh-end').value || '07:00',
+  };
+  try {
+    const r = await Wren.api('/api/notification-matrix', {
+      method: 'PUT',
+      body: JSON.stringify({ staff_id: mySettings && mySettings.staff && mySettings.staff.id, categories, quiet_hours }),
+    });
+    const who = (mySettings && mySettings.is_self) ? 'Settings saved' : `Saved for ${mySettings.staff.name}`;
+    if (r && r.rejected && r.rejected.length) {
+      Wren.toast(`${who} \u2014 ${r.rejected.length} compliance alert(s) stayed on`, 'info');
+    } else {
+      Wren.toast(who, 'success');
+    }
+  } catch (e) {
+    Wren.toast(e.message || 'Save failed', 'error');
+  }
+}
+
+async function refreshPushStatus() {
+  const status = document.getElementById('push-status');
+  try {
+    const s = await Wren.api('/api/notifications/push-status');
+    status.textContent = s.subscribed ? '✓ Enabled on this device' : (s.vapid ? 'Not enabled on this device' : 'Push not configured on this server');
+  } catch { status.textContent = ''; }
+}
+
+async function enablePushClick() {
+  try {
+    if (window.Wren && Wren.enablePush) {
+      await Wren.enablePush();
+    } else if ('serviceWorker' in navigator) {
+      await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      if (window.Wren && Wren.enablePush) await Wren.enablePush();
+      else Wren.toast('Push not supported in this shell', 'warning');
+    } else {
+      Wren.toast('Notifications not supported on this device', 'warning');
+    }
+  } catch (e) { Wren.toast('Could not enable notifications', 'error'); }
+  refreshPushStatus();
+}
+
+document.addEventListener('wren:ready', (e) => {
+  loadNotifs();
+  const role = (e.detail && e.detail.user && e.detail.user.role) || (window.Wren && Wren.user && Wren.user.role) || '';
+  if (role === 'parent') document.getElementById('notif-tabs').style.display = 'none';
+});
+</script>
+<script src="/js/wren-chat.js?v=2026062901"></script>
+</body>
+</html>

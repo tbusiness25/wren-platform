@@ -1,0 +1,159 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phonics Library · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --blue:#4a9abf;--orange:#e07820;--green:#2d5a4a}
+ .pl-wrap{padding:18px;max-width:1400px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .tabs{display:flex;gap:8px;margin-bottom:12px}
+ .tabs button{background:var(--card);border:1px solid var(--bd);color:var(--mut);border-radius:8px;
+   padding:8px 15px;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit}
+ .tabs button.active{background:var(--blue);border-color:var(--blue);color:#fff}
+ .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+ .chip{padding:6px 13px;border-radius:999px;border:1px solid var(--bd);background:var(--card);
+   color:var(--mut);font-size:.8rem;cursor:pointer;font-family:inherit;font-weight:600}
+ .chip.active{background:var(--blue);border-color:var(--blue);color:#fff}
+ .chips .lbl{color:var(--mut);font-size:.78rem;margin-right:4px}
+ .count{color:var(--mut);font-size:.8rem;margin-bottom:10px}
+ #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+ .tile{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;
+   display:flex;flex-direction:column;gap:7px;text-align:left;color:inherit;font-family:inherit}
+ .tile.story{cursor:pointer;transition:border-color .2s ease}
+ .tile.story:hover{border-color:var(--blue)}
+ .tile-top{display:flex;align-items:center;gap:9px}
+ .tile-title{font-weight:700;color:var(--txt);font-size:.95rem;flex:1;min-width:0}
+ .badge{font-size:.66rem;font-weight:700;padding:2px 9px;border-radius:999px;white-space:nowrap}
+ .badge.phase{background:rgba(74,154,191,.16);color:var(--blue)}
+ .badge.dur{background:rgba(224,120,32,.16);color:var(--orange)}
+ .tile-sub{font-size:.78rem;color:var(--mut);line-height:1.4}
+ .tile-meta{font-size:.72rem;color:var(--mut);display:flex;gap:8px;flex-wrap:wrap}
+ .tile-fmt{font-size:.68rem;font-weight:600;color:var(--blue)}
+ .empty{padding:30px;text-align:center;color:#64748b;grid-column:1/-1}
+</style>
+</head>
+<body>
+<div class="pl-wrap">
+  <h1>Phonics Library</h1>
+  <div class="sub">Wren's original decodable storybooks and phonics games — browse by phase, open a book in the reader, or print an A5 booklet.</div>
+
+  <div class="tabs" role="tablist">
+    <button data-tab="stories" class="active">📖 Decodable Stories</button>
+    <button data-tab="games">🎲 Phonics Games</button>
+  </div>
+
+  <div class="chips" id="phase-chips" role="group" aria-label="Filter by phase">
+    <span class="lbl">Phase:</span>
+    <button class="chip active" data-phase="">All</button>
+  </div>
+
+  <div class="count" id="count"></div>
+  <div id="grid"><div class="empty">Loading…</div></div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js?v=20260922-download"></script>
+<script src="/js/phonics-story-reader.js?v=20260803"></script>
+<script>
+(function(){
+  'use strict';
+  var TOKEN = function(){ return sessionStorage.getItem('wrenToken') || localStorage.getItem('wrenToken'); };
+  var stories = [];   // {slug,title,checkpoint,pages,phase}
+  var games   = [];   // {name,phase,format,gpc_focus,how_to_play,duration_mins,why_it_helps}
+  var tab = 'stories';
+  var phase = '';
+
+  function api(path){
+    return fetch(path, { headers: { 'Authorization': 'Bearer ' + TOKEN() } })
+      .then(function(r){ return r.ok ? r.json() : []; }).catch(function(){ return []; });
+  }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  // Stories carry phase inside the checkpoint string ("… Phase 3 …"); games carry a numeric phase.
+  function phaseOf(cp){ var m = /Phase\s*(\d)/i.exec(cp || ''); return m ? Number(m[1]) : null; }
+
+  function buildPhaseChips(){
+    var phases = {};
+    (tab === 'stories' ? stories : games).forEach(function(x){ if (x.phase) phases[x.phase] = true; });
+    var wrap = document.getElementById('phase-chips');
+    wrap.innerHTML = '<span class="lbl">Phase:</span><button class="chip' + (phase===''?' active':'') + '" data-phase="">All</button>' +
+      Object.keys(phases).map(Number).sort(function(a,b){return a-b;}).map(function(p){
+        return '<button class="chip' + (String(p)===phase?' active':'') + '" data-phase="' + p + '">Phase ' + p + '</button>';
+      }).join('');
+  }
+
+  function rows(){
+    var src = tab === 'stories' ? stories : games;
+    return phase ? src.filter(function(x){ return String(x.phase) === phase; }) : src;
+  }
+
+  function render(){
+    buildPhaseChips();
+    var grid = document.getElementById('grid');
+    var r = rows();
+    document.getElementById('count').textContent =
+      r.length + ' ' + (tab === 'stories' ? 'storybook' : 'game') + (r.length===1?'':'s') +
+      (phase ? ' in Phase ' + phase : '') + ' · ' + (tab==='stories'?stories.length:games.length) + ' total';
+    if (!r.length){ grid.innerHTML = '<div class="empty">Nothing here yet.</div>'; return; }
+
+    if (tab === 'stories'){
+      grid.innerHTML = r.map(function(s){
+        return '<button class="tile story" data-slug="' + esc(s.slug) + '">' +
+          '<div class="tile-top"><span class="tile-title">' + esc(s.title) + '</span>' +
+          (s.phase ? '<span class="badge phase">Phase ' + s.phase + '</span>' : '') + '</div>' +
+          '<div class="tile-sub">' + esc(s.checkpoint || '') + '</div>' +
+          '<div class="tile-meta"><span>' + (s.pages || 0) + ' pages</span><span>Tap to read · print A5</span></div>' +
+        '</button>';
+      }).join('');
+    } else {
+      grid.innerHTML = r.map(function(g){
+        return '<div class="tile">' +
+          '<div class="tile-top"><span class="tile-title">' + esc(g.name) + '</span>' +
+          (g.phase ? '<span class="badge phase">Phase ' + g.phase + '</span>' : '') +
+          (g.duration_mins ? '<span class="badge dur">' + g.duration_mins + ' min</span>' : '') + '</div>' +
+          (g.format ? '<div class="tile-fmt">' + esc(g.format) + '</div>' : '') +
+          (g.gpc_focus ? '<div class="tile-sub"><strong>Focus:</strong> ' + esc(g.gpc_focus) + '</div>' : '') +
+          (g.how_to_play ? '<div class="tile-sub">' + esc(g.how_to_play) + '</div>' : '') +
+          (g.why_it_helps ? '<div class="tile-sub" style="color:var(--blue)"><strong>Why it helps:</strong> ' + esc(g.why_it_helps) + '</div>' : '') +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  function init(){
+    // tab switching
+    document.querySelector('.tabs').addEventListener('click', function(ev){
+      var b = ev.target.closest('button'); if (!b) return;
+      tab = b.dataset.tab; phase = '';
+      document.querySelectorAll('.tabs button').forEach(function(x){ x.classList.toggle('active', x === b); });
+      render();
+    });
+    document.getElementById('phase-chips').addEventListener('click', function(ev){
+      var b = ev.target.closest('.chip'); if (!b) return;
+      phase = b.dataset.phase || '';
+      render();
+    });
+    // story reader
+    if (window.WrenPhonicsStoryReader) WrenPhonicsStoryReader.mount();
+    document.getElementById('grid').addEventListener('click', function(ev){
+      var t = ev.target.closest('.tile.story');
+      if (t && window.WrenPhonicsStoryReader) WrenPhonicsStoryReader.open(t.dataset.slug);
+    });
+
+    Promise.all([ api('/api/phonics/content/stories'), api('/api/phonics/content') ]).then(function(res){
+      stories = (Array.isArray(res[0]) ? res[0] : []).map(function(s){ s.phase = phaseOf(s.checkpoint); return s; });
+      games   = (res[1] && Array.isArray(res[1].games)) ? res[1].games : [];
+      render();
+    });
+  }
+
+  document.addEventListener('wren:ready', init);
+  if (window.Wren && Wren._ready) init();
+})();
+</script>
+</body></html>

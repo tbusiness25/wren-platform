@@ -1,0 +1,167 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parent Voice · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ .pv-wrap{padding:18px;max-width:960px;margin:0 auto;color:#f1f5f9}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:#94a3b8;font-size:.85rem;margin-bottom:14px;line-height:1.5}
+ .pv-tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+ .pv-tab{padding:7px 14px;border-radius:999px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.82rem}
+ .pv-tab.on{background:#4a9abf;border-color:#4a9abf;color:#04101c;font-weight:700}
+ .pv-card{background:#0f1a34;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+ .pv-meta{color:#94a3b8;font-size:.78rem;margin-bottom:6px}
+ .pv-body{white-space:pre-wrap;font-size:.9rem;background:rgba(255,255,255,.03);border-radius:8px;padding:10px;margin-bottom:10px}
+ .pv-actions{display:flex;gap:8px;flex-wrap:wrap}
+ .pv-btn{padding:7px 14px;border-radius:8px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.82rem}
+ .pv-btn.good{background:rgba(34,197,94,.18);color:#4ade80;border-color:rgba(34,197,94,.4)}
+ .pv-btn.bad{background:rgba(239,68,68,.18);color:#f87171;border-color:rgba(239,68,68,.4)}
+ .pv-empty{color:#94a3b8;padding:20px 0}
+ .pv-answer{background:rgba(255,255,255,.04);border-left:3px solid #4a9abf;border-radius:0 8px 8px 0;padding:8px 10px;margin:6px 0;font-size:.86rem}
+ .pv-field{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+ .pv-field input{background:#0f1a34;border:1px solid #334155;border-radius:8px;color:#f1f5f9;padding:8px 10px;font-size:.85rem;flex:1;min-width:220px}
+ .pv-warn{color:#fbbf24;font-size:.78rem;margin-top:4px}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+</head><body data-portal="admin">
+<div class="pv-wrap">
+  <h1>💬 Parent Voice</h1>
+  <div class="sub">Anonymous feedback, the question board, and testimonials — moderated here. Nothing on the anonymous tabs carries a name; do not add a way to find one.</div>
+  <div class="pv-tabs">
+    <button class="pv-tab on" data-t="feedback">Anonymous feedback</button>
+    <button class="pv-tab" data-t="questions">Question board</button>
+    <button class="pv-tab" data-t="testimonials">Testimonials</button>
+    <button class="pv-tab" data-t="links">WhatsApp links</button>
+  </div>
+  <div id="pv-body">Loading…</div>
+</div>
+<script>
+(function(){
+  'use strict';
+  const esc = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+  let tab = 'feedback';
+
+  async function loadFeedback(){
+    const el = document.getElementById('pv-body'); el.innerHTML = 'Loading…';
+    try {
+      const d = await Wren.api('/api/parent-voice/inbox?status=new');
+      const items = d.items || [];
+      if (!items.length) { el.innerHTML = '<div class="pv-empty">Nothing new.</div>'; return; }
+      el.innerHTML = items.map(r => `
+        <div class="pv-card" data-id="${r.id}" data-kind="feedback">
+          <div class="pv-meta">${r.category ? esc(r.category) + ' · ' : ''}week of ${esc(r.received_week)}</div>
+          <div class="pv-body">${esc(r.body)}</div>
+          <div class="pv-actions">
+            <button class="pv-btn good" data-set="actioned">Mark actioned</button>
+            <button class="pv-btn" data-set="read">Mark read</button>
+          </div>
+        </div>`).join('');
+    } catch(e) { el.innerHTML = '<div class="pv-empty">Could not load feedback.</div>'; }
+  }
+
+  async function loadQuestions(){
+    const el = document.getElementById('pv-body'); el.innerHTML = 'Loading…';
+    try {
+      const d = await Wren.api('/api/parent-voice/questions/admin');
+      const qs = d.questions || [];
+      if (!qs.length) { el.innerHTML = '<div class="pv-empty">No questions yet.</div>'; return; }
+      el.innerHTML = qs.map(q => `
+        <div class="pv-card">
+          <div class="pv-meta">Asked week of ${esc(q.asked_week)} · ${esc(q.status)}</div>
+          <div class="pv-body">${esc(q.body)}</div>
+          ${(q.answers||[]).map(a => `<div class="pv-answer">${esc(a.body)} <span style="opacity:.6">(${esc(a.status)})</span>
+            <button class="pv-btn" data-hide-answer="${a.id}" style="margin-left:8px;padding:2px 8px">${a.status==='hidden'?'Unhide':'Hide'}</button></div>`).join('')}
+          <div class="pv-actions" style="margin-top:8px">
+            <button class="pv-btn ${q.status==='hidden'?'good':'bad'}" data-hide-q="${q.id}" data-set="${q.status==='hidden'?'open':'hidden'}">${q.status==='hidden'?'Unhide question':'Hide question'}</button>
+          </div>
+        </div>`).join('');
+    } catch(e) { el.innerHTML = '<div class="pv-empty">Could not load questions.</div>'; }
+  }
+
+  async function loadTestimonials(){
+    const el = document.getElementById('pv-body'); el.innerHTML = 'Loading…';
+    try {
+      const d = await Wren.api('/api/parent-voice/testimonials/admin?status=pending');
+      const items = d.items || [];
+      if (!items.length) { el.innerHTML = '<div class="pv-empty">Nothing awaiting approval.</div>'; return; }
+      el.innerHTML = items.map(t => `
+        <div class="pv-card" data-id="${t.id}" data-kind="testimonial">
+          <div class="pv-meta">${esc(t.display_name)} · submitted ${esc(t.submitted_at)}</div>
+          <div class="pv-body">${esc(t.body)}</div>
+          <div class="pv-actions">
+            <button class="pv-btn good" data-set="approved">Approve — publish to website</button>
+            <button class="pv-btn bad" data-set="declined">Decline</button>
+          </div>
+        </div>`).join('');
+    } catch(e) { el.innerHTML = '<div class="pv-empty">Could not load testimonials.</div>'; }
+  }
+
+  async function loadLinks(){
+    const el = document.getElementById('pv-body'); el.innerHTML = 'Loading…';
+    try {
+      const d = await Wren.api('/api/parent-voice/community-links');
+      el.innerHTML = `
+        <div class="pv-card">
+          <div class="pv-field"><label style="width:140px">Baby Room</label><input id="pv-baby" value="${esc(d.baby_room_url||'')}" placeholder="https://chat.whatsapp.com/..."></div>
+          <div class="pv-field"><label style="width:140px">Pre-school</label><input id="pv-pre" value="${esc(d.preschool_url||'')}" placeholder="https://chat.whatsapp.com/..."></div>
+          <button class="pv-btn good" id="pv-save-links">Save links</button>
+          <div class="pv-warn">These are shown to every parent in that room — check the link before saving.</div>
+        </div>`;
+      document.getElementById('pv-save-links').addEventListener('click', async () => {
+        try {
+          await Wren.api('/api/parent-voice/community-links', { method:'PUT', body:{
+            baby_room_url: document.getElementById('pv-baby').value.trim(),
+            preschool_url: document.getElementById('pv-pre').value.trim(),
+          }});
+          Wren.toast('Saved','success');
+        } catch(e) { Wren.toast('Could not save','error'); }
+      });
+    } catch(e) { el.innerHTML = '<div class="pv-empty">Could not load links.</div>'; }
+  }
+
+  const LOADERS = { feedback: loadFeedback, questions: loadQuestions, testimonials: loadTestimonials, links: loadLinks };
+
+  document.addEventListener('wren:ready', function(){
+    document.querySelector('.pv-tabs').addEventListener('click', e => {
+      const b = e.target.closest('.pv-tab'); if (!b) return;
+      tab = b.dataset.t;
+      document.querySelectorAll('.pv-tab').forEach(x => x.classList.toggle('on', x === b));
+      LOADERS[tab]();
+    });
+    document.getElementById('pv-body').addEventListener('click', async e => {
+      const feedbackBtn = e.target.closest('.pv-card[data-kind="feedback"] .pv-btn');
+      if (feedbackBtn) {
+        const id = feedbackBtn.closest('.pv-card').dataset.id;
+        try { await Wren.api('/api/parent-voice/inbox/' + id + '/status', { method:'PUT', body:{ status: feedbackBtn.dataset.set } }); Wren.toast('Updated','success'); loadFeedback(); }
+        catch(x){ Wren.toast('Could not update','error'); }
+        return;
+      }
+      const tmBtn = e.target.closest('.pv-card[data-kind="testimonial"] .pv-btn');
+      if (tmBtn) {
+        const id = tmBtn.closest('.pv-card').dataset.id;
+        try { await Wren.api('/api/parent-voice/testimonials/' + id + '/status', { method:'PUT', body:{ status: tmBtn.dataset.set } }); Wren.toast('Updated','success'); loadTestimonials(); }
+        catch(x){ Wren.toast('Could not update','error'); }
+        return;
+      }
+      const qBtn = e.target.closest('[data-hide-q]');
+      if (qBtn) {
+        try { await Wren.api('/api/parent-voice/questions/' + qBtn.dataset.hideQ + '/status', { method:'PUT', body:{ status: qBtn.dataset.set } }); Wren.toast('Updated','success'); loadQuestions(); }
+        catch(x){ Wren.toast('Could not update','error'); }
+        return;
+      }
+      const aBtn = e.target.closest('[data-hide-answer]');
+      if (aBtn) {
+        try {
+          const wantHidden = aBtn.textContent.trim() === 'Hide';
+          await Wren.api('/api/parent-voice/answers/' + aBtn.dataset.hideAnswer + '/status', { method:'PUT', body:{ status: wantHidden ? 'hidden' : 'visible' } });
+          Wren.toast('Updated','success'); loadQuestions();
+        } catch(x){ Wren.toast('Could not update','error'); }
+      }
+    });
+    loadFeedback();
+  });
+})();
+</script>
+</body></html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Opening view-as session…</title>
+<!--
+  b320 — the hand-off landing page, served from the shared public root so the
+  one file works on both parents.* (Finch) and hr.* (Seed).
+
+  What arrives in the URL is a ONE-TIME CODE, never a token: 32 random bytes,
+  two minutes, single use, and only its sha256 is stored. The session token is
+  minted by POST /api/view-as/redeem on this host and handed straight to an
+  HttpOnly cookie, so it never touches the address bar, browser history, a log
+  line or an email. Same pattern, for the same reason, as the b233 OIDC
+  hand-off. The code is scrubbed out of history below before anything else.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--c-bg, #f6f7f9); color: var(--c-text, #1f2937);
+    font: 400 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 24px;
+  }
+  .card {
+    background: var(--c-card, #fff); border: 1px solid var(--c-border, #e2e5ea);
+    border-radius: 14px; padding: 28px 30px; max-width: 420px; width: 100%;
+    text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,.07);
+  }
+  h1 { font-size: 1.05rem; margin: 0 0 8px; }
+  p  { margin: 0; color: var(--c-muted, #6b7280); font-size: .92rem; }
+  .err { color: #b91c1c; font-weight: 600; }
+  @media (prefers-color-scheme: dark) {
+    body { background: var(--c-bg, #15181d); color: var(--c-text, #e8eaee); }
+    .card { background: var(--c-card, #1d2127); border-color: var(--c-border, #2c313a); }
+    p { color: var(--c-muted, #9aa3af); }
+    .err { color: #f87171; }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="t">Opening…</h1>
+    <p id="m">One moment.</p>
+  </div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var code = q.get('c') || '';
+  // Out of the address bar and out of history before the request is even made.
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+
+  function fail(msg) {
+    document.getElementById('t').textContent = 'Could not open';
+    var m = document.getElementById('m');
+    m.className = 'err';
+    m.textContent = msg;
+  }
+
+  if (!code) return fail('This link is missing its code. Start again from Roost.');
+
+  fetch('/api/view-as/redeem', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: code }),
+  })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) return fail((res.d && res.d.message) || 'This view-as link is not valid any more.');
+      // Seed (HR) authenticates from sessionStorage, which is per-TAB — so this
+      // session lives and dies with this tab and cannot leak into the manager's
+      // own HR tab next to it. Finch sends no header at all and rides the
+      // HttpOnly cookie the server just set.
+      if (res.d.portal === 'hr') {
+        try {
+          sessionStorage.setItem('wrenToken', res.d.token);
+          // Deliberately NOT setting wrenUser: wren-app-shell.js falls back to
+          // the JWT payload, which carries the SUBJECT's id, name, role and
+          // room. Letting it do that is what makes the portal render exactly as
+          // they see it rather than as an approximation we assembled here.
+          sessionStorage.removeItem('wrenUser');
+        } catch (e) { return fail('This browser is blocking session storage, so Seed cannot be opened.'); }
+      }
+      document.getElementById('t').textContent = 'Opening ' + (res.d.subject_label || 'their') + '’s view…';
+      location.replace(res.d.landing || '/');
+    })
+    .catch(function () { fail('Something went wrong opening this session.'); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Reading room — Roost</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<script src="/js/wren-markdown.js" defer></script>
+<style>
+/* b352 — tokens only, no bare hex. Checked in both palettes (the Roost dark one, and the light one the tokens
+   are overridden to in scripts/b352-screens.js). */
+.rr-page{max-width:1000px}
+/* [hidden] must win over the author display rules below (a flex row with the attribute still shows otherwise) */
+.rr-page [hidden],.rr-sheet [hidden]{display:none!important}
+.rr-intro{background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:13px 15px;
+  font-size:.85rem;color:var(--c-muted);line-height:1.6;margin-bottom:14px}
+.rr-intro b{color:var(--c-text)}
+
+.rr-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.rr-tab{flex:1 1 130px;text-align:left;border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-muted);
+  border-radius:12px;padding:10px 14px;font-family:inherit;cursor:pointer;min-height:56px}
+.rr-tab .n{display:block;font-size:1.35rem;font-weight:800;color:var(--c-text);line-height:1.1}
+.rr-tab .l{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em}
+.rr-tab.on{border-color:var(--c-blue)}
+.rr-tab.on .l{color:var(--c-blue)}
+
+.rr-resume{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--c-surface);border:1px dashed var(--c-blue);
+  border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:.84rem;color:var(--c-muted)}
+.rr-resume b{color:var(--c-text)}
+
+.rr-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.rr-bar input[type=search]{flex:1;min-width:200px;background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-text);
+  border-radius:9px;padding:9px 12px;font-size:.88rem;font-family:inherit;min-height:44px}
+.rr-chip{border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-muted);border-radius:999px;
+  padding:6px 13px;font-size:.78rem;cursor:pointer;font-family:inherit;min-height:40px}
+.rr-chip.on{border-color:var(--c-blue);color:var(--c-text);background:color-mix(in srgb,var(--c-blue) 16%,transparent)}
+.rr-chip .n{margin-left:6px;font-weight:700}
+
+.rr-card{background:var(--c-surface);border:1px solid var(--c-border);border-left:4px solid var(--c-blue);border-radius:12px;
+  padding:13px 15px;margin-bottom:10px}
+.rr-card.s-in_progress{border-left-color:var(--c-amber)}
+.rr-card.s-done{border-left-color:var(--c-green)}
+.rr-head{display:flex;gap:8px;align-items:flex-start;flex-wrap:nowrap}
+
+/* b506 — the pin. One short group above the normal list, a thin rule under it, and a 📌 on every card:
+   muted and transparent when it is not pinned, filled when it is. Tokens only; checked light and dark. */
+.rr-group{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin:2px 0 8px}
+.rr-group-t{font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--c-blue)}
+.rr-group-n{font-size:.74rem;color:var(--c-muted)}
+.rr-group-rule{border-top:1px solid var(--c-border);margin:16px 0 14px}
+.rr-pin{flex:0 0 auto;background:transparent;border:1px solid var(--c-border);border-radius:9px;min-width:44px;min-height:44px;
+  font-size:.95rem;line-height:1;cursor:pointer;font-family:inherit;color:var(--c-muted);opacity:.5;filter:grayscale(1)}
+.rr-pin:hover{border-color:var(--c-blue);opacity:.85}
+.rr-pin.on{opacity:1;filter:none;border-color:var(--c-blue);background:color-mix(in srgb,var(--c-blue) 16%,transparent);color:var(--c-text)}
+.rr-pin[disabled]{cursor:progress}
+.rr-badge.pinned{color:var(--c-blue)}
+.rr-err{font-size:.78rem;color:var(--c-red);margin-top:8px;line-height:1.5}
+.rr-title{font-weight:700;color:var(--c-text);font-size:.97rem;line-height:1.35;flex:1 1 240px;background:none;border:0;
+  text-align:left;padding:0;cursor:pointer;font-family:inherit;min-height:44px;display:flex;align-items:center;justify-content:flex-start}
+/* a long path or URL in a title or one-line summary must wrap, never push the page wider than the phone */
+.rr-card,.rr-title,.rr-sum,.rr-meta,.rr-resume,.rr-foot,.rr-st-s,.rr-st-t,.rr-sh-head h2{overflow-wrap:anywhere;min-width:0}
+.rr-title:hover{text-decoration:underline}
+.rr-meta{font-size:.75rem;color:var(--c-muted);margin-top:5px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.rr-badge{font-size:.66rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;border:1px solid currentColor;
+  border-radius:999px;padding:2px 9px;white-space:nowrap;color:var(--c-muted);background:transparent}
+.rr-badge.changed{color:var(--c-amber)}
+.rr-badge.gone{color:var(--c-red)}
+.rr-flip{font-family:inherit;cursor:pointer;min-height:32px}
+.rr-flip.needs{color:var(--c-amber)}
+.rr-sum{font-size:.85rem;color:var(--c-text);line-height:1.55;margin-top:8px}
+.rr-track{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center;font-size:.72rem;color:var(--c-muted)}
+.rr-dot{display:inline-flex;align-items:center;gap:5px}
+.rr-dot i{width:12px;height:12px;border-radius:50%;border:2px solid var(--c-border);display:inline-block}
+.rr-dot.on i{background:var(--c-green);border-color:var(--c-green)}
+.rr-dot.on{color:var(--c-text)}
+.rr-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.rr-btn{background:transparent;border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;padding:8px 14px;
+  font-size:.82rem;cursor:pointer;font-family:inherit;min-height:44px}
+.rr-btn:hover{border-color:var(--c-blue)}
+.rr-btn.primary{background:var(--c-blue);border-color:var(--c-blue);color:var(--c-navy);font-weight:700}
+.rr-btn[disabled]{opacity:.5;cursor:not-allowed}
+.rr-muted{color:var(--c-muted);font-size:.86rem}
+.rr-fold{margin:18px 0 8px;border:1px solid var(--c-border);border-radius:12px;background:var(--c-surface)}
+.rr-fold>summary{cursor:pointer;padding:13px 15px;font-weight:700;color:var(--c-text);min-height:44px;display:flex;align-items:center}
+.rr-fold>div{padding:0 12px 12px}
+.rr-foot{margin-top:18px;font-size:.78rem;color:var(--c-muted);line-height:1.6}
+.rr-foot details{margin-top:6px}
+.rr-foot summary{cursor:pointer;min-height:44px;display:flex;align-items:center}
+
+/* the reader — a popup, per the popup-first rule: acting on a row never navigates away from the list */
+.rr-veil{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:400;display:none}
+.rr-veil.on{display:block}
+.rr-sheet{position:fixed;z-index:401;background:var(--c-bg);color:var(--c-text);border:1px solid var(--c-border);
+  display:none;flex-direction:column;inset:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.rr-sheet.on{display:flex}
+@media (min-width:900px){
+  .rr-sheet{inset:24px 24px 24px auto;width:min(1180px,calc(100vw - 48px));border-radius:14px}
+}
+/* the document first; the track beside it on a wide screen, below it on a phone */
+.rr-reader{display:flex;flex-direction:column;gap:18px}
+@media (min-width:900px){
+  .rr-reader{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+  .rr-side{position:sticky;top:0;max-height:calc(100vh - 150px);overflow:auto}
+}
+.rr-sh-t{flex:1;min-width:0}
+.rr-mini{margin-top:6px}
+.rr-mini .rr-track{margin-top:0}
+.rr-sh-head{display:flex;gap:10px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid var(--c-border)}
+.rr-sh-head h2{margin:0;font-size:1.05rem;line-height:1.35;color:var(--c-text)}
+.rr-x{background:transparent;border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;min-width:44px;min-height:44px;
+  font-size:1.2rem;cursor:pointer;font-family:inherit}
+.rr-sh-body{overflow:auto;flex:1;padding:14px 16px 28px;-webkit-overflow-scrolling:touch}
+.rr-steps{border:1px solid var(--c-border);border-radius:12px;background:var(--c-surface);padding:6px 12px;margin-bottom:16px}
+.rr-step{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--c-border);align-items:flex-start}
+.rr-step:last-child{border-bottom:0}
+.rr-tick{flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:2px solid var(--c-border);background:transparent;
+  color:var(--c-navy);font-size:1.15rem;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center}
+.rr-step.on .rr-tick{background:var(--c-green);border-color:var(--c-green)}
+.rr-tick[disabled]{opacity:.45;cursor:not-allowed}
+.rr-st-body{flex:1;min-width:0}
+.rr-st-t{font-weight:700;font-size:.9rem;color:var(--c-text)}
+.rr-st-s{font-size:.78rem;color:var(--c-muted);margin-top:2px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.rr-st-form{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.rr-st-form textarea,.rr-st-form input{background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-text);border-radius:9px;
+  padding:9px 11px;font-size:.88rem;font-family:inherit;min-height:44px;width:100%}
+.rr-st-form textarea{min-height:88px;resize:vertical}
+.rr-st-row{display:flex;gap:8px;flex-wrap:wrap}
+.rr-mode{display:inline-flex;border:1px solid var(--c-border);border-radius:10px;overflow:hidden;margin-bottom:12px}
+.rr-mode button{border:0;background:transparent;color:var(--c-muted);padding:8px 14px;font-family:inherit;font-size:.8rem;cursor:pointer;min-height:44px}
+.rr-mode button.on{background:color-mix(in srgb,var(--c-blue) 18%,transparent);color:var(--c-text);font-weight:700}
+.rr-hist{font-size:.78rem;color:var(--c-muted);line-height:1.6}
+.rr-hist li{margin-bottom:3px}
+
+/* the rendered document */
+.rr-doc{font-size:.92rem;line-height:1.7;color:var(--c-text);word-break:break-word}
+.rr-doc h1{font-size:1.35rem;margin:1.1em 0 .4em}
+.rr-doc h2{font-size:1.15rem;margin:1.2em 0 .4em;padding-bottom:.2em;border-bottom:1px solid var(--c-border)}
+.rr-doc h3{font-size:1rem;margin:1.1em 0 .3em}
+.rr-doc h4,.rr-doc h5,.rr-doc h6{font-size:.9rem;margin:1em 0 .3em;color:var(--c-muted);text-transform:uppercase;letter-spacing:.04em}
+.rr-doc p{margin:.6em 0}
+.rr-doc ul,.rr-doc ol{padding-left:1.4em;margin:.5em 0}
+.rr-doc li{margin:.2em 0}
+.rr-doc code{background:var(--c-surface);border:1px solid var(--c-border);border-radius:5px;padding:1px 5px;font-size:.84em}
+.rr-doc pre{background:var(--c-surface);border:1px solid var(--c-border);border-radius:9px;padding:11px 13px;overflow-x:auto}
+.rr-doc pre code{border:0;padding:0;background:none}
+.rr-doc blockquote{margin:.8em 0;padding:.1em 1em;border-left:3px solid var(--c-blue);color:var(--c-muted)}
+.rr-doc a{color:var(--c-blue)}
+.rr-doc hr{border:0;border-top:1px solid var(--c-border);margin:1.4em 0}
+.rr-doc .rr-table{overflow-x:auto;margin:.8em 0}
+.rr-doc table{border-collapse:collapse;font-size:.82rem;min-width:100%}
+.rr-doc th,.rr-doc td{border:1px solid var(--c-border);padding:6px 9px;text-align:left;vertical-align:top}
+.rr-doc th{background:var(--c-surface);color:var(--c-text);white-space:nowrap}
+.rr-doc .rr-ref,.rr-doc .rr-img{color:var(--c-muted)}
+.rr-doc .rr-empty{color:var(--c-muted);font-style:italic}
+.rr-frame{width:100%;height:68vh;border:1px solid var(--c-border);border-radius:9px;background:var(--c-surface)}
+.rr-pre{white-space:pre-wrap}
+@media (max-width:767px){.rr-chip{min-height:44px}.rr-flip{min-height:44px}.rr-page{padding-left:14px;padding-right:14px}}
+</style>
+</head>
+<body>
+<div class="v2-page rr-page">
+  <h1 class="page-title">📖 Reading room</h1>
+
+  <div class="rr-intro">
+    Every analysis, audit, research report and decision note Wren holds, <b>newest first</b>. Tick <b>Read</b> when you have.
+    The ones that ask for a decision carry on — <b>Discussed</b> (with the office manager or the team), <b>Decided</b> (what you decided, in your words,
+    which also goes into the decision register) and <b>Done</b> (what happened). The ones that are only for information end at Read.
+    Nothing here is written by Wren for you: the document is the source, the ticks are yours.
+    Tap <b>📌</b> on anything you want to keep at the top — a pinned document stays there once you have read it.
+  </div>
+
+  <div class="rr-tabs" id="rr-tabs" aria-label="Show"></div>
+  <div id="rr-resume"></div>
+
+  <div class="rr-bar">
+    <input type="search" id="rr-q" placeholder="Search titles, summaries and the text of every document…" aria-label="Search the reading room">
+    <button class="rr-chip" id="rr-dec" aria-pressed="false">Needs a decision</button>
+  </div>
+  <div class="rr-bar" id="rr-kinds" aria-label="Filter by kind"></div>
+  <div class="rr-bar" id="rr-bulk" hidden></div>
+
+  <div id="rr-list"><p class="rr-muted">Loading…</p></div>
+
+  <details class="rr-fold" id="rr-done-fold"><summary id="rr-done-sum">Done</summary><div id="rr-done-list"></div></details>
+
+  <div class="rr-foot" id="rr-foot"></div>
+</div>
+
+<div class="rr-veil" id="rr-veil"></div>
+<div class="rr-sheet" id="rr-sheet" role="dialog" aria-modal="true" aria-labelledby="rr-sh-title">
+  <div class="rr-sh-head">
+    <div class="rr-sh-t"><h2 id="rr-sh-title">…</h2><div class="rr-mini" id="rr-mini"></div></div>
+    <button class="rr-x" id="rr-sh-close" aria-label="Close">×</button>
+  </div>
+  <div class="rr-sh-body" id="rr-sh-body"></div>
+</div>
+
+<script>
+const api = (u, o) => Wren.api(u, o);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const errText = e => (e && (e.message || e.error)) ? String(e.message || e.error) : 'Something went wrong.';
+
+const KIND_LABEL = { analysis: 'Analyses', audit: 'Audits', research: 'Research', qa: 'Testing', decision: 'Decision records', reference: 'Reference', other: 'Other' };
+const KIND_ONE   = { analysis: 'Analysis', audit: 'Audit', research: 'Research', qa: 'Testing', decision: 'Decision record', reference: 'Reference', other: 'Document' };
+const KIND_ORDER = ['analysis', 'audit', 'research', 'qa', 'decision', 'reference', 'other'];
+
+let S = { status: 'open', kinds: new Set(), decision: false, q: '', data: null, done: null, openId: null, lastFocus: null };
+const store = {
+  get(k) { try { return localStorage.getItem('wren.readingroom.' + k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem('wren.readingroom.' + k, v); } catch (_) {} },
+};
+
+function fmtDate(d) {
+  if (!d) return '';
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00Z');
+  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+function fmtWhen(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+/* ── the list ─────────────────────────────────────────────────────────────────────────── */
+function qs(extra) {
+  const p = new URLSearchParams();
+  if (S.q) p.set('q', S.q);
+  if (S.kinds.size) p.set('kind', [...S.kinds].join(','));
+  if (S.decision) p.set('decision', 'yes');
+  const st = extra && extra.status ? extra.status : (S.q ? 'all' : S.status);
+  p.set('status', st);
+  return p.toString();
+}
+
+async function load() {
+  try {
+    S.data = await api('/api/reading-room?' + qs());
+    renderTabs(); renderKinds(); renderList(); renderFoot(); renderResume(); renderBulk();
+    const fold = document.getElementById('rr-done-fold');
+    if (fold.open) loadDone();
+  } catch (e) {
+    document.getElementById('rr-list').innerHTML = `<p class="rr-muted">Could not load the reading room: ${esc(errText(e))}</p>`;
+  }
+}
+
+function renderTabs() {
+  const c = S.data.counts;
+  const el = document.getElementById('rr-tabs');
+  el.innerHTML = [
+    ['unread', 'To read', c.unread], ['in_progress', 'In progress', c.in_progress], ['done', 'Done', c.done],
+  ].map(([k, l, n]) => `<button class="rr-tab${S.status === k ? ' on' : ''}" data-tab="${k}" aria-pressed="${S.status === k}"><span class="n">${n}</span><span class="l">${l}</span></button>`).join('');
+  el.querySelectorAll('.rr-tab').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.tab;
+    if (k === 'done') { const f = document.getElementById('rr-done-fold'); f.open = true; loadDone(); f.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    S.status = S.status === k ? 'open' : k;      // a second tap goes back to "everything still open"
+    load();
+  }));
+}
+
+function renderKinds() {
+  const kc = S.data.kind_counts || {};
+  const total = Object.values(kc).reduce((a, b) => a + b, 0);
+  const chips = [`<button class="rr-chip${S.kinds.size ? '' : ' on'}" data-k="">All<span class="n">${total}</span></button>`]
+    .concat(KIND_ORDER.filter(k => kc[k]).map(k => `<button class="rr-chip${S.kinds.has(k) ? ' on' : ''}" data-k="${k}">${esc(KIND_LABEL[k])}<span class="n">${kc[k]}</span></button>`));
+  const el = document.getElementById('rr-kinds');
+  el.innerHTML = chips.join('');
+  el.querySelectorAll('.rr-chip').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    if (!k) S.kinds.clear(); else if (S.kinds.has(k)) S.kinds.delete(k); else S.kinds.add(k);
+    store.set('kinds', [...S.kinds].join(',')); load();
+  }));
+}
+
+const TRACK = [['read', 'Read'], ['discussed', 'Discussed'], ['decided', 'Decided'], ['done', 'Done']];
+function trackHtml(it) {
+  const steps = it.needs_decision ? TRACK : TRACK.slice(0, 1);
+  return `<div class="rr-track" aria-label="Progress">${steps.map(([k, l]) => `<span class="rr-dot${it.steps[k] ? ' on' : ''}"><i></i>${l}</span>`).join('')}</div>`;
+}
+
+function cardHtml(it) {
+  const flip = `<button class="rr-badge rr-flip ${it.needs_decision ? 'needs' : ''}" data-flip="${it.id}" title="Tap to flip" aria-label="${it.needs_decision ? 'Needs a decision — tap to make it for information' : 'For information — tap to make it need a decision'}">${it.needs_decision ? 'Needs a decision' : 'For information'}</button>`;
+  // b506 — the pin lives beside the title, where it is reachable without opening the document.
+  const pin = `<button class="rr-pin${it.pinned ? ' on' : ''}" data-pin="${it.id}" aria-pressed="${it.pinned ? 'true' : 'false'}"
+    title="${it.pinned ? 'Unpin' : 'Pin to top'}" aria-label="${it.pinned ? 'Unpin this document' : 'Pin this document to the top'}">📌</button>`;
+  return `<div class="rr-card s-${it.status}" data-id="${it.id}">
+    <div class="rr-head"><button class="rr-title" data-open="${it.id}">${esc(it.title)}</button>${pin}</div>
+    <div class="rr-meta">
+      <span class="rr-badge">${esc(KIND_ONE[it.kind] || 'Document')}</span>
+      ${it.date ? `<span>${esc(fmtDate(it.date))}</span>` : ''}
+      ${flip}
+      ${it.pinned ? `<span class="rr-badge pinned">Pinned${it.pinned_by ? ' by ' + esc(it.pinned_by) : ''}</span>` : ''}
+      ${it.changed_since_read ? '<span class="rr-badge changed">Changed since you read it</span>' : ''}
+      ${it.file_missing ? '<span class="rr-badge gone">File no longer on disk</span>' : ''}
+      ${S.q && it.status === 'done' ? '<span class="rr-badge">Done</span>' : ''}
+    </div>
+    ${it.summary ? `<div class="rr-sum">${esc(it.summary)}</div>` : ''}
+    ${trackHtml(it)}
+    <div class="rr-acts">
+      <button class="rr-btn primary" data-open="${it.id}">${it.steps.read ? 'Open' : 'Read it'}</button>
+      ${it.steps.read ? '' : `<button class="rr-btn" data-quickread="${it.id}">Mark read</button>`}
+    </div>
+    <div class="rr-err" data-err="${it.id}" role="alert" hidden></div>
+  </div>`;
+}
+
+function bindCards(root) {
+  root.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openDoc(+b.dataset.open, b)));
+  root.querySelectorAll('[data-quickread]').forEach(b => b.addEventListener('click', () => step(+b.dataset.quickread, { step: 'read', on: true })));
+  root.querySelectorAll('[data-flip]').forEach(b => b.addEventListener('click', () => flip(+b.dataset.flip)));
+  root.querySelectorAll('[data-pin]').forEach(b => b.addEventListener('click', () => togglePin(+b.dataset.pin)));
+}
+
+function renderList() {
+  const items = S.data.items;
+  const el = document.getElementById('rr-list');
+  if (!items.length) {
+    const c = S.data.counts;
+    el.innerHTML = S.q || S.kinds.size || S.decision
+      ? '<p class="rr-muted">Nothing matches that.</p>'
+      : (c.total === 0
+          ? `<p class="rr-muted">No documents yet.${S.data.scan_note ? ' ' + esc(S.data.scan_note) : ''}</p>`
+          : '<p class="rr-muted">Nothing is waiting — you are up to date. Open <b>Done</b> below to look back.</p>');
+    return;
+  }
+  // b506 — pinned first, in one short group with a thin rule under it. Not a separate tab: one list, one version.
+  const pinned = items.filter(i => i.pinned), rest = items.filter(i => !i.pinned);
+  let html = '';
+  if (pinned.length) {
+    html += `<div class="rr-group"><span class="rr-group-t">📌 Pinned</span><span class="rr-group-n">${pinned.length} of ${S.data.pin_cap || 10}</span></div>`
+          + pinned.map(cardHtml).join('')
+          + (rest.length ? '<div class="rr-group-rule"></div>' : '');
+  }
+  html += rest.map(cardHtml).join('');
+  el.innerHTML = html;
+  bindCards(el);
+}
+
+/* The Done fold, re-rendered from what is already in memory — used after an optimistic pin toggle so a
+   card in there moves without a round trip. */
+function renderDoneList() {
+  const el = document.getElementById('rr-done-list');
+  if (!el || !S.done) return;
+  el.innerHTML = S.done.length ? S.done.map(cardHtml).join('') : '<p class="rr-muted">Nothing finished yet.</p>';
+  bindCards(el);
+}
+
+function showCardError(id, msg) {
+  const el = document.querySelector(`[data-err="${id}"]`);
+  if (!el) { Wren.toast(msg, 'warning'); return; }
+  el.textContent = msg;
+  el.hidden = false;
+}
+
+function renderResume() {
+  const el = document.getElementById('rr-resume');
+  const id = +store.get('lastOpen');
+  const it = id && S.data.items.find(x => x.id === id && x.status !== 'done');
+  el.innerHTML = it ? `<div class="rr-resume"><span>Pick up where you left off: <b>${esc(it.title)}</b></span><button class="rr-btn" data-open="${it.id}">Continue</button></div>` : '';
+  bindCards(el);
+}
+
+function renderBulk() {
+  const el = document.getElementById('rr-bulk');
+  const unread = S.data.items.filter(i => i.status === 'unread');
+  if (unread.length < 2 || S.q) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `<button class="rr-btn" id="rr-bulk-btn">Mark these ${unread.length} as read…</button>
+    <span class="rr-muted">Only if you really have. It is recorded as a bulk action, not as ${unread.length} separate reads.</span>`;
+  document.getElementById('rr-bulk-btn').addEventListener('click', () => confirmBulk(unread.map(i => i.id)));
+}
+
+function confirmBulk(ids) {
+  const body = document.getElementById('rr-sh-body');
+  S.lastFocus = document.activeElement;
+  document.getElementById('rr-sh-title').textContent = `Mark ${ids.length} documents as read?`;
+  document.getElementById('rr-mini').innerHTML = '';
+  body.innerHTML = `<p>You are saying you have read <b>${ids.length}</b> documents — everything currently shown under <b>To read</b> with the filters you have on.
+    The history will record that it was a bulk action by you. Documents that need a decision stay open at Read; you can still discuss, decide and finish them.</p>
+    <div class="rr-acts"><button class="rr-btn primary" id="rr-bulk-yes">Yes, I have read these ${ids.length}</button><button class="rr-btn" id="rr-bulk-no">Cancel</button></div>`;
+  showSheet();
+  document.getElementById('rr-bulk-no').addEventListener('click', closeSheet);
+  document.getElementById('rr-bulk-yes').addEventListener('click', async () => {
+    try {
+      const r = await api('/api/reading-room/bulk-read', { method: 'POST', body: { ids } });
+      Wren.toast(`Marked ${r.marked} as read`, 'success'); closeSheet(); load();
+    } catch (e) { Wren.toast(errText(e), 'warning'); }
+  });
+}
+
+/* Done — folded away, still searchable (a search shows every status). */
+async function loadDone() {
+  const el = document.getElementById('rr-done-list');
+  el.innerHTML = '<p class="rr-muted">Loading…</p>';
+  try {
+    const p = new URLSearchParams({ status: 'done' });
+    if (S.kinds.size) p.set('kind', [...S.kinds].join(','));
+    if (S.decision) p.set('decision', 'yes');
+    const d = await api('/api/reading-room?' + p.toString());
+    S.done = d.items;
+    renderDoneList();
+  } catch (e) { el.innerHTML = `<p class="rr-muted">Could not load: ${esc(errText(e))}</p>`; }
+}
+document.getElementById('rr-done-fold').addEventListener('toggle', function () { if (this.open) loadDone(); });
+
+function renderFoot() {
+  const d = S.data;
+  const parts = [];
+  if (d.scanned_at) parts.push(`Last scanned ${esc(fmtWhen(d.scanned_at))}${d.scanned_by === 'host' ? ' (by the host script)' : ''}.`);
+  else parts.push('Not scanned yet.');
+  if (d.scan_note) parts.push(esc(d.scan_note));
+  let detail = '';
+  if (d.on_disk) {
+    const rows = Object.entries(d.on_disk).map(([tree, t]) => {
+      const ex = Object.entries(t.excluded || {}).sort((a, b) => b[1] - a[1]);
+      const exN = ex.reduce((a, [, n]) => a + n, 0);
+      return `<li><b>${tree === 'canonical' ? 'wren-docs' : 'wren/wren-docs (in the repo)'}</b>: ${t.files} files = ${t.listed} listed + ${t.withheld} withheld + ${exN} not documents to read
+        <ul>${ex.map(([why, n]) => `<li>${n} — ${esc(why)}</li>`).join('')}</ul></li>`;
+    }).join('');
+    detail = `<details><summary>Where every file in the two folders went</summary><ul>${rows}</ul></details>`;
+  }
+  if (d.withheld) parts.push(`${d.withheld} document${d.withheld === 1 ? ' is' : 's are'} withheld from this list because ${d.withheld === 1 ? 'it looks' : 'they look'} like ${d.withheld === 1 ? 'it holds' : 'they hold'} a child's or family's details. They are counted, never shown.`);
+  if (d.file_missing) parts.push(`${d.file_missing} listed document${d.file_missing === 1 ? ' has' : 's have'} gone from disk since they were first seen — the ticks are kept.`);
+  document.getElementById('rr-foot').innerHTML = parts.join(' ') + detail;
+}
+
+/* ── ticks ────────────────────────────────────────────────────────────────────────────── */
+function replaceItem(updated) {
+  if (!updated) return;
+  const swap = arr => { if (!arr) return; const i = arr.findIndex(x => x.id === updated.id); if (i >= 0) arr[i] = updated; };
+  swap(S.data && S.data.items); swap(S.done);
+}
+
+async function step(id, body) {
+  try {
+    const r = await api(`/api/reading-room/${id}/step`, { method: 'POST', body });
+    replaceItem(r.item);
+    if (S.openId === id) renderSheetSteps(r.item);
+    await load();
+    return r.item;
+  } catch (e) { Wren.toast(errText(e), 'warning'); return null; }
+}
+async function flip(id) {
+  const it = [...(S.data.items || []), ...(S.done || [])].find(x => x.id === id);
+  if (!it) return;
+  try {
+    const r = await api(`/api/reading-room/${id}`, { method: 'PATCH', body: { needs_decision: !it.needs_decision } });
+    replaceItem(r.item);
+    if (S.openId === id) renderSheetSteps(r.item);
+    await load();
+  } catch (e) { Wren.toast(errText(e), 'warning'); }
+}
+
+/* b506 — pin / unpin. Optimistic: the card moves straight away, and on a refusal (the cap, mostly) the
+   state goes back and the reason is written into the card. No alert(), no confirm(). */
+async function togglePin(id) {
+  const it = [...(S.data.items || []), ...(S.done || [])].find(x => x.id === id);
+  if (!it) return;
+  const was = { pinned: it.pinned, pinned_at: it.pinned_at, pinned_by: it.pinned_by };
+  const want = !it.pinned;
+  it.pinned = want;
+  it.pinned_at = want ? new Date().toISOString() : null;
+  it.pinned_by = null;                       // the server says who; until then the badge just says "Pinned"
+  renderList(); renderDoneList();
+  try {
+    const r = await api(`/api/reading-room/${id}/pin`, { method: 'POST', body: { pinned: want } });
+    replaceItem(r.item);
+    if (S.openId === id) renderSheetSteps(r.item);
+    await load();
+    if (S.done) renderDoneList();
+  } catch (e) {
+    Object.assign(it, was);
+    renderList(); renderDoneList();
+    showCardError(id, errText(e));
+  }
+}
+
+/* ── the reader (a popup) ─────────────────────────────────────────────────────────────── */
+function showSheet() { document.getElementById('rr-veil').classList.add('on'); document.getElementById('rr-sheet').classList.add('on'); document.getElementById('rr-sh-close').focus(); document.body.style.overflow = 'hidden'; }
+function closeSheet() {
+  document.getElementById('rr-veil').classList.remove('on'); document.getElementById('rr-sheet').classList.remove('on');
+  document.body.style.overflow = ''; S.openId = null;
+  if (S.lastFocus && S.lastFocus.focus) { try { S.lastFocus.focus(); } catch (_) {} }
+}
+document.getElementById('rr-sh-close').addEventListener('click', closeSheet);
+document.getElementById('rr-veil').addEventListener('click', closeSheet);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('rr-sheet').classList.contains('on')) closeSheet(); });
+
+let CUR = null;   // { item, content, history }
+
+async function openDoc(id, from) {
+  S.lastFocus = from || document.activeElement;
+  S.openId = id; store.set('lastOpen', String(id));
+  document.getElementById('rr-sh-title').textContent = 'Opening…';
+  document.getElementById('rr-sh-body').innerHTML = '<p class="rr-muted">Loading…</p>';
+  showSheet();
+  try {
+    const d = await api('/api/reading-room/' + id);
+    CUR = d;
+    document.getElementById('rr-sh-title').textContent = d.item.title;
+    document.getElementById('rr-sh-body').innerHTML = `
+      <div class="rr-reader">
+        <div class="rr-main">
+          <div class="rr-doc" id="rr-doc"></div>
+          <div id="rr-end" class="rr-acts" style="margin-top:22px"></div>
+        </div>
+        <aside class="rr-side" aria-label="Progress on this document">
+          <div id="rr-steps-host"></div>
+          <details class="rr-foot"><summary>History</summary><ul class="rr-hist" id="rr-hist"></ul></details>
+        </aside>
+      </div>`;
+    renderSheetSteps(d.item);
+    renderDoc(d);
+    renderHist(d.history);
+  } catch (e) {
+    document.getElementById('rr-sh-title').textContent = 'Could not open it';
+    document.getElementById('rr-sh-body').innerHTML = `<p class="rr-muted">${esc(errText(e))}</p>`;
+  }
+}
+
+function renderDoc(d) {
+  const host = document.getElementById('rr-doc');
+  const it = d.item;
+  if (d.too_large || d.content == null) { host.innerHTML = '<p class="rr-empty">This file is too large to show here. Open it from the folder it lives in.</p>'; return; }
+  if (it.format === 'md') host.innerHTML = window.WrenMarkdown ? WrenMarkdown.render(d.content) : '<pre class="rr-pre">' + esc(d.content) + '</pre>';
+  else if (it.format === 'csv') host.innerHTML = window.WrenMarkdown ? WrenMarkdown.renderCsv(d.content) : '<pre class="rr-pre">' + esc(d.content) + '</pre>';
+  else if (it.format === 'html') {
+    // Scripts never run: an empty sandbox attribute blocks them, forms, popups and same-origin access.
+    host.innerHTML = '<iframe class="rr-frame" sandbox="" title="Document"></iframe>';
+    host.firstChild.srcdoc = d.content;
+  } else host.innerHTML = '<pre class="rr-pre">' + esc(d.content) + '</pre>';
+}
+
+function renderHist(h) {
+  const ul = document.getElementById('rr-hist');
+  if (!ul) return;
+  // b506 — a pin is not a tick, so it gets its own words rather than "pinned ticked".
+  const line = e => e.step === 'pinned'
+    ? `${esc(fmtWhen(e.at))} — ${esc(e.by || 'someone')}: ${e.action === 'unpin' ? 'took the pin off' : 'pinned it to the top'}`
+    : `${esc(fmtWhen(e.at))} — ${esc(e.by || 'someone')}: ${esc(e.step.replace('_', ' '))} ${esc(e.action === 'bulk' ? 'ticked (bulk)' : e.action === 'flip' ? 'changed' : e.action === 'untick' ? 'un-ticked' : e.action === 'edit' ? 'edited' : 'ticked')}${e.step === 'decided' && e.detail && e.detail.decision ? ' — “' + esc(String(e.detail.decision).slice(0, 160)) + '”' : ''}`;
+  ul.innerHTML = (h && h.length) ? h.map(e => `<li>${line(e)}</li>`).join('') : '<li>Nothing yet.</li>';
+}
+
+function renderSheetSteps(it) {
+  const host = document.getElementById('rr-steps-host');
+  if (!host) return;
+  const mini = document.getElementById('rr-mini'); if (mini) mini.innerHTML = trackHtml(it);
+  const st = it.steps;
+  const who = s => s ? `${esc(s.by || 'Someone')} · ${esc(fmtWhen(s.at))}` : '';
+  const mode = `<div class="rr-mode" role="group" aria-label="What kind of document is this"><button data-mode="0" class="${it.needs_decision ? '' : 'on'}" aria-pressed="${!it.needs_decision}">For information</button><button data-mode="1" class="${it.needs_decision ? 'on' : ''}" aria-pressed="${!!it.needs_decision}">Needs a decision</button></div>`;
+
+  const row = (key, label, done, sub, form, canTick) => `
+    <div class="rr-step${done ? ' on' : ''}" data-step="${key}">
+      <button class="rr-tick" data-tick="${key}" aria-pressed="${done ? 'true' : 'false'}" aria-label="${label}${done ? ' — done, tap to undo' : ''}" ${canTick ? '' : 'disabled'}>${done ? '✓' : ''}</button>
+      <div class="rr-st-body"><div class="rr-st-t">${label}</div><div class="rr-st-s">${sub}</div>${form || ''}</div>
+    </div>`;
+
+  let html = `${mode}<div class="rr-steps">`;
+  html += row('read', 'Read', !!st.read, st.read ? who(st.read) : 'Tick when you have read it.', '', true);
+  if (it.needs_decision) {
+    html += row('discussed', 'Discussed with the office manager / the team', !!st.discussed,
+      st.discussed ? `${who(st.discussed)}${st.discussed.on ? ' · talked through ' + esc(fmtDate(st.discussed.on)) : ''}${st.discussed.note ? '\n' + esc(st.discussed.note) : ''}` : 'Optional. Say who and when.',
+      `<div class="rr-st-form" data-form="discussed" hidden><input type="date" id="rr-d-when" aria-label="When was it talked through"><input type="text" id="rr-d-note" maxlength="500" placeholder="Who with, and anything worth keeping"><div class="rr-st-row"><button class="rr-btn primary" data-save="discussed">Save</button><button class="rr-btn" data-cancel="discussed">Cancel</button></div></div>`,
+      !!st.read);
+    html += row('decided', 'Decided', !!st.decided,
+      st.decided ? `${who(st.decided)}\n“${esc(st.decided.text)}”` : 'What did you decide? It is written to the decision register too.',
+      `<div class="rr-st-form" data-form="decided" hidden><textarea id="rr-dec-text" maxlength="4000" placeholder="The decision, in your words"></textarea><div class="rr-st-row"><button class="rr-btn primary" data-save="decided">Record decision</button><button class="rr-btn" data-cancel="decided">Cancel</button></div></div>`,
+      !!st.read);
+    html += row('done', 'Done', !!st.done,
+      st.done ? `${who(st.done)}\n${esc(st.done.note)}` : 'Once the decision has been carried out, say what happened.',
+      `<div class="rr-st-form" data-form="done" hidden><textarea id="rr-done-text" maxlength="2000" placeholder="What happened"></textarea><div class="rr-st-row"><button class="rr-btn primary" data-save="done">Mark done</button><button class="rr-btn" data-cancel="done">Cancel</button></div></div>`,
+      !!st.decided);
+  }
+  html += '</div>';
+  if (!it.needs_decision) html += '<p class="rr-muted" style="margin-top:-6px">For information — reading it is the end of it.</p>';
+  if (it.changed_since_read) html += '<p class="rr-muted"><span class="rr-badge changed">Changed since you read it</span></p>';
+  host.innerHTML = html;
+
+  host.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { if ((b.dataset.mode === '1') !== it.needs_decision) flip(it.id); }));
+
+  const showForm = k => {
+    const f = host.querySelector(`[data-form="${k}"]`); if (!f) return;
+    f.hidden = false;
+    if (k === 'discussed') { const w = f.querySelector('#rr-d-when'); w.value = (st.discussed && st.discussed.on) || new Date().toISOString().slice(0, 10); f.querySelector('#rr-d-note').value = (st.discussed && st.discussed.note) || ''; }
+    if (k === 'decided') f.querySelector('#rr-dec-text').value = (st.decided && st.decided.text) || '';
+    if (k === 'done') f.querySelector('#rr-done-text').value = (st.done && st.done.note) || '';
+    const first = f.querySelector('textarea,input'); if (first) first.focus();
+  };
+  host.querySelectorAll('[data-tick]').forEach(b => b.addEventListener('click', async () => {
+    const k = b.dataset.tick;
+    if (st[k]) {           // already ticked: a second tap takes it off (Discussed / Decided / Done first offer an edit)
+      if (k !== 'read' && !b.dataset.confirm) {
+        b.dataset.confirm = '1';
+        const sub = b.closest('.rr-step').querySelector('.rr-st-s');
+        sub.insertAdjacentHTML('beforeend', `\n<span class="rr-muted">Tap the tick again to take it off, or </span><button class="rr-btn" data-edit="${k}">edit it</button>`);
+        sub.querySelector('[data-edit]').addEventListener('click', () => showForm(k));
+        return;
+      }
+      await step(it.id, { step: k, on: false });
+    } else if (k === 'read') await step(it.id, { step: 'read', on: true });
+    else showForm(k);
+  }));
+  host.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => { host.querySelector(`[data-form="${b.dataset.cancel}"]`).hidden = true; }));
+  host.querySelectorAll('[data-save]').forEach(b => b.addEventListener('click', async () => {
+    const k = b.dataset.save;
+    if (k === 'discussed') await step(it.id, { step: 'discussed', on: true, when: host.querySelector('#rr-d-when').value || undefined, note: host.querySelector('#rr-d-note').value });
+    if (k === 'decided')   await step(it.id, { step: 'decided', on: true, decision: host.querySelector('#rr-dec-text').value });
+    if (k === 'done')      await step(it.id, { step: 'done', on: true, note: host.querySelector('#rr-done-text').value });
+    if (S.openId === it.id) { try { const d = await api('/api/reading-room/' + it.id); CUR = d; renderHist(d.history); } catch (_) {} }
+  }));
+
+  const end = document.getElementById('rr-end');
+  if (end) {
+    end.innerHTML = st.read ? '' : '<button class="rr-btn primary" id="rr-end-read">I have read this</button>';
+    const b = document.getElementById('rr-end-read'); if (b) b.addEventListener('click', async () => { await step(it.id, { step: 'read', on: true }); });
+  }
+}
+
+/* ── wiring ───────────────────────────────────────────────────────────────────────────── */
+let qTimer = null;
+document.getElementById('rr-q').addEventListener('input', function () {
+  clearTimeout(qTimer); qTimer = setTimeout(() => { S.q = this.value.trim(); store.set('q', S.q); load(); }, 250);
+});
+document.getElementById('rr-dec').addEventListener('click', function () {
+  S.decision = !S.decision; this.classList.toggle('on', S.decision); this.setAttribute('aria-pressed', String(S.decision)); store.set('dec', S.decision ? '1' : ''); load();
+});
+
+// wren:ready fires at the end of buildShell(); nothing may call the API before it (absolute rule 7).
+document.addEventListener('wren:ready', () => {
+  const k = store.get('kinds'); if (k) k.split(',').filter(Boolean).forEach(x => S.kinds.add(x));
+  if (store.get('dec')) { S.decision = true; const b = document.getElementById('rr-dec'); b.classList.add('on'); b.setAttribute('aria-pressed', 'true'); }
+  const q = store.get('q'); if (q) { S.q = q; document.getElementById('rr-q').value = q; }
+  load();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Reports — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+<link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<script src="/js/wren-anon-toggle.js"></script>
+<style>
+/* b342 (2026-09-21) — custom reports, the EyMan kind. Pick a subject, tick the fields, ask for the GAPS.
+   Tokens only (var(--c-*)), checked light AND dark. Blank cells render as a visible "—" in the muted colour. */
+.rb-wrap { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .rb-wrap { grid-template-columns: 1fr; } }
+/* ~35 fields make the builder tall, and Run report used to sit at the very bottom of it. The builder now scrolls on its own and
+   the buttons stay pinned to its foot, so you never scroll the page to find them. */
+.rb-builder { position: sticky; top: 0; max-height: calc(100vh - 130px); overflow-y: auto; align-self: start; overscroll-behavior: contain; }
+@media (max-width: 900px) { .rb-builder { position: static; max-height: none; overflow: visible; } }
+.rb-foot { position: sticky; bottom: -14px; z-index: 3; margin: 12px -14px -14px; padding: 10px 14px 14px; background: var(--c-surface); border-top: 1px solid var(--c-border); border-radius: 0 0 12px 12px; }
+.rb-foot .rb-actions { margin-top: 0; }
+
+.rb-panel { border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-surface); padding: 14px; margin-bottom: 12px; }
+.rb-panel h3 { margin: 0 0 8px; font-size: .95rem; color: var(--c-text); }
+.rb-panel label.rb-l { display: block; font-size: .76rem; color: var(--c-muted); margin: 10px 0 3px; font-weight: 600; }
+.rb-panel select, .rb-panel input[type=text], .rb-panel input[type=number] { width: 100%; box-sizing: border-box; min-height: 40px; }
+/* the native number box paints white in the dark theme; make every control in the panel take the tokens */
+.rb-panel input[type=text], .rb-panel input[type=number], .rb-panel select { background: var(--c-navy-mid, var(--c-surface)); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 8px; padding: 0 12px; font: inherit; font-size: .88rem; }
+.rb-quiet { background: transparent !important; color: var(--c-text) !important; border: 1px solid var(--c-border) !important; }
+.rb-quiet:hover { background: color-mix(in srgb, var(--c-blue) 12%, transparent) !important; }
+
+.rb-group { border: 0; border-top: 1px solid var(--c-border); margin: 10px 0 0; padding: 8px 0 0; }
+.rb-group legend { font-size: .72rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--c-muted); padding: 0 6px 0 0; }
+.rb-fhead { display: grid; grid-template-columns: 1fr 64px; gap: 6px; font-size: .68rem; font-weight: 700; color: var(--c-muted); text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 0; }
+.rb-fhead span:last-child { text-align: center; }
+.rb-f { display: grid; grid-template-columns: 1fr 64px; gap: 6px; align-items: center; min-height: 34px; }
+.rb-f label { display: flex; align-items: center; gap: 8px; font-size: .84rem; color: var(--c-text); cursor: pointer; padding: 4px 0; }
+.rb-f label.rb-gap { justify-content: center; }
+.rb-f input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--c-blue); flex: 0 0 auto; }
+.rb-f.always .rb-gap { visibility: hidden; }
+
+.rb-mode { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .82rem; color: var(--c-text); margin-top: 10px; }
+.rb-mode select { width: auto; min-width: 90px; }
+
+.rb-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.rb-saved { list-style: none; margin: 0; padding: 0; }
+.rb-saved li { display: flex; align-items: center; gap: 6px; border: 1px solid var(--c-border); border-radius: 10px; margin-bottom: 6px; }
+.rb-saved button.rb-load { flex: 1; text-align: left; background: transparent; border: 0; color: var(--c-text); padding: 9px 10px; min-height: 40px; cursor: pointer; font: inherit; font-size: .84rem; border-radius: 10px; }
+.rb-saved button.rb-load small { display: block; color: var(--c-muted); font-size: .7rem; margin-top: 1px; }
+.rb-saved button.rb-load:hover, .rb-saved button.rb-load[aria-current="true"] { background: color-mix(in srgb, var(--c-blue) 14%, transparent); }
+.rb-saved button.rb-del { background: transparent; border: 0; color: var(--c-muted); min-width: 44px; min-height: 40px; cursor: pointer; font-size: .78rem; font-weight: 700; }
+.rb-saved button.rb-del.arm { color: var(--c-red); }
+.rb-savebox { display: none; margin-top: 10px; }
+.rb-savebox.open { display: block; }
+
+.rb-summary { font-size: 1.05rem; font-weight: 700; color: var(--c-text); margin: 0 0 4px; line-height: 1.35; }
+.rb-sub { font-size: .76rem; color: var(--c-muted); margin: 0 0 10px; }
+.rb-notice { font-size: .8rem; color: var(--c-text); border-left: 3px solid var(--c-amber); background: color-mix(in srgb, var(--c-amber) 12%, transparent); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; }
+.rb-err { font-size: .84rem; font-weight: 700; color: var(--c-red); margin: 8px 0; }
+
+.rb-scroll { overflow: auto; max-height: calc(100vh - 300px); border: 1px solid var(--c-border); border-radius: 12px; background: var(--c-surface); }
+.rb-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: .82rem; }
+.rb-table th { position: sticky; top: 0; z-index: 2; background: var(--c-navy-mid, var(--c-surface)); color: var(--c-text); text-align: left;
+               font-size: .72rem; font-weight: 800; padding: 9px 12px; border-bottom: 1px solid var(--c-border); white-space: normal; min-width: 84px; max-width: 220px; vertical-align: bottom; }
+.rb-table td { padding: 8px 12px; border-bottom: 1px solid var(--c-border); color: var(--c-text); vertical-align: top; }
+.rb-table tbody tr:last-child td { border-bottom: 0; }
+.rb-table td a { color: var(--c-blue); text-decoration: none; font-weight: 600; }
+.rb-table td a:hover { text-decoration: underline; }
+.rb-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rb-blank { color: var(--c-muted); }
+.rb-table td.rb-gapcell { background: color-mix(in srgb, var(--c-amber) 16%, transparent); }
+.rb-empty { padding: 28px 16px; text-align: center; color: var(--c-muted); font-size: .9rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rb-print-head { display: none; }
+
+.rb-panel input:focus-visible, .rb-panel select:focus-visible, .rb-panel button:focus-visible, .rb-saved button:focus-visible, .rb-f input:focus-visible {
+  outline: 2px solid var(--c-blue); outline-offset: 2px; }
+
+@media print {
+  body.v2-shell #wren-sidebar, body.v2-shell #wren-topbar, #wren-bottom-nav, #wren-toasts, .wren-quickbar { display: none !important; }
+  html, body, body.edition-admin, #wren-content, body.v2-shell #wren-main { background: #fff !important; }
+  body.v2-shell #wren-main, body.v2-shell #wren-content { margin: 0 !important; padding: 0 !important; }
+  body.edition-admin, body.edition-admin #wren-main { overflow: visible !important; height: auto !important; }
+  .rb-builder, .rb-actions, .page-header, .rb-noprint { display: none !important; }
+  .rb-wrap { display: block; }
+  .rb-scroll { max-height: none; overflow: visible; border: 0; }
+  .rb-table th { position: static; color: #000 !important; background: #fff !important; border-bottom: 1.5px solid #000 !important; }
+  .rb-table td { color: #000 !important; border-bottom: 1px solid #bbb !important; background: #fff !important; }
+  .rb-table td.rb-gapcell { background: #eee !important; }
+  .rb-blank { color: #666 !important; }
+  .rb-table td a { color: #000 !important; text-decoration: none !important; font-weight: 400 !important; }
+  .rb-summary, .rb-sub { color: #000 !important; }
+  .rb-print-head { display: block; margin: 0 0 10px; color: #000; font-size: 11pt; }
+  .rb-print-head b { font-size: 13pt; }
+  @page { size: landscape; margin: 1.2cm; }
+}
+</style>
+</head>
+<body>
+<div id="wren-content">
+
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+    <div>
+      <div class="page-title" style="font-size:1.05rem">🧾 Reports</div>
+      <div style="font-size:.78rem;color:var(--c-muted);margin-top:2px">
+        Pick the fields, then ask for the gaps — “which children have no emergency contact?” — the way EyMan’s custom reports worked.
+        Real names and contact details appear here; every run and export is recorded.
+      </div>
+    </div>
+  </div>
+
+  <div class="rb-wrap">
+    <!-- ── the builder ─────────────────────────────────────────────────────── -->
+    <div class="rb-builder">
+      <div class="rb-panel" id="rb-saved-panel">
+        <h3>Saved reports</h3>
+        <ul class="rb-saved" id="rb-saved" aria-label="Saved reports"><li style="border:0;color:var(--c-muted);font-size:.8rem">Loading…</li></ul>
+      </div>
+
+      <form class="rb-panel" id="rb-form" novalidate>
+        <h3>Build a report</h3>
+        <label class="rb-l" for="rb-subject">About</label>
+        <select id="rb-subject" class="v2-sort-select"></select>
+
+        <label class="rb-l" for="rb-who">Who to include</label>
+        <select id="rb-who" class="v2-sort-select"></select>
+        <div id="rb-days-wrap" hidden>
+          <label class="rb-l" for="rb-days">Starting within (days)</label>
+          <input type="number" id="rb-days" min="1" max="730" value="90">
+        </div>
+        <div id="rb-room-wrap" hidden>
+          <label class="rb-l" for="rb-room">Room</label>
+          <select id="rb-room" class="v2-sort-select"><option value="">All rooms</option></select>
+        </div>
+
+        <div class="rb-fhead" aria-hidden="true"><span>Fields to show</span><span>Missing?</span></div>
+        <div id="rb-fields"></div>
+
+        <div class="rb-mode">
+          <span>Only rows where</span>
+          <select id="rb-mode" class="v2-sort-select" aria-label="Any or all of the ticked fields"><option value="any">any</option><option value="all">all</option></select>
+          <span>of the ticked “Missing?” fields are missing</span>
+        </div>
+        <div style="font-size:.72rem;color:var(--c-muted);margin-top:6px">Tick nothing under “Missing?” to see every row.</div>
+
+        <div class="rb-foot">
+          <div class="rb-actions">
+            <button type="submit" class="btn btn-primary" id="rb-run">Run report</button>
+            <button type="button" class="btn rb-quiet" id="rb-save-open">Save…</button>
+          </div>
+          <div class="rb-savebox" id="rb-savebox">
+            <label class="rb-l" for="rb-name">Name this report</label>
+            <input type="text" id="rb-name" maxlength="80" placeholder="e.g. Missing emergency contacts" autocomplete="off">
+            <div class="rb-actions">
+              <button type="button" class="btn btn-sm btn-primary" id="rb-save-go">Save</button>
+              <button type="button" class="btn btn-sm rb-quiet" id="rb-save-cancel">Cancel</button>
+            </div>
+            <div class="rb-err" id="rb-save-err" role="alert" hidden></div>
+          </div>
+          <div class="rb-err" id="rb-form-err" role="alert" hidden></div>
+        </div>
+      </form>
+    </div>
+
+    <!-- ── the result ──────────────────────────────────────────────────────── -->
+    <div>
+      <div class="rb-print-head" id="rb-print-head"></div>
+      <div id="rb-result-head" aria-live="polite">
+        <p class="rb-summary" id="rb-summary">Choose some fields and run the report.</p>
+        <p class="rb-sub" id="rb-sub"></p>
+      </div>
+      <div id="rb-hidden-notice" class="rb-notice" hidden></div>
+      <div class="rb-actions rb-noprint" id="rb-out-actions" style="margin:0 0 10px" hidden>
+        <button type="button" class="btn btn-sm" id="rb-csv">Export CSV</button>
+        <button type="button" class="btn btn-sm rb-quiet" id="rb-print">Print / save as PDF</button>
+        <span id="rb-anon-slot"></span>
+      </div>
+      <div class="rb-scroll" id="rb-scroll"><div class="rb-empty">Nothing run yet.</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function errText(e, fb) { return (e && (e.error || e.message)) || fb; }      // Wren.api rejects with the response BODY, not an Error
+
+  var META = null, SAVED = [], CURRENT = { savedId: null, name: '' }, LAST = null;
+
+  // ── build the form from /meta ─────────────────────────────────────────────
+  function subject() { return META.subjects[$('rb-subject').value]; }
+
+  function drawSubjects() {
+    $('rb-subject').innerHTML = Object.keys(META.subjects).map(function (k) { return '<option value="' + esc(k) + '">' + esc(META.subjects[k].label) + '</option>'; }).join('');
+    $('rb-room').innerHTML = '<option value="">All rooms</option>' + META.rooms.map(function (r) { return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join('');
+  }
+  function drawSubjectParts(def) {
+    var S = subject();
+    $('rb-who').innerHTML = S.who.map(function (w) { return '<option value="' + esc(w.key) + '">' + esc(w.label) + '</option>'; }).join('');
+    $('rb-room-wrap').hidden = !S.roomFilter;
+    var chosen = def && def.fields ? def.fields : defaultFields(S);
+    var gaps = def && def.missing ? def.missing.fields : [];
+    $('rb-fields').innerHTML = S.groups.map(function (g) {
+      return '<fieldset class="rb-group"><legend>' + esc(g.label) + '</legend>' + g.fields.map(function (f) {
+        return '<div class="rb-f' + (f.always ? ' always' : '') + '">' +
+          '<label><input type="checkbox" data-show="' + esc(f.key) + '"' + (chosen.indexOf(f.key) >= 0 ? ' checked' : '') + '> ' + esc(f.label) + '</label>' +
+          '<label class="rb-gap" title="Only rows where this is missing"><input type="checkbox" data-gap="' + esc(f.key) + '"' + (gaps.indexOf(f.key) >= 0 ? ' checked' : '') +
+          (f.always ? ' tabindex="-1" aria-hidden="true"' : '') + ' aria-label="' + esc(f.label) + ' is missing"></label></div>';
+      }).join('') + '</fieldset>';
+    }).join('');
+    syncWho();
+  }
+  function defaultFields(S) {
+    var first = S.groups[0] && S.groups[0].fields.map(function (f) { return f.key; });
+    return (first || []).slice(0, 2);
+  }
+  function syncWho() {
+    var S = subject(), w = S.who.filter(function (x) { return x.key === $('rb-who').value; })[0];
+    $('rb-days-wrap').hidden = !(w && w.days);
+  }
+
+  function readDefinition() {
+    var fields = [], gaps = [];
+    Array.prototype.forEach.call($('rb-fields').querySelectorAll('[data-show]'), function (el) { if (el.checked) fields.push(el.getAttribute('data-show')); });
+    Array.prototype.forEach.call($('rb-fields').querySelectorAll('[data-gap]'), function (el) { if (el.checked) gaps.push(el.getAttribute('data-gap')); });
+    var def = { subject: $('rb-subject').value, fields: fields, who: $('rb-who').value };
+    if (!$('rb-days-wrap').hidden) def.days = Number($('rb-days').value) || 90;
+    if (!$('rb-room-wrap').hidden && $('rb-room').value) def.room_id = Number($('rb-room').value);
+    if (gaps.length) def.missing = { mode: $('rb-mode').value, fields: gaps };
+    return def;
+  }
+  function applyDefinition(def) {
+    $('rb-subject').value = def.subject;
+    drawSubjectParts(def);
+    $('rb-who').value = def.who; syncWho();
+    if (def.days) $('rb-days').value = def.days;
+    $('rb-room').value = def.room_id ? String(def.room_id) : '';
+    $('rb-mode').value = def.missing ? def.missing.mode : 'any';
+  }
+
+  // ticking "Missing?" also ticks "show": a filter on a column you cannot see is confusing
+  $('rb-fields').addEventListener('change', function (e) {
+    var g = e.target.getAttribute('data-gap');
+    if (g && e.target.checked) { var s = $('rb-fields').querySelector('[data-show="' + g + '"]'); if (s) s.checked = true; }
+    var s2 = e.target.getAttribute('data-show');
+    if (s2 && !e.target.checked) { var g2 = $('rb-fields').querySelector('[data-gap="' + s2 + '"]'); if (g2) g2.checked = false; }
+  });
+  $('rb-subject').addEventListener('change', function () { CURRENT.savedId = null; drawSubjectParts(null); markSaved(); });
+  $('rb-who').addEventListener('change', syncWho);
+
+  // ── run ───────────────────────────────────────────────────────────────────
+  function showErr(id, msg) { var b = $(id); b.textContent = msg; b.hidden = !msg; }
+  function friendly(e) {
+    if (e && e.error === 'not_ready') return 'Reports need a database update that has not been applied here yet.';
+    return errText(e, 'Something went wrong. Please try again.');
+  }
+
+  function renderResult(r, def) {
+    LAST = { def: def, result: r };
+    $('rb-summary').textContent = r.summary;
+    var sub = [r.matched + ' row' + (r.matched === 1 ? '' : 's') + ' shown'];
+    if (def.missing) sub.push('out of ' + r.population + ' in this group');
+    $('rb-sub').textContent = sub.join(' · ') + (r.truncated ? ' · first ' + r.rows.length + ' only — narrow the report to see the rest' : '');
+    $('rb-out-actions').hidden = false;
+    $('rb-print-head').innerHTML = '<b>Your Nursery</b> — ' + esc(CURRENT.name || 'Report') + ' — ' + esc(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })) +
+      '<br>' + esc(r.summary);
+    if (!r.rows.length) { $('rb-scroll').innerHTML = '<div class="rb-empty">' + (def.missing ? 'Nothing is missing — every row has these filled in.' : 'No rows match.') + '</div>'; return; }
+    var gapCols = def.missing ? def.missing.fields : [];
+    var linkCol = -1;
+    r.columns.forEach(function (c, i) { if (linkCol < 0 && (c.key === 'child_name' || c.key === 'staff_name')) linkCol = i; });
+    if (linkCol < 0 && r.profile) linkCol = 0;
+    var html = '<table class="rb-table"><caption class="sr-only">' + esc(r.summary) + '</caption><thead><tr>' +
+      r.columns.map(function (c) { return '<th scope="col">' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      r.rows.map(function (row, ri) {
+        return '<tr>' + row.map(function (v, ci) {
+          var col = r.columns[ci], cls = [];
+          if (col.kind === 'number') cls.push('num');
+          if (v == null && gapCols.indexOf(col.key) >= 0) cls.push('rb-gapcell');
+          var inner = v == null || v === '' ? '<span class="rb-blank" aria-label="missing">—</span>' : esc(v);
+          if (ci === linkCol && r.profile && r.profile[ri] && v != null && v !== '') inner = '<a href="' + esc(r.profile[ri]) + '">' + inner + '</a>';
+          return '<td' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + '>' + inner + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table>';
+    $('rb-scroll').innerHTML = html;
+  }
+
+  function run(def) {
+    showErr('rb-form-err', '');
+    $('rb-run').disabled = true;
+    return Wren.api('/api/report-builder/run', { method: 'POST', body: { definition: def, saved_id: CURRENT.savedId } })
+      .then(function (r) { renderResult(r, r.definition || def); })
+      .catch(function (e) { showErr('rb-form-err', friendly(e)); })
+      .then(function () { $('rb-run').disabled = false; });
+  }
+  $('rb-form').addEventListener('submit', function (e) { e.preventDefault(); if (!readDefinition().fields.length) { showErr('rb-form-err', 'Tick at least one field to show.'); return; } run(readDefinition()); });
+
+  // ── export + print ────────────────────────────────────────────────────────
+  // b402 — the shared anon-mode toggle. "on" always wins, in either direction,
+  // over the pii_anon_exports_default setting (src/lib/pii-anon-mode.js).
+  var ANON = (window.WrenAnonToggle && window.WrenAnonToggle.mount('rb-anon-slot')) || { isOn: function () { return false; } };
+  $('rb-csv').addEventListener('click', function () {
+    if (!LAST) return;
+    var btn = $('rb-csv'); btn.disabled = true;
+    fetch('/api/report-builder/export', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + Wren.getToken() },
+      body: JSON.stringify({ definition: LAST.def, saved_id: CURRENT.savedId, name: CURRENT.name || 'report', anon: ANON.isOn() }) })
+      .then(function (r) {
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw j; });
+        var cd = r.headers.get('Content-Disposition') || '', m = /filename="([^"]+)"/.exec(cd);
+        return r.blob().then(function (b) { return { blob: b, name: m ? m[1] : 'report.csv' }; });
+      })
+      .then(function (x) {
+        var a = document.createElement('a'); a.href = URL.createObjectURL(x.blob); a.download = x.name;
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      })
+      .catch(function (e) { showErr('rb-form-err', friendly(e)); })
+      .then(function () { btn.disabled = false; });
+  });
+  $('rb-print').addEventListener('click', function () { window.print(); });
+
+  // ── saved reports ─────────────────────────────────────────────────────────
+  function markSaved() {
+    Array.prototype.forEach.call($('rb-saved').querySelectorAll('.rb-load'), function (b) { b.setAttribute('aria-current', String(Number(b.getAttribute('data-id')) === CURRENT.savedId)); });
+  }
+  function drawSaved() {
+    if (!SAVED.length) { $('rb-saved').innerHTML = '<li style="border:0;color:var(--c-muted);font-size:.8rem;padding:2px 0">None yet. Build a report, then Save.</li>'; return; }
+    $('rb-saved').innerHTML = SAVED.map(function (s) {
+      return '<li><button type="button" class="rb-load" data-id="' + s.id + '"' + (s.broken ? ' disabled' : '') + '>' + esc(s.name) +
+        '<small>' + esc((META.subjects[s.subject] || {}).label || s.subject) + (s.by ? ' · ' + esc(s.by) : '') + (s.broken ? ' · cannot be opened' : '') + '</small></button>' +
+        '<button type="button" class="rb-del" data-del="' + s.id + '" aria-label="Delete ' + esc(s.name) + '">Delete</button></li>';
+    }).join('');
+    markSaved();
+  }
+  function loadSaved() {
+    return Wren.api('/api/report-builder/saved').then(function (r) { SAVED = r.saved || []; drawSaved(); }).catch(function () { SAVED = []; drawSaved(); });
+  }
+  $('rb-saved').addEventListener('click', function (e) {
+    var load = e.target.closest('.rb-load'), del = e.target.closest('.rb-del');
+    if (load) {
+      var s = SAVED.filter(function (x) { return x.id === Number(load.getAttribute('data-id')); })[0];
+      if (!s || !s.definition) return;
+      CURRENT = { savedId: s.id, name: s.name }; applyDefinition(s.definition); markSaved();
+      var notice = $('rb-hidden-notice');
+      if (s.hidden && s.hidden.length) { notice.textContent = 'This saved report includes ' + s.hidden.join(', ') + ', which you do not have access to, so it has been left out.'; notice.hidden = false; }
+      else notice.hidden = true;
+      run(s.definition);
+    } else if (del) {
+      if (!del.classList.contains('arm')) { del.classList.add('arm'); del.textContent = 'Sure?'; setTimeout(function () { del.classList.remove('arm'); del.textContent = 'Delete'; }, 3000); return; }
+      Wren.api('/api/report-builder/saved/' + del.getAttribute('data-del'), { method: 'DELETE' }).then(function () {
+        if (CURRENT.savedId === Number(del.getAttribute('data-del'))) CURRENT = { savedId: null, name: '' };
+        return loadSaved();
+      }).catch(function (er) { showErr('rb-form-err', friendly(er)); });
+    }
+  });
+  $('rb-save-open').addEventListener('click', function () {
+    if (!readDefinition().fields.length) { showErr('rb-form-err', 'Tick at least one field to show.'); return; }
+    showErr('rb-form-err', ''); $('rb-savebox').classList.add('open'); $('rb-name').value = CURRENT.name || ''; $('rb-name').focus();
+  });
+  $('rb-save-cancel').addEventListener('click', function () { $('rb-savebox').classList.remove('open'); showErr('rb-save-err', ''); });
+  $('rb-save-go').addEventListener('click', function () {
+    var name = $('rb-name').value.trim();
+    if (!name) { showErr('rb-save-err', 'Please give the report a name.'); return; }
+    // saving under the name of the report that is open updates it; a different name makes a new one
+    var existing = SAVED.filter(function (s) { return s.id === CURRENT.savedId && s.name.toLowerCase() === name.toLowerCase(); })[0];
+    Wren.api('/api/report-builder/saved', { method: 'POST', body: { name: name, definition: readDefinition(), id: existing ? existing.id : null } })
+      .then(function (r) { CURRENT = { savedId: r.id, name: r.name }; $('rb-savebox').classList.remove('open'); showErr('rb-save-err', ''); return loadSaved(); })
+      .catch(function (e) { showErr('rb-save-err', friendly(e)); });
+  });
+
+  // ── boot ──────────────────────────────────────────────────────────────────
+  function boot() {
+    Wren.api('/api/report-builder/meta').then(function (m) {
+      META = m; drawSubjects();
+      $('rb-subject').value = 'children';
+      // the report Toby actually asked for is the starting point: child names, parent emails, the emergency contact — gaps only
+      drawSubjectParts({ fields: ['wren_number', 'child_name', 'room', 'p1_name', 'p1_email', 'p2_email', 'emergency_any'], missing: { mode: 'any', fields: ['emergency_any'] } });
+      return loadSaved();
+    }).catch(function (e) {
+      $('rb-form').innerHTML = '<div class="rb-err">' + esc(friendly(e)) + '</div>';
+      $('rb-saved-panel').hidden = true;
+    });
+  }
+  if (window.Wren && Wren.user) boot(); else document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>

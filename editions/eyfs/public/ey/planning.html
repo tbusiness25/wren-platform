@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Planning">
+  <meta name="wren-app-chat"  content="on">
+  <title>Planning · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260727">
+  <style>
+    #pl-page { padding:12px 12px env(safe-area-inset-bottom,16px); max-width:1200px; margin:0 auto; }
+    #pl-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:6px 2px 12px; }
+    #pl-head h1 { font-size:1.15rem; margin:0; flex:1; color:var(--c-text,#f1f5f9); }
+    .pl-ctl { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+    .pl-sel, .pl-week-lbl { border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b);
+      color:var(--c-text,#f1f5f9); padding:8px 12px; min-height:44px; border-radius:12px; font-size:.9rem; font-family:inherit; }
+    .pl-week-lbl { font-weight:600; display:flex; align-items:center; }
+    .pl-btn { border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b); color:var(--c-text,#f1f5f9);
+      padding:8px 14px; min-height:44px; border-radius:12px; font-size:.88rem; font-weight:600; cursor:pointer; font-family:inherit; }
+    .pl-btn.primary { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; }
+    .pl-btn:hover { border-color:var(--c-blue,#4a9abf); }
+    .pl-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+    @media (max-width:820px){ .pl-grid { grid-template-columns:1fr; } }
+    .pl-day { background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748); border-radius:12px; padding:10px; min-height:80px; display:flex; flex-direction:column; }
+    .pl-day-h { font-weight:700; font-size:.82rem; color:var(--c-text,#f1f5f9); margin-bottom:8px; display:flex; align-items:center; gap:6px; text-transform:capitalize; }
+    .pl-day-add { margin-left:auto; background:none; border:none; color:var(--c-blue,#4a9abf); font-size:1.2rem; cursor:pointer; line-height:1; padding:0 4px; }
+    .pl-act { background:var(--c-card,#0f1927); border:1px solid var(--c-border,#2d3748); border-radius:9px; padding:8px 10px; margin-bottom:8px; cursor:pointer; }
+    .pl-act:hover { border-color:var(--c-blue,#4a9abf); }
+    .pl-act-title { font-weight:600; font-size:.86rem; color:var(--c-text,#f1f5f9); }
+    .pl-act-type { font-size:.68rem; text-transform:uppercase; letter-spacing:.4px; color:var(--c-blue,#89c2d9); margin-top:2px; }
+    .pl-act-areas { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+    .pl-area-chip { font-size:.62rem; padding:1px 7px; border-radius:999px; border:1px solid var(--c-border,#2d3748); color:var(--c-muted,#94a3b8); }
+    .pl-empty { font-size:.78rem; color:var(--c-muted,#64748b); font-style:italic; padding:4px 2px; }
+    /* b217 — which half-term this week belongs to, and whether it is a break */
+    .pl-term-bar { border:1px solid var(--c-border,#2d3748); background:var(--c-card,#0f1927);
+      border-radius:11px; padding:9px 12px; margin:0 0 12px; font-size:.79rem; line-height:1.5;
+      color:var(--c-text,#e2e8f0); display:flex; gap:8px; align-items:flex-start; }
+    .pl-term-bar .k { flex:0 0 auto; }
+    .pl-term-bar.teaching { border-color:rgba(34,197,94,.34); background:rgba(34,197,94,.07); }
+    .pl-term-bar.break    { border-color:rgba(245,158,11,.38); background:rgba(245,158,11,.08); }
+    .pl-day.closed { opacity:.6; }
+    .pl-btn[disabled], .pl-day-add[disabled] { opacity:.42; cursor:not-allowed; }
+    .pl-btn[disabled]:hover { border-color:var(--c-border,#2d3748); }
+    /* modal */
+    #pl-modal { position:fixed; inset:0; background:rgba(8,15,30,.75); z-index:1000; display:none; overflow-y:auto; padding:16px; }
+    #pl-modal.open { display:block; }
+    #pl-modal-inner { max-width:560px; margin:20px auto; background:var(--c-bg,#0f172a); border:1px solid var(--c-border,#2d3748); border-radius:16px; padding:18px; }
+    #pl-modal h2 { font-size:1.05rem; margin:0 0 14px; color:var(--c-text,#f1f5f9); }
+    .pl-field { margin-bottom:12px; }
+    .pl-field label { display:block; font-size:.78rem; font-weight:600; color:var(--c-muted,#94a3b8); margin-bottom:4px; }
+    .pl-field input, .pl-field select, .pl-field textarea { width:100%; box-sizing:border-box; border:1px solid var(--c-border,#2d3748);
+      background:var(--c-surface,#1e293b); color:var(--c-text,#f1f5f9); padding:9px 11px; border-radius:10px; font-size:.9rem; font-family:inherit; }
+    .pl-field textarea { min-height:64px; resize:vertical; }
+    .pl-areas-box { display:flex; flex-wrap:wrap; gap:6px; }
+    .pl-areas-box label { display:inline-flex; align-items:center; gap:5px; font-size:.76rem; font-weight:500; color:var(--c-text,#e2e8f0);
+      border:1px solid var(--c-border,#2d3748); border-radius:999px; padding:5px 10px; cursor:pointer; margin:0; }
+    .pl-areas-box input { width:auto; }
+    .pl-modal-actions { display:flex; gap:8px; margin-top:16px; }
+    .pl-modal-actions .pl-btn { flex:1; justify-content:center; }
+    #pl-del-btn { flex:0 0 auto; color:var(--c-red,#f87171); }
+    /* b-planedit — view toggle + card picker + editable term */
+    .pl-viewtog { display:inline-flex; border:1px solid var(--c-border,#2d3748); border-radius:12px; overflow:hidden; }
+    .pl-viewtog button { background:var(--c-surface,#1e293b); color:var(--c-muted,#94a3b8); border:none; padding:8px 14px; min-height:44px; font-size:.85rem; font-weight:600; cursor:pointer; font-family:inherit; }
+    .pl-viewtog button.active { background:var(--c-blue,#4a9abf); color:#fff; }
+    #pl-pick { position:fixed; inset:0; background:rgba(8,15,30,.75); z-index:1000; display:none; overflow-y:auto; padding:16px; }
+    #pl-pick.open { display:block; }
+    #pl-pick-inner { max-width:1200px; margin:20px auto; background:var(--c-bg,#0f172a); border:1px solid var(--c-border,#2d3748); border-radius:16px; padding:18px; }
+    #pl-pick h2 { font-size:1.05rem; margin:0 0 12px; color:var(--c-text,#f1f5f9); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    #pl-pick h2 select { border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b); color:var(--c-text,#f1f5f9); padding:6px 10px; border-radius:10px; font-size:.9rem; font-family:inherit; }
+    .pl-pick-tabs { display:flex; gap:6px; margin-bottom:10px; }
+    .pl-pick-tabs button { flex:1; background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748); color:var(--c-muted,#94a3b8); padding:7px 8px; border-radius:8px; cursor:pointer; font-size:.78rem; font-weight:600; font-family:inherit; }
+    .pl-pick-tabs button.active { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; }
+    #pl-pick-filters { margin-bottom:9px; }
+    /* b211 — pick by sub-aspect, not by scrolling */
+    .pl-pick-note { font-size:.74rem; color:var(--c-muted,#94a3b8); font-style:italic; margin-bottom:9px; }
+    .pl-pick-full { margin-bottom:16px; }
+    .pl-pick-full .pl-pick-add { margin:0 0 6px; }
+    #pl-pick-more { display:block; width:100%; margin:2px 0 10px; }
+    #pl-pick-custom { display:inline-block; font-size:.8rem; color:var(--c-blue,#89c2d9); margin-bottom:10px; cursor:pointer; }
+    .pl-pick-item { background:var(--c-card,#0f1927); border:1px solid var(--c-border,#2d3748); border-radius:10px; padding:10px 12px; margin-bottom:8px; }
+    .pl-pick-item .t { font-weight:600; font-size:.88rem; color:var(--c-text,#f1f5f9); }
+    .pl-pick-item .m { font-size:.72rem; color:var(--c-muted,#94a3b8); margin-top:3px; font-style:italic; }
+    /* b219 — this is a tablet button in a room, not a mouse target: never below 44px */
+    .pl-pick-add { margin-top:8px; background:var(--c-blue,#4a9abf); border:none; color:#fff;
+      min-height:44px; padding:0 16px; border-radius:10px; font-size:.82rem; font-weight:600;
+      cursor:pointer; font-family:inherit; }
+    /* wren-app-shell.css floors every button to 40px under 768px with a selector that
+       outranks a bare class. Win it back with the dialog id rather than editing the
+       shared rule, which is deliberate for the rest of the app. */
+    #pl-pick .pl-pick-add { min-height:44px; }
+    /* b219 — whole cards on a tablet, side by side, instead of one long column.
+       760px is the floor because that is where a tablet in PORTRAIT starts: it gives
+       two ~350px cards, the same width a phone renders one at, so both stay readable.
+       Fixed at two columns rather than auto-fill — a third column on a wide desktop
+       would squeeze intent / implementation / impact back into something unreadable,
+       which is the thing this build exists to stop. */
+    #pl-pick-list.pl-cards .pl-pick-full { margin-bottom:0; }
+    @media (min-width:760px) {
+      #pl-pick-list.pl-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+        gap:14px; align-items:start; }
+      /* The card's own 3-column intent/impl/impact block keys off VIEWPORT width, so
+         inside a grid cell it would still try three columns at ~180px each. Stack it. */
+      #pl-pick-list.pl-cards .wrc-cols,
+      #pl-pick-list.pl-cards .wrc-coel { grid-template-columns:1fr; }
+    }
+    /* b238 (2026-08-27) — Planning is ONE entry with TWO tabs: Termly and Weekly.
+       Termly is the b181 half-term plan at /ey/termly-plan; Weekly is this page's
+       week grid. The tab bar is duplicated on termly-plan.html so the pair reads as
+       one feature rather than two menu entries. */
+    .pl-tabs { display:flex; gap:0; border:1px solid var(--c-border,#2d3748); border-radius:12px;
+      overflow:hidden; margin:0 0 12px; }
+    .pl-tabs a, .pl-tabs button { flex:1; background:var(--c-surface,#1e293b); color:var(--c-muted,#94a3b8);
+      border:none; padding:11px 14px; min-height:46px; font-size:.9rem; font-weight:600; cursor:pointer;
+      font-family:inherit; text-align:center; text-decoration:none; display:flex; align-items:center;
+      justify-content:center; gap:6px; }
+    .pl-tabs a:hover, .pl-tabs button:hover { color:var(--c-text,#f1f5f9); }
+    .pl-tabs .on, .pl-tabs .active { background:var(--c-blue,#4a9abf); color:#fff; }
+    /* b238 — the planning tools that used to sit in More. Reachable here and from
+       inside the observation flow; nowhere else. */
+    .pl-tools { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+    .pl-tool { display:inline-flex; align-items:center; gap:7px; min-height:44px; padding:0 14px;
+      border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b);
+      color:var(--c-text,#f1f5f9); border-radius:12px; font-size:.85rem; font-weight:600;
+      text-decoration:none; }
+    .pl-tool:hover { border-color:var(--c-blue,#4a9abf); }
+    #pl-term { max-width:760px; }
+    .pl-term-card { background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748); border-radius:12px; padding:16px; margin-bottom:14px; }
+    .pl-term-card h3 { font-size:1rem; margin:0 0 12px; color:var(--c-text,#f1f5f9); }
+    .pl-int-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px; }
+    .pl-int-list li { background:var(--c-card,#0f1927); border-radius:8px; padding:8px 12px 8px 28px; font-size:.86rem; position:relative; color:var(--c-text,#e2e8f0); }
+    .pl-int-list li:before { content:'→'; position:absolute; left:10px; color:var(--c-blue,#89c2d9); }
+    .pl-int-row { display:flex; gap:6px; margin-bottom:6px; align-items:center; }
+    #pl-term .pl-int-input { border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b); color:var(--c-text,#f1f5f9); padding:9px 11px; border-radius:10px; font-size:.9rem; font-family:inherit; min-height:40px; box-sizing:border-box; }
+    .pl-int-row .pl-int-input { flex:1; }
+    .pl-int-row button { background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748); color:var(--c-text,#f1f5f9); border-radius:8px; min-height:40px; padding:0 10px; cursor:pointer; font-family:inherit; }
+  </style>
+</head>
+<body>
+<div id="pl-page">
+  <div id="pl-head">
+    <h1>🗓️ Planning</h1>
+    <button class="pl-btn primary" id="pl-add">+ Add activity</button>
+  </div>
+
+  <!-- b238 (2026-08-27, Toby's walkthrough) — Planning is one thing with two tabs.
+       Termly = the why / what was discussed (the b181 half-term plan).
+       Weekly  = resources and activities (the grid below).
+       The old in-page "Term" toggle (theme + learning intentions on
+       /api/planning/term) is superseded by the Termly tab: its button is kept but
+       hidden so the existing bindings below still resolve, and its markup/JS are
+       left untouched rather than rewritten. -->
+  <nav class="pl-tabs" aria-label="Planning">
+    <a href="/ey/termly-plan">📅 Termly</a>
+    <button id="pl-view-week" class="on active" aria-current="page">🗓️ Weekly</button>
+    <button id="pl-view-term" hidden aria-hidden="true" tabindex="-1">Term (legacy)</button>
+  </nav>
+
+  <!-- b238 — the planning tools that used to be separate More entries. They also
+       appear inside the observation flow (observation-new.html). -->
+  <div class="pl-tools">
+    <a class="pl-tool" href="/ey/activities">🎨 Activity Bank</a>
+    <a class="pl-tool" href="/ey/resource-cards">🗂️ Resource Cards</a>
+    <a class="pl-tool" href="/ey/story-studio">📖 Story Studio</a>
+    <a class="pl-tool" href="/ey/phonics">🔤 Phonics</a>
+    <a class="pl-tool" href="/ey/phonics-tracker">✅ Phonics tracker</a>
+  </div>
+
+  <!-- WEEK VIEW -->
+  <div id="pl-week-view">
+    <div class="pl-ctl">
+      <select class="pl-sel" id="pl-room">
+        <option value="1">Baby Room</option>
+        <option value="2" selected>Pre-school</option>
+      </select>
+      <button class="pl-btn" id="pl-prev">← Prev</button>
+      <span class="pl-week-lbl" id="pl-week-lbl">This week</span>
+      <button class="pl-btn" id="pl-next">Next →</button>
+      <button class="pl-btn" id="pl-today">This week</button>
+    </div>
+    <!-- b217 — planning follows the Ealing school calendar; a break week carries none -->
+    <div class="pl-term-bar" id="pl-term-bar" style="display:none"></div>
+    <div class="pl-grid" id="pl-grid"><div class="pl-empty">Loading…</div></div>
+  </div>
+
+  <!-- TERM VIEW (b-planedit — editable theme + learning intentions) -->
+  <div id="pl-term" style="display:none">
+    <div class="pl-ctl">
+      <select class="pl-sel" id="pl-term-room">
+        <option value="1">Baby Room</option>
+        <option value="2" selected>Pre-school</option>
+      </select>
+      <select class="pl-sel" id="pl-term-name">
+        <option>Autumn 1</option><option>Autumn 2</option>
+        <option>Spring 1</option><option>Spring 2</option>
+        <option selected>Summer 1</option><option>Summer 2</option>
+      </select>
+      <select class="pl-sel" id="pl-term-year">
+        <option value="2024-2025">2024–2025</option>
+        <option value="2025-2026" selected>2025–2026</option>
+        <!-- b217 — the school year the term calendar covers -->
+        <option value="2026-2027">2026–2027</option>
+      </select>
+    </div>
+    <div id="pl-term-content"><div class="pl-empty">Loading…</div></div>
+  </div>
+</div>
+
+<div id="pl-modal" role="dialog" aria-modal="true">
+  <div id="pl-modal-inner">
+    <h2 id="pl-modal-title">Add activity</h2>
+    <input type="hidden" id="pl-f-id">
+    <div class="pl-field"><label>Day</label>
+      <select id="pl-f-day">
+        <option value="monday">Monday</option><option value="tuesday">Tuesday</option>
+        <option value="wednesday">Wednesday</option><option value="thursday">Thursday</option>
+        <option value="friday">Friday</option>
+      </select>
+    </div>
+    <div class="pl-field"><label>Activity title *</label><input id="pl-f-title" placeholder="e.g. Autumn leaf printing"></div>
+    <div class="pl-field"><label>Type</label>
+      <select id="pl-f-type">
+        <option value="">—</option>
+        <option value="sensory">Sensory</option>
+        <option value="maths_physical">Maths &amp; Physical</option>
+        <option value="art_design">Art &amp; Design</option>
+        <option value="small_world">Small World</option>
+        <option value="book_focus">Book Focus</option>
+      </select>
+    </div>
+    <div class="pl-field"><label>Description</label><textarea id="pl-f-desc" placeholder="What will happen, and how"></textarea></div>
+    <div class="pl-field"><label>Adult role</label><input id="pl-f-adult" placeholder="What the adult does to support / extend"></div>
+    <div class="pl-field"><label>Resources</label><input id="pl-f-res" placeholder="What's needed"></div>
+    <div class="pl-field"><label>EYFS areas</label>
+      <div class="pl-areas-box" id="pl-f-areas"></div>
+    </div>
+    <div class="pl-modal-actions">
+      <button class="pl-btn" id="pl-del-btn" style="display:none">Delete</button>
+      <button class="pl-btn" id="pl-cancel">Cancel</button>
+      <button class="pl-btn primary" id="pl-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- CARD PICKER (b-planedit — card-pick-first primary flow) -->
+<div id="pl-pick" role="dialog" aria-modal="true">
+  <div id="pl-pick-inner">
+    <h2>Add to
+      <select id="pl-pick-day">
+        <option value="monday">Monday</option><option value="tuesday">Tuesday</option>
+        <option value="wednesday">Wednesday</option><option value="thursday">Thursday</option>
+        <option value="friday">Friday</option>
+      </select>
+    </h2>
+    <div class="pl-pick-tabs">
+      <button id="pl-ptab-rc" class="active" data-ptab="rc">🗂️ Resource Cards</button>
+      <button id="pl-ptab-ab" data-ptab="ab">📚 Activity Bank</button>
+    </div>
+    <div id="pl-pick-filters"></div>
+    <div class="pl-pick-note" id="pl-pick-note"></div>
+    <a id="pl-pick-custom">✏️ Type a custom activity instead</a>
+    <div id="pl-pick-list"><div class="pl-empty">Loading…</div></div>
+    <button class="pl-btn" id="pl-pick-more" style="display:none">Show more</button>
+    <div class="pl-modal-actions"><button class="pl-btn" id="pl-pick-close">Close</button></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<!-- b211 — shared card vocabulary, sub-aspect tick list and full-card renderer -->
+<script src="/js/resource-cards-filters.js?v=b219"></script>
+<script src="/js/wren-subaspect-picker.js?v=b219"></script>
+<script src="/js/resource-cards-render.js?v=b211"></script>
+<script>
+(function () {
+  'use strict';
+  var DAYS = ['monday','tuesday','wednesday','thursday','friday'];
+  var AREAS = ['Communication & Language','Personal, Social & Emotional Development','Physical Development',
+               'Literacy','Mathematics','Understanding the World','Expressive Arts & Design'];
+  var week = mondayOf(new Date());
+  var WEEKCAL = null;                 // b217 — which half-term this week is, and whether it is plannable
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function mondayOf(d){ var x=new Date(d); var diff=x.getDay()===0?-6:1-x.getDay(); x.setDate(x.getDate()+diff); return x.toISOString().slice(0,10); }
+  function fmtWeek(w){ var d=new Date(w+'T00:00:00'); return 'w/c ' + d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
+  function room(){ return document.getElementById('pl-room').value; }
+
+  /* b217 — a week belongs to a half-term (Autumn 1, Autumn 2, …) or to a break.
+     Break weeks carry no planning, so the page says which one it is and turns the
+     add buttons off rather than offering a grid that will be refused on save. */
+  function loadWeekCalendar(){
+    return Wren.api('/api/planning/calendar/week?week='+encodeURIComponent(week))
+      .then(function(w){ WEEKCAL=w; return w; })
+      .catch(function(){ WEEKCAL=null; return null; });   // never block planning on the calendar
+  }
+  function renderTermBar(){
+    var bar=document.getElementById('pl-term-bar');
+    if(!WEEKCAL){ bar.style.display='none'; setAddEnabled(true); return; }
+    var cls='', icon='📅';
+    if(WEEKCAL.status==='teaching'){ cls=' teaching'; }
+    else if(WEEKCAL.status==='break'){ cls=' break'; icon='🌿'; }
+    else if(WEEKCAL.status==='no_calendar'){ icon='⚠️'; }
+    var extra = WEEKCAL.plannable ? ''
+      : '<br>Use the <a href="/ey/termly-plan">termly plan</a> to evaluate the half-term just gone and draft the next one.';
+    bar.className='pl-term-bar'+cls;
+    bar.innerHTML='<span class="k">'+icon+'</span><span>'+esc(WEEKCAL.message||'')+extra+'</span>';
+    bar.style.display='';
+    setAddEnabled(WEEKCAL.plannable !== false);
+  }
+  function setAddEnabled(on){
+    var add=document.getElementById('pl-add');
+    add.disabled=!on;
+    add.title = on ? '' : ((WEEKCAL&&WEEKCAL.message)||'No planning this week');
+    document.querySelectorAll('#pl-grid .pl-day-add').forEach(function(b){ b.disabled=!on; });
+    document.querySelectorAll('#pl-grid .pl-day').forEach(function(d){ d.classList.toggle('closed', !on); });
+  }
+
+  function load(){
+    var grid=document.getElementById('pl-grid');
+    document.getElementById('pl-week-lbl').textContent=fmtWeek(week);
+    grid.innerHTML='<div class="pl-empty">Loading…</div>';
+    loadWeekCalendar().then(renderTermBar);
+    Wren.api('/api/planning/weekly?room_id='+encodeURIComponent(room())+'&week='+encodeURIComponent(week)).then(function(rows){
+      rows=Array.isArray(rows)?rows:[];
+      var byDay={}; rows.forEach(function(r){ (byDay[r.day]=byDay[r.day]||[]).push(r); });
+      grid.innerHTML=DAYS.map(function(day){
+        var acts=(byDay[day]||[]).map(function(a){
+          var areas=(a.eyfs_areas||[]).map(function(x){return '<span class="pl-area-chip">'+esc(x)+'</span>';}).join('');
+          return '<div class="pl-act" data-act="'+encodeURIComponent(JSON.stringify(a))+'">'+
+            '<div class="pl-act-title">'+esc(a.activity_title)+'</div>'+
+            (a.activity_type?'<div class="pl-act-type">'+esc(a.activity_type.replace(/_/g,' '))+'</div>':'')+
+            (areas?'<div class="pl-act-areas">'+areas+'</div>':'')+'</div>';
+        }).join('');
+        return '<div class="pl-day"><div class="pl-day-h">'+day+
+          '<button class="pl-day-add" data-day="'+day+'" title="Add to '+day+'">+</button></div>'+
+          (acts||'<div class="pl-empty">No activities</div>')+'</div>';
+      }).join('');
+      setAddEnabled(!WEEKCAL || WEEKCAL.plannable !== false);   // b217 — re-apply after the grid redraws
+    }).catch(function(){ grid.innerHTML='<div class="pl-empty">Could not load the plan.</div>'; });
+  }
+
+  function buildAreas(){
+    document.getElementById('pl-f-areas').innerHTML=AREAS.map(function(a){
+      return '<label><input type="checkbox" value="'+esc(a)+'"> '+esc(a.replace(' & ',' & '))+'</label>';
+    }).join('');
+  }
+
+  function openModal(act, day){
+    document.getElementById('pl-modal-title').textContent=act?'Edit activity':'Add activity';
+    document.getElementById('pl-f-id').value=act?act.id:'';
+    document.getElementById('pl-f-day').value=(act&&act.day)||day||'monday';
+    document.getElementById('pl-f-title').value=act?act.activity_title||'':'';
+    document.getElementById('pl-f-type').value=act?act.activity_type||'':'';
+    document.getElementById('pl-f-desc').value=act?(act.activity_description||act.differentiation||''):'';
+    document.getElementById('pl-f-adult').value=act?act.role_of_adult||'':'';
+    document.getElementById('pl-f-res').value=act?act.resources||'':'';
+    var sel=(act&&act.eyfs_areas)||[];
+    document.querySelectorAll('#pl-f-areas input').forEach(function(c){ c.checked=sel.indexOf(c.value)>=0; });
+    document.getElementById('pl-del-btn').style.display=act?'':'none';
+    document.getElementById('pl-del-btn').dataset.id=act?act.id:'';
+    document.getElementById('pl-modal').classList.add('open');
+  }
+  function closeModal(){ document.getElementById('pl-modal').classList.remove('open'); }
+  /* b217 — say why, don't just do nothing. The API refuses a break week too (409),
+     so this is the friendly half of the same rule, not the only guard. */
+  function plannable(){
+    if(!WEEKCAL || WEEKCAL.plannable !== false) return true;
+    if(window.Wren && Wren.toast) Wren.toast(WEEKCAL.message, 'info', 4200);
+    else alert(WEEKCAL.message);
+    return false;
+  }
+
+  function save(){
+    var id=document.getElementById('pl-f-id').value;
+    var title=document.getElementById('pl-f-title').value.trim();
+    if(!title){ document.getElementById('pl-f-title').focus(); return; }
+    var areas=[]; document.querySelectorAll('#pl-f-areas input:checked').forEach(function(c){ areas.push(c.value); });
+    var body={
+      room_id:room(), week_commencing:week, day:document.getElementById('pl-f-day').value,
+      activity_title:title, activity_type:document.getElementById('pl-f-type').value||null,
+      activity_description:document.getElementById('pl-f-desc').value.trim()||null,
+      role_of_adult:document.getElementById('pl-f-adult').value.trim()||null,
+      resources:document.getElementById('pl-f-res').value.trim()||null,
+      eyfs_areas:areas
+    };
+    var btn=document.getElementById('pl-save'); btn.disabled=true; btn.textContent='Saving…';
+    var req=id ? Wren.api('/api/planning/weekly/'+id,{method:'PATCH',body:body})
+               : Wren.api('/api/planning/weekly',{method:'POST',body:body});
+    req.then(function(){ btn.disabled=false; btn.textContent='Save'; closeModal(); load(); })
+       .catch(function(e){ btn.disabled=false; btn.textContent='Save';
+         alert((e&&(e.error||e.message))||'Could not save. You may not have permission to edit plans.'); });
+  }
+
+  function del(){
+    var id=document.getElementById('pl-del-btn').dataset.id;
+    if(!id) return;
+    if(!confirm('Delete this activity?')) return;
+    Wren.api('/api/planning/weekly/'+id,{method:'DELETE'}).then(function(){ closeModal(); load(); })
+      .catch(function(e){ alert((e&&(e.error||e.message))||'Could not delete.'); });
+  }
+
+  // ── b211: pick by sub-aspect, not by scrolling ─────────────────────────────
+  // The picker was a flat scroll of 284 resource cards. Now you tick the
+  // sub-aspects you want covered (Managing Self, Speaking, Number…), narrow with a
+  // keyword and an age band, and see the WHOLE cards for what is left — intent,
+  // implementation, key questions, impact — with Add sitting on each card.
+  var pick = { day:'monday', tab:'rc', rc:[], rcBySlug:{}, ab:[], rcLoaded:false, abLoaded:false,
+               filters:null, shown:0, matches:[], fullBySlug:{} };
+  var PAGE = 12;                                   // full cards rendered per "Show more"
+
+  function cap(s){ return String(s||'').charAt(0).toUpperCase()+String(s||'').slice(1); }
+
+  // Card artwork carries its own light/dark palette; match it to whatever the
+  // page palette is so the picker doesn't punch a dark hole in a light theme.
+  function cardTheme(){
+    try {
+      var bg=getComputedStyle(document.documentElement).getPropertyValue('--c-bg').trim();
+      var m=bg.match(/\d+/g);
+      if(m && m.length>=3){
+        var lum=(0.299*(+m[0])+0.587*(+m[1])+0.114*(+m[2]));
+        return lum>140 ? 'light' : 'dark';
+      }
+      if(/^#([0-9a-f]{6})$/i.test(bg)){
+        var r=parseInt(bg.substr(1,2),16), g=parseInt(bg.substr(3,2),16), b=parseInt(bg.substr(5,2),16);
+        return (0.299*r+0.587*g+0.114*b)>140 ? 'light' : 'dark';
+      }
+    } catch(e){}
+    return (window.WrenResourceCards && WrenResourceCards.theme()) || 'dark';
+  }
+
+  function openPicker(day){
+    pick.day = day || 'monday';
+    document.getElementById('pl-pick-day').value = pick.day;
+    document.getElementById('pl-pick').classList.add('open');
+    ensureFilters();
+    ensurePickLoaded();
+  }
+  function closePicker(){ document.getElementById('pl-pick').classList.remove('open'); }
+  function switchPtab(tab){
+    pick.tab = tab;
+    document.getElementById('pl-ptab-rc').classList.toggle('active', tab==='rc');
+    document.getElementById('pl-ptab-ab').classList.toggle('active', tab==='ab');
+    ensurePickLoaded();
+  }
+
+  // One tick list, both tabs — the whole point is that cards and activities are
+  // chosen from the SAME vocabulary. It is rebuilt from whichever library is
+  // loaded, so an aspect nobody has used yet never appears.
+  function ensureFilters(){
+    if(pick.filters) return;
+    if(!window.WrenSubAspectPicker || !window.WrenRCFilters) return;
+    pick.filters = WrenSubAspectPicker.create({
+      mount: document.getElementById('pl-pick-filters'),
+      groups: [],
+      bands: WrenRCFilters.AGE_BANDS,
+      // b219 — themes first: one tick takes 284 cards down to ~20, which ticking a
+      // sub-aspect can never do (the median card carries eight of those).
+      themes: [],
+      themeLabel: 'Theme',
+      // b219 — the 17 sub-aspect chips start folded away behind their own button.
+      // Theme + age band stay visible, so the picker opens onto CARDS on a tablet
+      // rather than onto a full screen of ticks you have to scroll past.
+      collapsed: true,
+      placeholder: 'Keyword — title, strapline, intent, key questions…',
+      emptyText: 'Load the library to see its sub-aspects.',
+      onChange: function(){ pick.shown=0; renderPick(); }
+    });
+  }
+
+  function rebuildGroups(){
+    if(!pick.filters || !window.WrenRCFilters) return;
+    if(pick.tab==='rc'){
+      pick.filters.setGroups(WrenRCFilters.aspectGroups(pick.rc));
+      // b219 — derived from the loaded cards, so a theme added to the JSONs tomorrow
+      // appears here without a code change.
+      pick.filters.setThemes(WrenRCFilters.themeOptions(pick.rc));
+    } else {
+      // Activities carry no theme at all, so the row empties rather than offering
+      // ticks that would narrow nothing.
+      pick.filters.setThemes([]);
+      // Activities are tagged by AREA only (ladn.planning_activities.eyfs_areas /
+      // curriculum_activities short codes), never by sub-aspect. Keep the same tick
+      // list and widen each tick to its parent area, counting what it would match.
+      var groups = WrenRCFilters.aspectGroups(pick.rc);
+      groups.forEach(function(g){
+        var set = WrenRCFilters.areaMatchSet([g.area]);
+        var n = pick.ab.filter(function(a){
+          return (a.eyfs_areas||[]).some(function(x){ return set[String(x).toUpperCase()]; });
+        }).length;
+        g.aspects.forEach(function(a){ a.count = n; });
+      });
+      pick.filters.setGroups(groups);
+    }
+  }
+
+  function ensurePickLoaded(){
+    var el=document.getElementById('pl-pick-list');
+    pick.shown=0;
+    if(pick.tab==='rc'){
+      if(pick.rcLoaded) { rebuildGroups(); return renderPick(); }
+      pick.rcLoaded=true; el.innerHTML='<div class="pl-empty">Loading…</div>';
+      Wren.api('/api/resource-cards').then(function(d){
+        pick.rc=Array.isArray(d)?d:[]; pick.rcBySlug={};
+        pick.rc.forEach(function(c){pick.rcBySlug[c.slug]=c;});
+        rebuildGroups(); renderPick();
+      }).catch(function(){ pick.rcLoaded=false; el.innerHTML='<div class="pl-empty">Could not load resource cards.</div>'; });
+    } else {
+      // The card library doubles as the sub-aspect vocabulary, so fetch it too.
+      var needCards = !pick.rcLoaded;
+      if(needCards) pick.rcLoaded=true;
+      if(pick.abLoaded && !needCards) { rebuildGroups(); return renderPick(); }
+      el.innerHTML='<div class="pl-empty">Loading…</div>';
+      var jobs=[ pick.abLoaded ? Promise.resolve(null) : Wren.api('/api/activity-bank?limit=500') ];
+      if(needCards) jobs.push(Wren.api('/api/resource-cards'));
+      Promise.all(jobs).then(function(r){
+        if(r[0]){ pick.ab=(r[0]&&r[0].activities)||r[0]||[]; pick.abLoaded=true; }
+        if(r[1]){ pick.rc=Array.isArray(r[1])?r[1]:[]; pick.rcBySlug={};
+                  pick.rc.forEach(function(c){pick.rcBySlug[c.slug]=c;}); }
+        rebuildGroups(); renderPick();
+      }).catch(function(){ pick.abLoaded=false; el.innerHTML='<div class="pl-empty">Could not load activities.</div>'; });
+    }
+  }
+
+  function filterState(){
+    return pick.filters ? pick.filters.state() : { q:'', aspects:[], bands:[], themes:[] };
+  }
+
+  // b219 — a plain-English label for a theme slug, for the "showing X" note.
+  function themeNames(keys){
+    return (keys||[]).map(function(k){
+      return window.WrenRCFilters ? WrenRCFilters.themeLabel(k) : k;
+    }).join(' + ');
+  }
+
+  function renderPick(){
+    var el=document.getElementById('pl-pick-list');
+    var more=document.getElementById('pl-pick-more');
+    var note=document.getElementById('pl-pick-note');
+    var st=filterState();
+
+    if(pick.tab==='rc'){
+      pick.matches = window.WrenRCFilters
+        ? WrenRCFilters.applyMulti(pick.rc, st)
+        : pick.rc;
+      if(pick.filters) pick.filters.setCount(pick.matches.length+' of '+pick.rc.length+' cards');
+      var bits=[];
+      if(st.themes.length) bits.push(themeNames(st.themes));
+      if(st.aspects.length) bits.push(st.aspects.length+' sub-aspect'+(st.aspects.length>1?'s':''));
+      note.textContent = bits.length
+        ? 'Showing full cards for '+bits.join(' · ')+'.'
+        : 'Pick a theme above to narrow these '+pick.rc.length+' cards — sub-aspects alone barely narrow, most cards carry eight.';
+      // b219 — whole cards, gridded on a tablet. Off when there is nothing to grid,
+      // so the "no matches" line stays full-width rather than sitting in one column.
+      el.classList.toggle('pl-cards', pick.matches.length>0);
+      if(!pick.matches.length){ el.innerHTML='<div class="pl-empty">No resource cards match.</div>'; more.style.display='none'; return; }
+      // Full cards arrive from /bulk, so say so rather than flashing an empty list.
+      if(!pick.shown) el.innerHTML='<div class="pl-empty">Loading cards…</div>';
+      renderFullCards();
+      return;
+    }
+
+    // Activity bank — same ticks, widened to the parent areas of what you ticked.
+    var areas = [];
+    st.aspects.forEach(function(a){
+      var area = WrenRCFilters.areaOfAspect(a);
+      if(area && areas.indexOf(area)<0) areas.push(area);
+    });
+    var set = areas.length ? WrenRCFilters.areaMatchSet(areas) : null;
+    var q=(st.q||'').toLowerCase();
+    var acts=pick.ab.filter(function(a){
+      if(set && !(a.eyfs_areas||[]).some(function(x){ return set[String(x).toUpperCase()]; })) return false;
+      if(q && (a.title||a.name||'').toLowerCase().indexOf(q)<0
+           && (a.description||'').toLowerCase().indexOf(q)<0) return false;
+      return true;
+    });
+    if(pick.filters) pick.filters.setCount(acts.length+' of '+pick.ab.length+' activities');
+    note.textContent = 'Activities are tagged by area, not by theme or sub-aspect — a tick shows everything in that area'+
+      (areas.length?' ('+areas.join(', ')+').':'.');
+    el.classList.remove('pl-cards');       // b219 — the activity bank is a list, not full cards
+    more.style.display='none';
+    if(!acts.length){ el.innerHTML='<div class="pl-empty">No activities match.</div>'; return; }
+    el.innerHTML=acts.slice(0,200).map(function(a){
+      var meta=Array.isArray(a.eyfs_areas)?a.eyfs_areas.slice(0,3).join(', '):'';
+      return '<div class="pl-pick-item"><div class="t">'+esc(a.title||a.name)+'</div>'+
+        (meta?'<div class="m">'+esc(meta)+'</div>':'')+
+        '<button class="pl-pick-add" data-ab="'+esc(a.id)+'">+ Add to '+cap(pick.day)+'</button></div>';
+    }).join('');
+  }
+
+  // Full cards, a page at a time — 284 whole cards at once would be unusable.
+  function renderFullCards(){
+    var el=document.getElementById('pl-pick-list');
+    var more=document.getElementById('pl-pick-more');
+    var batch=pick.matches.slice(pick.shown, pick.shown+PAGE);
+    if(!batch.length){ more.style.display='none'; return; }
+    var need=batch.filter(function(c){ return !pick.fullBySlug[c.slug]; }).map(function(c){ return c.slug; });
+    var got = need.length
+      ? Wren.api('/api/resource-cards/bulk?slugs='+encodeURIComponent(need.join(',')))
+      : Promise.resolve([]);
+    more.disabled=true;
+    got.then(function(full){
+      (full||[]).forEach(function(c){ pick.fullBySlug[c.slug]=c; });
+      if(!pick.shown) el.innerHTML='';        // clear the "Loading cards…" placeholder
+      var theme=cardTheme();
+      batch.forEach(function(idx){
+        var card=pick.fullBySlug[idx.slug];
+        var wrap=document.createElement('div');
+        wrap.className='pl-pick-full';
+        if(card && window.WrenResourceCards){
+          wrap.appendChild(WrenResourceCards.renderCard(card, { theme: theme }));
+        } else {
+          wrap.innerHTML='<div class="pl-pick-item"><div class="t">'+esc(idx.title)+'</div>'+
+            (idx.strapline?'<div class="m">'+esc(idx.strapline)+'</div>':'')+'</div>';
+        }
+        var btn=document.createElement('button');
+        btn.className='pl-pick-add';
+        btn.setAttribute('data-rc', idx.slug);
+        btn.textContent='+ Add to '+cap(pick.day);
+        wrap.insertBefore(btn, wrap.firstChild);   // above the card, clear of the hero art
+        el.appendChild(wrap);
+      });
+      pick.shown += batch.length;
+      more.disabled=false;
+      var left=pick.matches.length-pick.shown;
+      more.textContent='Show '+Math.min(PAGE,left)+' more ('+left+' still to see)';
+      more.style.display = left>0 ? '' : 'none';
+    }).catch(function(){
+      more.disabled=false;
+      if(!pick.shown) el.innerHTML='<div class="pl-empty">Could not load the full cards.</div>';
+    });
+  }
+
+  function addCardToDay(slug){
+    var card=pick.rcBySlug[slug]; if(!card) return;
+    var day=document.getElementById('pl-pick-day').value||'monday';
+    var pre=pick.fullBySlug[slug];
+    (pre?Promise.resolve(pre):Wren.api('/api/resource-cards/'+encodeURIComponent(slug))).then(function(full){
+      var impl=Array.isArray(full.implementation)?full.implementation.join(' '):'';
+      var enh=Array.isArray(full.enhancements)?full.enhancements.join('; '):'';
+      var areas=full.areas||card.areas||[];
+      return Wren.api('/api/planning/weekly',{method:'POST',body:{
+        room_id:parseInt(room(),10), week_commencing:week, day:day,
+        activity_title:full.title||card.title||slug,
+        role_of_adult:impl||(full.strapline||null),
+        resources:enh||null, eyfs_areas:areas,
+        resource_card_slug:slug, resource_card_title:full.title||card.title||slug, resource_card_areas:areas
+      }});
+    }).then(function(){ closePicker(); load(); })
+      .catch(function(e){ alert((e&&(e.error||e.message))||'Could not add. You may not have permission to edit plans.'); });
+  }
+  function addActToDay(id){
+    var a=pick.ab.filter(function(x){return String(x.id)===String(id);})[0]; if(!a) return;
+    var day=document.getElementById('pl-pick-day').value||'monday';
+    Wren.api('/api/planning/weekly',{method:'POST',body:{
+      room_id:parseInt(room(),10), week_commencing:week, day:day, activity_title:a.title||a.name,
+      role_of_adult:a.description||null,
+      resources:Array.isArray(a.materials_needed)?a.materials_needed.join(', '):(a.resources_needed||null),
+      eyfs_areas:Array.isArray(a.eyfs_areas)?a.eyfs_areas:[]
+    }}).then(function(){ closePicker(); load(); })
+      .catch(function(e){ alert((e&&(e.error||e.message))||'Could not add.'); });
+  }
+
+  // ── b-planedit: editable term plan ─────────────────────────────────────────
+  var termData=null, termEditing=false;
+  function tRoom(){ return document.getElementById('pl-term-room').value; }
+  function tTerm(){ return document.getElementById('pl-term-name').value; }
+  function tYear(){ return document.getElementById('pl-term-year').value; }
+  function switchView(v){
+    document.getElementById('pl-view-week').classList.toggle('active', v==='week');
+    document.getElementById('pl-view-term').classList.toggle('active', v==='term');
+    document.getElementById('pl-week-view').style.display = v==='week'?'':'none';
+    document.getElementById('pl-term').style.display = v==='term'?'':'none';
+    document.getElementById('pl-add').style.display = v==='week'?'':'none';
+    if(v==='term'){ termData=null; loadTerm(); }
+  }
+  function loadTerm(){
+    var el=document.getElementById('pl-term-content');
+    el.innerHTML='<div class="pl-empty">Loading…</div>';
+    Wren.api('/api/planning/term?room_id='+encodeURIComponent(tRoom())+'&term='+encodeURIComponent(tTerm())+'&year='+encodeURIComponent(tYear())).then(function(t){
+      termData=t||{theme:'',learning_intentions:[]}; termEditing=false; renderTerm();
+    }).catch(function(){ el.innerHTML='<div class="pl-empty">Could not load the term plan.</div>'; });
+  }
+  function renderTerm(){
+    if(termEditing) return renderTermEdit();
+    var t=termData||{}; var el=document.getElementById('pl-term-content');
+    var ints=t.learning_intentions||[];
+    el.innerHTML='<div class="pl-term-card">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><h3 style="margin:0;flex:1">🎯 Theme: '+esc(t.theme||'—')+'</h3>'+
+      '<button class="pl-btn" id="pl-term-edit">✏️ Edit</button></div>'+
+      '<h4 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--c-muted,#94a3b8);margin:0 0 8px">Learning Intentions</h4>'+
+      (ints.length?'<ul class="pl-int-list">'+ints.map(function(i){return '<li>'+esc(i)+'</li>';}).join('')+'</ul>'
+        :'<div class="pl-empty">No learning intentions yet — tap Edit to add them.</div>')+
+      '</div>';
+    document.getElementById('pl-term-edit').addEventListener('click',function(){ termEditing=true; renderTerm(); });
+  }
+  function renderTermEdit(){
+    var t=termData||{}; var el=document.getElementById('pl-term-content');
+    var ints=(t.learning_intentions||[]).slice();
+    function rowHtml(v){ return '<div class="pl-int-row"><input class="pl-int-input" value="'+esc(v)+'" placeholder="Learning intention…"><button class="pl-int-up" title="Move up">↑</button><button class="pl-int-down" title="Move down">↓</button><button class="pl-int-del" title="Remove" style="color:#f87171">✕</button></div>'; }
+    el.innerHTML='<div class="pl-term-card"><h3>✏️ Edit term plan</h3>'+
+      '<label style="display:block;font-size:.72rem;color:var(--c-muted,#94a3b8);margin-bottom:4px">Theme title</label>'+
+      '<input class="pl-int-input" id="pl-term-theme" value="'+esc(t.theme||'')+'" placeholder="e.g. Growing &amp; Changing" style="width:100%;margin-bottom:14px">'+
+      '<label style="display:block;font-size:.72rem;color:var(--c-muted,#94a3b8);margin-bottom:4px">Learning intentions</label>'+
+      '<div id="pl-term-ints">'+ints.map(rowHtml).join('')+'</div>'+
+      '<button class="pl-btn" id="pl-term-add" style="margin-top:4px">+ Add intention</button>'+
+      '<div class="pl-modal-actions"><button class="pl-btn" id="pl-term-cancel">Cancel</button><button class="pl-btn primary" id="pl-term-save">Save plan</button></div>'+
+      '</div>';
+    var wrap=document.getElementById('pl-term-ints');
+    document.getElementById('pl-term-add').addEventListener('click',function(){ wrap.insertAdjacentHTML('beforeend',rowHtml('')); var ins=wrap.querySelectorAll('.pl-int-input'); ins[ins.length-1].focus(); });
+    wrap.addEventListener('click',function(e){
+      var row=e.target.closest('.pl-int-row'); if(!row) return;
+      if(e.target.closest('.pl-int-del')) row.remove();
+      else if(e.target.closest('.pl-int-up')){ var p=row.previousElementSibling; if(p) wrap.insertBefore(row,p); }
+      else if(e.target.closest('.pl-int-down')){ var n=row.nextElementSibling; if(n) wrap.insertBefore(n,row); }
+    });
+    document.getElementById('pl-term-cancel').addEventListener('click',function(){ termEditing=false; renderTerm(); });
+    document.getElementById('pl-term-save').addEventListener('click',saveTerm);
+  }
+  function saveTerm(){
+    var theme=(document.getElementById('pl-term-theme').value||'').trim();
+    var ints=[]; document.querySelectorAll('#pl-term-ints .pl-int-input').forEach(function(i){ var v=i.value.trim(); if(v) ints.push(v); });
+    var btn=document.getElementById('pl-term-save'); btn.disabled=true; btn.textContent='Saving…';
+    Wren.api('/api/planning/term-plan',{method:'PUT',body:{ room_id:parseInt(tRoom(),10), term:tTerm(), year:tYear(), theme:theme, learning_intentions:ints }})
+      .then(function(saved){ termData=saved; termEditing=false; renderTerm(); })
+      .catch(function(e){ btn.disabled=false; btn.textContent='Save plan'; alert((e&&(e.error||e.message))||'Could not save. You may not have permission to edit plans.'); });
+  }
+
+  /* b217 — the academic year, on the 1 September boundary the schools use.
+     NOT the funding year (1 Sep–31 Dec / 1 Jan–31 Mar / 1 Apr–31 Aug). */
+  function academicYearOf(ymd){
+    var y=parseInt(ymd.slice(0,4),10), m=parseInt(ymd.slice(5,7),10), st=m>=9?y:y-1;
+    return st+'-'+(st+1);
+  }
+  function boot(){
+    /* b217 — boot once. Both entry points below can fire (wren:ready AND the
+       DOMContentLoaded fallback), and the fallback's guard only stopped ITSELF,
+       so every listener got bound twice: one tap on Next stepped TWO weeks. */
+    var _g=document.getElementById('pl-grid');
+    if(_g.dataset.b==='1') return;
+    _g.dataset.b='1';
+    buildAreas();
+    // Open the term view on the current academic year when we have it listed.
+    var ay=academicYearOf(new Date().toISOString().slice(0,10));
+    var ySel=document.getElementById('pl-term-year');
+    for(var i=0;i<ySel.options.length;i++){ if(ySel.options[i].value===ay){ ySel.value=ay; break; } }
+    document.getElementById('pl-room').addEventListener('change', load);
+    // b-planedit — view toggle + term controls
+    document.getElementById('pl-view-week').addEventListener('click', function(){ switchView('week'); });
+    document.getElementById('pl-view-term').addEventListener('click', function(){ switchView('term'); });
+    document.getElementById('pl-term-room').addEventListener('change', loadTerm);
+    document.getElementById('pl-term-name').addEventListener('change', loadTerm);
+    document.getElementById('pl-term-year').addEventListener('change', loadTerm);
+    // b-planedit — card picker bindings
+    document.getElementById('pl-ptab-rc').addEventListener('click', function(){ switchPtab('rc'); });
+    document.getElementById('pl-ptab-ab').addEventListener('click', function(){ switchPtab('ab'); });
+    document.getElementById('pl-pick-close').addEventListener('click', closePicker);
+    document.getElementById('pl-pick-day').addEventListener('change', function(){ pick.day=this.value; pick.shown=0; renderPick(); });
+    document.getElementById('pl-pick-more').addEventListener('click', renderFullCards);
+    document.getElementById('pl-pick-custom').addEventListener('click', function(){ var d=document.getElementById('pl-pick-day').value; closePicker(); openModal(null, d); });
+    document.getElementById('pl-pick').addEventListener('click', function(e){ if(e.target===this) closePicker(); });
+    document.getElementById('pl-pick-list').addEventListener('click', function(e){
+      var rc=e.target.closest('[data-rc]'); if(rc){ addCardToDay(rc.getAttribute('data-rc')); return; }
+      var ab=e.target.closest('[data-ab]'); if(ab){ addActToDay(ab.getAttribute('data-ab')); }
+    });
+    document.getElementById('pl-prev').addEventListener('click', function(){ var d=new Date(week); d.setDate(d.getDate()-7); week=d.toISOString().slice(0,10); load(); });
+    document.getElementById('pl-next').addEventListener('click', function(){ var d=new Date(week); d.setDate(d.getDate()+7); week=d.toISOString().slice(0,10); load(); });
+    document.getElementById('pl-today').addEventListener('click', function(){ week=mondayOf(new Date()); load(); });
+    document.getElementById('pl-add').addEventListener('click', function(){ if(!plannable()) return; openPicker('monday'); });  // b-planedit — card-pick-first
+    document.getElementById('pl-cancel').addEventListener('click', closeModal);
+    document.getElementById('pl-save').addEventListener('click', save);
+    document.getElementById('pl-del-btn').addEventListener('click', del);
+    document.getElementById('pl-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
+    document.getElementById('pl-grid').addEventListener('click', function(e){
+      var addBtn=e.target.closest('.pl-day-add'); if(addBtn){ if(!plannable()) return; openPicker(addBtn.dataset.day); return; }  // b-planedit — card-pick-first
+      var card=e.target.closest('.pl-act'); if(card){ openModal(JSON.parse(decodeURIComponent(card.dataset.act))); }
+    });
+    load();
+  }
+  document.addEventListener('wren:ready', boot);
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(function(){ if(window.Wren && !document.getElementById('pl-grid').dataset.b){ document.getElementById('pl-grid').dataset.b='1'; boot(); } },700); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="admin">
+  <title>Login health — Wren Admin</title>
+  <link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js?v=login20261023" defer></script>
+  <style>
+    /* login-20261023 — same look as Staff PINs: --c-* tokens only, light and dark. */
+    .lh-stats { display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px; }
+    .lh-stat { background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:14px;text-align:center; }
+    .lh-stat-val { font-size:1.6rem;font-weight:800;color:var(--c-text);line-height:1; }
+    .lh-stat-lbl { font-size:10px;color:var(--c-muted);margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:.04em; }
+    .lh-stat.bad .lh-stat-val { color:var(--c-red); }
+    .lh-stat.warn .lh-stat-val { color:var(--c-amber); }
+    .lh-stat.ok .lh-stat-val { color:var(--c-green); }
+
+    .banner { border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:.87rem;line-height:1.6;
+              background:var(--c-surface);border:1px solid var(--c-border);color:var(--c-muted); }
+    .banner b { color:var(--c-text); }
+    .banner.bad { border-color:color-mix(in srgb, var(--c-red) 45%, transparent); }
+
+    .toolbar { display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px; }
+    .toolbar input[type=search] { background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-border);
+      border-radius:8px;padding:8px 11px;font:inherit;font-size:.85rem;min-height:40px;min-width:200px; }
+    .toolbar label { font-size:.8rem;color:var(--c-muted);display:flex;align-items:center;gap:6px; }
+    .tabs { display:flex;gap:6px;margin-bottom:14px; }
+    .tabs button { min-height:40px; }
+    .tabs button.active { background:var(--c-blue);color:#fff;border-color:var(--c-blue); }
+
+    .lh-row { background:var(--c-card);border:1px solid var(--c-border);border-radius:11px;padding:12px 15px;margin-bottom:8px; }
+    .lh-row.blocked { border-color:color-mix(in srgb, var(--c-red) 50%, transparent); }
+    .lh-row.attention { border-color:color-mix(in srgb, var(--c-amber) 50%, transparent);border-style:dashed; }
+    .lh-head { display:flex;align-items:center;gap:12px;flex-wrap:wrap; }
+    .lh-who { flex:1;min-width:190px; }
+    .lh-name { font-weight:700;color:var(--c-text);font-size:.95rem; }
+    .lh-sub { color:var(--c-muted);font-size:.76rem;margin-top:3px;line-height:1.45; }
+    .lh-checks { list-style:none;margin:10px 0 0;padding:0;display:grid;gap:5px; }
+    .lh-checks li { display:flex;gap:8px;align-items:flex-start;font-size:.8rem;color:var(--c-text);line-height:1.45; }
+    .lh-checks li .ic { flex:none;width:18px;text-align:center;font-weight:800; }
+    .lh-checks li.ok .ic { color:var(--c-green); }
+    .lh-checks li.warn .ic { color:var(--c-amber); }
+    .lh-checks li.bad .ic { color:var(--c-red); }
+    .lh-checks li.info { color:var(--c-muted); }
+    .lh-checks li .fx { margin-left:auto;display:flex;gap:6px;flex-wrap:wrap; }
+    .lh-needs { font-size:.74rem;color:var(--c-amber);font-weight:600; }
+
+    .pill { font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap; }
+    .pill-ok   { background:var(--c-green-light);color:var(--c-green); }
+    .pill-warn { background:var(--c-amber-light);color:var(--c-amber); }
+    .pill-bad  { background:var(--c-red-light, color-mix(in srgb, var(--c-red) 18%, transparent));color:var(--c-red); }
+    .pill-mut  { background:color-mix(in srgb, var(--c-muted) 22%, transparent);color:var(--c-muted); }
+    .btn-min { min-height:36px; }
+
+    .lh-modal { position:fixed;inset:0;background:color-mix(in srgb, var(--c-bg) 80%, transparent);
+                display:none;align-items:center;justify-content:center;z-index:1200;padding:18px; }
+    .lh-modal.open { display:flex; }
+    .lh-modal-box { background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;max-width:620px;width:100%;
+                    padding:22px 24px;max-height:90vh;overflow:auto; }
+    .lh-modal-box h3 { margin:0 0 6px;color:var(--c-text);font-size:1.05rem; }
+    .lh-modal-box p { margin:0 0 12px;color:var(--c-muted);font-size:.83rem;line-height:1.6; }
+    .lh-modal-box pre { white-space:pre-wrap;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;
+                        padding:12px;font-size:.78rem;color:var(--c-text);line-height:1.5;max-height:46vh;overflow:auto; }
+    .lh-modal-actions { display:flex;gap:9px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px; }
+    @media (max-width:640px) { .lh-checks li { flex-wrap:wrap; } .lh-checks li .fx { margin-left:26px; } }
+  </style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Login health</div>
+      <div class="page-subtitle">Can every member of staff and every parent actually sign in? What is missing, and how to fix it</div>
+    </div>
+    <a href="/staff/staff-pins.html" class="btn btn-secondary btn-sm">Staff PINs →</a>
+  </div>
+
+  <div class="banner">
+    <b>One way in per portal.</b> Room tablets (EY): tap your name, then your PIN.
+    Staff HR on a phone: a Cloudflare email code (about once a month), then email and PIN.
+    Roost: email, PIN and the authenticator-app code. Parents: a Cloudflare email code, nothing else.
+    Wren ID is optional for staff — nobody needs it to sign in.
+    <br>This page only reads. Each fix is a button you press; nothing is sent, and no PIN is changed, by opening it.
+  </div>
+  <div class="banner bad" id="cf-banner" style="display:none"></div>
+
+  <div class="lh-stats" id="stats"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="btn btn-ghost btn-sm active" data-tab="staff" role="tab">Staff</button>
+    <button class="btn btn-ghost btn-sm" data-tab="parents" role="tab">Parents</button>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Search by name or email…" aria-label="Search">
+    <label><input type="checkbox" id="only-problems" checked> Only people with something to fix</label>
+    <span style="flex:1"></span>
+    <button class="btn btn-secondary btn-sm btn-min" id="btn-sync">Update Cloudflare now</button>
+    <button class="btn btn-ghost btn-sm btn-min" id="btn-refresh">Re-check</button>
+  </div>
+
+  <div id="rows"><div style="color:var(--c-muted);padding:24px;text-align:center">Loading…</div></div>
+  <p style="color:var(--c-muted);font-size:.78rem;line-height:1.6;margin-top:18px" id="footnote"></p>
+</div>
+
+<!-- The Wren ID set-up email, shown before anything is sent. -->
+<div class="lh-modal" id="wid-modal" role="dialog" aria-modal="true" aria-labelledby="wid-title">
+  <div class="lh-modal-box">
+    <h3 id="wid-title">Send a Wren ID set-up link</h3>
+    <p id="wid-sub"></p>
+    <pre id="wid-body">Loading…</pre>
+    <p style="margin-top:10px">Wren ID is optional — their PIN keeps working whatever happens. A new link cancels any older one.</p>
+    <div class="lh-modal-actions">
+      <button class="btn btn-ghost btn-sm btn-min" id="wid-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm btn-min" id="wid-send" disabled>Send this email</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+(function () {
+  var _data = null;
+  var _tab = 'staff';
+  var _widTarget = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function errText(e) { return (e && (e.message || e.error)) || 'Something went wrong'; }
+  function when(iso) {
+    return iso ? new Date(iso).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : null;
+  }
+  var ICON = { ok:'✓', warn:'!', bad:'✕', info:'·' };
+  var STATUS = {
+    ready:     '<span class="pill pill-ok">Ready</span>',
+    attention: '<span class="pill pill-warn">Check</span>',
+    blocked:   '<span class="pill pill-bad">Can’t sign in</span>',
+    'n/a':     '<span class="pill pill-mut">No access expected</span>'
+  };
+  var KIND = { current:'On roll', enquiry:'Enquiry', keepsake:'Left — memory book live', leaver:'Left' };
+
+  function fixHtml(c, who) {
+    switch (c.fix) {
+      case 'unlock':
+        return '<button class="btn btn-primary btn-sm btn-min" data-unlock="' + who.id + '">Unlock</button>';
+      case 'set_pin':
+        return '<a class="btn btn-primary btn-sm btn-min" href="/staff/staff-pins.html">Set a PIN</a>';
+      case 'edit_profile':
+        return '<a class="btn btn-secondary btn-sm btn-min" href="/staff-profile.html?id=' + who.id + '">Open profile</a>';
+      case 'edit_access':
+        return '<a class="btn btn-secondary btn-sm btn-min" href="/child-profile.html?id=' + who.child_id + '">Open child</a>';
+      case 'sync_access':
+        return '<button class="btn btn-secondary btn-sm btn-min" data-sync="1">Update Cloudflare now</button>';
+      case 'wren_id_invite':
+        if (c.state === 'ok' || /used \d/.test(c.text) || !who.email || who.protected) return '';
+        return '<button class="btn btn-ghost btn-sm btn-min" data-wid="' + who.id + '">Send set-up link…</button>';
+      default: return '';
+    }
+  }
+
+  function checksHtml(list, who) {
+    return '<ul class="lh-checks">' + list.map(function (c) {
+      return '<li class="' + c.state + '"><span class="ic">' + ICON[c.state] + '</span><span>' + esc(c.text) + '</span>'
+        + '<span class="fx">' + fixHtml(c, who) + '</span></li>';
+    }).join('') + '</ul>';
+  }
+
+  function staffRow(s) {
+    var sub = [esc(s.job_title || String(s.role || '').replace(/_/g, ' ')), '<b>' + esc(s.tier) + '</b>', 'Uses: ' + esc(s.portals.join(', '))];
+    if (s.email) sub.push(esc(s.email));
+    sub.push(s.last_login_at ? 'last signed in ' + esc(when(s.last_login_at)) : 'never signed in');
+    return '<div class="lh-row ' + s.status + '"><div class="lh-head"><div class="lh-who">'
+      + '<div class="lh-name">' + esc(s.name) + (s.protected ? ' <span class="pill pill-mut">Owner — PIN protected</span>' : '') + '</div>'
+      + '<div class="lh-sub">' + sub.join(' · ') + '</div></div>' + STATUS[s.status] + '</div>'
+      + checksHtml(s.checks, s) + '</div>';
+  }
+
+  function parentRow(p) {
+    var sub = ['Child: ' + esc(p.child || ('#' + p.child_id)), esc(KIND[p.kind] || p.kind)];
+    return '<div class="lh-row ' + (p.status === 'n/a' ? '' : p.status) + '"><div class="lh-head"><div class="lh-who">'
+      + '<div class="lh-name">' + esc(p.email || '(no email)') + '</div>'
+      + '<div class="lh-sub">' + sub.join(' · ') + '</div></div>' + STATUS[p.status]
+      + (p.kind !== 'leaver' && p.email ? ' <button class="btn btn-ghost btn-sm btn-min" data-copy="' + esc(p.email) + '">Copy sign-in steps</button>' : '')
+      + '</div>' + checksHtml(p.checks, p) + '</div>';
+  }
+
+  function render() {
+    if (!_data) return;
+    var q = document.getElementById('q').value.trim().toLowerCase();
+    var only = document.getElementById('only-problems').checked;
+    var list = _tab === 'staff' ? _data.staff : _data.parents;
+    list = list.filter(function (x) {
+      if (only && (x.status === 'ready' || x.status === 'n/a')) return false;
+      if (q && String((x.name || '') + ' ' + (x.child || '') + ' ' + (x.email || '')).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+    document.getElementById('rows').innerHTML = list.length
+      ? list.map(_tab === 'staff' ? staffRow : parentRow).join('')
+      : '<div style="color:var(--c-muted);padding:24px;text-align:center">' + (only ? 'Nothing to fix here. ✓' : 'Nobody matches that.') + '</div>';
+  }
+
+  function renderStats() {
+    var cs = _data.counts.staff, cp = _data.counts.parents;
+    var s = [
+      ['Staff ready', cs.ready || 0, 'ok'],
+      ['Staff to check', cs.attention || 0, cs.attention ? 'warn' : ''],
+      ['Staff who can’t sign in', cs.blocked || 0, cs.blocked ? 'bad' : ''],
+      ['Parent logins ready', cp.ready || 0, 'ok'],
+      ['Parent logins to check', (cp.attention || 0) + (cp.blocked || 0), (cp.blocked ? 'bad' : cp.attention ? 'warn' : '')],
+      ['Children with no parent login', _data.children_with_no_parent_login.length, _data.children_with_no_parent_login.length ? 'warn' : '']
+    ];
+    document.getElementById('stats').innerHTML = s.map(function (x) {
+      return '<div class="lh-stat ' + x[2] + '"><div class="lh-stat-val">' + x[1] + '</div><div class="lh-stat-lbl">' + esc(x[0]) + '</div></div>';
+    }).join('');
+    var cf = _data.cloudflare, b = document.getElementById('cf-banner');
+    if (!cf.ok) {
+      b.style.display = '';
+      b.innerHTML = '<b>Couldn’t read Cloudflare just now</b> (' + esc(cf.reason) + '). The “Cloudflare lets them in” checks are shown as unknown, not as failures.';
+    } else b.style.display = 'none';
+    var kids = _data.children_with_no_parent_login;
+    document.getElementById('footnote').innerHTML =
+      'Checked ' + esc(new Date(_data.generated_at).toLocaleString('en-GB')) + '. Cloudflare lists cached for 5 minutes — “Re-check” reads them fresh. '
+      + (kids.length ? 'Children on roll with no parent email at all: '
+        + kids.map(function (id) { return '<a href="/child-profile.html?id=' + id + '">#' + id + '</a>'; }).join(', ') + '.' : '');
+  }
+
+  function load(fresh) {
+    return Wren.api('/api/login-health' + (fresh ? '?fresh=1' : '')).then(function (d) {
+      _data = d; renderStats(); render();
+    }).catch(function (e) {
+      document.getElementById('rows').innerHTML = '<div style="color:var(--c-red);padding:24px;text-align:center">' + esc(errText(e)) + '</div>';
+    });
+  }
+
+  // ── Fixes ─────────────────────────────────────────────────────────────────
+  function unlock(id) {
+    var s = _data.staff.filter(function (x) { return x.id === id; })[0];
+    if (!s || !window.confirm('Unlock ' + s.name + ' now? They can try their PIN again straight away.')) return;
+    Wren.api('/api/auth/lockouts/unlock', { method:'POST', body:{ account_type:'staff', account_key:String(id) } })
+      .then(function () { Wren.toast(s.name + ' is unlocked.', 'success'); load(); })
+      .catch(function (e) { Wren.toast(errText(e), 'error'); });
+  }
+
+  function syncParents() {
+    if (!window.confirm('Update Cloudflare’s lists now?\n\nThis is the same update that runs every morning at 07:17: it makes Cloudflare’s parents, staff (HR) and Roost lists match the records in Wren. Leavers drop off; nobody is emailed.')) return;
+    Wren.api('/api/login-health/sync-access', { method:'POST' })
+      .then(function (d) {
+        var r = (d && d.result) || {}, bits = [];
+        ['parents','staff','roost'].forEach(function (k) { var v = r[k] || {}; bits.push(k + ': ' + (v.error ? 'failed' : (v.count != null ? v.count : '—'))); });
+        Wren.toast('Cloudflare updated — ' + bits.join(', ') + '.', d.ok ? 'success' : 'warning'); load(true);
+      })
+      .catch(function (e) { Wren.toast(errText(e), 'error'); });
+  }
+
+  function copySteps(email) {
+    var url = location.hostname.replace(/^admin\./, 'parents.');
+    var text = 'To open the Your Nursery parents app:\n'
+      + '1. Go to https://' + url + ' on your phone.\n'
+      + '2. Type this email address: ' + email + '\n'
+      + '3. Cloudflare (who look after the nursery’s sign-in) will email you a 6-digit code. Type it in — it works for about 10 minutes.\n'
+      + 'Your phone then stays signed in for 30 days. Wrong address? Tap “Try a different email address” and start again.';
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+      .then(function () { Wren.toast('Copied — paste it into your own message to the family.', 'success'); })
+      .catch(function () { window.prompt('Copy these steps:', text); });
+  }
+
+  function openWid(id) {
+    _widTarget = id;
+    var send = document.getElementById('wid-send');
+    send.disabled = true; send.textContent = 'Send this email';
+    document.getElementById('wid-body').textContent = 'Loading…';
+    document.getElementById('wid-sub').textContent = '';
+    document.getElementById('wid-modal').classList.add('open');
+    Wren.api('/api/login-health/wren-id-preview/' + id).then(function (d) {
+      if (_widTarget !== id) return;
+      document.getElementById('wid-sub').innerHTML = 'To <b>' + esc(d.name) + '</b> &lt;' + esc(d.to) + '&gt; · Subject: <b>' + esc(d.subject) + '</b>';
+      document.getElementById('wid-body').textContent = d.text;
+      send.disabled = false;
+    }).catch(function (e) { document.getElementById('wid-body').textContent = errText(e); });
+  }
+  function closeWid() { document.getElementById('wid-modal').classList.remove('open'); _widTarget = null; }
+  function sendWid() {
+    var id = _widTarget; if (!id) return;
+    var btn = document.getElementById('wid-send');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    Wren.api('/api/auth/oidc/enrolment/staff/invite', { method:'POST', body:{ staff_ids:[id] } }).then(function (d) {
+      var r = (d && d.results && d.results[0]) || {};
+      if (r.ok && r.emailed) Wren.toast('Set-up link sent.', 'success');
+      else if (r.ok) Wren.toast('Link made, but email is switched off on this instance — nothing was sent.', 'warning');
+      else Wren.toast('Not sent: ' + (r.reason || 'unknown') + (r.detail ? ' — ' + r.detail : ''), 'error');
+      closeWid(); load();
+    }).catch(function (e) { Wren.toast(errText(e), 'error'); btn.disabled = false; btn.textContent = 'Send this email'; });
+  }
+
+  // ── Wiring ────────────────────────────────────────────────────────────────
+  document.getElementById('rows').addEventListener('click', function (ev) {
+    var t;
+    if ((t = ev.target.closest('[data-unlock]'))) { ev.preventDefault(); return unlock(parseInt(t.getAttribute('data-unlock'), 10)); }
+    if ((t = ev.target.closest('[data-sync]'))) { ev.preventDefault(); return syncParents(); }
+    if ((t = ev.target.closest('[data-copy]'))) { ev.preventDefault(); return copySteps(t.getAttribute('data-copy')); }
+    if ((t = ev.target.closest('[data-wid]'))) { ev.preventDefault(); return openWid(parseInt(t.getAttribute('data-wid'), 10)); }
+  });
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      _tab = b.getAttribute('data-tab');
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('active', x === b); });
+      render();
+    });
+  });
+  document.getElementById('q').addEventListener('input', render);
+  document.getElementById('only-problems').addEventListener('change', render);
+  document.getElementById('btn-refresh').addEventListener('click', function () { load(true); });
+  document.getElementById('btn-sync').addEventListener('click', syncParents);
+  document.getElementById('wid-cancel').addEventListener('click', function (e) { e.preventDefault(); closeWid(); });
+  document.getElementById('wid-send').addEventListener('click', function (e) { e.preventDefault(); sendWid(); });
+  document.getElementById('wid-modal').addEventListener('click', function (e) { if (e.target === e.currentTarget) closeWid(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeWid(); });
+
+  // CLAUDE.md rule 7: wait for wren:ready (or the shell having already fired it).
+  if (window._wrenReady) load();
+  else document.addEventListener('wren:ready', function () { load(); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="termly-review">
+  <meta name="wren-app-title" content="Termly Reviews">
+  <meta name="wren-app-chat"  content="off">
+  <title>Termly Key-Child Reviews · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #ey-tr { padding: 8px 12px env(safe-area-inset-bottom, 24px); max-width: 760px; margin: 0 auto; }
+    .tr-intro { font-size: .85rem; color: var(--c-muted); padding: 4px 2px 12px; line-height: 1.5; }
+    .tr-termbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .tr-termbar label { font-size: .8rem; color: var(--c-muted); }
+    .tr-termbar select {
+      background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border);
+      border-radius: 10px; padding: 8px 12px; font-size: .9rem; min-height: 40px;
+    }
+    .tr-card {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: 14px; padding: 14px; margin-bottom: 14px;
+    }
+    .tr-card h3 { margin: 0 0 2px; font-size: 1.02rem; }
+    .tr-card .room { font-size: .78rem; color: var(--c-muted); margin: 0 0 10px; }
+    .tr-stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tr-stat {
+      flex: 1 1 70px; text-align: center; background: var(--c-navy-mid, rgba(255,255,255,.03));
+      border: 1px solid var(--c-border); border-radius: 12px; padding: 8px 6px;
+    }
+    .tr-stat b { display: block; font-size: 1.3rem; font-weight: 800; line-height: 1; }
+    .tr-stat span { display: block; font-size: .68rem; color: var(--c-muted); margin-top: 4px; }
+    .tr-summary {
+      border-left: 4px solid var(--c-blue); background: rgba(74,154,191,.08);
+      border-radius: 10px; padding: 12px 14px; font-size: .9rem; line-height: 1.55;
+      margin-bottom: 12px; white-space: pre-wrap;
+    }
+    .tr-summary .meta { display: block; font-size: .7rem; color: var(--c-muted); margin-top: 8px; }
+    .tr-eval-label { font-size: .8rem; color: var(--c-muted); display: block; margin-bottom: 6px; }
+    .tr-eval {
+      width: 100%; min-height: 96px; box-sizing: border-box; resize: vertical;
+      background: var(--c-navy-mid, rgba(255,255,255,.03)); color: var(--c-text);
+      border: 1px solid var(--c-border); border-radius: 12px; padding: 12px 14px;
+      font-size: .92rem; line-height: 1.5; font-family: inherit;
+    }
+    .tr-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .tr-btn {
+      flex: 1 1 auto; min-height: 44px; border-radius: 12px; border: 1px solid var(--c-border);
+      background: var(--c-navy-mid, rgba(255,255,255,.04)); color: var(--c-text);
+      font-size: .9rem; font-weight: 600; cursor: pointer; padding: 10px 14px;
+    }
+    .tr-btn.primary { background: var(--c-blue); border-color: var(--c-blue); color: #fff; }
+    .tr-btn.gen { background: rgba(74,154,191,.16); border-color: rgba(74,154,191,.4); color: var(--c-blue); }
+    .tr-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .tr-badge {
+      display: inline-block; font-size: .68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; padding: 3px 9px; border-radius: 999px; margin-left: 8px; vertical-align: middle;
+    }
+    .tr-badge.draft { background: rgba(234,179,8,.16); color: #eab308; }
+    .tr-badge.finalised { background: rgba(34,197,94,.16); color: #22c55e; }
+    .tr-empty { text-align: center; color: var(--c-muted); padding: 40px 12px; font-size: .9rem; }
+    .tr-spin { color: var(--c-muted); font-size: .85rem; padding: 8px 2px; }
+  </style>
+</head>
+<body>
+  <main id="ey-tr">
+    <p class="tr-intro">An end-of-term overview of each of your key children — their observations, next steps, activities and photos this term. Generate a summary, review it, and add your own short evaluation before finalising.</p>
+    <div class="tr-termbar">
+      <label for="tr-term">Term</label>
+      <select id="tr-term"></select>
+      <span id="tr-scope" style="font-size:.78rem;color:var(--c-muted);"></span>
+    </div>
+    <div id="tr-list"><div class="tr-spin">Loading your key children…</div></div>
+  </main>
+
+  <script src="/js/wren-core.js?v=20260704" defer></script>
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-app-shell.js?v=20260717" defer></script>
+  <script>
+  (function () {
+    'use strict';
+    var API = '/api/termly-reviews';
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    var currentTerm = null; // {label, year}
+
+    document.addEventListener('wren:ready', function () {
+      loadTerms();
+    });
+
+    function loadTerms() {
+      Wren.api(API + '/terms').then(function (d) {
+        var sel = document.getElementById('tr-term');
+        var terms = (d && d.terms) || [];
+        if (!terms.length) { sel.innerHTML = '<option>No terms</option>'; return; }
+        sel.innerHTML = terms.map(function (t) {
+          return '<option value="' + esc(t.label) + '|' + esc(t.year) + '"' + (t.is_current ? ' selected' : '') + '>' + esc(t.label) + ' ' + esc(t.year) + '</option>';
+        }).join('');
+        sel.addEventListener('change', loadList);
+        loadList();
+      }).catch(function () {
+        document.getElementById('tr-list').innerHTML = '<div class="tr-empty">Could not load terms.</div>';
+      });
+    }
+
+    function selectedTerm() {
+      var v = (document.getElementById('tr-term').value || '').split('|');
+      return { label: v[0] || '', year: v[1] || '' };
+    }
+
+    function loadList() {
+      currentTerm = selectedTerm();
+      var list = document.getElementById('tr-list');
+      list.innerHTML = '<div class="tr-spin">Loading your key children…</div>';
+      var q = '?term=' + encodeURIComponent(currentTerm.label) + '&year=' + encodeURIComponent(currentTerm.year);
+      Wren.api(API + '/my' + q).then(function (d) {
+        document.getElementById('tr-scope').textContent = d && d.is_manager ? '· all key children (manager view)' : '';
+        var kids = (d && d.children) || [];
+        if (!kids.length) { list.innerHTML = '<div class="tr-empty">No key children for this term.</div>'; return; }
+        list.innerHTML = '';
+        kids.forEach(function (c) { list.appendChild(renderCard(c)); });
+      }).catch(function () {
+        list.innerHTML = '<div class="tr-empty">Could not load your key children.</div>';
+      });
+    }
+
+    function renderCard(c) {
+      var el = document.createElement('div');
+      el.className = 'tr-card';
+      el.dataset.child = c.child_id;
+      var badge = c.status
+        ? '<span class="tr-badge ' + esc(c.status) + '">' + esc(c.status) + '</span>'
+        : '';
+      el.innerHTML =
+        '<h3>' + esc(c.name) + badge + '</h3>' +
+        '<p class="room">' + esc(c.room_name || 'No room') + '</p>' +
+        '<div class="tr-stats">' +
+          statBox(c.obs_count, 'Observations') +
+          statBox(c.next_steps_count, 'Next steps') +
+          statBox(c.activities_count, 'Activities') +
+          statBox(c.photo_count, 'Photos') +
+        '</div>' +
+        '<div class="tr-summary-wrap">' +
+          (c.ai_summary
+            ? summaryHtml(c.ai_summary, c.ai_generated_at)
+            : '<button class="tr-btn gen" data-act="gen">✨ Generate summary</button>') +
+        '</div>' +
+        '<label class="tr-eval-label" style="margin-top:12px;">Your evaluation</label>' +
+        '<textarea class="tr-eval" placeholder="Add a few sentences reflecting on ' + esc(c.first_name) + '’s term…">' + esc(c.evaluation || '') + '</textarea>' +
+        '<div class="tr-actions">' +
+          '<button class="tr-btn gen" data-act="regen"' + (c.ai_summary ? '' : ' hidden') + '>↻ Regenerate</button>' +
+          '<button class="tr-btn" data-act="draft">Save draft</button>' +
+          '<button class="tr-btn primary" data-act="final">Finalise</button>' +
+        '</div>';
+      el.addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-act]'); if (!b) return;
+        var act = b.dataset.act;
+        if (act === 'gen' || act === 'regen') doGenerate(el, c);
+        else if (act === 'draft') doSave(el, c, 'draft');
+        else if (act === 'final') doSave(el, c, 'finalised');
+      });
+      return el;
+    }
+
+    function statBox(n, label) {
+      return '<div class="tr-stat"><b>' + (n == null ? 0 : n) + '</b><span>' + label + '</span></div>';
+    }
+    function summaryHtml(text, at) {
+      var when = '';
+      try { if (at) when = 'Generated ' + new Date(at).toLocaleDateString('en-GB', { day:'numeric', month:'short' }); } catch (e) {}
+      return '<div class="tr-summary">' + esc(text) + (when ? '<span class="meta">' + when + ' · AI draft, please review</span>' : '') + '</div>';
+    }
+
+    function doGenerate(el, c) {
+      var wrap = el.querySelector('.tr-summary-wrap');
+      var regenBtn = el.querySelector('[data-act="regen"]');
+      wrap.innerHTML = '<div class="tr-spin">Generating summary… this can take a moment.</div>';
+      Wren.api(API + '/' + c.child_id + '/generate', {
+        method: 'POST',
+        body: { term: currentTerm.label, year: currentTerm.year },
+      }).then(function (d) {
+        if (d && d.summary) {
+          wrap.innerHTML = summaryHtml(d.summary, new Date().toISOString());
+          if (regenBtn) regenBtn.hidden = false;
+        } else {
+          wrap.innerHTML = '<button class="tr-btn gen" data-act="gen">✨ Generate summary</button>';
+          Wren.toast('Could not generate summary', 'error');
+        }
+      }).catch(function (err) {
+        wrap.innerHTML = '<button class="tr-btn gen" data-act="gen">✨ Generate summary</button>';
+        Wren.toast((err && err.error) || 'Summary failed', 'error');
+      });
+    }
+
+    function doSave(el, c, status) {
+      var evaluation = el.querySelector('.tr-eval').value || '';
+      Wren.api(API + '/' + c.child_id, {
+        method: 'PUT',
+        body: { evaluation: evaluation, status: status, term: currentTerm.label, year: currentTerm.year },
+      }).then(function (d) {
+        if (d && d.ok) {
+          Wren.toast(status === 'finalised' ? 'Review finalised' : 'Draft saved', 'success');
+          var h3 = el.querySelector('h3');
+          var old = h3.querySelector('.tr-badge'); if (old) old.remove();
+          var b = document.createElement('span');
+          b.className = 'tr-badge ' + status;
+          b.textContent = status;
+          h3.appendChild(b);
+        }
+      }).catch(function (err) {
+        Wren.toast((err && err.error) || 'Save failed', 'error');
+      });
+    }
+  })();
+  </script>
+</body>
+</html>

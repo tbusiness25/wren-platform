@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition" content="eyfs">
+  <meta name="wren-app-title" content="Request CCTV Footage">
+  <title>Request CCTV Footage — Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* b249 — tokens only. Translucent fills use color-mix() on a token so light and
+   dark both work without a second palette. */
+.cr-wrap{max-width:760px}
+.cr-clock{background:color-mix(in srgb, var(--c-red) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--c-red) 40%, transparent);
+  border-radius:12px;padding:14px 16px;margin-bottom:18px;color:var(--c-text);font-size:.9rem;line-height:1.6}
+.cr-clock b{color:var(--c-red)}
+.cr-off{background:color-mix(in srgb, var(--c-amber) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--c-amber) 40%, transparent);
+  border-radius:12px;padding:13px 15px;margin-bottom:18px;color:var(--c-text);font-size:.86rem;line-height:1.6}
+.cr-field{margin-bottom:14px}
+.cr-field label{display:block;font-size:.78rem;font-weight:700;color:var(--c-muted);
+  text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px}
+.cr-field input,.cr-field select,.cr-field textarea{width:100%;padding:10px 12px;border-radius:9px;
+  border:1px solid var(--c-border);background:var(--c-surface);color:var(--c-text);font:inherit;font-size:.92rem}
+.cr-row{display:flex;gap:12px}.cr-row>div{flex:1}
+.cr-help{color:var(--c-muted);font-size:.8rem;margin-top:5px;line-height:1.5}
+.cr-msg{border-radius:10px;padding:11px 14px;font-size:.88rem;margin-bottom:14px;display:none}
+.cr-msg.ok{display:block;background:color-mix(in srgb, var(--c-green) 15%, transparent);color:var(--c-green);
+  border:1px solid color-mix(in srgb, var(--c-green) 40%, transparent)}
+.cr-msg.err{display:block;background:color-mix(in srgb, var(--c-red) 15%, transparent);color:var(--c-red);
+  border:1px solid color-mix(in srgb, var(--c-red) 40%, transparent)}
+.cr-item{border:1px solid var(--c-border);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--c-card)}
+.cr-item .top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}
+.cr-item .ref{font-weight:700;color:var(--c-text)}
+.cr-item .meta{color:var(--c-muted);font-size:.8rem;margin-top:4px;line-height:1.5}
+.cr-days{font-weight:800;color:var(--c-red)}
+.cr-days.gone{color:var(--c-muted);font-weight:600}
+.cr-badge{font-size:.68rem;font-weight:800;letter-spacing:.03em;padding:3px 9px;border-radius:5px;white-space:nowrap}
+.cr-b-open{background:color-mix(in srgb, var(--c-blue) 20%, transparent);color:var(--c-blue-light, var(--c-blue))}
+.cr-b-done{background:color-mix(in srgb, var(--c-green) 20%, transparent);color:var(--c-green)}
+.cr-b-warn{background:color-mix(in srgb, var(--c-amber) 22%, transparent);color:var(--c-amber)}
+.cr-empty{color:var(--c-muted);font-size:.88rem;padding:14px 0}
+@media (max-width:560px){.cr-row{flex-direction:column;gap:0}}
+</style>
+</head>
+<body>
+<div id="wren-content">
+  <div class="page-header">
+    <h1 class="page-title">Request CCTV Footage</h1>
+    <p style="color:var(--c-muted);margin:0">Ask the manager to look at footage — an accident, a mark, a complaint, or a security incident.</p>
+  </div>
+
+  <div class="cr-wrap">
+    <div class="cr-clock">
+      <b>Same day, please.</b> Footage is kept for <b id="cr-rd">7</b> days and then automatically overwritten.
+      After that it is gone and cannot be recovered — the one-month deadline for answering a request is not the
+      deadline that matters. If something happens that might later need footage, raise it before you go home.
+    </div>
+
+    <div class="cr-off" id="cr-off">
+      <b>The cameras are not switched on yet.</b> They are installed but nothing is recording. You can still
+      raise a request and it will be recorded and answered, but there is no footage from before switch-on.
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div id="cr-msg" class="cr-msg"></div>
+      <form id="cr-form">
+        <div class="cr-field">
+          <label for="cr-child">Child (if it involves one)</label>
+          <select id="cr-child"><option value="">— not about a specific child —</option></select>
+        </div>
+        <div class="cr-field">
+          <label for="cr-date">Date of the incident</label>
+          <input id="cr-date" type="date" required>
+        </div>
+        <div class="cr-row">
+          <div class="cr-field"><label for="cr-from">From (approx.)</label><input id="cr-from" type="time" step="300"></div>
+          <div class="cr-field"><label for="cr-to">To (approx.)</label><input id="cr-to" type="time" step="300"></div>
+        </div>
+        <div class="cr-field">
+          <label for="cr-loc">Where</label>
+          <input id="cr-loc" maxlength="300" placeholder="e.g. pre-school room, main entrance, garden">
+        </div>
+        <div class="cr-field">
+          <label for="cr-reason">What happened, and what would the footage show?</label>
+          <textarea id="cr-reason" rows="4" required placeholder="Be specific — the manager decides from this whether the footage may be viewed at all."></textarea>
+          <div class="cr-help">
+            CCTV Policy §3 permits footage to be viewed only for a safeguarding concern, an accident with an unclear
+            cause, a complaint, a security incident, or a statutory request. Every view is logged with the reason.
+          </div>
+        </div>
+        <button class="btn btn-primary" id="cr-submit" type="submit">Send to the manager</button>
+      </form>
+    </div>
+
+    <h2 class="section-title">Your requests</h2>
+    <div id="cr-list"><div class="cr-empty">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('wren:ready', init);
+
+var CHILDREN_LOADED = false;
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function fmt(d){ return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ''; }
+
+/* days_to_overwrite comes from the server, computed from the expiry stamped on
+   the row at submission — never from this device's clock. */
+function daysLine(r){
+  if(r.footage_expired) return '<span class="cr-days gone">footage already overwritten</span>';
+  var d = r.days_to_overwrite;
+  if(d==null) return '';
+  if(d<=0) return '<span class="cr-days">overwritten today</span>';
+  return '<span class="cr-days">'+d+' day'+(d===1?'':'s')+' until it is overwritten</span>';
+}
+
+function preserveLine(r){
+  switch(r.preserve_status){
+    case 'preserved':   return ' · <span style="color:var(--c-green)">clip kept</span>';
+    case 'disabled':    return ' · clip keeping is switched off (nothing is recording)';
+    case 'unavailable': return ' · <span style="color:var(--c-amber)">no recorder answered — nothing was kept</span>';
+    case 'failed':      return ' · <span style="color:var(--c-red)">the clip could NOT be kept</span>';
+    case 'expired':     return ' · <span style="color:var(--c-muted)">too late to keep a clip</span>';
+    default: return '';
+  }
+}
+
+async function init(){
+  await loadChildren();
+  await load();
+  document.getElementById('cr-date').max = new Date().toISOString().slice(0,10);
+  document.getElementById('cr-form').addEventListener('submit', submit);
+}
+
+async function loadChildren(){
+  try{
+    var kids = await Wren.api('/api/children?active=true');
+    var list = Array.isArray(kids) ? kids : (kids && kids.children) || [];
+    var sel = document.getElementById('cr-child');
+    sel.innerHTML = '<option value="">— not about a specific child —</option>' + list.map(function(c){
+      var n = (c.preferred_name || c.first_name || '') + ' ' + (c.last_name || '');
+      return '<option value="'+c.id+'">'+esc(n.trim())+'</option>';
+    }).join('');
+    CHILDREN_LOADED = true;
+  }catch(e){ /* a request that names no child is still a valid request */ }
+}
+
+async function load(){
+  var el = document.getElementById('cr-list');
+  try{
+    var d = await Wren.api('/api/cctv/mine');
+    document.getElementById('cr-rd').textContent = d.retention_days || 7;
+    var rows = d.requests || [];
+    if(!rows.length){ el.innerHTML = '<div class="cr-empty">You have not raised any footage requests.</div>'; return; }
+    el.innerHTML = rows.map(function(r){
+      var open = r.status !== 'closed' && r.status !== 'decided';
+      var cls = r.footage_expired ? 'cr-b-warn' : (open ? 'cr-b-open' : 'cr-b-done');
+      return '<div class="cr-item"><div class="top">'
+        + '<span class="ref">'+esc(r.reference || ('Request '+r.id))+(r.child_name?' · '+esc(r.child_name):'')+'</span>'
+        + '<span class="cr-badge '+cls+'">'+esc(r.status)+'</span></div>'
+        + '<div class="meta">Incident '+fmt(r.incident_date)+(r.incident_location?' · '+esc(r.incident_location):'')
+        + ' — '+daysLine(r)+preserveLine(r)+'</div>'
+        + '<div class="meta">Raised '+fmt(r.request_date)+' · manager to respond by '+fmt(r.response_due_date)
+        + (r.decision ? ' · decision: '+esc(r.decision) : '')+'</div></div>';
+    }).join('');
+  }catch(e){ el.innerHTML = '<div class="cr-empty">Could not load your requests.</div>'; }
+}
+
+async function submit(e){
+  e.preventDefault();
+  var btn = document.getElementById('cr-submit'); btn.disabled = true;
+  var msg = document.getElementById('cr-msg');
+  var body = {
+    child_id: parseInt(document.getElementById('cr-child').value,10) || null,
+    incident_date: document.getElementById('cr-date').value,
+    incident_time_from: document.getElementById('cr-from').value || null,
+    incident_time_to: document.getElementById('cr-to').value || null,
+    incident_location: document.getElementById('cr-loc').value.trim(),
+    reason: document.getElementById('cr-reason').value.trim()
+  };
+  try{
+    var d = await Wren.api('/api/cctv', { method:'POST', body: JSON.stringify(body) });
+    msg.className = 'cr-msg ok';
+    msg.innerHTML = 'Sent — reference <b>'+esc(d.request.reference)+'</b>. The manager has been notified and a '
+      + 'request to keep the footage was raised straight away.';
+    document.getElementById('cr-reason').value = '';
+    document.getElementById('cr-loc').value = '';
+    load();
+  }catch(err){
+    msg.className = 'cr-msg err';
+    msg.textContent = 'Could not send: ' + (err.error || err.message || 'unknown error');
+  }finally{ btn.disabled = false; }
+}
+</script>
+</body>
+</html>

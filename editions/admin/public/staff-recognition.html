@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recognition · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ .rc-wrap{padding:18px;max-width:900px;margin:0 auto;color:#f1f5f9}
+ h1{font-size:1.3rem;margin:0 0 4px}.sub{color:#94a3b8;font-size:.85rem;margin-bottom:14px;line-height:1.5}
+ .rc-tabs{display:flex;gap:8px;margin-bottom:14px}
+ .rc-tab{padding:7px 14px;border-radius:999px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.82rem}
+ .rc-tab.on{background:#4a9abf;border-color:#4a9abf;color:#04101c;font-weight:700}
+ .rc-card{background:#0f1a34;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+ .rc-meta{color:#94a3b8;font-size:.78rem;margin-bottom:6px}
+ .rc-body{white-space:pre-wrap;font-size:.9rem;background:rgba(255,255,255,.03);border-radius:8px;padding:10px;margin-bottom:10px}
+ .rc-actions{display:flex;gap:8px}
+ .rc-btn{padding:7px 14px;border-radius:8px;border:1px solid #334155;background:transparent;color:#cbd5e1;cursor:pointer;font-size:.82rem}
+ .rc-btn.release{background:rgba(34,197,94,.18);color:#4ade80;border-color:rgba(34,197,94,.4)}
+ .rc-btn.decline{background:rgba(239,68,68,.18);color:#f87171;border-color:rgba(239,68,68,.4)}
+ .rc-empty{color:#94a3b8;padding:20px 0}
+ .rc-count-row{display:flex;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.08);padding:8px 0;font-size:.9rem}
+ .rc-badge{background:rgba(74,154,191,.2);color:#7dd3fc;border-radius:999px;padding:1px 10px;font-size:.8rem;font-weight:700}
+</style>
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+</head><body data-portal="admin">
+<div class="rc-wrap">
+  <h1>💚 Recognition</h1>
+  <div class="sub">Parents saying thank you to a member of the team. Nothing here pays anyone — see wren-docs/analysis/2026-09-24-staff-recognition-and-bonuses.md before that is ever considered.</div>
+  <div class="rc-tabs">
+    <button class="rc-tab on" data-t="inbox">Awaiting review</button>
+    <button class="rc-tab" data-t="counts">By staff member</button>
+  </div>
+  <div id="rc-body">Loading…</div>
+</div>
+<script>
+(function(){
+  'use strict';
+  const esc = s => { const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; };
+  let tab = 'inbox';
+
+  async function loadInbox(){
+    const el = document.getElementById('rc-body');
+    el.innerHTML = 'Loading…';
+    try {
+      const d = await Wren.api('/api/staff-recognition/inbox');
+      const items = d.items || [];
+      if (!items.length) { el.innerHTML = '<div class="rc-empty">Nothing waiting for review.</div>'; return; }
+      el.innerHTML = items.map(r => `
+        <div class="rc-card" data-id="${r.id}">
+          <div class="rc-meta">To <strong>${esc(r.staff_name)}</strong>${r.child_name ? ' · from ' + esc(r.child_name) + "'s family" : ''} · ${new Date(r.created_at).toLocaleString('en-GB')}</div>
+          <div class="rc-body">${esc(r.body)}</div>
+          <div class="rc-actions">
+            <button class="rc-btn release" data-set="released">Release to them</button>
+            <button class="rc-btn decline" data-set="declined">Decline</button>
+          </div>
+        </div>`).join('');
+    } catch(e) { el.innerHTML = '<div class="rc-empty">Could not load the review queue.</div>'; }
+  }
+
+  async function loadCounts(){
+    const el = document.getElementById('rc-body');
+    el.innerHTML = 'Loading…';
+    try {
+      const staffList = await Wren.api('/api/staff-recognition/staff-list');
+      const rows = await Promise.all((staffList.staff||[]).map(async s => {
+        try { const d = await Wren.api('/api/staff-recognition/staff/' + s.id); return { name: s.first_name + (s.last_initial ? ' ' + s.last_initial + '.' : ''), count: d.count }; }
+        catch { return { name: s.first_name, count: 0 }; }
+      }));
+      rows.sort((a,b) => b.count - a.count);
+      const withAny = rows.filter(r => r.count > 0);
+      if (!withAny.length) { el.innerHTML = '<div class="rc-empty">No released recognitions yet.</div>'; return; }
+      el.innerHTML = withAny.map(r => `<div class="rc-count-row"><span>${esc(r.name)}</span><span class="rc-badge">${r.count}</span></div>`).join('');
+    } catch(e) { el.innerHTML = '<div class="rc-empty">Could not load counts.</div>'; }
+  }
+
+  document.addEventListener('wren:ready', function(){
+    document.querySelector('.rc-tabs').addEventListener('click', e => {
+      const b = e.target.closest('.rc-tab'); if (!b) return;
+      tab = b.dataset.t;
+      document.querySelectorAll('.rc-tab').forEach(x => x.classList.toggle('on', x === b));
+      tab === 'inbox' ? loadInbox() : loadCounts();
+    });
+    document.getElementById('rc-body').addEventListener('click', async e => {
+      const b = e.target.closest('.rc-btn'); if (!b) return;
+      const card = b.closest('.rc-card');
+      try { await Wren.api('/api/staff-recognition/inbox/' + card.dataset.id + '/status', { method:'PUT', body:{ status: b.dataset.set } }); Wren.toast('Updated','success'); loadInbox(); }
+      catch(x){ Wren.toast('Could not update','error'); }
+    });
+    loadInbox();
+  });
+})();
+</script>
+</body></html>

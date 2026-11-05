@@ -1,0 +1,314 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Resource Cards · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --blue:#4a9abf;--orange:#e07820}
+ .rc-wrap{padding:18px;max-width:1500px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}.sub{color:var(--mut);font-size:.85rem;margin-bottom:14px}
+ .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--bd);
+   border-radius:10px;padding:10px 12px;margin-bottom:14px}
+ .bar .grow{flex:1}
+ .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--bd);
+   border-radius:10px;padding:10px 12px;margin-bottom:12px}
+ .filters input[type=search],.filters select{background:#0b1428;border:1px solid var(--bd);color:var(--txt);
+   border-radius:8px;padding:8px 11px;font-size:.82rem;font-family:inherit}
+ .filters input[type=search]{flex:1;min-width:200px}
+ .filters select{cursor:pointer;max-width:230px}
+ .filters select:disabled{opacity:.45;cursor:not-allowed}
+ .filters .fw{display:flex;gap:0;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+ .filters .fw button{background:transparent;color:var(--mut);border:none;border-radius:0;padding:8px 11px;font-size:.75rem}
+ .filters .fw button.active{background:var(--blue);color:#fff}
+ .filters .clr{background:transparent;border:1px solid var(--bd);color:var(--mut);font-weight:600}
+ button{background:var(--blue);border:none;color:#06121f;border-radius:6px;padding:7px 13px;font-size:.82rem;
+   font-weight:700;cursor:pointer;font-family:inherit}
+ button:hover{opacity:.9}
+ button.ghost{background:transparent;border:1px solid var(--bd);color:var(--txt);font-weight:600}
+ .aspects-box{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+ .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+ .chip{padding:6px 13px;border-radius:999px;border:1px solid var(--bd);background:var(--card);
+   color:var(--mut);font-size:.8rem;cursor:pointer;font-family:inherit;font-weight:600}
+ .chip.active{background:var(--blue);border-color:var(--blue);color:#fff}
+ #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+ .tile{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;cursor:pointer;
+   transition:border-color .2s ease;display:flex;flex-direction:column;gap:7px;text-align:left;color:inherit;font-family:inherit}
+ .tile:hover{border-color:var(--blue)}
+ .tile-top{display:flex;align-items:center;gap:9px}
+ .tile-icon{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;
+   background:rgba(74,154,191,.12);color:var(--blue);font-size:1.3rem;flex:0 0 auto}
+ .tile-icon svg{width:1.2em;height:1.2em}
+ .tile-title{font-weight:700;color:var(--txt);font-size:.95rem;flex:1;min-width:0}
+ .tile-age{font-size:.68rem;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(224,120,32,.16);
+   color:var(--orange);white-space:nowrap}
+ .tile-strap{font-size:.8rem;color:var(--mut);font-style:italic;line-height:1.35}
+ .tile-areas{display:flex;gap:5px;flex-wrap:wrap;margin-top:auto}
+ .tile-area{font-size:.66rem;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--bd);
+   color:var(--mut);background:#0b1428}
+ .empty{padding:30px;text-align:center;color:#64748b;grid-column:1/-1}
+ /* detail overlay */
+ #overlay{position:fixed;inset:0;background:rgba(5,10,22,.85);z-index:1000;display:none;overflow-y:auto;padding:24px}
+ #overlay.open{display:block}
+ #overlay-inner{max-width:1150px;margin:0 auto}
+ #overlay-bar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+ #overlay-bar .grow{flex:1}
+</style>
+</head>
+<body>
+<div class="rc-wrap">
+  <h1>Resource Cards</h1>
+  <div class="sub">Curriculum cards for continuous provision — intent, adult support and observable learning mapped to the framework. Print A4 landscape for the rooms.</div>
+
+  <div class="bar">
+    <span class="grow" id="count-note" style="color:var(--mut);font-size:.82rem"></span>
+    <button class="ghost" id="btn-print-all">🖨 Print all shown</button>
+      <button class="ghost" id="btn-theme" title="Switch light/dark card style">🌓 Theme</button>
+  </div>
+
+  <div class="filters" role="group" aria-label="Search and filter resource cards">
+    <input type="search" id="f-search" placeholder="Search title, strapline or intent…" aria-label="Search cards">
+    <select id="f-band" aria-label="Filter by age band"><option value="">All ages</option></select>
+    <div class="fw" role="group" aria-label="Curriculum framework labels" title="Relabel areas/aspects by framework">
+      <button type="button" data-fw="dm" class="active">Dev Matters</button>
+      <button type="button" data-fw="b25">Birth to 5</button>
+    </div>
+    <button type="button" class="clr" id="f-clear">Clear</button>
+  </div>
+
+  <!-- b211 — tick sub-aspects instead of walking an area→aspect cascade one value at a time -->
+  <div id="f-aspects" class="aspects-box"></div>
+
+  <div class="chips" id="cat-chips" role="group" aria-label="Filter by category">
+    <button class="chip active" data-cat="">All</button>
+  </div>
+
+  <div id="grid"><div class="empty">Loading…</div></div>
+</div>
+
+<div id="overlay" role="dialog" aria-modal="true" aria-label="Resource card detail">
+  <div id="overlay-inner">
+    <div id="overlay-bar">
+      <button class="ghost" id="btn-close">← Back</button>
+      <span class="grow"></span>
+      <button id="btn-print-one">🖨 Print this card</button>
+    </div>
+    <div id="overlay-card"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js?v=20260922-download"></script>
+<script src="/js/fledge-profile-icons.js?v=b278"></script>
+<script src="/js/resource-cards-render.js"></script>
+<script src="/js/resource-cards-filters.js?v=b219"></script>
+<script src="/js/wren-subaspect-picker.js?v=b219"></script>
+<script>
+(function(){
+  'use strict';
+  var TOKEN = function(){ return sessionStorage.getItem('wrenToken'); };
+  var API = '/api/resource-cards';
+  var index = [];
+  var currentCard = null;
+  var fullCache = {};
+  var RCF = window.WrenRCFilters;
+  // Combined filter state (AND). cat still driven by the category chips below.
+  var state = { q: '', band: '', aspects: [], themes: [], cat: '' };   // b211 aspects multi-select; b219 themes
+  var ASPECTS = null;                                     // WrenSubAspectPicker instance
+  var framework = 'dm';
+
+  var CATS = window.WrenResourceCards.CATEGORY_META;
+  var AGES = window.WrenResourceCards.AGE_LABELS;
+
+  function api(path){
+    return fetch(API + path, {
+      headers: { 'Authorization': 'Bearer ' + TOKEN(), 'Content-Type': 'application/json' }
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); });
+  }
+
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function iconFor(cat){
+    var meta = CATS[cat];
+    try {
+      if (meta && meta.icon && window.WrenIcons && typeof WrenIcons.get === 'function') {
+        return WrenIcons.get(meta.icon) || '';
+      }
+    } catch(e){}
+    return '';
+  }
+
+  function buildChips(){
+    var wrap = document.getElementById('cat-chips');
+    Object.keys(CATS).forEach(function(cat){
+      var b = document.createElement('button');
+      b.className = 'chip';
+      b.dataset.cat = cat;
+      b.textContent = CATS[cat].label;
+      wrap.appendChild(b);
+    });
+    wrap.addEventListener('click', function(ev){
+      var btn = ev.target.closest('.chip');
+      if (!btn) return;
+      state.cat = btn.dataset.cat || '';
+      wrap.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('active', c === btn); });
+      renderGrid();
+    });
+  }
+
+  // ── Search + filter controls ────────────────────────────────────────────────
+  function buildFilters(){
+    var band = document.getElementById('f-band');
+    RCF.AGE_BANDS.forEach(function(b){
+      var o = document.createElement('option'); o.value = b.key; o.textContent = b.label; band.appendChild(o);
+    });
+    buildAspectPicker();
+
+    document.getElementById('f-search').addEventListener('input', function(){ state.q = this.value; renderGrid(); });
+    band.addEventListener('change', function(){ state.band = this.value; renderGrid(); });
+    document.querySelectorAll('.fw button').forEach(function(b){
+      b.addEventListener('click', function(){
+        framework = b.dataset.fw;
+        document.querySelectorAll('.fw button').forEach(function(x){ x.classList.toggle('active', x === b); });
+        if (ASPECTS) ASPECTS.setGroups(RCF.aspectGroups(index, { fw: framework }));
+        renderGrid();
+      });
+    });
+    document.getElementById('f-clear').addEventListener('click', function(){
+      state.q = ''; state.band = ''; state.aspects = []; state.themes = [];
+      document.getElementById('f-search').value = '';
+      document.getElementById('f-band').value = '';
+      if (ASPECTS) ASPECTS.clear(); else renderGrid();
+    });
+  }
+
+  // b211 — the tick list, built from the aspects the LOADED cards actually carry,
+  // so a card tagged with something new tomorrow appears without a code change.
+  // Search stays in the page's own filter bar, so the component runs search:false.
+  function buildAspectPicker(){
+    var mount = document.getElementById('f-aspects');
+    if (!mount || !window.WrenSubAspectPicker) return;
+    ASPECTS = WrenSubAspectPicker.create({
+      mount: mount,
+      search: false,
+      groups: RCF.aspectGroups(index, { fw: framework }),
+      // b219 — the theme row, derived from the cards themselves. Ticking one cuts
+      // 284 cards to ~20; a sub-aspect tick alone cannot (median card has eight).
+      themes: RCF.themeOptions(index),
+      themeLabel: 'Theme',
+      onChange: function(st){ state.aspects = st.aspects; state.themes = st.themes; renderGrid(); }
+    });
+  }
+
+  function filtered(){
+    return RCF.applyMulti(index, {
+      q: state.q, cat: state.cat,
+      bands: state.band ? [state.band] : [],
+      aspects: state.aspects,
+      themes: state.themes
+    });
+  }
+
+  function renderGrid(){
+    var grid = document.getElementById('grid');
+    var rows = filtered();
+    var active = state.q || state.band || state.aspects.length || state.themes.length || state.cat;
+    document.getElementById('count-note').textContent =
+      rows.length + ' card' + (rows.length === 1 ? '' : 's') + (active ? ' match filters' : '') + ' · ' + index.length + ' total';
+    if (ASPECTS) ASPECTS.setCount(rows.length + ' of ' + index.length + ' cards');
+    if (!rows.length) {
+      grid.innerHTML = '<div class="empty">No resource cards match — try clearing a filter.</div>';
+      return;
+    }
+    grid.innerHTML = rows.map(function(e){
+      var areas = (e.areas || []).map(function(a){ return '<span class="tile-area">' + esc(a) + '</span>'; }).join('');
+      var icon = iconFor(e.category);
+      return '<button class="tile" data-slug="' + esc(e.slug) + '">' +
+        '<div class="tile-top">' +
+          (icon ? '<span class="tile-icon">' + icon + '</span>' : '') +
+          '<span class="tile-title">' + esc(e.title) + '</span>' +
+          '<span class="tile-age">' + esc(AGES[e.age_range] || e.age_range || '') + '</span>' +
+        '</div>' +
+        (e.strapline ? '<div class="tile-strap">' + esc(e.strapline) + '</div>' : '') +
+        '<div class="tile-areas">' + areas + '</div>' +
+      '</button>';
+    }).join('');
+  }
+
+  function fetchFull(slug){
+    if (fullCache[slug]) return Promise.resolve(fullCache[slug]);
+    return api('/' + encodeURIComponent(slug)).then(function(res){
+      if (!res.ok) throw new Error('load failed');
+      fullCache[slug] = res.j;
+      return res.j;
+    });
+  }
+
+  function openCard(slug){
+    fetchFull(slug).then(function(card){
+      currentCard = card;
+      var holder = document.getElementById('overlay-card');
+      holder.innerHTML = '';
+      holder.appendChild(WrenResourceCards.renderCard(card));
+      var ov = document.getElementById('overlay');
+      ov.classList.add('open');
+      ov.scrollTop = 0;
+      document.body.style.overflow = 'hidden';
+    }).catch(function(){});
+  }
+
+  function closeOverlay(){
+    document.getElementById('overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    currentCard = null;
+  }
+
+  function printAll(){
+    var rows = filtered();
+    if (!rows.length) return;
+    Promise.all(rows.map(function(e){ return fetchFull(e.slug).catch(function(){ return null; }); }))
+      .then(function(cards){
+        cards = cards.filter(Boolean);
+        if (cards.length) WrenResourceCards.printCards(cards);
+      });
+  }
+
+  function init(){
+    buildChips();
+    buildFilters();
+    document.getElementById('grid').addEventListener('click', function(ev){
+      var tile = ev.target.closest('.tile');
+      if (tile) openCard(tile.dataset.slug);
+    });
+    document.getElementById('btn-close').addEventListener('click', closeOverlay);
+    document.getElementById('overlay').addEventListener('click', function(ev){
+      if (ev.target === this) closeOverlay();
+    });
+    document.getElementById('btn-print-one').addEventListener('click', function(){
+      if (currentCard) WrenResourceCards.printCards(currentCard);
+    });
+    document.getElementById('btn-print-all').addEventListener('click', printAll);
+    document.getElementById('btn-theme').addEventListener('click', function(){ WrenResourceCards.setTheme(WrenResourceCards.theme()==='dark'?'light':'dark'); location.reload(); });
+
+    api('').then(function(res){
+      index = res.ok && Array.isArray(res.j) ? res.j : [];
+      // b211 — the tick list is built AFTER the cards land, from their own aspects.
+      if (ASPECTS) {
+        ASPECTS.setGroups(RCF.aspectGroups(index, { fw: framework }));
+        ASPECTS.setThemes(RCF.themeOptions(index));   // b219 — same, for themes
+      }
+      renderGrid();
+    }).catch(function(){
+      document.getElementById('grid').innerHTML = '<div class="empty">Could not load resource cards.</div>';
+    });
+  }
+
+  document.addEventListener('wren:ready', init);
+  // Fallback if shell doesn't fire (page opened standalone)
+  if (window.Wren && Wren._ready) init();
+})();
+</script>
+</body></html>

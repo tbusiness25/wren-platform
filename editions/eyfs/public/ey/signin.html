@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="Sign In / Out">
+  <meta name="wren-app-chat"  content="off">
+  <title>Sign In / Out · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260704">
+  <style>
+    #signin-page { padding: 12px 12px env(safe-area-inset-bottom, 16px); }
+
+    .signin-hint {
+      text-align: center;
+      color: var(--c-muted);
+      font-size: .85rem;
+      margin: 2px 0 14px;
+    }
+
+    /* Responsive card grid */
+    .signin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px;
+    }
+
+    .signin-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 14px;
+      padding: 14px 10px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: transform .12s, border-color .12s;
+      position: relative;
+      user-select: none;
+    }
+    .signin-card:hover  { border-color: var(--c-blue); }
+    .signin-card:active { transform: scale(.97); }
+
+    .signin-photo {
+      width: 76px; height: 76px;
+      border-radius: 50%;
+      margin: 0 auto 8px;
+      object-fit: cover;
+      background: rgba(74,154,191,0.18);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--c-blue);
+      font-weight: 700; font-size: 1.5rem;
+      overflow: hidden;
+    }
+    .signin-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .signin-name {
+      font-size: .9rem; font-weight: 700; color: var(--c-text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .signin-role { font-size: .72rem; color: var(--c-muted); margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .signin-pill {
+      display: inline-block;
+      margin-top: 8px;
+      font-size: .68rem; font-weight: 700;
+      padding: 3px 9px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: .03em;
+    }
+    .signin-pill.in  { background: rgba(34,197,94,0.15);  color: var(--c-green, #22c55e); }
+    .signin-pill.out { background: rgba(148,163,184,0.15); color: var(--c-muted); }
+
+    /* status dot on avatar corner */
+    .signin-card.in  .signin-photo { box-shadow: 0 0 0 2px var(--c-green, #22c55e); }
+
+    .signin-empty { text-align: center; padding: 40px 16px; color: var(--c-muted); }
+
+    /* ── PIN modal ─────────────────────────────────────────────────────────── */
+    .pin-overlay {
+      position: fixed; inset: 0; z-index: 900;
+      background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center;
+      padding: 16px;
+    }
+    .pin-overlay.open { display: flex; }
+    .pin-modal {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 18px;
+      width: 100%; max-width: 320px;
+      padding: 20px 18px 22px;
+      text-align: center;
+    }
+    .pin-who { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .pin-who .signin-photo { margin: 0; width: 60px; height: 60px; font-size: 1.2rem; }
+    .pin-who-name { font-weight: 700; color: var(--c-text); }
+    .pin-who-sub  { font-size: .78rem; color: var(--c-muted); }
+
+    .pin-dots { display: flex; justify-content: center; gap: 12px; margin: 16px 0; height: 16px; }
+    .pin-dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid var(--c-border); background: transparent;
+      transition: background .1s;
+    }
+    .pin-dot.filled { background: var(--c-blue); border-color: var(--c-blue); }
+
+    .pin-msg { min-height: 18px; font-size: .8rem; margin-bottom: 10px; }
+    .pin-msg.err { color: var(--c-red, #ef4444); }
+    .pin-msg.ok  { color: var(--c-green, #22c55e); }
+
+    .pin-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .pin-key {
+      height: 56px; border-radius: 12px;
+      border: 1px solid var(--c-border);
+      background: transparent; color: var(--c-text);
+      font-size: 1.3rem; font-weight: 600; cursor: pointer;
+      transition: background .1s, transform .08s;
+    }
+    .pin-key:active { transform: scale(.94); background: rgba(74,154,191,0.15); }
+    .pin-key.wide { grid-column: span 1; font-size: .95rem; }
+    .pin-cancel {
+      margin-top: 12px; width: 100%; height: 44px;
+      background: transparent; border: none; color: var(--c-muted);
+      font-size: .9rem; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="signin-page"></div>
+
+  <!-- PIN keypad modal -->
+  <div class="pin-overlay" id="pin-overlay">
+    <div class="pin-modal">
+      <div class="pin-who" id="pin-who"></div>
+      <div class="pin-dots" id="pin-dots"></div>
+      <div class="pin-msg" id="pin-msg"></div>
+      <div class="pin-keys" id="pin-keys"></div>
+      <button class="pin-cancel" id="pin-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <script src="/js/wren-core.js?v=20260704" defer></script>
+  <script src="/icons/wren-icons.js?v=b146" defer></script>
+  <script src="/js/wren-app-shell.js?v=20260717" defer></script>
+  <script>
+  document.addEventListener('wren:ready', function () {
+    const page = document.getElementById('signin-page');
+
+    // Plain fetch (not Wren.api) so the shared kiosk works with OR without a
+    // logged-in session — attach the staff token if we happen to have one.
+    function authHeaders() {
+      let t = null;
+      try { t = sessionStorage.getItem('wrenToken'); } catch (e) {}
+      return t ? { 'Authorization': 'Bearer ' + t } : {};
+    }
+    async function apiGet(url) {
+      const r = await fetch(url, { headers: authHeaders() });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || ('HTTP ' + r.status));
+      return r.json();
+    }
+    async function apiPost(url, body) {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(body)
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+      return data;
+    }
+
+    let board = [];
+
+    function initials(s) {
+      return ((s.first_name || ' ')[0] + (s.last_name || ' ')[0]).toUpperCase();
+    }
+    function fmtSince(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+    function photoHtml(s, extraClass) {
+      const inner = s.photo_url
+        ? `<img src="${s.photo_url}" alt="" onerror="this.replaceWith(document.createTextNode('${initials(s)}'))">`
+        : initials(s);
+      return `<div class="signin-photo ${extraClass || ''}">${inner}</div>`;
+    }
+
+    async function load() {
+      try {
+        board = await apiGet('/api/staff-signin/board') || [];
+        render();
+      } catch (err) {
+        page.innerHTML = `<div class="signin-empty">Couldn't load the board: ${err.message}</div>`;
+      }
+    }
+
+    function render() {
+      if (!board.length) { page.innerHTML = '<div class="signin-empty">No active staff</div>'; return; }
+      const inCount = board.filter(s => s.status === 'in').length;
+      let html = `<div class="signin-hint">Tap your photo to sign in or out · ${inCount} on site</div>`;
+      html += '<div class="signin-grid">';
+      for (const s of board) {
+        const pill = s.status === 'in'
+          ? `<span class="signin-pill in">In · ${fmtSince(s.since)}</span>`
+          : `<span class="signin-pill out">Out</span>`;
+        html += `
+          <div class="signin-card ${s.status}" data-id="${s.id}">
+            ${photoHtml(s)}
+            <div class="signin-name">${s.first_name} ${s.last_name}</div>
+            ${s.role ? `<div class="signin-role">${s.role}</div>` : ''}
+            ${pill}
+          </div>`;
+      }
+      html += '</div>';
+      page.innerHTML = html;
+      page.querySelectorAll('.signin-card').forEach(c =>
+        c.addEventListener('click', () => openPin(+c.dataset.id)));
+    }
+
+    // ── PIN keypad ─────────────────────────────────────────────────────────
+    const overlay = document.getElementById('pin-overlay');
+    const whoEl   = document.getElementById('pin-who');
+    const dotsEl  = document.getElementById('pin-dots');
+    const msgEl   = document.getElementById('pin-msg');
+    const keysEl  = document.getElementById('pin-keys');
+    let pinBuf = '', pinStaff = null, submitting = false;
+
+    (function buildKeys() {
+      const keys = ['1','2','3','4','5','6','7','8','9','del','0','ok'];
+      keysEl.innerHTML = keys.map(k => {
+        if (k === 'del') return `<button class="pin-key wide" data-k="del">⌫</button>`;
+        if (k === 'ok')  return `<button class="pin-key wide" data-k="ok">✓</button>`;
+        return `<button class="pin-key" data-k="${k}">${k}</button>`;
+      }).join('');
+      keysEl.querySelectorAll('.pin-key').forEach(b =>
+        b.addEventListener('click', () => onKey(b.dataset.k)));
+    })();
+
+    function drawDots() {
+      const n = Math.max(pinBuf.length, 4);
+      let h = '';
+      for (let i = 0; i < n; i++) h += `<div class="pin-dot ${i < pinBuf.length ? 'filled' : ''}"></div>`;
+      dotsEl.innerHTML = h;
+    }
+    function openPin(id) {
+      pinStaff = board.find(s => s.id === id);
+      if (!pinStaff) return;
+      pinBuf = ''; submitting = false;
+      msgEl.textContent = ''; msgEl.className = 'pin-msg';
+      const verb = pinStaff.status === 'in' ? 'sign OUT' : 'sign IN';
+      whoEl.innerHTML = photoHtml(pinStaff) +
+        `<div class="pin-who-name">${pinStaff.first_name} ${pinStaff.last_name}</div>` +
+        `<div class="pin-who-sub">Enter PIN to ${verb}</div>`;
+      drawDots();
+      overlay.classList.add('open');
+    }
+    function closePin() { overlay.classList.remove('open'); pinBuf = ''; pinStaff = null; }
+
+    function onKey(k) {
+      if (submitting) return;
+      if (k === 'del') { pinBuf = pinBuf.slice(0, -1); drawDots(); return; }
+      if (k === 'ok')  { submit(); return; }
+      if (pinBuf.length >= 8) return;
+      pinBuf += k; drawDots();
+      if (pinBuf.length >= 6) submit(); // auto-submit at 6 (also works for 4 via ✓)
+    }
+
+    async function submit() {
+      if (submitting || !pinStaff || pinBuf.length < 4) {
+        if (pinBuf.length < 4) { msgEl.textContent = 'PIN is at least 4 digits'; msgEl.className = 'pin-msg err'; }
+        return;
+      }
+      submitting = true;
+      msgEl.textContent = 'Checking…'; msgEl.className = 'pin-msg';
+      try {
+        const res = await apiPost('/api/staff-signin/toggle', { staff_id: pinStaff.id, pin: pinBuf });
+        msgEl.textContent = res.status === 'in' ? 'Signed in ✓' : 'Signed out ✓';
+        msgEl.className = 'pin-msg ok';
+        setTimeout(async () => { closePin(); await load(); }, 650);
+      } catch (err) {
+        pinBuf = ''; drawDots();
+        msgEl.textContent = err.message || 'Failed';
+        msgEl.className = 'pin-msg err';
+        submitting = false;
+      }
+    }
+
+    document.getElementById('pin-cancel').addEventListener('click', closePin);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closePin(); });
+
+    load();
+  });
+  </script>
+</body>
+</html>

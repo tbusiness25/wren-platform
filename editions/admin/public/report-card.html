@@ -1,0 +1,362 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Setting Report Card · Wren</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script><link rel="stylesheet" href="/css/wren-shell-v2.css">
+<style>
+ :root{--bg:#080f1e;--card:#0f1a34;--bd:rgba(255,255,255,.10);--txt:#f1f5f9;--mut:#94a3b8;
+   --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--none:#64748b;--blue:#4a9abf;--orange:#e07820}
+ .rc-wrap{padding:18px;max-width:1400px;margin:0 auto;color:var(--txt)}
+ h1{font-size:1.3rem;margin:0 0 2px}
+ .sub{color:var(--mut);font-size:.85rem;margin-bottom:12px}
+
+ /* The honesty banner is deliberately loud and never collapsible. */
+ .disclaimer{background:rgba(224,120,32,.10);border:1px solid rgba(224,120,32,.45);
+   border-radius:12px;padding:11px 14px;font-size:.82rem;line-height:1.5;margin-bottom:16px}
+ .disclaimer b{color:var(--orange)}
+
+ .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+ .spacer{flex:1}
+ .btn{background:var(--blue);border:1px solid var(--blue);color:#04121b;border-radius:9px;padding:9px 15px;
+   font-size:.85rem;font-weight:700;cursor:pointer;min-height:40px}
+ .btn:hover{filter:brightness(1.08)}
+ .btn.ghost{background:transparent;color:var(--txt);border-color:var(--bd)}
+ .banner{font-size:.82rem;color:var(--mut);min-height:1em}
+
+ /* headline */
+ .headline{display:grid;grid-template-columns:minmax(210px,260px) 1fr;gap:16px;margin-bottom:18px}
+ @media(max-width:820px){.headline{grid-template-columns:1fr}}
+ .panel{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px}
+ .overall{text-align:center}
+ .big{font-size:3.4rem;font-weight:800;line-height:1;margin:4px 0}
+ .of{font-size:1rem;color:var(--mut);font-weight:600}
+ .rag{display:inline-block;padding:3px 12px;border-radius:999px;font-size:.72rem;font-weight:800;
+   letter-spacing:.05em;text-transform:uppercase;border:1px solid currentColor;margin-top:6px}
+ .r-green{color:var(--ok)}.r-amber{color:var(--warn)}.r-red{color:var(--bad)}.r-no_data{color:var(--none)}
+ .t-green{color:var(--ok)}.t-amber{color:var(--warn)}.t-red{color:var(--bad)}.t-no_data{color:var(--none)}
+ .meta{font-size:.74rem;color:var(--mut);margin-top:8px;line-height:1.5}
+ .panel h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 10px}
+ .spark{width:100%;height:90px;display:block}
+ .spark-empty{color:var(--mut);font-size:.82rem;padding:24px 0;text-align:center}
+
+ /* domain cards */
+ .domains{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:18px}
+ .dcard{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:15px;cursor:pointer;
+   transition:border-color .15s, transform .15s}
+ .dcard:hover{border-color:var(--blue);transform:translateY(-1px)}
+ .dcard[aria-expanded=true]{border-color:var(--blue)}
+ .dhead{display:flex;align-items:baseline;gap:9px}
+ .dicon{font-size:1.15rem}
+ .dname{font-weight:700;font-size:.93rem;flex:1}
+ .dscore{font-size:1.9rem;font-weight:800;line-height:1}
+ .dblurb{color:var(--mut);font-size:.76rem;margin-top:7px;line-height:1.45}
+ .bar{height:7px;border-radius:999px;background:rgba(255,255,255,.07);margin-top:11px;overflow:hidden}
+ .bar i{display:block;height:100%;border-radius:999px}
+ .b-green{background:var(--ok)}.b-amber{background:var(--warn)}.b-red{background:var(--bad)}
+ .dbasis{font-size:.71rem;color:var(--mut);margin-top:8px}
+ .dhint{font-size:.71rem;color:var(--blue);margin-top:6px;font-weight:600}
+ .lowconf{display:inline-block;margin-top:8px;padding:2px 9px;border-radius:999px;font-size:.68rem;
+   font-weight:700;color:var(--warn);border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.10)}
+
+ /* sub-metric drill-down */
+ .drill{background:var(--card);border:1px solid var(--blue);border-radius:14px;padding:0;margin-bottom:18px;
+   overflow:hidden}
+ .drill-head{padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;
+   flex-wrap:wrap}
+ .drill-head h3{margin:0;font-size:1rem}
+ .drill-note{font-size:.76rem;color:var(--mut);flex:1 0 100%}
+ .tbl-scroll{overflow-x:auto}
+ table{border-collapse:collapse;width:100%;font-size:.8rem;min-width:820px}
+ th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--bd);vertical-align:top}
+ thead th{background:#0b1428;color:var(--mut);font-weight:700;font-size:.7rem;
+   text-transform:uppercase;letter-spacing:.04em}
+ tbody tr:last-child td{border-bottom:0}
+ td.metric{font-weight:600;min-width:190px}
+ td.metric small{display:block;font-weight:400;color:var(--mut);font-size:.72rem;margin-top:3px;line-height:1.45}
+ td.num{white-space:nowrap;font-weight:800;font-size:.95rem}
+ td.rows{color:var(--mut);font-size:.76rem;line-height:1.5;min-width:230px}
+ .srcs{display:block;margin-top:4px;font-size:.68rem;color:#64748b;font-family:ui-monospace,Menlo,monospace}
+ .nodata{color:var(--none);font-style:italic}
+ .lnk{color:var(--blue);text-decoration:none;font-weight:700;white-space:nowrap}
+ .lnk:hover{text-decoration:underline}
+
+ /* fix list */
+ .fix{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:18px}
+ .fixrow{display:flex;gap:13px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--bd)}
+ .fixrow:last-child{border-bottom:0;padding-bottom:0}
+ .rank{width:26px;height:26px;border-radius:50%;background:rgba(74,154,191,.16);color:var(--blue);
+   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;flex:0 0 26px}
+ .fixbody{flex:1;min-width:0}
+ .fixtitle{font-weight:700;font-size:.9rem}
+ .fixmeta{color:var(--mut);font-size:.76rem;margin-top:3px;line-height:1.5}
+ .fixwhy{color:var(--mut);font-size:.75rem;margin-top:5px;font-style:italic;line-height:1.5}
+ .fixscore{font-weight:800;font-size:1rem;white-space:nowrap}
+
+ .excl{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:24px}
+ .excl li{color:var(--mut);font-size:.79rem;margin:7px 0;line-height:1.5}
+ .excl li b{color:var(--txt);font-weight:600}
+ .empty{color:var(--mut);font-size:.85rem;padding:8px 0}
+
+ @media print{
+   @page{size:A4 portrait;margin:12mm}
+   body{background:#fff;color:#000}
+   .wren-sidebar,.wren-topbar,.wren-shell-nav,nav,.toolbar{display:none!important}
+   .rc-wrap{padding:0;max-width:none}
+   .panel,.dcard,.fix,.excl,.drill{background:#fff;border:1px solid #999;break-inside:avoid}
+   .disclaimer{border:1px solid #a60;background:#fff8ef}
+   h1,.sub,.dname,.fixtitle{color:#000}
+   .t-green,.b-green{color:#0a0}.t-amber{color:#a60}.t-red{color:#c00}
+ }
+</style></head>
+<body data-portal="admin">
+<div class="rc-wrap">
+  <h1>📊 Setting Report Card</h1>
+  <div class="sub">How inspection-ready this setting looks on the records it already holds — and what to fix first.</div>
+
+  <div class="disclaimer">
+    <b>Internal readiness indicator — not an Ofsted grade.</b>
+    Wren does not predict, simulate or award an Ofsted judgement. This score is calculated only from
+    records held in this setting, using the four EY inspection areas as headings so the numbers land
+    somewhere familiar. A sub-metric with no data is shown as <span class="nodata">no data</span> and is
+    <b>excluded</b> from the score — never counted as 0 and never counted as 100.
+  </div>
+
+  <div class="toolbar">
+    <span class="banner" id="banner">Loading…</span>
+    <span class="spacer"></span>
+    <button class="btn ghost" id="btn-refresh">Recalculate now</button>
+    <button class="btn" id="btn-print">🖨️ Print / PDF</button>
+  </div>
+
+  <div class="headline">
+    <div class="panel overall">
+      <h2>Overall readiness</h2>
+      <div class="big" id="overall-score">—</div>
+      <div class="of">out of 100</div>
+      <div><span class="rag" id="overall-rag">—</span></div>
+      <div class="meta" id="overall-meta"></div>
+    </div>
+    <div class="panel">
+      <h2>Trend — one point per snapshot</h2>
+      <div id="spark-host"><div class="spark-empty">Loading trend…</div></div>
+      <div class="meta" id="trend-meta"></div>
+    </div>
+  </div>
+
+  <div class="domains" id="domains"></div>
+  <div id="drill-host"></div>
+
+  <div class="fix">
+    <h2>🔧 Fix these first</h2>
+    <div class="meta" style="margin:-4px 0 6px">Ranked by impact — how much of the domain average each one is
+      currently giving away (its weight × the points it is short). Only sub-metrics that actually have data appear here.</div>
+    <div id="fixlist"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="excl">
+    <h2>🚫 Not scored — no data</h2>
+    <div class="meta" style="margin:-4px 0 6px">These inputs have nothing to measure yet, so they are excluded from
+      every average above rather than scored as zero. Start recording them and they join the score automatically.</div>
+    <ul id="excluded"><li>Loading…</li></ul>
+  </div>
+</div>
+
+<script src="/js/wren-core.js"></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/report-card';
+  var TOKEN=function(){return sessionStorage.getItem('wrenToken');};
+  var STATE={card:null,trend:null,open:null};
+
+  function api(p){
+    return fetch(API+p,{headers:{'Authorization':'Bearer '+TOKEN()}})
+      .then(function(r){return r.json().then(function(j){return{ok:r.ok,status:r.status,j:j};})
+        .catch(function(){return{ok:r.ok,status:r.status,j:null};});});}
+  function el(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){
+    return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+  function fmtDT(s){ if(!s) return '—'; try{return new Date(s).toLocaleString('en-GB');}catch(e){return String(s);} }
+
+  /* One RAG vocabulary for the whole page — statuses come from the API so the
+     colours can never drift from the thresholds the score was built with. */
+  function ragClass(pfx,st){ return pfx+'-'+(st||'no_data'); }
+  function scoreTxt(s){ return s==null ? 'n/a' : s; }
+
+  /* ── trend sparkline: hand-rolled SVG, no chart library on this page ─────── */
+  function sparkline(points){
+    var pts=points.filter(function(p){return p.overall_score!=null;});
+    if(pts.length<2){
+      return '<div class="spark-empty">'+
+        (pts.length===1
+          ? 'One snapshot so far ('+scoreTxt(pts[0].overall_score)+'/100). The line appears from the second snapshot — the nightly job writes one a month.'
+          : 'No snapshots yet. The trend fills in as snapshots are written.')+'</div>';
+    }
+    var W=600,H=90,PADX=6,PADY=10;
+    var xs=function(i){return PADX+(i*(W-2*PADX))/(pts.length-1);};
+    var ys=function(v){return H-PADY-((v/100)*(H-2*PADY));};
+    var d=pts.map(function(p,i){return (i?'L':'M')+xs(i).toFixed(1)+' '+ys(p.overall_score).toFixed(1);}).join(' ');
+    var area=d+' L '+xs(pts.length-1).toFixed(1)+' '+(H-PADY)+' L '+xs(0).toFixed(1)+' '+(H-PADY)+' Z';
+    var last=pts[pts.length-1];
+    var col=last.rag==='green'?'#22c55e':last.rag==='amber'?'#f59e0b':'#ef4444';
+    var dots=pts.map(function(p,i){
+      return '<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(p.overall_score).toFixed(1)+'" r="2.6" fill="'+col+'">'+
+             '<title>'+esc(String(p.snapshot_date).slice(0,10))+': '+p.overall_score+'/100</title></circle>';}).join('');
+    return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" '+
+      'aria-label="Overall readiness indicator over time">'+
+      '<line x1="0" y1="'+ys(80).toFixed(1)+'" x2="'+W+'" y2="'+ys(80).toFixed(1)+'" stroke="#22c55e" stroke-width="1" stroke-dasharray="4 4" opacity=".35"/>'+
+      '<line x1="0" y1="'+ys(60).toFixed(1)+'" x2="'+W+'" y2="'+ys(60).toFixed(1)+'" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4 4" opacity=".35"/>'+
+      '<path d="'+area+'" fill="'+col+'" opacity=".13"/>'+
+      '<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>'+
+      dots+'</svg>';
+  }
+
+  /* ── domain cards ────────────────────────────────────────────────────────── */
+  function renderDomains(){
+    var c=STATE.card;
+    el('domains').innerHTML=c.domains.map(function(d){
+      var pct=d.score==null?0:d.score;
+      var barCls=d.status==='green'?'b-green':d.status==='amber'?'b-amber':'b-red';
+      return '<div class="dcard" data-domain="'+esc(d.key)+'" role="button" tabindex="0" '+
+             'aria-expanded="'+(STATE.open===d.key)+'">'+
+        '<div class="dhead"><span class="dicon">'+esc(d.icon||'')+'</span>'+
+          '<span class="dname">'+esc(d.label)+'</span>'+
+          '<span class="dscore '+ragClass('t',d.status)+'">'+scoreTxt(d.score)+'</span></div>'+
+        '<div class="dblurb">'+esc(d.blurb||'')+'</div>'+
+        '<div class="bar"><i class="'+barCls+'" style="width:'+pct+'%"></i></div>'+
+        (d.low_confidence?'<div class="lowconf">⚠ Low confidence — only '+d.coverage+'% of this domain\'s inputs have data</div>':'')+
+        '<div class="dbasis">'+esc(d.basis||'')+'</div>'+
+        '<div class="dhint">'+(STATE.open===d.key?'▾ Hide the sub-metrics':'▸ Show the sub-metrics behind this score')+'</div>'+
+      '</div>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.dcard'),function(n){
+      n.onclick=function(){toggle(n.getAttribute('data-domain'));};
+      n.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle(n.getAttribute('data-domain'));} };
+    });
+  }
+  function toggle(key){ STATE.open = (STATE.open===key ? null : key); renderDomains(); renderDrill(); }
+
+  /* ── the audit trail: every sub-metric, its value and the rows behind it ─── */
+  function renderDrill(){
+    var host=el('drill-host');
+    if(!STATE.open){ host.innerHTML=''; return; }
+    var d=STATE.card.domains.filter(function(x){return x.key===STATE.open;})[0];
+    if(!d){ host.innerHTML=''; return; }
+
+    var body=d.sub_metrics.map(function(m){
+      var val = m.score==null
+        ? '<td class="num nodata">no data</td>'
+        : '<td class="num '+ragClass('t',m.status)+'">'+m.score+'%</td>';
+      var rows = m.score==null
+        ? '<span class="nodata">'+esc(m.no_data||'No data')+'</span>'
+        : esc(m.detail||'')+(m.numerator!=null&&m.denominator!=null
+            ? ' <b>('+m.numerator+' / '+m.denominator+')</b>' : '');
+      return '<tr>'+
+        '<td class="metric">'+esc(m.label)+'<small>'+esc(m.why||'')+'</small></td>'+
+        val+
+        '<td>'+(m.score==null?'—':'×'+m.weight)+'</td>'+
+        '<td class="rows">'+rows+
+          '<span class="srcs">'+esc((m.sources||[]).join(' · '))+'</span></td>'+
+        '<td>'+(m.link?'<a class="lnk" href="'+esc(m.link)+'">Open →</a>':'')+'</td>'+
+      '</tr>';
+    }).join('');
+
+    host.innerHTML='<div class="drill">'+
+      '<div class="drill-head"><h3>'+esc(d.icon||'')+' '+esc(d.label)+' — '+
+        '<span class="'+ragClass('t',d.status)+'">'+scoreTxt(d.score)+'/100</span></h3>'+
+        '<span class="spacer"></span>'+
+        '<button class="btn ghost" id="btn-close-drill">Close</button>'+
+        '<div class="drill-note">'+esc(d.basis||'')+
+          ' Weights are relative within this domain only — excluding a "no data" row re-shares the weight across the rest.'+
+          (d.low_confidence?' <b style="color:#f59e0b">This score rests on under half the domain\'s intended weight — read it as a pointer, not a verdict.</b>':'')+
+          '</div>'+
+      '</div>'+
+      '<div class="tbl-scroll"><table>'+
+        '<thead><tr><th>Sub-metric</th><th>Score</th><th>Weight</th><th>The rows behind it</th><th>Fix</th></tr></thead>'+
+        '<tbody>'+body+'</tbody></table></div></div>';
+    el('btn-close-drill').onclick=function(){ STATE.open=null; renderDomains(); renderDrill(); };
+    host.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+
+  function renderFix(){
+    var w=STATE.card.weakest||[];
+    if(!w.length){ el('fixlist').innerHTML='<div class="empty">Nothing scored below the green threshold — '+
+      'no ranked actions to show.</div>'; return; }
+    el('fixlist').innerHTML=w.map(function(f,i){
+      var gap = f.gap!=null && f.gap>0
+        ? f.gap+' more to close the gap' : null;
+      return '<div class="fixrow">'+
+        '<div class="rank">'+(i+1)+'</div>'+
+        '<div class="fixbody">'+
+          '<div class="fixtitle">'+esc(f.label)+'</div>'+
+          '<div class="fixmeta">'+esc(f.domain_label)+' · '+esc(f.detail||'')+
+            (gap?' · <b>'+esc(gap)+'</b>':'')+'</div>'+
+          '<div class="fixwhy">'+esc(f.why||'')+'</div>'+
+        '</div>'+
+        '<div style="text-align:right">'+
+          '<div class="fixscore '+ragClass('t',f.status)+'">'+f.score+'%</div>'+
+          (f.link?'<a class="lnk" href="'+esc(f.link)+'">Fix →</a>':'')+
+        '</div>'+
+      '</div>';
+    }).join('');
+  }
+
+  function renderExcluded(){
+    var x=STATE.card.excluded||[];
+    el('excluded').innerHTML = x.length
+      ? x.map(function(e){return '<li><b>'+esc(e.label)+'</b> — '+esc(e.reason||'No data')+'</li>';}).join('')
+      : '<li>Every sub-metric has data — nothing is excluded from the score.</li>';
+  }
+
+  function renderHeadline(){
+    var o=STATE.card.overall||{};
+    el('overall-score').textContent=scoreTxt(o.score);
+    el('overall-score').className='big '+ragClass('t',o.status);
+    el('overall-rag').textContent=(o.status||'no data').replace('_',' ');
+    el('overall-rag').className='rag '+ragClass('r',o.status);
+    var th=STATE.card.thresholds||{};
+    el('overall-meta').innerHTML=
+      esc(o.scored_sub_metrics+' of '+o.total_sub_metrics+' sub-metrics scored')+'<br>'+
+      esc(o.excluded_sub_metrics+' excluded for having no data')+'<br>'+
+      (th.green!=null?esc('Green ≥'+th.green+', amber ≥'+th.amber):'')+'<br>'+
+      'Calculated '+esc(fmtDT(STATE.card.computed_at));
+  }
+
+  function load(fresh){
+    el('banner').textContent=fresh?'Recalculating…':'Loading…';
+    api(fresh?'/?fresh=1':'/').then(function(res){
+      if(!res.ok){
+        el('banner').textContent='Could not load ('+res.status+') — '+((res.j&&res.j.error)||'failed');
+        return;
+      }
+      STATE.card=res.j;
+      el('banner').textContent=(res.j.cached?'Showing the cached snapshot from ':'Freshly calculated ')+
+        fmtDT(res.j.computed_at)+(res.j.cached?' — use Recalculate now for live numbers':'');
+      renderHeadline(); renderDomains(); renderDrill(); renderFix(); renderExcluded();
+      loadTrend();
+    });
+  }
+
+  function loadTrend(){
+    api('/trend?months=12').then(function(res){
+      if(!res.ok||!res.j){ el('spark-host').innerHTML='<div class="spark-empty">Trend unavailable.</div>'; return; }
+      STATE.trend=res.j;
+      el('spark-host').innerHTML=sparkline(res.j.points||[]);
+      var n=(res.j.points||[]).length;
+      el('trend-meta').textContent=n+' snapshot'+(n===1?'':'s')+' in the last 12 months · '+
+        'dashed lines mark the amber (60) and green (80) thresholds · a monthly point is written by the nightly job.';
+    });
+  }
+
+  function init(){
+    el('btn-refresh').onclick=function(){ load(true); };
+    el('btn-print').onclick=function(){ window.print(); };
+    load(false);
+  }
+  document.addEventListener('wren:ready', init);
+})();
+</script>
+</body></html>

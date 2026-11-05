@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="wren-edition" content="admin">
+<title>Clock In/Out — Wren Admin</title>
+<link rel="stylesheet" href="/css/wren.css">
+<!-- b351 — the appearance engine, synchronous so a saved palette is on the page before first paint -->
+<script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-shell-v2.js" defer></script>
+<style>
+/* ── Layout ── */
+.ci-page { display:flex; flex-direction:column; gap:20px; }
+.ci-tabs { display:flex; gap:4px; border-bottom:1px solid var(--c-border); margin-bottom:4px; }
+.ci-tab { padding:10px 18px; font-size:.82rem; font-weight:700; color:var(--c-muted); cursor:pointer; border-bottom:2px solid transparent; transition:.15s; }
+.ci-tab.active { color:#4a9abf; border-bottom-color:#4a9abf; }
+.ci-tab:hover:not(.active) { color:var(--c-text); }
+.ci-panel { display:none; }
+.ci-panel.active { display:block; }
+
+/* ── Live status strip ── */
+.status-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; }
+.staff-card { background:var(--c-card); border:1px solid var(--c-border); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+.staff-card.in { border-color:#22c55e44; }
+.staff-card.out { border-color:#64748b44; }
+.staff-card.overdue { border-color:#ef444444; }
+.staff-card .sc-name { font-size:.95rem; font-weight:700; color:var(--c-text); }
+.staff-card .sc-role { font-size:.72rem; color:var(--c-muted); text-transform:capitalize; }
+.staff-card .sc-status { display:flex; align-items:center; gap:6px; margin-top:4px; }
+.sc-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.sc-dot.in { background:#22c55e; }
+.sc-dot.out { background:#64748b; }
+.sc-dot.overdue { background:#ef4444; }
+.sc-dot.pending { background:#f59e0b; }
+.sc-time { font-size:.8rem; color:var(--c-text); font-weight:600; }
+.sc-hours { font-size:.72rem; color:var(--c-muted); }
+.sc-fob { font-size:.65rem; padding:2px 6px; border-radius:4px; font-weight:700; margin-top:2px; width:fit-content; }
+.sc-fob.registered { background:rgba(74,154,191,.12); color:#4a9abf; }
+.sc-fob.unregistered { background:rgba(239,68,68,.12); color:#ef4444; }
+
+.manual-btn { padding:6px 14px; border-radius:8px; font-size:.75rem; font-weight:700; border:1px solid var(--c-border); background:transparent; color:var(--c-muted); cursor:pointer; margin-top:6px; transition:.15s; }
+.manual-btn:hover { background:var(--c-border); color:var(--c-text); }
+.manual-btn.in { border-color:#22c55e55; color:#22c55e; }
+.manual-btn.out { border-color:#ef444455; color:#ef4444; }
+
+/* ── Fob management ── */
+.fob-table-wrap { overflow-x:auto; border-radius:8px; border:1px solid var(--c-border); margin-top:12px; }
+.fob-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.fob-table th { text-align:left; padding:10px 14px; font-size:.7rem; font-weight:800; color:var(--c-muted); text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--c-border); background:#0f172a; }
+.fob-table td { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.04); color:var(--c-text); vertical-align:middle; }
+.fob-table tr:last-child td { border-bottom:none; }
+.fob-table tr:hover td { background:rgba(255,255,255,.02); }
+.badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; }
+.badge-active { background:rgba(34,197,94,.12); color:#22c55e; }
+.badge-inactive { background:rgba(100,116,139,.12); color:#64748b; }
+.badge-method { background:rgba(74,154,191,.12); color:#4a9abf; }
+.help-box { background:#0f172a; border:1px solid var(--c-border); border-radius:8px; padding:14px 16px; margin-top:16px; font-size:.8rem; color:var(--c-muted); }
+.help-box strong { color:var(--c-text); display:block; margin-bottom:4px; }
+
+/* ── Shift history ── */
+.hist-controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+.hist-controls input[type="date"] { padding:8px 12px; background:var(--c-card); border:1px solid var(--c-border); border-radius:8px; color:var(--c-text); font-size:.85rem; }
+.hist-controls select { padding:8px 12px; background:var(--c-card); border:1px solid var(--c-border); border-radius:8px; color:var(--c-text); font-size:.85rem; cursor:pointer; }
+.hist-table-wrap { overflow-x:auto; border-radius:8px; border:1px solid var(--c-border); }
+.hist-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.hist-table th { text-align:left; padding:10px 14px; font-size:.7rem; font-weight:800; color:var(--c-muted); text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--c-border); background:#0f172a; }
+.hist-table td { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.04); color:var(--c-text); }
+.hist-table tr:last-child td { border-bottom:none; }
+.status-badge { padding:2px 8px; border-radius:99px; font-size:.7rem; font-weight:700; }
+.status-complete { background:rgba(34,197,94,.12); color:#22c55e; }
+.status-open { background:rgba(245,158,11,.12); color:#f59e0b; }
+.status-incomplete { background:rgba(239,68,68,.12); color:#ef4444; }
+
+/* ── Toolbar ── */
+.toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.refresh-info { font-size:.72rem; color:var(--c-muted); }
+</style>
+</head>
+<body>
+<div id="wren-shell"></div>
+<div class="page-content" data-role="manager deputy_manager">
+
+<div class="ci-page">
+  <div class="toolbar">
+    <div>
+      <h2 style="margin:0;font-size:1.15rem;color:var(--c-text)">Clock In / Out</h2>
+      <div class="refresh-info" id="last-refresh">Updating every 30s</div>
+    </div>
+    <button class="btn" id="btn-refresh-status" style="font-size:.8rem;padding:8px 14px">Refresh</button>
+  </div>
+
+  <div class="ci-tabs">
+    <div class="ci-tab active" data-tab="live">Live Status</div>
+    <div class="ci-tab" data-tab="fobs">Fob Management</div>
+    <div class="ci-tab" data-tab="history">Shift History</div>
+    <!-- b310 (2026-09-10) — two tabs added, nothing removed or reordered. -->
+    <div class="ci-tab" data-tab="queries">Missing taps <span id="q-count" style="display:none"></span></div>
+    <div class="ci-tab" data-tab="readers">Readers</div>
+  </div>
+
+  <!-- ── LIVE STATUS ── -->
+  <div class="ci-panel active" id="panel-live">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="flex:1;min-width:160px;background:var(--c-card);border:1px solid #22c55e33;border-radius:10px;padding:14px 16px">
+        <div style="font-size:1.6rem;font-weight:800;color:#22c55e" id="count-in">—</div>
+        <div style="font-size:.72rem;color:var(--c-muted);font-weight:700">Staff currently IN</div>
+      </div>
+      <div style="flex:1;min-width:160px;background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:14px 16px">
+        <div style="font-size:1.6rem;font-weight:800;color:var(--c-muted)" id="count-pending">—</div>
+        <div style="font-size:.72rem;color:var(--c-muted);font-weight:700">Not yet arrived</div>
+      </div>
+      <div style="flex:1;min-width:160px;background:var(--c-card);border:1px solid #ef444433;border-radius:10px;padding:14px 16px">
+        <div style="font-size:1.6rem;font-weight:800;color:#ef4444" id="count-out">—</div>
+        <div style="font-size:.72rem;color:var(--c-muted);font-weight:700">Left today</div>
+      </div>
+    </div>
+    <div class="status-grid" id="status-grid">
+      <div style="color:var(--c-muted);font-size:.85rem">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ── FOB MANAGEMENT ── -->
+  <div class="ci-panel" id="panel-fobs">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <span style="font-size:.85rem;color:var(--c-muted)">Registered Mifare Classic 1K fobs</span>
+      <button class="btn btn-primary" id="btn-open-register-modal" style="font-size:.82rem;padding:8px 16px">+ Register New Fob</button>
+    </div>
+    <div class="fob-table-wrap">
+      <table class="fob-table">
+        <thead>
+          <tr><th>Staff</th><th>Fob UID</th><th>Label</th><th>Status</th><th>Registered</th><th>Action</th></tr>
+        </thead>
+        <tbody id="fob-tbody">
+          <tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="help-box">
+      <strong>How to find a fob UID</strong>
+      Log into your door access controller (its admin web UI on your LAN) → Access → Card Management → scan the fob — the UID (e.g. <code>A1B2C3D4</code>) appears in the card number field.
+      Alternatively, tap them on the door reader/intercom and check the unknown-fob alerts — the UID will be in the alert message.
+    </div>
+  </div>
+
+  <!-- ── MISSING TAPS (b310) ──────────────────────────────────────────────
+       The emergency-exit button means people leave without tapping. That is a
+       certainty, not a risk. Every gap here is a question addressed to the person
+       who knows the answer, and NOTHING is written until they answer it. -->
+  <div class="ci-panel" id="panel-queries">
+    <div class="help-box" style="margin-top:0;margin-bottom:14px">
+      <strong>Why this list exists</strong>
+      Staff leave through the emergency exit without tapping out. Wren does not guess a
+      leaving time — the gap becomes a question the person answers the next morning, and
+      their answer is recorded as <em>self-reported</em> so a timesheet always says how each
+      time was captured. The rota time is offered on their screen as a starting point and is
+      never written unless they choose it.
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <button class="btn" id="btn-sweep" style="font-size:.78rem;padding:7px 14px">Check for new gaps</button>
+      <span style="font-size:.75rem;color:var(--c-muted)" id="sweep-note"></span>
+    </div>
+    <div class="hist-table-wrap">
+      <table class="hist-table">
+        <thead><tr><th>Date</th><th>Staff</th><th>What's missing</th><th>Recorded tap</th><th>Rota</th><th>Action</th></tr></thead>
+        <tbody id="q-tbody"><tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <h3 style="font-size:.85rem;color:var(--c-muted);margin:22px 0 8px;text-transform:uppercase;letter-spacing:.05em">Answered</h3>
+    <div class="hist-table-wrap">
+      <table class="hist-table">
+        <thead><tr><th>Date</th><th>Staff</th><th>Gap</th><th>Answer</th><th>Captured as</th><th>Note</th></tr></thead>
+        <tbody id="qa-tbody"><tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── READERS (b310) ───────────────────────────────────────────────────── -->
+  <div class="ci-panel" id="panel-readers">
+    <div class="help-box" style="margin-top:0;margin-bottom:14px">
+      <strong>Direction comes from the reader</strong>
+      The gate reader is <b>IN</b> — staff have to tap it to get through the gate, so a tap
+      there can only mean arriving. The office reader is <b>OUT</b>. A reader set to
+      <b>both</b> falls back to alternating taps, which is what a one-reader setting has to
+      do and is exactly what caused people to be clocked out while stood in the building.
+      <br><br>
+      The webhook that receives taps is public and unauthenticated (the door intercom cannot
+      send a login). So a tap is only recorded if it matches an <b>active</b> reader below —
+      by device id, by a door-name alias, or by source IP. Everything else is refused.
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <span style="font-size:.85rem;color:var(--c-muted)">Readers Wren will accept taps from</span>
+      <button class="btn btn-primary" id="btn-add-device" style="font-size:.82rem;padding:8px 16px">+ Add Reader</button>
+    </div>
+    <div class="fob-table-wrap">
+      <table class="fob-table">
+        <thead><tr><th>Reader</th><th>Direction</th><th>Device id</th><th>Recognises</th><th>Taps</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+        <tbody id="dev-tbody"><tr><td colspan="8" style="text-align:center;color:var(--c-muted);padding:20px">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <h3 style="font-size:.85rem;color:var(--c-muted);margin:22px 0 8px;text-transform:uppercase;letter-spacing:.05em">Refused taps</h3>
+    <div style="font-size:.8rem;color:var(--c-muted);margin-bottom:8px">
+      A tap from a reader Wren has not been told about. This is the setup tool: plug the new
+      office reader in, tap it once, and whatever it called itself appears here to be copied
+      into a reader row. Held in memory only — it clears when the server restarts.
+    </div>
+    <div class="hist-table-wrap">
+      <table class="hist-table">
+        <thead><tr><th>When</th><th>Device id</th><th>Door name</th><th>From IP</th><th>Reason</th></tr></thead>
+        <tbody id="ref-tbody"><tr><td colspan="5" style="text-align:center;color:var(--c-muted);padding:20px">None — nothing has been refused since the last restart.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── SHIFT HISTORY ── -->
+  <div class="ci-panel" id="panel-history">
+    <div class="hist-controls">
+      <label style="font-size:.82rem;color:var(--c-muted)">Staff:
+        <select id="hist-staff-select" style="margin-left:6px">
+          <option value="">All staff</option>
+        </select>
+      </label>
+      <label style="font-size:.82rem;color:var(--c-muted)">Days:
+        <select id="hist-days-select" style="margin-left:6px">
+          <option value="7">7 days</option>
+          <option value="14" selected>14 days</option>
+          <option value="30">30 days</option>
+        </select>
+      </label>
+      <button class="btn" id="btn-export-csv" style="font-size:.78rem;padding:7px 14px">Export CSV</button>
+    </div>
+    <div class="hist-table-wrap">
+      <table class="hist-table">
+        <thead>
+          <tr><th>Date</th><th>Staff</th><th>Clock In</th><th>Clock Out</th><th>Total</th><th>Method</th><th>Status</th></tr>
+        </thead>
+        <tbody id="hist-tbody">
+          <tr><td colspan="7" style="text-align:center;color:var(--c-muted);padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- Manual clock modal -->
+<div id="manual-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:24px;width:100%;max-width:380px;margin:16px">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:16px" id="manual-modal-title">Manual Clock</div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Staff member</label>
+      <select id="manual-staff-id" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem">
+        <option value="">Select staff…</option>
+      </select>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Action</label>
+      <select id="manual-event-type" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem">
+        <option value="clock_in">Clock IN</option>
+        <option value="clock_out">Clock OUT</option>
+      </select>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Notes (optional)</label>
+      <input id="manual-notes" type="text" placeholder="e.g. Fob forgotten" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="btn-close-manual-modal" style="padding:9px 18px">Cancel</button>
+      <button class="btn btn-primary" id="manual-submit-btn" style="padding:9px 18px">Submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reader modal (b310) -->
+<div id="dev-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:24px;width:100%;max-width:440px;margin:16px;max-height:90vh;overflow-y:auto">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:6px" id="dev-modal-title">Add Reader</div>
+    <div style="font-size:.78rem;color:var(--c-muted);margin-bottom:16px;line-height:1.55">
+      Saving a reader with an id that already exists edits that reader rather than adding a second one.
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Device id <span style="color:var(--c-muted)">(what the reader calls itself)</span></label>
+      <input id="dev-id" type="text" placeholder="office-desk" style="width:100%;padding:9px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Name</label>
+      <input id="dev-label" type="text" placeholder="Office desk" style="width:100%;padding:9px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">A tap here means</label>
+      <select id="dev-direction" style="width:100%;padding:9px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem">
+        <option value="in">Clocking IN (arrival)</option>
+        <option value="out">Clocking OUT (leaving)</option>
+        <option value="both">Alternate — in, then out, then in…</option>
+      </select>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Where it is</label>
+      <input id="dev-location" type="text" placeholder="Office" style="width:100%;padding:9px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Door names it sends <span style="color:var(--c-muted)">(comma separated)</span></label>
+      <input id="dev-aliases" type="text" placeholder="Office, Back Office" style="width:100%;padding:9px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Its IP address <span style="color:var(--c-muted)">(comma separated, optional)</span></label>
+      <input id="dev-ips" type="text" placeholder="192.0.2.11" style="width:100%;padding:9px 12px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:.85rem;color:var(--c-text);margin-bottom:16px">
+      <input id="dev-active" type="checkbox" checked> Accept taps from this reader
+    </label>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="btn-close-dev-modal" style="padding:9px 18px">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-device" style="padding:9px 18px">Save Reader</button>
+    </div>
+  </div>
+</div>
+
+<!-- Register fob modal -->
+<div id="fob-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:24px;width:100%;max-width:400px;margin:16px">
+    <div style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:16px">Register New Fob</div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Staff member</label>
+      <select id="fob-staff-id" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem">
+        <option value="">Select staff…</option>
+      </select>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Fob UID <span style="color:var(--c-muted)">(from your access controller's card management)</span></label>
+      <input id="fob-uid-input" type="text" placeholder="e.g. A1B2C3D4" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box;text-transform:uppercase">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:.8rem;color:var(--c-muted);display:block;margin-bottom:6px">Label <span style="color:var(--c-muted)">(optional, e.g. "Blue keyring fob")</span></label>
+      <input id="fob-label-input" type="text" placeholder="Blue keyring fob" style="width:100%;padding:9px 12px;background:#0f172a;border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:.88rem;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="btn-close-fob-modal" style="padding:9px 18px">Cancel</button>
+      <button class="btn btn-primary" id="btn-register-fob" style="padding:9px 18px">Register Fob</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtTime(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/London'});
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'2-digit'});
+}
+function fmtHours(h) {
+  if (h == null) return '—';
+  const hrs = Math.floor(h);
+  const mins = Math.round((h % 1) * 60);
+  return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+}
+function fmtMinutes(m) {
+  if (m == null) return '—';
+  const h = Math.floor(m / 60);
+  const mn = m % 60;
+  return h > 0 ? `${h}h ${mn}m` : `${mn}m`;
+}
+
+let allStaff = [];
+let statusInterval;
+
+function switchTab(tab) {
+  // b310 — match on data-tab, not on position. The old version compared the tab's
+  // INDEX against a hard-coded three-item array, so any new tab broke all of them.
+  document.querySelectorAll('.ci-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tab);
+  });
+  document.querySelectorAll('.ci-panel').forEach(el => el.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'fobs') loadFobs();
+  if (tab === 'history') loadHistory();
+  if (tab === 'queries') loadQueries();
+  if (tab === 'readers') loadDevices();
+}
+
+async function loadStatus() {
+  try {
+    const data = await Wren.api('/api/clockin/today');
+    const grid = document.getElementById('status-grid');
+    let cIn = 0, cOut = 0, cPending = 0;
+    if (!data.length) {
+      grid.innerHTML = '<div style="color:var(--c-muted);font-size:.85rem">No staff records</div>';
+      return;
+    }
+    grid.innerHTML = data.map(s => {
+      const isClockedIn = s.status === 'in';
+      const isOut = s.status === 'out';
+      const isPending = s.status === 'not_arrived';
+      if (isClockedIn) cIn++;
+      if (isOut) cOut++;
+      if (isPending) cPending++;
+      const dotClass = isClockedIn ? 'in' : isOut ? 'out' : 'pending';
+      const cardClass = isClockedIn ? 'in' : isOut ? 'out' : '';
+      const statusText = isClockedIn
+        ? `IN since ${fmtTime(s.clock_in_time)}`
+        : isOut ? `Left at ${fmtTime(s.clock_out_time)}` : 'Not yet arrived';
+      const hoursText = isClockedIn && s.hours_today != null
+        ? `${fmtHours(s.hours_today)} today`
+        : isOut && s.clock_out_time ? `${fmtMinutes(s.total_minutes)} worked` : '';
+      const fobBadge = s.fob_registered
+        ? '<span class="sc-fob registered">Fob registered</span>'
+        : '<span class="sc-fob unregistered">No fob</span>';
+      const manualType = isClockedIn ? 'clock_out' : 'clock_in';
+      const manualLabel = isClockedIn ? 'Clock out' : 'Clock in';
+      const manualClass = isClockedIn ? 'out' : 'in';
+      return `
+        <div class="staff-card ${cardClass}">
+          <div class="sc-name">${esc(s.name)}</div>
+          <div class="sc-role">${esc((s.role||'').replace(/_/g,' '))} · ${esc(s.room||'')}</div>
+          <div class="sc-status">
+            <div class="sc-dot ${dotClass}"></div>
+            <div class="sc-time">${esc(statusText)}</div>
+          </div>
+          ${hoursText ? `<div class="sc-hours">${esc(hoursText)}</div>` : ''}
+          ${fobBadge}
+          <button class="manual-btn ${manualClass}" data-action="quick-manual" data-staff-id="${s.staff_id}" data-type="${manualType}">${manualLabel} (manual)</button>
+        </div>
+      `;
+    }).join('');
+    document.getElementById('count-in').textContent = cIn;
+    document.getElementById('count-out').textContent = cOut;
+    document.getElementById('count-pending').textContent = cPending;
+    document.getElementById('last-refresh').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  } catch(e) {
+    console.error('Status load error:', e);
+  }
+}
+
+async function loadFobs() {
+  try {
+    const fobs = await Wren.api('/api/clockin/fobs');
+    const tbody = document.getElementById('fob-tbody');
+    if (!fobs.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">No fobs registered yet — click Register New Fob above to add the first one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = fobs.map(f => `
+      <tr>
+        <td><strong>${esc(f.staff_name)}</strong></td>
+        <td><code style="font-family:monospace;color:#4a9abf;font-size:.85rem">${esc(f.fob_uid)}</code></td>
+        <td>${esc(f.label || '—')}</td>
+        <td><span class="badge ${f.is_active ? 'badge-active' : 'badge-inactive'}">${f.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td style="font-size:.8rem;color:var(--c-muted)">${fmtDate(f.registered_at)}</td>
+        <td>
+          ${f.is_active
+            ? `<button class="btn" data-action="deactivate" data-id="${f.id}" data-uid="${esc(f.fob_uid)}" style="font-size:.72rem;padding:5px 10px;color:#ef4444;border-color:#ef444433">Deactivate</button>`
+            : '<span style="font-size:.75rem;color:var(--c-muted)">Inactive</span>'
+          }
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    console.error('Fob load error:', e);
+  }
+}
+
+async function loadHistory() {
+  const staffId = document.getElementById('hist-staff-select').value;
+  const days = document.getElementById('hist-days-select').value || 14;
+  try {
+    let url;
+    if (staffId) {
+      url = `/api/clockin/staff/${staffId}/history?days=${days}`;
+    } else {
+      // Load all staff history by fetching each — build from today's data
+      url = `/api/clockin/staff/0/history?days=${days}`;
+    }
+    // For all staff, iterate each active staff member
+    let shifts = [];
+    if (!staffId && allStaff.length) {
+      const results = await Promise.all(
+        allStaff.map(s => Wren.api(`/api/clockin/staff/${s.id}/history?days=${days}`).catch(()=>[]))
+      );
+      shifts = results.flat();
+    } else if (staffId) {
+      shifts = await Wren.api(url).catch(()=>[]);
+    }
+    shifts.sort((a, b) => new Date(b.shift_date) - new Date(a.shift_date));
+    const tbody = document.getElementById('hist-tbody');
+    if (!shifts.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--c-muted);padding:20px">No shift records for this period</td></tr>';
+      return;
+    }
+    tbody.innerHTML = shifts.map(s => {
+      const statusClass = s.status === 'complete' ? 'status-complete' : s.status === 'open' ? 'status-open' : 'status-incomplete';
+      const methodBadge = s.method ? `<span class="badge badge-method">${esc(s.method)}</span>` : '—';
+      return `
+        <tr>
+          <td style="font-weight:600">${fmtDate(s.shift_date)}</td>
+          <td>${esc(s.staff_name || '—')}</td>
+          <td>${fmtTime(s.clock_in_time)}</td>
+          <td>${fmtTime(s.clock_out_time)}</td>
+          <td>${fmtMinutes(s.total_minutes)}</td>
+          <td>${methodBadge}</td>
+          <td><span class="status-badge ${statusClass}">${esc(s.status||'—')}</span></td>
+        </tr>
+      `;
+    }).join('');
+  } catch(e) {
+    console.error('History load error:', e);
+  }
+}
+
+function exportCsv() {
+  const rows = document.querySelectorAll('#hist-tbody tr');
+  if (!rows.length) return;
+  const headers = ['Date','Staff','Clock In','Clock Out','Total Hours','Method','Status'];
+  const lines = [headers.join(',')];
+  rows.forEach(row => {
+    const cols = Array.from(row.querySelectorAll('td')).map(td => `"${td.textContent.trim().replace(/"/g,'""')}"`);
+    if (cols.length > 1) lines.push(cols.join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `shifts-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+function openRegisterModal() {
+  const sel = document.getElementById('fob-staff-id');
+  sel.innerHTML = '<option value="">Select staff…</option>';
+  allStaff.forEach(s => {
+    sel.innerHTML += `<option value="${s.id}">${esc(s.first_name)} ${esc(s.last_name)}</option>`;
+  });
+  document.getElementById('fob-uid-input').value = '';
+  document.getElementById('fob-label-input').value = '';
+  document.getElementById('fob-modal').style.display = 'flex';
+}
+function closeFobModal() { document.getElementById('fob-modal').style.display = 'none'; }
+
+async function registerFob() {
+  const staff_id = document.getElementById('fob-staff-id').value;
+  const fob_uid = document.getElementById('fob-uid-input').value.trim().toUpperCase();
+  const label = document.getElementById('fob-label-input').value.trim();
+  if (!staff_id || !fob_uid) { Wren.toast('Please select staff and enter fob UID', 'warning'); return; }
+  try {
+    await Wren.api('/api/clockin/fobs', { method: 'POST', body: { staff_id: parseInt(staff_id), fob_uid, label: label || null } });
+    closeFobModal();
+    Wren.toast('Fob registered successfully', 'success');
+    loadFobs();
+  } catch(e) {
+    Wren.toast('Error: ' + (e.error || e.message || 'Failed to register fob'), 'error');
+  }
+}
+
+async function deactivateFob(id, uid) {
+  if (!confirm(`Deactivate fob ${uid}? Staff will not be able to clock in/out with this fob.`)) return;
+  try {
+    await Wren.api(`/api/clockin/fobs/${id}`, { method: 'DELETE' });
+    Wren.toast('Fob deactivated', 'success');
+    loadFobs();
+  } catch(e) {
+    Wren.toast('Error: ' + (e.error || e.message || 'Failed'), 'error');
+  }
+}
+
+// Manual clock modal
+let manualTargetStaffId = null;
+function quickManual(staffId, eventType) {
+  manualTargetStaffId = staffId;
+  document.getElementById('manual-event-type').value = eventType;
+  const s = allStaff.find(x => x.id === staffId);
+  document.getElementById('manual-modal-title').textContent = `Manual ${eventType === 'clock_in' ? 'Clock In' : 'Clock Out'}${s ? ' — ' + s.first_name + ' ' + s.last_name : ''}`;
+  const sel = document.getElementById('manual-staff-id');
+  sel.innerHTML = '<option value="">Select staff…</option>';
+  allStaff.forEach(x => {
+    sel.innerHTML += `<option value="${x.id}" ${x.id === staffId ? 'selected' : ''}>${esc(x.first_name)} ${esc(x.last_name)}</option>`;
+  });
+  document.getElementById('manual-notes').value = '';
+  document.getElementById('manual-modal').style.display = 'flex';
+}
+function closeManualModal() { document.getElementById('manual-modal').style.display = 'none'; }
+async function submitManual() {
+  const staff_id = parseInt(document.getElementById('manual-staff-id').value);
+  const event_type = document.getElementById('manual-event-type').value;
+  const notes = document.getElementById('manual-notes').value.trim();
+  if (!staff_id) { Wren.toast('Please select a staff member', 'warning'); return; }
+  const btn = document.getElementById('manual-submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    await Wren.api('/api/clockin/manual', { method: 'POST', body: { staff_id, event_type, notes: notes || null } });
+    closeManualModal();
+    Wren.toast(`${event_type === 'clock_in' ? 'Clocked in' : 'Clocked out'} successfully`, 'success');
+    loadStatus();
+  } catch(e) {
+    Wren.toast('Error: ' + (e.error || e.message || 'Failed'), 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit';
+  }
+}
+
+async function init() {
+  try {
+    const staffData = await Wren.api('/api/staff');
+    allStaff = (staffData || []).filter(s => s.is_active);
+    // Populate history staff selector
+    const sel = document.getElementById('hist-staff-select');
+    allStaff.forEach(s => {
+      sel.innerHTML += `<option value="${s.id}">${esc(s.first_name)} ${esc(s.last_name)}</option>`;
+    });
+  } catch(e) { console.error('Staff load error:', e); }
+  loadStatus();
+  statusInterval = setInterval(loadStatus, 30000);
+}
+
+document.getElementById('btn-refresh-status').addEventListener('click', loadStatus);
+document.querySelector('.ci-tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.ci-tab[data-tab]');
+  if (tab) switchTab(tab.dataset.tab);
+});
+document.getElementById('btn-open-register-modal').addEventListener('click', openRegisterModal);
+document.getElementById('hist-staff-select').addEventListener('change', loadHistory);
+document.getElementById('hist-days-select').addEventListener('change', loadHistory);
+document.getElementById('btn-export-csv').addEventListener('click', exportCsv);
+document.getElementById('btn-close-manual-modal').addEventListener('click', closeManualModal);
+document.getElementById('manual-submit-btn').addEventListener('click', submitManual);
+document.getElementById('btn-close-fob-modal').addEventListener('click', closeFobModal);
+document.getElementById('btn-register-fob').addEventListener('click', registerFob);
+document.getElementById('status-grid').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action="quick-manual"]');
+  if (btn) quickManual(parseInt(btn.dataset.staffId), btn.dataset.type);
+});
+document.getElementById('fob-tbody').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action="deactivate"]');
+  if (btn) deactivateFob(parseInt(btn.dataset.id), btn.dataset.uid);
+});
+
+if (window._wrenReady) {
+  init();
+} else {
+  document.addEventListener('wren:ready', init);
+}
+
+/* ── b310 (2026-09-10): readers + the missing-tap queue ─────────────────────
+   Appended. Nothing above this line was removed. */
+
+function b310Dur(m) {
+  const n = Number(m);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  const h = Math.floor(n / 60), r = Math.round(n % 60);
+  return h ? h + 'h ' + r + 'm' : r + 'm';
+}
+function b310Ago(iso) {
+  if (!iso) return 'never';
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  return fmtDate(iso);
+}
+function b310Day(d) {
+  return d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : '—';
+}
+// How a time was captured, in words. Showing this is the point: a self-reported
+// time must never look identical on screen to one a reader recorded.
+function b310Source(s) {
+  if (!s) return 'unrecorded';
+  if (s === 'self_reported')    return 'they told us';
+  if (s === 'manager_reported') return 'a manager told us';
+  if (s === 'manager_entered')  return 'entered by a manager';
+  if (s === 'correction')       return 'corrected';
+  if (s === 'pin_board')        return 'sign-in board';
+  if (s.indexOf('fob:') === 0)  return 'reader ' + s.slice(4);
+  return s;
+}
+
+// ── Missing taps ───────────────────────────────────────────────────────────
+async function loadQueries() {
+  const tb = document.getElementById('q-tbody');
+  const ta = document.getElementById('qa-tbody');
+  try {
+    const [open, answered] = await Promise.all([
+      Wren.api('/api/clockin/queries'),
+      Wren.api('/api/clockin/queries?status=answered'),
+    ]);
+    const qs = open.queries || [];
+    const badge = document.getElementById('q-count');
+    if (qs.length) {
+      badge.textContent = ' (' + qs.length + ')';
+      badge.style.display = 'inline';
+      badge.style.color = 'var(--c-orange)';
+    } else { badge.style.display = 'none'; }
+
+    tb.innerHTML = qs.length ? qs.map(q => `
+      <tr data-qrow="${q.id}">
+        <td>${esc(b310Day(q.date))}</td>
+        <td>${esc(q.staff_name || '')}</td>
+        <td>${q.kind === 'missing_out' ? 'No tap-out' : 'No tap-in'}</td>
+        <td>${esc(q.opened_hhmm || '—')}</td>
+        <td>${esc(q.scheduled_start_hhmm || '—')}–${esc(q.scheduled_end_hhmm || '—')}</td>
+        <td style="white-space:nowrap">
+          <input type="time" step="300" data-qtime="${q.id}" style="padding:5px 7px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:.8rem">
+          <button class="manual-btn" data-qsave="${q.id}" style="margin-top:0">Record</button>
+          <button class="manual-btn" data-qdis="${q.id}" style="margin-top:0">Not a gap</button>
+        </td>
+      </tr>`).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">Nothing missing. Every day with a tap-in has a tap-out.</td></tr>';
+
+    const ans = answered.queries || [];
+    ta.innerHTML = ans.length ? ans.slice(0, 50).map(q => `
+      <tr>
+        <td>${esc(b310Day(q.date))}</td>
+        <td>${esc(q.staff_name || '')}</td>
+        <td>${q.kind === 'missing_out' ? 'No tap-out' : 'No tap-in'}</td>
+        <td><b>${esc(q.answer_hhmm || '—')}</b></td>
+        <td><span class="badge badge-method">${esc(b310Source(q.answer_source))}</span></td>
+        <td style="color:var(--c-muted)">${esc(q.answer_note || '')}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">Nothing answered yet.</td></tr>';
+  } catch (e) {
+    tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--c-muted);padding:20px">${esc((e && (e.error || e.message)) || 'Could not load')}</td></tr>`;
+  }
+}
+
+async function b310AnswerQuery(id) {
+  const input = document.querySelector('[data-qtime="' + id + '"]');
+  const time = input && input.value;
+  if (!time) {
+    // Deliberately no fallback to the rota time here either. A manager filling
+    // this in on somebody's behalf still has to type what they were told.
+    alert('Put in the time they actually left. Wren will not assume one.');
+    return;
+  }
+  try {
+    await Wren.api('/api/clockin/queries/' + id + '/answer', { method: 'POST', body: { time: time.slice(0, 5) } });
+    await loadQueries();
+    loadStatus();
+  } catch (e) { alert((e && (e.error || e.message)) || 'Could not record that'); }
+}
+
+async function b310DismissQuery(id) {
+  const reason = prompt('Why is this not a real gap? (e.g. shift cancelled, wrong fob tapped)');
+  if (reason === null) return;
+  try {
+    await Wren.api('/api/clockin/queries/' + id + '/dismiss', { method: 'POST', body: { reason } });
+    await loadQueries();
+  } catch (e) { alert((e && (e.error || e.message)) || 'Could not dismiss that'); }
+}
+
+// ── Readers ────────────────────────────────────────────────────────────────
+async function loadDevices() {
+  const tb = document.getElementById('dev-tbody');
+  const rb = document.getElementById('ref-tbody');
+  try {
+    const d = await Wren.api('/api/clockin/devices');
+    const devs = d.devices || [];
+    tb.innerHTML = devs.length ? devs.map(x => {
+      const dirBadge = x.direction === 'in' ? 'badge-active'
+                     : x.direction === 'out' ? 'badge-method' : 'badge-inactive';
+      const dirWord = x.direction === 'in' ? 'IN — arrival'
+                    : x.direction === 'out' ? 'OUT — leaving' : 'Alternates';
+      const recognises = [].concat(x.aliases || [], x.ip_allow || []).filter(Boolean).join(', ');
+      return `<tr>
+        <td><b>${esc(x.label)}</b>${x.location ? '<div style="font-size:.72rem;color:var(--c-muted)">' + esc(x.location) + '</div>' : ''}</td>
+        <td><span class="badge ${dirBadge}">${esc(dirWord)}</span></td>
+        <td><code style="font-size:.78rem">${esc(x.device_id)}</code></td>
+        <td style="font-size:.78rem;color:var(--c-muted);max-width:240px">${esc(recognises) || '—'}</td>
+        <td>${x.event_count}</td>
+        <td style="font-size:.78rem;color:var(--c-muted)">${esc(b310Ago(x.last_seen_at))}</td>
+        <td><span class="badge ${x.is_active ? 'badge-active' : 'badge-inactive'}">${x.is_active ? 'Accepting' : 'Refusing'}</span></td>
+        <td><button class="manual-btn" data-devedit="${x.id}" style="margin-top:0">Edit</button></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--c-muted);padding:20px">No readers. Until one is added, every tap is refused.</td></tr>';
+    window.__b310devices = devs;
+
+    const refs = d.refusals || [];
+    rb.innerHTML = refs.length ? refs.map(r => `<tr>
+        <td style="font-size:.78rem">${esc(b310Ago(r.at))}</td>
+        <td><code style="font-size:.78rem">${esc(r.device_id || '—')}</code></td>
+        <td>${esc(r.door_name || '—')}</td>
+        <td style="font-size:.78rem;color:var(--c-muted)">${esc(r.ip || '—')}</td>
+        <td style="font-size:.78rem;color:var(--c-muted)">${esc(r.reason || '')}${r.scope ? ' (' + esc(r.scope) + ')' : ''}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="5" style="text-align:center;color:var(--c-muted);padding:20px">None — nothing has been refused since the last restart.</td></tr>';
+  } catch (e) {
+    tb.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--c-muted);padding:20px">${esc((e && (e.error || e.message)) || 'Could not load')}</td></tr>`;
+  }
+}
+
+let b310EditingDevice = null;
+function b310OpenDeviceModal(dev) {
+  b310EditingDevice = dev || null;
+  document.getElementById('dev-modal-title').textContent = dev ? 'Edit Reader' : 'Add Reader';
+  document.getElementById('dev-id').value = dev ? dev.device_id : '';
+  document.getElementById('dev-label').value = dev ? dev.label : '';
+  document.getElementById('dev-direction').value = dev ? dev.direction : 'out';
+  document.getElementById('dev-location').value = dev ? (dev.location || '') : '';
+  document.getElementById('dev-aliases').value = dev ? (dev.aliases || []).join(', ') : '';
+  document.getElementById('dev-ips').value = dev ? (dev.ip_allow || []).join(', ') : '';
+  document.getElementById('dev-active').checked = dev ? !!dev.is_active : true;
+  document.getElementById('dev-modal').style.display = 'flex';
+}
+function b310CloseDeviceModal() {
+  document.getElementById('dev-modal').style.display = 'none';
+  b310EditingDevice = null;
+}
+async function b310SaveDevice() {
+  const body = {
+    device_id: document.getElementById('dev-id').value.trim(),
+    label:     document.getElementById('dev-label').value.trim(),
+    direction: document.getElementById('dev-direction').value,
+    location:  document.getElementById('dev-location').value.trim() || null,
+    kind:      b310EditingDevice ? b310EditingDevice.kind : 'network_reader',
+    aliases:   document.getElementById('dev-aliases').value,
+    ip_allow:  document.getElementById('dev-ips').value,
+    is_active: document.getElementById('dev-active').checked,
+  };
+  if (!body.device_id || !body.label) { alert('A device id and a name are both needed.'); return; }
+  try {
+    await Wren.api('/api/clockin/devices', { method: 'POST', body });
+    b310CloseDeviceModal();
+    loadDevices();
+  } catch (e) { alert((e && (e.error || e.message)) || 'Could not save that reader'); }
+}
+
+document.getElementById('q-tbody').addEventListener('click', e => {
+  const save = e.target.closest('[data-qsave]');
+  if (save) return b310AnswerQuery(save.dataset.qsave);
+  const dis = e.target.closest('[data-qdis]');
+  if (dis) return b310DismissQuery(dis.dataset.qdis);
+});
+document.getElementById('dev-tbody').addEventListener('click', e => {
+  const ed = e.target.closest('[data-devedit]');
+  if (!ed) return;
+  const dev = (window.__b310devices || []).find(x => String(x.id) === ed.dataset.devedit);
+  if (dev) b310OpenDeviceModal(dev);
+});
+document.getElementById('btn-add-device').addEventListener('click', () => b310OpenDeviceModal(null));
+document.getElementById('btn-close-dev-modal').addEventListener('click', b310CloseDeviceModal);
+document.getElementById('btn-save-device').addEventListener('click', b310SaveDevice);
+document.getElementById('btn-sweep').addEventListener('click', async () => {
+  const note = document.getElementById('sweep-note');
+  note.textContent = 'Checking…';
+  try {
+    const r = await Wren.api('/api/clockin/reconcile/sweep', { method: 'POST', body: {} });
+    note.textContent = (r.raised || []).length
+      ? (r.raised.length + ' new gap' + (r.raised.length === 1 ? '' : 's') + ' found')
+      : 'No new gaps in the last 14 days.';
+    loadQueries();
+  } catch (e) { note.textContent = (e && (e.error || e.message)) || 'Could not check'; }
+});
+
+/* ── b362 (2026-09-29): open on the tab the URL names ────────────────────────
+   APPENDED. Nothing above this line was changed.
+
+   Fob management has existed since b199/b250 and lives on this page as the "Fob
+   Management" tab — reachable only by loading /clockin.html (which lands on Live
+   Status) and then clicking. So "Clock-in & fobs" in the Roost Staff nav points at
+   /clockin.html#fobs, and this is what makes that fragment mean something.
+
+   Driven off the tab bar's own data-tab attributes rather than a hard-coded list,
+   so a tab added later deep-links for free and an unknown fragment is ignored
+   instead of throwing (switchTab would hit a null panel). */
+(function () {
+  function tabFromHash() {
+    var h = String(window.location.hash || '').replace(/^#/, '').toLowerCase();
+    if (!h) return null;
+    var el = document.querySelector('.ci-tab[data-tab="' + h.replace(/[^a-z0-9_-]/g, '') + '"]');
+    return el ? el.dataset.tab : null;
+  }
+  function applyHash() {
+    var t = tabFromHash();
+    // switchTab() also fires that tab's own loader, so a deep link arrives with
+    // its data already coming rather than on an empty panel.
+    if (t && document.getElementById('panel-' + t)) switchTab(t);
+  }
+  window.addEventListener('hashchange', applyHash);
+  // init() is what the rest of this page waits for; run after it so the staff
+  // list the Fob tab needs is already being fetched.
+  if (window._wrenReady) setTimeout(applyHash, 0);
+  else document.addEventListener('wren:ready', function () { setTimeout(applyHash, 0); });
+})();
+</script>
+<script src="/js/wren-chat.js?v=2026070901"></script>
+</body>
+</html>

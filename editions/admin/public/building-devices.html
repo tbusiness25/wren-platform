@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"  content="admin">
+  <meta name="wren-app-page" content="building-devices">
+  <title>Building &amp; devices · Roost</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js?v=b351"></script>
+  <link rel="stylesheet" href="/css/wren-shell-v2.css">
+  <style>
+    /* ═══════════════════════════════════════════════════════════════════════════
+       b511 — Roost → Operations → 🏠 Building & devices.
+
+       Toby, 18 Oct: "Make it easy for dummies, as the office manager likes to be spoonfed …
+       if I'm not there it needs to be able to be done."
+
+       So the whole page is built around four things a person can do standing up,
+       holding a device, without having been told anything first:
+         • see every device as a room, with a colour AND a word AND a picture;
+         • add one, with the exact steps for that model on screen;
+         • walk the building on Monday ticking the 19 off;
+         • be told, in English, what to try when one has stopped.
+
+       Colour: var(--c-*) tokens only — no hex, no rgb(), no named colour. Tints
+       are color-mix() of a token, the house idiom (public/css/wren-tokens.css).
+       scripts/b351-colour-audit.js enforces this.
+
+       Colour never carries meaning alone: every traffic light is a coloured dot
+       PLUS the word ("Working", "Battery low", "Not responding") PLUS a sentence.
+       ═══════════════════════════════════════════════════════════════════════════ */
+    /* ⚠️ min-width: 0 on the wrapper AND on the tab strip. The tab strip is a
+       flex row of six pills with overflow-x: auto; without min-width: 0 its
+       min-content width (all six laid out flat, ~540px) propagates up through
+       the shell's layout and makes the whole PAGE 433px wide at a 390px
+       viewport — the strip scrolls, but the document scrolls sideways with it.
+       Caught by the 390px UI check. */
+    .bd-wrap { max-width: 1100px; min-width: 0; margin: 0 auto; padding: 16px 16px calc(env(safe-area-inset-bottom, 16px) + 40px); }
+    .bd-head h1 { font-size: 1.35rem; margin: 0 0 4px; color: var(--c-text); }
+    .bd-head p  { margin: 0 0 16px; color: var(--c-muted); font-size: .86rem; line-height: 1.55; max-width: 72ch; }
+
+    /* ── Tabs ── */
+    .bd-tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 18px; -webkit-overflow-scrolling: touch;
+               padding-bottom: 2px; min-width: 0; max-width: 100%; }
+    .bd-tabs button { flex: 0 0 auto; background: var(--c-surface); color: var(--c-muted);
+      border: 1px solid var(--c-border); border-radius: 999px; padding: 10px 16px;
+      font: inherit; font-size: .88rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .bd-tabs button:hover { color: var(--c-text); border-color: var(--c-border-strong); }
+    .bd-tabs button[aria-selected="true"] { background: var(--c-blue); color: var(--c-on-blue); border-color: transparent; }
+    .bd-tabs button:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .bd-pane { min-width: 0; }
+    .bd-pane[hidden] { display: none; }
+
+    /* ── Cards ── */
+    .card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px;
+            padding: 15px; margin-bottom: 15px; }
+    .card > h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+                 color: var(--c-muted); margin: 0 0 11px; font-weight: 800; }
+    .card > h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 600; margin-left: 8px; }
+    .muted { color: var(--c-muted); font-size: .84rem; line-height: 1.55; }
+    .empty { color: var(--c-muted); font-size: .86rem; padding: 14px 2px; }
+
+    /* ── Banners ── */
+    .banner { display: none; gap: 10px; align-items: flex-start; font-size: .86rem; line-height: 1.55;
+              border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; color: var(--c-text);
+              border: 1px solid var(--c-border); background: var(--c-muted-soft); }
+    .banner.show { display: flex; }
+    .banner.warn { background: var(--c-warn-soft);   border-color: var(--c-warn); }
+    .banner.bad  { background: var(--c-danger-soft); border-color: var(--c-danger); }
+    .banner.info { background: var(--c-info-soft);   border-color: var(--c-info); }
+    .banner.ok   { background: var(--c-ok-soft);     border-color: var(--c-ok); }
+    .banner .b-icon { flex: 0 0 auto; font-size: 1.05rem; line-height: 1.4; }
+
+    /* ── The room map ──
+       Big targets. the office manager will use this on a phone, one-handed, walking. ── */
+    .room { margin-bottom: 22px; min-width: 0; }
+    .room h3 { font-size: 1rem; font-weight: 800; color: var(--c-text); margin: 0 0 4px;
+               display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+    .room h3 .count { font-size: .76rem; font-weight: 700; color: var(--c-muted); }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(188px, 1fr)); min-width: 0; }
+
+    /* ⚠️ min-width: 0 all the way down, and minmax(0, 1fr) on the mobile grid.
+       A grid item's automatic minimum size is its MIN-CONTENT width, so without
+       these a tile whose longest word is "thermometer" forced a 252px track —
+       two of those plus a gap made the whole page 433px wide at a 390px
+       viewport. The tile looked fine; the document scrolled sideways. */
+    .dev { display: flex; flex-direction: column; gap: 9px; text-align: left; width: 100%; min-width: 0;
+           background: var(--c-surface); border: 1px solid var(--c-border); border-left: 4px solid var(--c-muted);
+           border-radius: 14px; padding: 13px; cursor: pointer; font: inherit; color: var(--c-text); }
+    .dev:hover { border-color: var(--c-border-strong); }
+    .dev:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .dev.green { border-left-color: var(--c-ok); }
+    .dev.amber { border-left-color: var(--c-warn);   background: color-mix(in srgb, var(--c-warn-soft) 55%, var(--c-surface)); }
+    .dev.red   { border-left-color: var(--c-danger); background: color-mix(in srgb, var(--c-danger-soft) 55%, var(--c-surface)); }
+    .dev.ghost { border-left-color: var(--c-border); border-style: dashed; opacity: .82; }
+    .dev-top { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .dev-top > span { min-width: 0; }
+    .dev-art { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 11px; background: var(--c-surface-2);
+               border: 1px solid var(--c-border); display: grid; place-items: center; }
+    .dev-art svg { width: 28px; height: 28px; }
+    .dev-name { display: block; font-weight: 800; font-size: .95rem; line-height: 1.25; overflow-wrap: break-word; }
+    .dev-kind { font-size: .74rem; color: var(--c-muted); font-weight: 700; }
+    .dev-status { display: flex; align-items: flex-start; gap: 7px; font-size: .8rem; line-height: 1.45; min-width: 0; }
+    .dev-status > span:last-child { min-width: 0; overflow-wrap: break-word; }
+    .dot { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; margin-top: 4px;
+           background: var(--c-muted); border: 1px solid var(--c-border-strong); }
+    .dot.green { background: var(--c-ok);     border-color: var(--c-ok); }
+    .dot.amber { background: var(--c-warn);   border-color: var(--c-warn); }
+    .dot.red   { background: var(--c-danger); border-color: var(--c-danger); }
+    .dev-status b { display: block; font-size: .82rem; }
+    .dev-status span { color: var(--c-muted); }
+    .readings { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* ── Pills ── */
+    .pill { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 800;
+            border-radius: 999px; padding: 3px 9px; border: 1px solid var(--c-border);
+            background: var(--c-muted-soft); color: var(--c-text); }
+    .pill.ok   { background: var(--c-ok-soft);     border-color: var(--c-ok); }
+    .pill.warn { background: var(--c-warn-soft);   border-color: var(--c-warn); }
+    .pill.bad  { background: var(--c-danger-soft); border-color: var(--c-danger); }
+    .pill.info { background: var(--c-info-soft);   border-color: var(--c-info); }
+
+    /* ── Buttons ── */
+    .btn { background: var(--c-blue); color: var(--c-on-blue); border: 1px solid transparent;
+           border-radius: 11px; padding: 11px 18px; font: inherit; font-size: .9rem; font-weight: 800; cursor: pointer; }
+    .btn:hover { background: var(--c-blue-dark); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.ghost { background: var(--c-surface); color: var(--c-text); border-color: var(--c-border); }
+    .btn.ghost:hover { border-color: var(--c-border-strong); background: var(--c-surface-2); }
+    .btn.danger { background: var(--c-danger); color: var(--c-on-fill); }
+    .btn.big { font-size: 1rem; padding: 14px 24px; border-radius: 13px; }
+    .btn:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .btn-row { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+
+    /* ── The wizard ── */
+    .pick { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .pick button { display: flex; flex-direction: column; align-items: center; gap: 9px; text-align: center;
+                   background: var(--c-surface); border: 2px solid var(--c-border); border-radius: 15px;
+                   padding: 18px 12px; font: inherit; color: var(--c-text); cursor: pointer; }
+    .pick button:hover { border-color: var(--c-blue); background: var(--c-blue-soft); }
+    .pick button:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+    .pick svg { width: 54px; height: 54px; }
+    .pick .p-label { font-weight: 800; font-size: .92rem; }
+    .pick .p-blurb { font-size: .74rem; color: var(--c-muted); line-height: 1.45; }
+
+    .steps { counter-reset: s; list-style: none; margin: 0; padding: 0; }
+    .steps li { counter-increment: s; position: relative; padding: 0 0 14px 42px; font-size: .95rem; line-height: 1.6; }
+    .steps li::before { content: counter(s); position: absolute; left: 0; top: 0;
+      width: 29px; height: 29px; border-radius: 50%; background: var(--c-blue); color: var(--c-on-blue);
+      display: grid; place-items: center; font-weight: 800; font-size: .85rem; }
+
+    .countdown { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+                 background: var(--c-blue-soft); border: 1px solid var(--c-blue); border-radius: 14px; padding: 14px 16px; }
+    .countdown .num { font-size: 2.1rem; font-weight: 800; color: var(--c-ink-strong); font-variant-numeric: tabular-nums; min-width: 92px; }
+    .countdown .say { font-size: .88rem; line-height: 1.5; }
+    .bar { height: 8px; border-radius: 999px; background: var(--c-muted-soft); overflow: hidden; margin-top: 9px; }
+    .bar i { display: block; height: 100%; background: var(--c-blue); transition: width .5s linear; }
+
+    /* ── Checklist ── */
+    .chk { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--c-border);
+           border-radius: 12px; background: var(--c-surface); margin-bottom: 9px; }
+    .chk.done { background: var(--c-ok-soft); border-color: var(--c-ok); }
+    .chk.retired { opacity: .6; }
+    .chk-art { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; }
+    .chk-art svg { width: 26px; height: 26px; }
+    .chk-body { flex: 1 1 auto; min-width: 0; }
+    .chk-body b { display: block; font-size: .92rem; }
+    .chk-body span { font-size: .78rem; color: var(--c-muted); line-height: 1.45; }
+    .chk-act { flex: 0 0 auto; }
+    .prog { height: 12px; border-radius: 999px; background: var(--c-muted-soft); overflow: hidden; margin: 10px 0 6px; }
+    .prog i { display: block; height: 100%; background: var(--c-ok); }
+
+    /* ── Rows (radiators, kitchen) ── */
+    .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 13px 0; border-bottom: 1px solid var(--c-border); }
+    .row:last-child { border-bottom: 0; }
+    .row-main { flex: 1 1 220px; min-width: 0; }
+    .row-main b { display: block; font-size: .94rem; }
+    .row-main span { font-size: .79rem; color: var(--c-muted); line-height: 1.5; }
+    .temp { display: flex; align-items: center; gap: 8px; }
+    .temp output { font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 68px; text-align: center; }
+    .stepbtn { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--c-border);
+               background: var(--c-surface-2); color: var(--c-text); font: inherit; font-size: 1.3rem;
+               font-weight: 800; cursor: pointer; line-height: 1; }
+    .stepbtn:hover { border-color: var(--c-border-strong); }
+    .stepbtn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── The device sheet ── */
+    .scrim { position: fixed; inset: 0; background: var(--c-scrim); z-index: 80; display: none; }
+    .scrim.show { display: block; }
+    .sheet { position: fixed; z-index: 81; right: 0; top: 0; bottom: 0; width: min(520px, 100%);
+             background: var(--c-surface); border-left: 1px solid var(--c-border);
+             overflow-y: auto; -webkit-overflow-scrolling: touch; display: none;
+             padding: 18px 18px calc(env(safe-area-inset-bottom, 18px) + 40px); }
+    .sheet.show { display: block; }
+    .sheet h2 { margin: 0 0 3px; font-size: 1.15rem; color: var(--c-text); }
+    .sheet .close { position: absolute; top: 12px; right: 14px; background: var(--c-surface-2);
+      border: 1px solid var(--c-border); border-radius: 10px; width: 38px; height: 38px;
+      font: inherit; font-size: 1.1rem; color: var(--c-text); cursor: pointer; }
+    .tsg { border: 1px solid var(--c-border); border-radius: 12px; padding: 12px; margin-bottom: 10px;
+           background: var(--c-surface-2); }
+    .tsg b { display: block; font-size: .9rem; margin-bottom: 4px; }
+    .tsg p { margin: 0; font-size: .84rem; color: var(--c-muted); line-height: 1.55; }
+    .tsg.likely { border-color: var(--c-warn); background: var(--c-warn-soft); }
+    .tsg.likely p { color: var(--c-text); }
+
+    label.f { display: block; font-size: .78rem; font-weight: 800; color: var(--c-muted);
+              text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 6px; }
+    input[type="text"], select {
+      width: 100%; background: var(--c-surface-2); color: var(--c-text);
+      border: 1px solid var(--c-border); border-radius: 11px; padding: 12px 13px; font: inherit; font-size: .95rem; }
+    input[type="text"]:focus, select:focus { outline: 2px solid var(--c-focus); outline-offset: 1px; }
+    .msg { font-size: .84rem; margin-top: 10px; color: var(--c-muted); line-height: 1.55; min-height: 1.2em; }
+    .msg.err { color: var(--c-danger); font-weight: 700; }
+    .msg.ok  { color: var(--c-ok); font-weight: 700; }
+    pre.yaml { background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 11px;
+      padding: 12px; overflow-x: auto; font-size: .76rem; line-height: 1.55; color: var(--c-text); margin: 8px 0 0; }
+
+    @media (max-width: 560px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .dev-art { width: 40px; height: 40px; }
+      .dev-art svg { width: 24px; height: 24px; }
+      .pick { grid-template-columns: 1fr 1fr; }
+      .countdown .num { font-size: 1.8rem; min-width: 76px; }
+    }
+  </style>
+</head>
+<body class="wren-shell">
+
+<!-- ══ Device artwork ═══════════════════════════════════════════════════════
+     Drawn once here as <symbol>s and referenced with <use>. Deliberately plain
+     line drawings, currentColor only, so they are legible in both themes and
+     at 26px as well as 54px. They are pictures of the OBJECT (a radiator with a
+     dial on it, a plug with pins) rather than abstract icons, because the whole
+     point is "the thing in your hand looks like this one".
+     ════════════════════════════════════════════════════════════════════════ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-radiator" viewBox="0 0 48 48">
+    <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="5" y="12" width="22" height="26" rx="3"/>
+      <path d="M11 14v22M17 14v22M23 14v22"/>
+      <path d="M27 25h5"/>
+      <rect x="32" y="18" width="11" height="14" rx="4"/>
+      <path d="M37.5 18v-4"/>
+      <circle cx="37.5" cy="25" r="2.2"/>
+    </g>
+  </symbol>
+  <symbol id="i-thermometer" viewBox="0 0 48 48">
+    <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="8" y="8" width="32" height="32" rx="6"/>
+      <path d="M16 29h4M16 22h9"/>
+      <circle cx="31" cy="25" r="5"/>
+      <path d="M31 20v-3"/>
+    </g>
+  </symbol>
+  <symbol id="i-plug" viewBox="0 0 48 48">
+    <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="30" height="30" rx="8"/>
+      <circle cx="24" cy="24" r="7"/>
+      <path d="M24 13.5v-4M19 33.5v4M29 33.5v4"/>
+    </g>
+  </symbol>
+  <symbol id="i-button" viewBox="0 0 48 48">
+    <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="10" y="10" width="28" height="28" rx="7"/>
+      <circle cx="24" cy="24" r="7"/>
+      <path d="M24 21v6"/>
+    </g>
+  </symbol>
+  <symbol id="i-sensor" viewBox="0 0 48 48">
+    <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 34V17a7 7 0 0 1 7-7h10a7 7 0 0 1 7 7v17z"/>
+      <circle cx="24" cy="21" r="4"/>
+      <path d="M17 38h14"/>
+    </g>
+  </symbol>
+  <symbol id="i-other" viewBox="0 0 48 48">
+    <g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="10" y="10" width="28" height="28" rx="7"/>
+      <path d="M24 29v-1.5c0-2 2.6-2.6 2.6-5A2.9 2.9 0 0 0 21 21.3"/>
+      <path d="M24 33.5v.1"/>
+    </g>
+  </symbol>
+</svg>
+
+<div class="bd-wrap">
+
+  <div class="bd-head">
+    <h1>🏠 Building &amp; devices</h1>
+    <p>
+      Every radiator valve, thermometer, smart plug, button and movement sensor in the nursery,
+      room by room. A green dot means it is working. You do not need to know anything about how
+      any of it fits together — the page tells you what to do.
+    </p>
+  </div>
+
+  <div class="banner bad"  id="bn-hub"><span class="b-icon">⚠️</span><span id="bn-hub-t"></span></div>
+  <div class="banner warn" id="bn-ha"><span class="b-icon">🔌</span><span id="bn-ha-t"></span></div>
+  <div class="banner info" id="bn-open"><span class="b-icon">📡</span><span id="bn-open-t"></span></div>
+
+  <div class="bd-tabs" role="tablist" aria-label="Building and devices">
+    <button role="tab" data-tab="rooms"    aria-selected="true">Rooms</button>
+    <button role="tab" data-tab="add"      aria-selected="false">Add a device</button>
+    <button role="tab" data-tab="checklist" aria-selected="false">Monday checklist</button>
+    <button role="tab" data-tab="heating"  aria-selected="false">Radiators</button>
+    <button role="tab" data-tab="kitchen"  aria-selected="false">Fridge &amp; freezer</button>
+    <button role="tab" data-tab="health"   aria-selected="false">Hub health</button>
+  </div>
+
+  <!-- ══ ROOMS ══════════════════════════════════════════════════════════ -->
+  <section class="bd-pane" data-pane="rooms" role="tabpanel">
+    <div class="card" id="r-summary" hidden>
+      <h2>At a glance</h2>
+      <div id="r-summary-body"></div>
+    </div>
+    <div id="r-body"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ══ ADD A DEVICE ═══════════════════════════════════════════════════ -->
+  <section class="bd-pane" data-pane="add" role="tabpanel" hidden>
+    <div id="w-body"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ══ CHECKLIST ══════════════════════════════════════════════════════ -->
+  <section class="bd-pane" data-pane="checklist" role="tabpanel" hidden>
+    <div class="banner info show"><span class="b-icon">📋</span><span>
+      The 19 devices that were on the old network before the little USB stick went missing.
+      Each one has to be paired again, once. Walk the building with this list: do the
+      <strong>plugs first</strong> in each room — they pass messages along for everything else.
+    </span></div>
+    <div id="c-body"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ══ RADIATORS ══════════════════════════════════════════════════════ -->
+  <section class="bd-pane" data-pane="heating" role="tabpanel" hidden>
+    <div id="h-body"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ══ KITCHEN ════════════════════════════════════════════════════════ -->
+  <section class="bd-pane" data-pane="kitchen" role="tabpanel" hidden>
+    <div id="k-body"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- ══ HEALTH ═════════════════════════════════════════════════════════ -->
+  <section class="bd-pane" data-pane="health" role="tabpanel" hidden>
+    <div id="hh-body"><div class="empty">Loading…</div></div>
+  </section>
+
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+  <button class="close" id="sheet-close" aria-label="Close">✕</button>
+  <div id="sheet-body"></div>
+</aside>
+
+<script src="/js/wren-shell-v2.js"></script>
+<script>
+/* ═════════════════════════════════════════════════════════════════════════════
+   The page's own client. It calls /api/building-devices/* and decides NOTHING:
+   the traffic light, the wording of every status, the pairing steps, which
+   rooms exist and which radiators may be touched are all server-side. This file
+   draws the answer.
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  var API = '/api/building-devices';
+  var loaded = {};
+  var joinTimer = null;
+  var joinPoll = null;
+  var wiz = { step: 0, type: null, model: null, baseline: [], found: [], expires: 0 };
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function errText(e) {
+    if (!e) return 'Something went wrong.';
+    return e.message || e.error || (typeof e === 'string' ? e : 'Something went wrong.');
+  }
+  function $(id) { return document.getElementById(id); }
+  function art(icon) { return '<svg aria-hidden="true" focusable="false"><use href="#i-' + esc(icon || 'other') + '"></use></svg>'; }
+  function when(iso) {
+    if (!iso) return 'never';
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short',
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
+    } catch (e) { return '—'; }
+  }
+  function banner(id, tid, html) {
+    var b = $(id);
+    if (!b) return;
+    if (html) { $(tid).innerHTML = html; b.classList.add('show'); }
+    else b.classList.remove('show');
+  }
+
+  /* ── Tabs ─────────────────────────────────────────────────────────────── */
+  var LOADERS = { rooms: loadRooms, add: loadWizard, checklist: loadChecklist,
+                  heating: loadHeating, kitchen: loadKitchen, health: loadHealth };
+
+  function show(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('.bd-tabs button'), function (b) {
+      b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.bd-pane'), function (p) {
+      p.hidden = p.dataset.pane !== name;
+    });
+    try { history.replaceState(null, '', '#tab-' + name); } catch (e) { /* file:// and old browsers */ }
+    if (!loaded[name] && LOADERS[name]) { loaded[name] = true; LOADERS[name](); }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.bd-tabs button'), function (b) {
+    b.addEventListener('click', function () { show(b.dataset.tab); });
+  });
+
+  /* ── A device tile ────────────────────────────────────────────────────── */
+  function devTile(d) {
+    var lvl = (d.light && d.light.level) || 'green';
+    var reads = (d.readings || []).map(function (r) {
+      return '<span class="pill">' + esc(r.label) + ' ' + esc(r.value) + '</span>';
+    }).join('');
+    return '<button class="dev ' + lvl + '" data-ieee="' + esc(d.ieee) + '">'
+      + '<span class="dev-top">'
+      +   '<span class="dev-art">' + art(d.icon) + '</span>'
+      +   '<span><span class="dev-name">' + esc(d.name) + '</span>'
+      +   '<span class="dev-kind">' + esc(d.type_label) + '</span></span>'
+      + '</span>'
+      + '<span class="dev-status"><span class="dot ' + lvl + '"></span>'
+      +   '<span><b>' + esc(d.light ? d.light.says : '') + '</b>'
+      +   '<span>' + esc(d.light ? d.light.detail : '') + '</span></span></span>'
+      + (reads ? '<span class="readings">' + reads + '</span>' : '')
+      + '</button>';
+  }
+
+  function wireTiles(root) {
+    Array.prototype.forEach.call(root.querySelectorAll('.dev[data-ieee]'), function (b) {
+      b.addEventListener('click', function () { openDevice(b.dataset.ieee); });
+    });
+  }
+
+  /* ── Rooms ────────────────────────────────────────────────────────────── */
+  function loadRooms() {
+    Wren.api(API + '/overview').then(function (d) {
+      renderBanners(d);
+      var body = $('r-body');
+      if (d.configured === false || d.unreachable) {
+        body.innerHTML = '<div class="card"><div class="empty">' + esc(d.reason || 'Home Assistant is not answering.') + '</div></div>';
+        return;
+      }
+      var s = d.summary || {};
+      $('r-summary').hidden = false;
+      $('r-summary-body').innerHTML =
+        '<div class="btn-row" style="margin-bottom:9px">'
+        + '<span class="pill ok">' + (s.green || 0) + ' working</span>'
+        + '<span class="pill warn">' + (s.amber || 0) + ' need' + ((s.amber || 0) === 1 ? 's' : '') + ' a look</span>'
+        + '<span class="pill bad">' + (s.red || 0) + ' not responding</span>'
+        + (d.recovery && d.recovery.total
+            ? '<span class="pill info">' + (d.recovery.found || 0) + ' of ' + d.recovery.total + ' old devices back</span>' : '')
+        + '</div>'
+        + '<p class="muted" style="margin:0">' + esc(s.text || '') + '</p>'
+        + '<div class="btn-row" style="margin-top:12px">'
+        + '<button class="btn" id="r-add">＋ Add a device</button>'
+        + '<button class="btn ghost" id="r-refresh">Check again</button></div>';
+      $('r-add').addEventListener('click', function () { show('add'); });
+      $('r-refresh').addEventListener('click', function () {
+        $('r-body').innerHTML = '<div class="empty">Checking…</div>';
+        loaded.rooms = true; loadRooms();
+      });
+
+      var rooms = (d.rooms || []).filter(function (r) { return r.devices.length; });
+      if (!rooms.length) {
+        body.innerHTML = '<div class="card"><h2>No devices yet</h2>'
+          + '<p class="muted">Nothing is paired. That is expected right after the hub was rebuilt — '
+          + 'use <strong>Monday checklist</strong> to work through the 19 devices that need pairing again.</p>'
+          + '<div class="btn-row" style="margin-top:12px"><button class="btn big" id="r-start">Start the checklist</button></div></div>';
+        $('r-start').addEventListener('click', function () { show('checklist'); });
+        return;
+      }
+      body.innerHTML = rooms.map(function (r) {
+        return '<section class="room"><h3>' + esc(r.label)
+          + ' <span class="count">' + r.devices.length + (r.devices.length === 1 ? ' device' : ' devices') + '</span></h3>'
+          + '<div class="grid">' + r.devices.map(devTile).join('') + '</div></section>';
+      }).join('');
+      wireTiles(body);
+    }).catch(function (e) {
+      $('r-body').innerHTML = '<div class="card"><div class="empty">' + esc(errText(e)) + '</div></div>';
+    });
+  }
+
+  function renderBanners(d) {
+    var h = d && d.health;
+    banner('bn-hub', 'bn-hub-t', h && h.big_warning ? esc(h.big_warning) : '');
+    banner('bn-ha', 'bn-ha-t', (d && d.configured === false) ? esc(d.reason || '') : '');
+    banner('bn-open', 'bn-open-t', h && h.joining_open
+      ? 'The network is <strong>open to new devices</strong> right now. It closes itself after a couple of minutes — '
+        + 'if that was not you, nothing has been lost, but tell Toby.' : '');
+  }
+
+  /* ── The device sheet ─────────────────────────────────────────────────── */
+  function closeSheet() {
+    $('sheet').classList.remove('show');
+    $('scrim').classList.remove('show');
+  }
+  $('sheet-close').addEventListener('click', closeSheet);
+  $('scrim').addEventListener('click', closeSheet);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
+
+  function openDevice(ieee) {
+    $('sheet').classList.add('show');
+    $('scrim').classList.add('show');
+    $('sheet-body').innerHTML = '<div class="empty">Loading…</div>';
+    Wren.api(API + '/device/' + encodeURIComponent(ieee)).then(function (d) {
+      if (!d.device) {
+        $('sheet-body').innerHTML = '<h2 id="sheet-title">Not paired</h2><p class="muted">'
+          + esc(d.message || 'We cannot find that device.') + '</p>';
+        return;
+      }
+      renderDevice(d);
+    }).catch(function (e) {
+      $('sheet-body').innerHTML = '<h2 id="sheet-title">Sorry</h2><p class="muted">' + esc(errText(e)) + '</p>';
+    });
+  }
+
+  function renderDevice(d) {
+    var dev = d.device, det = d.detail || {};
+    var lvl = (dev.light && dev.light.level) || 'green';
+    var rooms = (d.rooms || []).map(function (r) {
+      return '<option value="' + esc(r.key) + '"' + (r.key === dev.room ? ' selected' : '') + '>' + esc(r.label) + '</option>';
+    }).join('');
+
+    $('sheet-body').innerHTML =
+      '<div style="display:flex;gap:12px;align-items:center;margin-bottom:4px">'
+      + '<span class="dev-art">' + art(dev.icon) + '</span>'
+      + '<span><h2 id="sheet-title">' + esc(dev.name) + '</h2>'
+      + '<span class="dev-kind">' + esc(dev.type_label) + ' · ' + esc(dev.room_label) + '</span></span></div>'
+
+      + '<div class="dev-status" style="margin:12px 0 16px"><span class="dot ' + lvl + '"></span>'
+      + '<span><b>' + esc(dev.light.says) + '</b><span>' + esc(dev.light.detail) + '</span></span></div>'
+
+      + '<div class="readings" style="margin-bottom:16px">'
+      + (dev.readings || []).map(function (r) { return '<span class="pill">' + esc(r.label) + ' ' + esc(r.value) + '</span>'; }).join('')
+      + (dev.signal ? '<span class="pill">Signal ' + esc(dev.signal.says) + '</span>' : '')
+      + (dev.mains_powered ? '<span class="pill info">Plugged in — passes messages along</span>' : '')
+      + '</div>'
+
+      + '<div class="card"><h2>Name and room</h2>'
+      + '<label class="f" for="d-name">What it is called</label>'
+      + '<input type="text" id="d-name" maxlength="60" value="' + esc(dev.name) + '">'
+      + '<label class="f" for="d-room">Which room it is in</label>'
+      + '<select id="d-room">' + rooms + '</select>'
+      + '<div class="btn-row" style="margin-top:14px"><button class="btn" id="d-save">Save</button></div>'
+      + '<div class="msg" id="d-msg"></div></div>'
+
+      + '<div class="card"><h2>Not working?</h2>'
+      + (d.troubleshooting || []).map(function (t) {
+          return '<div class="tsg ' + esc(t.strength) + '"><b>' + esc(t.title) + '</b><p>' + esc(t.body) + '</p></div>';
+        }).join('')
+      + '<div class="btn-row"><button class="btn ghost" id="d-repair">Pair it again</button></div></div>'
+
+      + '<div class="card"><h2>Details <span class="sub">for Toby</span></h2>'
+      + '<p class="muted" style="margin:0">'
+      + 'Model ' + esc(det.model || 'unknown') + (det.made_by ? ' by ' + esc(det.made_by) : '') + '.<br>'
+      + 'Takes ' + esc(det.battery_takes || '—') + '. ' + esc(det.battery_note || '') + '<br>'
+      + 'Address <code>' + esc(det.address) + '</code>. Last heard from ' + esc(dev.last_seen_says || 'never') + '.'
+      + '</p></div>'
+
+      + '<div class="card"><h2>Remove</h2>'
+      + '<p class="muted">Taking a device off the network means walking back to it with the instructions to put it '
+      + 'back on. Managers only.</p>'
+      + '<label class="f" for="d-confirm">Type its name to confirm: ' + esc(dev.name) + '</label>'
+      + '<input type="text" id="d-confirm" autocomplete="off">'
+      + '<div class="btn-row" style="margin-top:12px"><button class="btn danger" id="d-remove">Remove this device</button></div>'
+      + '<div class="msg" id="d-rmsg"></div></div>';
+
+    $('d-save').addEventListener('click', function () {
+      var m = $('d-msg');
+      m.className = 'msg'; m.textContent = 'Saving…';
+      Wren.api(API + '/device/' + encodeURIComponent(dev.ieee) + '/rename', { method: 'POST', body: {
+        name: ($('d-name').value || '').trim(), room: $('d-room').value } })
+        .then(function (r) {
+          m.className = 'msg ok'; m.textContent = r.says || 'Saved.';
+          loaded.rooms = false; loaded.checklist = false;
+          if (!$('[data-pane="rooms"]').hidden) { loaded.rooms = true; loadRooms(); }
+        })
+        .catch(function (e) { m.className = 'msg err'; m.textContent = errText(e); });
+    });
+
+    $('d-repair').addEventListener('click', function () {
+      closeSheet();
+      wiz = { step: 2, type: dev.type, model: det.model, baseline: [], found: [], expires: 0 };
+      show('add');
+      loaded.add = true; loadWizard();
+    });
+
+    $('d-remove').addEventListener('click', function () {
+      var m = $('d-rmsg');
+      m.className = 'msg'; m.textContent = 'Removing…';
+      Wren.api(API + '/device/' + encodeURIComponent(dev.ieee) + '/remove', { method: 'POST', body: {
+        confirm: $('d-confirm').value } })
+        .then(function (r) {
+          m.className = 'msg ok'; m.textContent = r.says || 'Removed.';
+          loaded.rooms = true; loadRooms(); loaded.checklist = false;
+          setTimeout(closeSheet, 1400);
+        })
+        .catch(function (e) { m.className = 'msg err'; m.textContent = errText(e); });
+    });
+  }
+
+  /* ══ THE WIZARD ═══════════════════════════════════════════════════════════
+     Three steps, and only ever one of them on screen:
+       1  what is it (big pictures)
+       2  these are the exact buttons to press, and the network is open for 2 min
+       3  found it — what shall we call it and which room
+     Step 2 opens joining; EVERY exit from the wizard closes it again, including
+     the timer running out and the tab being left. A Zigbee network left open is
+     the only way this page can do harm.
+     ════════════════════════════════════════════════════════════════════════ */
+  var CATALOG = null;
+
+  function loadWizard() {
+    if (CATALOG) return drawWizard();
+    Wren.api(API + '/catalog').then(function (d) { CATALOG = d; drawWizard(); })
+      .catch(function (e) { $('w-body').innerHTML = '<div class="card"><div class="empty">' + esc(errText(e)) + '</div></div>'; });
+  }
+
+  function wizType() {
+    return (CATALOG.types || []).filter(function (t) { return t.key === wiz.type; })[0] || null;
+  }
+  function wizModel() {
+    var t = wizType();
+    if (!t) return null;
+    if (wiz.model) {
+      var m = t.models.filter(function (x) { return x.model === wiz.model; })[0];
+      if (m) return m;
+    }
+    return t.models[0] || null;
+  }
+
+  function drawWizard() {
+    var b = $('w-body');
+    if (wiz.step === 0) {
+      b.innerHTML = '<div class="card"><h2>Step 1 of 3 <span class="sub">What are you adding?</span></h2>'
+        + '<p class="muted" style="margin:0 0 14px">Tap the picture that looks like the thing in your hand.</p>'
+        + '<div class="pick">' + (CATALOG.types || []).map(function (t) {
+            return '<button data-type="' + esc(t.key) + '">' + art(t.icon)
+              + '<span class="p-label">' + esc(t.label) + '</span>'
+              + '<span class="p-blurb">' + esc(t.blurb) + '</span></button>';
+          }).join('') + '</div></div>';
+      Array.prototype.forEach.call(b.querySelectorAll('.pick button'), function (x) {
+        x.addEventListener('click', function () { wiz.type = x.dataset.type; wiz.model = null; wiz.step = 1; drawWizard(); });
+      });
+      return;
+    }
+
+    if (wiz.step === 1 || wiz.step === 2) {
+      var t = wizType(), m = wizModel();
+      if (!t || !m) { wiz.step = 0; return drawWizard(); }
+      var p = m.pairing || {};
+      var open = wiz.step === 2;
+      var many = t.models.length > 1;
+
+      b.innerHTML = '<div class="card"><h2>Step 2 of 3 <span class="sub">' + esc(t.label) + '</span></h2>'
+        + (many ? '<label class="f" for="w-model">Which one is it?</label><select id="w-model">'
+            + t.models.map(function (x) {
+                return '<option value="' + esc(x.model) + '"' + (x.model === m.model ? ' selected' : '') + '>'
+                  + esc(x.name) + ' (' + esc(x.model) + ')</option>'; }).join('')
+            + '</select>' : '')
+        + '<div id="w-open" style="margin:14px 0">' + (open ? countdownHtml() : '')
+          + (open ? '' : '<button class="btn big" id="w-go">I am ready — open the network</button>'
+              + '<p class="muted" style="margin-top:10px">This lets a new device join for two minutes. '
+              + 'Nothing else changes, and it closes itself afterwards.</p>') + '</div>'
+        + '<h2 style="margin-top:4px">Do this on the device</h2>'
+        + (p.lead ? '<p class="muted" style="margin:0 0 12px">' + esc(p.lead) + '</p>' : '')
+        + '<ol class="steps">' + (p.steps || []).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>'
+        + (p.success ? '<p class="muted"><strong>It worked when:</strong> ' + esc(p.success) + '</p>' : '')
+        + (p.failure ? '<p class="muted"><strong>If it goes wrong:</strong> ' + esc(p.failure) + '</p>' : '')
+        + '<p class="muted" style="margin-top:12px">This one runs on ' + esc(m.battery_phrase || m.battery) + '.'
+        + (m.mains_powered ? ' It also passes messages along for the battery ones, so leave it plugged in.' : '') + '</p>'
+        + '<div class="btn-row" style="margin-top:16px">'
+        + '<button class="btn ghost" id="w-back">Back</button>'
+        + (open ? '<button class="btn ghost" id="w-stop">Stop and close the network</button>' : '')
+        + '</div><div class="msg" id="w-msg"></div></div>'
+        + '<div class="card" id="w-found" hidden><h2>Found something</h2><div id="w-found-body"></div></div>';
+
+      if (many) $('w-model').addEventListener('change', function () { wiz.model = this.value; drawWizard(); });
+      $('w-back').addEventListener('click', function () { stopJoin('cancelled'); wiz.step = 0; drawWizard(); });
+      if (!open) $('w-go').addEventListener('click', startJoin);
+      if (open) $('w-stop').addEventListener('click', function () { stopJoin('cancelled'); wiz.step = 1; drawWizard(); });
+      if (open) tickCountdown();
+      return;
+    }
+
+    if (wiz.step === 3) {
+      var f = wiz.found[0];
+      b.innerHTML = '<div class="card"><h2>Step 3 of 3 <span class="sub">Found it!</span></h2>'
+        + '<div style="display:flex;gap:12px;align-items:center;margin-bottom:6px">'
+        + '<span class="dev-art">' + art(f.icon) + '</span>'
+        + '<span><b style="font-size:1.05rem">' + esc(f.type_label) + '</b><br>'
+        + '<span class="dev-kind">' + esc(f.model || '') + '</span></span></div>'
+        + (f.welcome_back ? '<div class="banner ok show" style="margin-top:12px"><span class="b-icon">👋</span><span>'
+            + esc(f.welcome_back) + '</span></div>' : '')
+        + '<label class="f" for="w-name">What shall we call it?</label>'
+        + '<input type="text" id="w-name" maxlength="60" value="' + esc(f.suggested_name || '') + '">'
+        + '<label class="f" for="w-room">Which room is it in?</label>'
+        + '<select id="w-room">' + (CATALOG.rooms || []).map(function (r) {
+            return '<option value="' + esc(r.key) + '"' + (r.key === f.suggested_room ? ' selected' : '') + '>'
+              + esc(r.label) + '</option>'; }).join('') + '</select>'
+        + '<div class="btn-row" style="margin-top:16px">'
+        + '<button class="btn big" id="w-save">Save and finish</button>'
+        + '<button class="btn ghost" id="w-another">Save and add another</button></div>'
+        + '<div class="msg" id="w-msg2"></div></div>';
+
+      var finish = function (another) {
+        var m2 = $('w-msg2');
+        m2.className = 'msg'; m2.textContent = 'Saving…';
+        Wren.api(API + '/device/' + encodeURIComponent(f.ieee) + '/rename', { method: 'POST', body: {
+          name: ($('w-name').value || '').trim(), room: $('w-room').value } })
+          .then(function () {
+            loaded.rooms = false; loaded.checklist = false;
+            wiz.found.shift();
+            if (wiz.found.length) { wiz.step = 3; return drawWizard(); }
+            if (another) { wiz.step = 0; wiz.type = null; wiz.model = null; return drawWizard(); }
+            m2.className = 'msg ok'; m2.textContent = 'All done.';
+            show('rooms'); loaded.rooms = true; loadRooms();
+          })
+          .catch(function (e) { m2.className = 'msg err'; m2.textContent = errText(e); });
+      };
+      $('w-save').addEventListener('click', function () { finish(false); });
+      $('w-another').addEventListener('click', function () { finish(true); });
+    }
+  }
+
+  function countdownHtml() {
+    return '<div class="countdown"><span class="num" id="w-num">—</span>'
+      + '<span class="say"><strong>The network is open.</strong><br>Put the device into pairing mode now, using the steps below.'
+      + '<span class="bar"><i id="w-bar" style="width:100%"></i></span></span></div>';
+  }
+
+  function startJoin() {
+    var m = $('w-msg');
+    m.className = 'msg'; m.textContent = 'Opening…';
+    Wren.api(API + '/join/open', { method: 'POST', body: { expecting_type: wiz.type } })
+      .then(function (r) {
+        wiz.baseline = r.baseline || [];
+        wiz.expires = Date.now() + (r.seconds || 120) * 1000;
+        wiz.total = r.seconds || 120;
+        wiz.step = 2;
+        drawWizard();
+        joinPoll = setInterval(pollJoin, 4000);
+        pollJoin();
+      })
+      .catch(function (e) { m.className = 'msg err'; m.textContent = errText(e); });
+  }
+
+  function tickCountdown() {
+    if (joinTimer) clearInterval(joinTimer);
+    paint();                      // paint once NOW; the interval is for afterwards
+    joinTimer = setInterval(paint, 500);
+
+    function paint() {
+      var left = Math.max(0, Math.round((wiz.expires - Date.now()) / 1000));
+      var n = $('w-num'), bar = $('w-bar');
+      if (!n) { clearInterval(joinTimer); joinTimer = null; return; }
+      n.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+      if (bar) bar.style.width = Math.round(100 * left / (wiz.total || 120)) + '%';
+      if (left <= 0) {
+        clearInterval(joinTimer); joinTimer = null;
+        stopJoin('timeout');
+        if (!wiz.found.length) {
+          var m = $('w-msg');
+          if (m) { m.className = 'msg err';
+            m.textContent = 'Nothing joined in those two minutes. Check the steps above and try again — '
+              + 'most often the button was not held quite long enough.'; }
+          wiz.step = 1; drawWizard();
+        }
+      }
+    }
+  }
+
+  function pollJoin() {
+    Wren.api(API + '/join/status?baseline=' + encodeURIComponent(wiz.baseline.join(',')))
+      .then(function (d) {
+        if (!d.found || !d.found.length) return;
+        wiz.found = d.found;
+        stopJoin('done');
+        wiz.step = 3;
+        drawWizard();
+      })
+      .catch(function () { /* a single poll failing is not worth shouting about */ });
+  }
+
+  function stopJoin(reason) {
+    if (joinPoll) { clearInterval(joinPoll); joinPoll = null; }
+    if (joinTimer) { clearInterval(joinTimer); joinTimer = null; }
+    if (!wiz.expires) return;
+    wiz.expires = 0;
+    Wren.api(API + '/join/close', { method: 'POST', body: {
+      reason: reason || 'done', found: wiz.found.map(function (f) { return f.ieee; }) } })
+      .catch(function () { /* z2m closes itself; this is belt and braces */ });
+  }
+  // Leaving the page with the network open is exactly what must not happen.
+  window.addEventListener('beforeunload', function () { if (wiz.expires) stopJoin('cancelled'); });
+
+  /* ══ CHECKLIST ════════════════════════════════════════════════════════ */
+  function loadChecklist() {
+    Wren.api(API + '/recovery').then(function (d) {
+      var p = d.progress || { total: 0, found: 0 };
+      var pct = p.total ? Math.round(100 * (p.found + (p.retired || 0)) / p.total) : 0;
+      var byRoom = {};
+      (d.items || []).forEach(function (i) { (byRoom[i.room_label] = byRoom[i.room_label] || []).push(i); });
+
+      $('c-body').innerHTML = '<div class="card"><h2>Progress</h2>'
+        + '<div class="prog"><i style="width:' + pct + '%"></i></div>'
+        + '<p class="muted" style="margin:0">' + esc(p.text || '') + '</p>'
+        + '<div class="btn-row" style="margin-top:12px"><button class="btn" id="c-add">＋ Add the next one</button>'
+        + '<button class="btn ghost" id="c-refresh">Check again</button></div></div>'
+        + Object.keys(byRoom).map(function (room) {
+            return '<div class="card"><h2>' + esc(room) + '</h2>' + byRoom[room].map(chkRow).join('') + '</div>';
+          }).join('');
+
+      $('c-add').addEventListener('click', function () { show('add'); });
+      $('c-refresh').addEventListener('click', function () {
+        $('c-body').innerHTML = '<div class="empty">Checking…</div>'; loadChecklist();
+      });
+      Array.prototype.forEach.call($('c-body').querySelectorAll('[data-retire]'), function (b) {
+        b.addEventListener('click', function () {
+          Wren.api(API + '/recovery/' + encodeURIComponent(b.dataset.retire) + '/retire',
+            { method: 'POST', body: { undo: b.dataset.undo === '1', note: b.dataset.undo === '1' ? null : 'Marked as not coming back' } })
+            .then(function () { loadChecklist(); })
+            .catch(function (e) { alert(errText(e)); });
+        });
+      });
+    }).catch(function (e) {
+      $('c-body').innerHTML = '<div class="card"><div class="empty">' + esc(errText(e)) + '</div></div>';
+    });
+  }
+
+  function chkRow(i) {
+    var done = i.status === 'found', retired = i.status === 'retired';
+    return '<div class="chk' + (done ? ' done' : '') + (retired ? ' retired' : '') + '">'
+      + '<span class="chk-art">' + art(i.icon) + '</span>'
+      + '<span class="chk-body"><b>' + (done ? '✓ ' : '') + esc(i.name) + '</b>'
+      + '<span>' + esc(i.type_label) + ' · ' + esc(i.says) + '</span></span>'
+      + '<span class="chk-act">'
+      + (done ? '<span class="pill ok">Back</span>'
+        : retired ? '<button class="btn ghost" data-retire="' + esc(i.ieee) + '" data-undo="1">Put back on the list</button>'
+        : '<button class="btn ghost" data-retire="' + esc(i.ieee) + '" data-undo="0">Not coming back</button>')
+      + '</span></div>';
+  }
+
+  /* ══ RADIATORS ════════════════════════════════════════════════════════ */
+  function loadHeating() {
+    Wren.api(API + '/radiators').then(function (d) {
+      if (d.configured === false || d.unreachable) {
+        $('h-body').innerHTML = '<div class="card"><div class="empty">' + esc(d.reason || '') + '</div></div>';
+        return;
+      }
+      var list = d.radiators || [];
+      if (!list.length) {
+        $('h-body').innerHTML = '<div class="card"><h2>No radiator valves</h2>'
+          + '<p class="muted">None of the radiator valves are set up in Home Assistant yet.</p></div>';
+        return;
+      }
+      $('h-body').innerHTML = '<div class="card"><h2>Radiators</h2>'
+        + '<p class="muted" style="margin:0 0 6px">Set the temperature a room should be kept at. '
+        + 'A greyed-out radiator has not been paired back yet.</p>'
+        + list.map(function (r) {
+            var t = r.temperature == null ? 18 : r.temperature;
+            return '<div class="row" data-ent="' + esc(r.entity_id) + '">'
+              + '<span class="row-main"><b>' + esc(r.label) + '</b><span>' + esc(r.room_label) + ' · ' + esc(r.says) + '</span></span>'
+              + '<span class="temp">'
+              + '<button class="stepbtn" data-d="-1"' + (r.available ? '' : ' disabled') + ' aria-label="Cooler">−</button>'
+              + '<output>' + t + '°</output>'
+              + '<button class="stepbtn" data-d="1"' + (r.available ? '' : ' disabled') + ' aria-label="Warmer">＋</button>'
+              + '<button class="btn" data-set' + (r.available ? '' : ' disabled') + '>Set</button></span>'
+              + '<span class="msg" style="flex:1 1 100%"></span></div>';
+          }).join('') + '</div>';
+
+      Array.prototype.forEach.call($('h-body').querySelectorAll('.row[data-ent]'), function (row) {
+        var out = row.querySelector('output');
+        row.querySelectorAll('.stepbtn').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var v = parseFloat(out.textContent) + (b.dataset.d === '1' ? 0.5 : -0.5);
+            v = Math.max(5, Math.min(28, v));
+            out.textContent = v + '°';
+          });
+        });
+        row.querySelector('[data-set]').addEventListener('click', function () {
+          var msg = row.querySelector('.msg');
+          msg.className = 'msg'; msg.textContent = 'Setting…';
+          Wren.api(API + '/radiators/temperature', { method: 'POST', body: {
+            entity_id: row.dataset.ent, temperature: parseFloat(out.textContent) } })
+            .then(function (r) { msg.className = 'msg ok'; msg.textContent = r.says || 'Done.'; })
+            .catch(function (e) { msg.className = 'msg err'; msg.textContent = errText(e); });
+        });
+      });
+    }).catch(function (e) {
+      $('h-body').innerHTML = '<div class="card"><div class="empty">' + esc(errText(e)) + '</div></div>';
+    });
+  }
+
+  /* ══ KITCHEN ══════════════════════════════════════════════════════════ */
+  function loadKitchen() {
+    Wren.api(API + '/kitchen-check').then(function (d) {
+      var cls = d.verdict === 'working' ? 'ok' : d.verdict === 'not_paired' ? 'warn' : 'bad';
+      $('k-body').innerHTML =
+        '<div class="banner ' + cls + ' show"><span class="b-icon">🧊</span><span>'
+        + '<strong>' + esc(d.verdict_says || '') + '</strong></span></div>'
+        + '<div class="card"><h2>The two probes</h2>'
+        + (d.probes || []).map(function (p) {
+            return '<div class="row"><span class="row-main"><b>' + esc(p.label)
+              + (p.reading_now_c != null ? ' — ' + esc(p.reading_now_c) + '°C' : '') + '</b>'
+              + '<span>' + esc(p.says) + '</span></span>'
+              + '<span class="pill ' + (p.feed_live ? 'ok' : p.paired ? 'warn' : 'bad') + '">'
+              + (p.feed_live ? 'Logging' : p.paired ? 'Paired only' : 'Not paired') + '</span></div>';
+          }).join('')
+        + '<p class="muted" style="margin-top:12px">' + esc((d.token && d.token.says) || '') + '</p></div>'
+        + (d.verdict === 'working' ? '' :
+          '<div class="card"><h2>What fixes it <span class="sub">for Toby</span></h2>'
+          + '<p class="muted">' + esc(d.fix.summary) + '</p>'
+          + '<p class="muted"><strong>First:</strong> ' + esc(d.fix.needs) + '</p>'
+          + '<pre class="yaml">' + esc(d.fix.rest_command) + '</pre>'
+          + '<pre class="yaml">' + esc(d.fix.automation) + '</pre>'
+          + '<p class="muted">' + esc(d.fix.note) + '</p>'
+          + '<p class="muted">Full notes: <code>' + esc(d.fix.doc) + '</code></p></div>');
+    }).catch(function (e) {
+      $('k-body').innerHTML = '<div class="card"><div class="empty">' + esc(errText(e)) + '</div></div>';
+    });
+  }
+
+  /* ══ HEALTH ═══════════════════════════════════════════════════════════ */
+  function loadHealth() {
+    Wren.api(API + '/overview').then(function (d) {
+      renderBanners(d);
+      var h = d.health;
+      if (!h) {
+        $('hh-body').innerHTML = '<div class="card"><div class="empty">' + esc(d.reason || 'Nothing to show.') + '</div></div>';
+        return;
+      }
+      $('hh-body').innerHTML =
+        (h.big_warning ? '<div class="banner bad show"><span class="b-icon">⚠️</span><span><strong>'
+          + esc(h.big_warning) + '</strong></span></div>' : '')
+        + '<div class="card"><h2>The hub</h2>'
+        + '<div class="dev-status"><span class="dot ' + (h.coordinator.online ? 'green' : 'red') + '"></span>'
+        + '<span><b>' + (h.coordinator.online ? 'On and listening' : 'Not answering') + '</b>'
+        + '<span>' + esc(h.coordinator.says) + '</span></span></div>'
+        + (h.coordinator.version ? '<p class="muted" style="margin-top:10px">Zigbee2MQTT ' + esc(h.coordinator.version) + '.</p>' : '')
+        + '</div>'
+        + '<div class="card"><h2>Backup</h2>'
+        + '<div class="dev-status"><span class="dot ' + (h.backup.last_backup_at ? (h.backup.stale ? 'amber' : 'green') : 'red') + '"></span>'
+        + '<span><b>' + (h.backup.last_backup_at ? when(h.backup.last_backup_at) : 'No backup reported') + '</b>'
+        + '<span>' + esc(h.backup.says) + '</span></span></div></div>'
+        + '<div class="card"><h2>Joining</h2>'
+        + '<p class="muted" style="margin:0">' + (h.joining_open
+            ? 'The network is <strong>open to new devices</strong> at the moment.'
+            : 'The network is closed. Nothing new can join until somebody uses "Add a device".') + '</p></div>';
+    }).catch(function (e) {
+      $('hh-body').innerHTML = '<div class="card"><div class="empty">' + esc(errText(e)) + '</div></div>';
+    });
+  }
+
+  /* ══ Start ════════════════════════════════════════════════════════════
+     wren:ready fires at the end of buildShell(). Calling a loader from a
+     script tag would race the shell and the data would never arrive
+     (CLAUDE.md rule 7).
+     ════════════════════════════════════════════════════════════════════ */
+  document.addEventListener('wren:ready', function () {
+    var want = (location.hash || '').replace('#tab-', '');
+    show(LOADERS[want] ? want : 'rooms');
+  });
+})();
+</script>
+</body>
+</html>

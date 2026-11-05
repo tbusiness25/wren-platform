@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="wren-edition"   content="eyfs">
+  <meta name="wren-app-page"  content="more">
+  <meta name="wren-app-title" content="AI-Assisted Planning">
+  <meta name="wren-app-chat"  content="on">
+  <title>AI-Assisted Planning · Wren</title>
+  <link rel="stylesheet" href="/css/wren.css">
+  <script src="/js/wren-theme.js"></script>
+  <link rel="stylesheet" href="/css/wren-app-shell.css?v=20260727">
+  <style>
+    /* b218 — areas of responsibility. Tablet-first, same conventions as the
+       termly plan: 44px touch targets, one stage on screen, no horizontal scroll,
+       var(--c-*) tokens only so it reads in both themes. */
+    #ar-page { padding:12px 12px env(safe-area-inset-bottom,16px); max-width:1000px; margin:0 auto; }
+    #ar-page h1 { font-size:1.15rem; margin:6px 2px 4px; color:var(--c-text,#f1f5f9); }
+    .ar-sub { font-size:.8rem; color:var(--c-muted,#94a3b8); margin:0 2px 12px; line-height:1.5; }
+    .ar-banner { border:1px solid var(--c-border,#2d3748); background:var(--c-card,#16212f);
+      border-radius:11px; padding:10px 12px; margin:0 0 11px; font-size:.82rem; line-height:1.5;
+      color:var(--c-text,#e2e8f0); }
+    .ar-banner.mine { border-color:rgba(34,197,94,.34); background:rgba(34,197,94,.07); }
+    .ar-banner.none { border-color:rgba(148,163,184,.34); }
+    .ar-banner b { font-size:.9rem; }
+    .ar-stages { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+    .ar-stages button { flex:1 1 120px; background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748);
+      color:var(--c-muted,#94a3b8); padding:8px 6px; min-height:44px; border-radius:10px; font-size:.75rem;
+      font-weight:700; cursor:pointer; font-family:inherit; }
+    .ar-stages button.on { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; }
+    /* b238 §3 — AI draft output */
+    .ar-ailist { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+    .ar-ailist li { background:var(--c-card,#0f1927); border:1px solid var(--c-border,#2d3748);
+      border-radius:10px; padding:9px 12px; font-size:.87rem; line-height:1.5; color:var(--c-text,#e2e8f0); }
+    .ar-ailist a { color:var(--c-blue,#89c2d9); }
+    .ar-lbl { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em;
+      font-weight:700; color:var(--c-muted,#94a3b8); }
+    .ar-stage { display:none; } .ar-stage.on { display:block; }
+    .ar-card { background:var(--c-surface,#1e293b); border:1px solid var(--c-border,#2d3748);
+      border-radius:12px; padding:13px; margin-bottom:11px; }
+    .ar-card h3 { margin:0 0 9px; font-size:.85rem; color:var(--c-text,#f1f5f9); }
+    .ar-lbl { display:block; font-size:.74rem; font-weight:600; color:var(--c-muted,#94a3b8); margin:10px 0 5px; }
+    .ar-ta, .ar-in, .ar-sel { width:100%; box-sizing:border-box; border:1px solid var(--c-border,#2d3748);
+      background:var(--c-bg,#0f172a); color:var(--c-text,#f1f5f9); padding:9px 11px; border-radius:10px;
+      font-size:.88rem; font-family:inherit; min-height:44px; }
+    .ar-ta { min-height:84px; resize:vertical; line-height:1.5; }
+    .ar-hint { font-size:.73rem; color:var(--c-muted,#64748b); line-height:1.5; margin-top:5px; }
+    .ar-msg { font-size:.76rem; color:var(--c-muted,#94a3b8); margin-left:8px; }
+    .ar-msg.ok { color:var(--c-green,#22c55e); } .ar-msg.bad { color:var(--c-red,#f87171); }
+    .ar-btn { border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b); color:var(--c-text,#f1f5f9);
+      padding:8px 14px; min-height:44px; border-radius:12px; font-size:.86rem; font-weight:600; cursor:pointer; font-family:inherit; }
+    .ar-btn.primary { background:var(--c-blue,#4a9abf); border-color:var(--c-blue,#4a9abf); color:#fff; }
+    .ar-btn.sm { min-height:36px; padding:6px 11px; font-size:.76rem; border-radius:9px; }
+    .ar-btn[disabled] { opacity:.5; cursor:default; }
+    .ar-ctl { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:11px; }
+    .ar-ctl > * { flex:1 1 170px; min-width:0; }
+    /* gathered intention rows */
+    .ar-int { border:1px solid var(--c-border,#2d3748); border-radius:11px; padding:11px 12px;
+      margin-bottom:9px; background:var(--c-card,#16212f); }
+    .ar-int.on { border-color:var(--c-green,#22c55e); background:rgba(34,197,94,.09); }
+    .ar-int.done { opacity:.68; }
+    .ar-int-top { display:flex; gap:10px; align-items:flex-start; cursor:pointer; min-height:44px; }
+    .ar-int-top input { width:20px; height:20px; margin-top:3px; flex:0 0 auto; }
+    .ar-int-txt { font-size:.87rem; line-height:1.45; color:var(--c-text,#f1f5f9); font-weight:600; }
+    .ar-meta { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+    .ar-tag { font-size:.68rem; font-weight:700; border:1px solid var(--c-border,#2d3748);
+      color:var(--c-muted,#94a3b8); border-radius:999px; padding:2px 9px; white-space:nowrap; }
+    .ar-tag.kids  { border-color:rgba(74,154,191,.5); color:var(--c-blue,#4a9abf); }
+    .ar-tag.group { border-color:rgba(34,197,94,.45); color:var(--c-green,#22c55e); }
+    .ar-tag.guess { border-color:rgba(245,158,11,.5); color:var(--c-amber,#f59e0b); }
+    .ar-more { font-size:.73rem; color:var(--c-muted,#94a3b8); line-height:1.55; margin-top:8px;
+      border-top:1px solid var(--c-border,#2d3748); padding-top:8px; display:none; }
+    .ar-int.open .ar-more { display:block; }
+    .ar-more b { color:var(--c-text,#e2e8f0); }
+    .ar-more ul { margin:4px 0 0; padding-left:18px; }
+    .ar-toggle { background:none; border:none; color:var(--c-blue,#4a9abf); font-size:.73rem;
+      font-weight:700; cursor:pointer; padding:6px 0 0; font-family:inherit; }
+    /* owners grid */
+    .ar-owner { border:1px solid var(--c-border,#2d3748); border-radius:11px; padding:11px 12px;
+      margin-bottom:9px; background:var(--c-card,#16212f); }
+    .ar-owner h4 { margin:0 0 4px; font-size:.85rem; color:var(--c-text,#f1f5f9); }
+    .ar-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+    .ar-chip { border:1px solid var(--c-border,#2d3748); background:var(--c-surface,#1e293b); border-radius:999px;
+      padding:5px 10px; font-size:.74rem; color:var(--c-text,#e2e8f0); display:inline-flex; align-items:center; gap:7px; }
+    .ar-chip button { background:none; border:none; color:var(--c-red,#f87171); cursor:pointer;
+      font-size:.95rem; line-height:1; padding:0 2px; min-height:0; }
+    .ar-chip .tick { color:var(--c-green,#22c55e); }
+    .ar-hist { border-left:2px solid var(--c-border,#2d3748); padding:2px 0 2px 11px; margin:0 0 12px; }
+    .ar-hist h5 { margin:0 0 3px; font-size:.76rem; color:var(--c-text,#f1f5f9); }
+    .ar-hist p { margin:0 0 6px; font-size:.78rem; line-height:1.5; color:var(--c-muted,#94a3b8); }
+    .ar-empty { font-size:.8rem; color:var(--c-muted,#94a3b8); line-height:1.55; padding:6px 2px; }
+    .ar-sum { display:grid; gap:7px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); margin-top:8px; }
+    .ar-sum div { border:1px solid var(--c-border,#2d3748); border-radius:10px; padding:9px 11px;
+      background:var(--c-card,#16212f); font-size:.76rem; color:var(--c-muted,#94a3b8); }
+    .ar-sum div b { display:block; font-size:1.05rem; color:var(--c-text,#f1f5f9); font-weight:700; }
+    /* The carry bar sticks ABOVE the EY bottom nav (fixed, 64px + safe area) —
+       otherwise the one button that matters sits underneath it on a tablet. */
+    .ar-bar { position:sticky; bottom:calc(64px + env(safe-area-inset-bottom,0px));
+      background:var(--c-bg,#0f172a); border-top:1px solid var(--c-border,#2d3748);
+      padding:10px 0; display:flex; gap:9px; align-items:center; z-index:5; }
+    body.wren-app-shell.no-bottom-nav .ar-bar { bottom:env(safe-area-inset-bottom,0px); }
+  </style>
+</head>
+<body>
+<div id="ar-page">
+  <h1>✨ AI-assisted planning</h1>
+  <!-- b238 (2026-08-27, §3) — renamed from "My Area &amp; Intentions". Same job:
+       each half term you fill out your area of responsibility and draft the next
+       one. What changed is that Wren now does the work first — it reads all your
+       key children's observations, next steps and termly updates and drafts the
+       half-term for you to correct, instead of handing you a blank page. -->
+  <p class="ar-sub">Each of us looks after one of the seven areas. Each half-term you say what you have
+    noticed and what you would change — then Wren gathers every child's current next steps in your area,
+    groups them, and hands you the list to tick. You choose intentions from real observations; you do not
+    write them from scratch. Step&nbsp;4 goes further: Wren reads <b>all</b> your key children's
+    observations, next steps and termly updates and drafts the whole half-term — theme, intentions,
+    activities, resources and a week-by-week focus — for you to edit.</p>
+
+  <div class="ar-banner" id="ar-banner">Loading…</div>
+
+  <div class="ar-stages">
+    <button class="on" data-stage="0">1 · My area</button>
+    <button data-stage="1">2 · Contribution</button>
+    <button data-stage="2">3 · Intentions</button>
+    <!-- b238 §3 — the AI-assisted draft. data-stage="4" so the existing 0-3
+         indices, and the manager-only "Who owns what" at 3, are untouched. -->
+    <button data-stage="4" id="ar-aibtn">4 · Draft with Wren ✨</button>
+    <button data-stage="3" id="ar-ownersbtn" style="display:none">Who owns what</button>
+  </div>
+
+  <!-- ── Stage 0 · my area ─────────────────────────────────────────────── -->
+  <div class="ar-stage on" id="ar-s0">
+    <div class="ar-card">
+      <h3>📋 What is sitting in this area right now</h3>
+      <div class="ar-hint" id="ar-s0-window">—</div>
+      <div class="ar-sum" id="ar-s0-sum"></div>
+    </div>
+    <div class="ar-card">
+      <h3>➡️ Carried into the next half-term</h3>
+      <div class="ar-hint" style="margin:0 0 8px">Intentions already ticked for the coming half-term, and the
+        next steps each one came from.</div>
+      <div id="ar-s0-carried" class="ar-empty">—</div>
+    </div>
+    <div class="ar-card">
+      <h3>🗂️ Every area, this half-term</h3>
+      <div id="ar-s0-areas" class="ar-empty">—</div>
+    </div>
+  </div>
+
+  <!-- ── Stage 1 · contribution ────────────────────────────────────────── -->
+  <div class="ar-stage" id="ar-s1">
+    <div class="ar-card">
+      <h3>✍️ Your contribution <span id="ar-c-period" style="font-weight:400;color:var(--c-muted,#94a3b8)"></span></h3>
+      <div class="ar-hint" style="margin:0 0 6px">Three questions, as long or as short as you like. It is
+        saved against this half-term, so next year you can read back what you said.</div>
+      <label class="ar-lbl" for="ar-noticed">👀 What have you noticed in this area?</label>
+      <textarea id="ar-noticed" class="ar-ta" placeholder="What is going well, what is not, what has changed since last half-term…"></textarea>
+      <label class="ar-lbl" for="ar-change">🔧 What would you change?</label>
+      <textarea id="ar-change" class="ar-ta" placeholder="The environment, the resources, the routine, the way we do something…"></textarea>
+      <label class="ar-lbl" for="ar-ideas">💡 Ideas to improve outcomes for children</label>
+      <textarea id="ar-ideas" class="ar-ta" placeholder="What you would like us to try next half-term…"></textarea>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:11px">
+        <button class="ar-btn primary" id="ar-savec">💾 Save contribution</button>
+        <span class="ar-msg" id="ar-cmsg"></span>
+      </div>
+    </div>
+    <div class="ar-card">
+      <h3>📚 Earlier half-terms</h3>
+      <div id="ar-chist" class="ar-empty">—</div>
+    </div>
+  </div>
+
+  <!-- ── Stage 2 · gathered intentions ─────────────────────────────────── -->
+  <div class="ar-stage" id="ar-s2">
+    <div class="ar-card">
+      <h3>🧺 Gathered from the children's next steps</h3>
+      <div class="ar-ctl">
+        <select id="ar-area" class="ar-sel"></select>
+        <select id="ar-room" class="ar-sel"></select>
+      </div>
+      <div class="ar-ctl">
+        <label style="flex:1 1 170px">
+          <span class="ar-lbl" style="margin-top:0">Gather next steps from</span>
+          <select id="ar-from" class="ar-sel"></select>
+        </label>
+        <label style="flex:1 1 170px">
+          <span class="ar-lbl" style="margin-top:0">Carry intentions into</span>
+          <select id="ar-for" class="ar-sel"></select>
+        </label>
+      </div>
+      <div class="ar-hint" id="ar-gmeta">—</div>
+      <!-- b223 (2026-08-24) — the same gathered list, arranged into a DRAFT plan by
+           the local model on Ascent for you to edit and sign off. Additive: the tick
+           list below is unchanged and still works entirely on its own. -->
+      <div class="ar-hint" style="margin-top:9px">Rather than ticking, you can have Wren
+        <a href="/ey/plan-draft" style="color:var(--c-blue,#4a9abf)">draft next half-term's plan</a>
+        from this same list and edit it — nothing is planned until you sign it off.</div>
+    </div>
+    <div id="ar-glist" class="ar-empty">—</div>
+    <div class="ar-bar" id="ar-gbar" style="display:none">
+      <button class="ar-btn primary" id="ar-carry" style="flex:1">Carry 0 intentions forward</button>
+      <span class="ar-msg" id="ar-gmsg"></span>
+    </div>
+    <div class="ar-card" style="margin-top:12px">
+      <h3>✅ Already carried forward</h3>
+      <div id="ar-carried" class="ar-empty">—</div>
+    </div>
+  </div>
+
+  <!-- ── Stage 4 · AI-assisted draft (b238, 2026-08-27 §3) ────────────────
+       Wren reads all the key children's observations, next steps and termly
+       updates and drafts the half-term. Sovereign model only (Ascent), child
+       names stripped server-side before anything reaches it. Nothing here saves:
+       the practitioner copies what they want into steps 2 and 3, which are still
+       the only things that write. -->
+  <div class="ar-stage" id="ar-s4">
+    <div class="ar-card">
+      <h3>✨ Let Wren draft the next half-term</h3>
+      <div class="ar-hint" style="margin:0 0 10px">Wren reads <b>every</b> observation, next step and termly
+        update for your key children, then drafts a theme, learning intentions, activities, resources and a
+        week-by-week focus. Children's names are removed before anything reaches the model, and the model
+        runs on the nursery's own hardware — nothing leaves the building.</div>
+      <div class="ar-ctl">
+        <select id="ar-ai-scope" class="ar-sel">
+          <option value="key_children">My key children</option>
+          <option value="room">A whole room</option>
+        </select>
+        <select id="ar-ai-room" class="ar-sel" style="display:none"></select>
+        <button class="ar-btn primary" id="ar-ai-go" style="flex:0 0 auto">✨ Draft it</button>
+      </div>
+      <div class="ar-hint" id="ar-ai-meta" style="margin:9px 0 0">—</div>
+      <span class="ar-msg" id="ar-ai-msg"></span>
+    </div>
+    <div id="ar-ai-out"></div>
+  </div>
+
+  <!-- ── Stage 3 · owners (managers) ───────────────────────────────────── -->
+  <div class="ar-stage" id="ar-s3">
+    <div class="ar-card">
+      <h3>👥 Who owns which area</h3>
+      <div class="ar-hint" style="margin:0 0 9px">One area each. An area can be shared, and nobody has to have
+        one. Changing somebody's area keeps the old one on file rather than deleting it.</div>
+      <div class="ar-ctl">
+        <select id="ar-astaff" class="ar-sel"></select>
+        <select id="ar-aarea" class="ar-sel"></select>
+        <button class="ar-btn primary" id="ar-assign" style="flex:0 0 auto">Assign</button>
+      </div>
+      <span class="ar-msg" id="ar-amsg"></span>
+    </div>
+    <div id="ar-owners"></div>
+  </div>
+</div>
+
+<script src="/js/wren-core.js?v=20260704" defer></script>
+<script src="/icons/wren-icons.js?v=b146" defer></script>
+<script src="/js/wren-app-shell.js?v=20260717" defer></script>
+<script>
+(function(){
+  'use strict';
+  var API='/api/areas';
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function el(id){ return document.getElementById(id); }
+  function msg(id,t,cls){ var e=el(id); if(!e) return; e.textContent=t; e.className='ar-msg'+(cls?' '+cls:''); }
+
+  var CTX=null, STAFF=[], ROOMS=[], OWNERS=null, GATHERED=null, PICKED={}, CARRIED=[];
+
+  function myArea(){ return CTX && CTX.my_area ? CTX.my_area.area : null; }
+  function areaVal(){ return el('ar-area').value || myArea() || (CTX&&CTX.areas&&CTX.areas[0]) || ''; }
+  function fromId(){ var v=parseInt(el('ar-from').value,10); return isNaN(v)?null:v; }
+  function forId(){ var v=parseInt(el('ar-for').value,10); return isNaN(v)?null:v; }
+  function roomVal(){ var v=parseInt(el('ar-room').value,10); return isNaN(v)?null:v; }
+  function htName(id){
+    var t=((CTX&&CTX.half_terms)||[]).filter(function(h){return h.id===id;})[0];
+    return t?t.name+' · '+t.academic_year:'—';
+  }
+  function fmtD(d){
+    if(!d) return '—';
+    var x=new Date(d);
+    return x.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  }
+
+  function go(n){
+    /* b238 — 4 is the AI-assisted draft stage; 0-3 are unchanged. */
+    [0,1,2,3,4].forEach(function(i){
+      var s=el('ar-s'+i); if(s) s.classList.toggle('on', i===n);
+      var b=document.querySelector('.ar-stages button[data-stage="'+i+'"]');
+      if(b) b.classList.toggle('on', i===n);
+    });
+    if(n===1) loadContributions();
+    if(n===2) loadGathered();
+    if(n===3) loadOwners();
+    if(n===4) loadAiContext();
+  }
+
+  /* ── banner ───────────────────────────────────────────────────────────── */
+  function renderBanner(){
+    var b=el('ar-banner');
+    if(!CTX){ b.textContent='Loading…'; return; }
+    var ht=CTX.gather_from, next=CTX.gather_for;
+    var where = ht ? ('We are in <b>'+esc(ht.name)+'</b> ('+fmtD(ht.start_date)+' – '+fmtD(ht.end_date)+').')
+                   : (next ? ('Between half-terms — next up is <b>'+esc(next.name)+'</b>, starting '+fmtD(next.start_date)+'.')
+                           : 'No school terms are set up yet.');
+    if(CTX.my_area){
+      b.className='ar-banner mine';
+      b.innerHTML='🎯 Your area is <b>'+esc(CTX.my_area.area)+'</b>'+
+        (CTX.my_area.assigned_by_name?' — set by '+esc(CTX.my_area.assigned_by_name):'')+
+        '. '+where;
+    } else {
+      b.className='ar-banner none';
+      b.innerHTML='You do not have an area of responsibility yet — a manager sets these. '+
+        'You can still read every area below. '+where;
+    }
+  }
+
+  /* ── stage 0 ──────────────────────────────────────────────────────────── */
+  function renderSummary(g){
+    el('ar-s0-window').textContent =
+      'Open next steps across the setting, plus next steps written inside observations between '+
+      fmtD(g.window.from)+' and '+fmtD(g.window.to)+
+      (g.window.reason==='last_120_days' ? ' (the half-term has not started, so the last 120 days are used).' : '.');
+    var mine=(g.summary||[]).filter(function(s){ return s.area===myArea(); })[0];
+    el('ar-s0-sum').innerHTML=
+      '<div><b>'+g.totals.next_steps_in+'</b>next steps gathered</div>'+
+      '<div><b>'+g.totals.children+'</b>children</div>'+
+      '<div><b>'+(mine?mine.next_steps:0)+'</b>in '+esc(myArea()||'your area')+'</div>'+
+      '<div><b>'+g.totals.from_observations+'</b>written inside observations</div>';
+    el('ar-s0-areas').innerHTML=(g.summary||[]).map(function(s){
+      return '<div class="ar-chip" style="margin:0 6px 6px 0">'+esc(s.area)+
+             ' <b>'+s.next_steps+'</b> next steps · '+s.children+' children</div>';
+    }).join('') + (g.unattributed_note ? '<div class="ar-hint">⚠️ '+esc(g.unattributed_note)+'</div>' : '');
+  }
+
+  function loadStage0(){
+    var qs='?'+(CTX.gather_for?'for_half_term_id='+CTX.gather_for.id+'&':'')+
+           (CTX.gather_from?'half_term_id='+CTX.gather_from.id:'');
+    return Wren.api(API+'/gathered'+qs).then(function(g){
+      renderSummary(g);
+    }).catch(function(e){ el('ar-s0-sum').innerHTML='<div class="ar-empty">Could not load: '+esc(e&&e.error||e)+'</div>'; });
+  }
+
+  function renderCarried(list, into){
+    if(!list.length) return '<div class="ar-empty">Nothing carried forward yet — pick from the gathered list in step 3.</div>';
+    return list.map(function(i){
+      return '<div class="ar-int" data-carried="'+i.id+'">'+
+        '<div class="ar-int-txt">'+esc(i.intention_text)+'</div>'+
+        '<div class="ar-meta">'+
+          '<span class="ar-tag kids">'+i.child_count+' '+(i.child_count===1?'child':'children')+'</span>'+
+          (i.sub_area?'<span class="ar-tag">'+esc(i.sub_area)+'</span>':'')+
+          (i.room_name?'<span class="ar-tag">'+esc(i.room_name)+'</span>':'')+
+          (i.is_group?'<span class="ar-tag group">Group intention</span>':'')+
+          '<span class="ar-tag">'+i.source_count+' source next step'+(i.source_count===1?'':'s')+'</span>'+
+          '<span class="ar-tag">'+esc(i.area)+'</span>'+
+        '</div>'+
+        '<button class="ar-toggle" data-trace="'+i.id+'">Where did this come from? →</button>'+
+        '<div class="ar-more" data-tracebox="'+i.id+'">Loading…</div>'+
+      '</div>';
+    }).join('');
+  }
+
+  function wireTrace(root){
+    root.addEventListener('click', function(e){
+      var b=e.target.closest('[data-trace]'); if(!b) return;
+      var id=b.getAttribute('data-trace');
+      var box=root.querySelector('[data-tracebox="'+id+'"]');
+      var card=b.closest('.ar-int');
+      card.classList.toggle('open');
+      if(!card.classList.contains('open') || box.dataset.loaded) return;
+      Wren.api(API+'/intentions/'+id+'/sources').then(function(d){
+        box.dataset.loaded='1';
+        box.innerHTML='<b>Traced back to '+d.sources.length+' next step'+(d.sources.length===1?'':'s')+':</b><ul>'+
+          d.sources.map(function(s){
+            return '<li>'+esc(s.child_name||'—')+(s.room_name?' ('+esc(s.room_name)+')':'')+' — “'+esc(s.source_text||'')+'”'+
+              (s.from_group_observation?' <span class="ar-tag group">group observation</span>':'')+
+              (s.next_step_status?' <span class="ar-tag">'+esc(s.next_step_status)+'</span>':'')+'</li>';
+          }).join('')+'</ul>';
+      }).catch(function(){ box.textContent='Could not load the trace.'; });
+    });
+  }
+
+  function loadCarriedInto(boxId, halfTermId, area){
+    var box=el(boxId);
+    if(!halfTermId){ box.innerHTML='<div class="ar-empty">No half-term selected.</div>'; return Promise.resolve(); }
+    var qs='?half_term_id='+halfTermId+(area?'&area='+encodeURIComponent(area):'');
+    return Wren.api(API+'/intentions'+qs).then(function(list){
+      CARRIED=list;
+      box.innerHTML=renderCarried(list, halfTermId);
+    }).catch(function(e){ box.innerHTML='<div class="ar-empty">Could not load: '+esc(e&&e.error||e)+'</div>'; });
+  }
+
+  /* ── stage 1 · contribution ───────────────────────────────────────────── */
+  function loadContributions(){
+    var ht=CTX.gather_from||CTX.gather_for;
+    el('ar-c-period').textContent = ht ? '— '+ht.name+' '+ht.academic_year : '';
+    if(!myArea()){
+      el('ar-chist').innerHTML='<div class="ar-empty">You do not own an area yet, so there is nothing to write.</div>';
+    }
+    var qs='?staff_id='+(CTX.user.id);
+    return Wren.api(API+'/contributions'+qs).then(function(rows){
+      var here=rows.filter(function(r){ return ht && r.half_term_id===ht.id; })[0];
+      if(here){
+        el('ar-noticed').value=here.noticed||'';
+        el('ar-change').value=here.would_change||'';
+        el('ar-ideas').value=here.ideas||'';
+        msg('ar-cmsg','Saved '+new Date(here.updated_at).toLocaleDateString('en-GB'),'ok');
+      }
+      var past=rows.filter(function(r){ return !ht || r.half_term_id!==ht.id; });
+      el('ar-chist').innerHTML = past.length ? past.map(function(r){
+        return '<div class="ar-hist"><h5>'+esc(r.half_term_name||r.term_name||'Earlier')+' · '+esc(r.area)+'</h5>'+
+          (r.noticed?'<p><b>Noticed:</b> '+esc(r.noticed)+'</p>':'')+
+          (r.would_change?'<p><b>Would change:</b> '+esc(r.would_change)+'</p>':'')+
+          (r.ideas?'<p><b>Ideas:</b> '+esc(r.ideas)+'</p>':'')+'</div>';
+      }).join('') : '<div class="ar-empty">Nothing yet — this is your first half-term in this area.</div>';
+    }).catch(function(e){ el('ar-chist').innerHTML='<div class="ar-empty">Could not load: '+esc(e&&e.error||e)+'</div>'; });
+  }
+
+  function saveContribution(){
+    var ht=CTX.gather_from||CTX.gather_for;
+    if(!ht){ msg('ar-cmsg','No half-term to save against.','bad'); return; }
+    if(!myArea()){ msg('ar-cmsg','You do not have an area of responsibility.','bad'); return; }
+    msg('ar-cmsg','Saving…');
+    Wren.api(API+'/contribution',{method:'PUT',body:{
+      half_term_id:ht.id, area:myArea(),
+      noticed:el('ar-noticed').value, would_change:el('ar-change').value, ideas:el('ar-ideas').value
+    }}).then(function(){ msg('ar-cmsg','Saved','ok'); })
+      .catch(function(e){ msg('ar-cmsg',(e&&e.error)||'Could not save','bad'); });
+  }
+
+  /* ── stage 2 · the gathered list ──────────────────────────────────────── */
+  function renderGathered(){
+    var g=GATHERED, box=el('ar-glist');
+    if(!g || !g.intentions){ box.innerHTML='<div class="ar-empty">—</div>'; return; }
+    if(!g.intentions.length){
+      box.innerHTML='<div class="ar-empty">No current next steps in this area for that window. '+
+        'Nothing to carry forward — which is worth knowing too.</div>';
+      el('ar-gbar').style.display='none';
+      return;
+    }
+    box.innerHTML=g.intentions.map(function(i,n){
+      var kids=i.children.map(function(c){ return esc(c.name)+(c.room_name?' ('+esc(c.room_name)+')':''); });
+      return '<div class="ar-int'+(PICKED[i.cluster_key]?' on':'')+(i.already_adopted?' done':'')+'" data-k="'+esc(i.cluster_key)+'">'+
+        '<label class="ar-int-top">'+
+          '<input type="checkbox" data-pick="'+esc(i.cluster_key)+'"'+
+            (PICKED[i.cluster_key]?' checked':'')+(i.already_adopted?' disabled':'')+'>'+
+          '<span class="ar-int-txt">'+esc(i.intention_text)+'</span>'+
+        '</label>'+
+        '<div class="ar-meta">'+
+          '<span class="ar-tag kids">'+i.child_count+' '+(i.child_count===1?'child':'children')+'</span>'+
+          i.rooms.map(function(r){ return '<span class="ar-tag">'+esc(r.room_name||'No room')+' ('+r.child_count+')</span>'; }).join('')+
+          (i.sub_area?'<span class="ar-tag">'+esc(i.sub_area)+'</span>':'')+
+          '<span class="ar-tag">seen '+i.recurrence+'×</span>'+
+          (i.is_group?'<span class="ar-tag group">Group intention</span>':'')+
+          (i.via.indexOf('keywords')>=0 && i.via.length===1?'<span class="ar-tag guess">area guessed from wording</span>':'')+
+          (i.already_adopted?'<span class="ar-tag group">already carried</span>':'')+
+        '</div>'+
+        '<button class="ar-toggle" data-open="'+n+'">Which children, and what was written? →</button>'+
+        '<div class="ar-more">'+
+          '<b>Children:</b> '+kids.join(', ')+
+          '<br><b>Written as:</b><ul>'+i.variants.map(function(v){ return '<li>“'+esc(v)+'”</li>'; }).join('')+'</ul>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+    el('ar-gbar').style.display='flex';
+    updateCarryBtn();
+  }
+
+  function updateCarryBtn(){
+    var n=Object.keys(PICKED).filter(function(k){ return PICKED[k]; }).length;
+    var b=el('ar-carry');
+    b.textContent='Carry '+n+' intention'+(n===1?'':'s')+' into '+(forId()?htName(forId()).split(' · ')[0]:'the next half-term');
+    b.disabled = n===0;
+  }
+
+  function loadGathered(){
+    var area=areaVal();
+    if(!area){ el('ar-glist').innerHTML='<div class="ar-empty">No areas configured.</div>'; return Promise.resolve(); }
+    el('ar-glist').innerHTML='<div class="ar-empty">Gathering…</div>';
+    PICKED={};
+    var qs='?area='+encodeURIComponent(area)+
+      (fromId()?'&half_term_id='+fromId():'')+
+      (forId()?'&for_half_term_id='+forId():'')+
+      (roomVal()?'&room_id='+roomVal():'');
+    return Wren.api(API+'/gathered'+qs).then(function(g){
+      GATHERED=g;
+      var t=g.area_totals||{};
+      el('ar-gmeta').textContent =
+        t.next_steps_in+' current next step'+(t.next_steps_in===1?'':'s')+' for '+t.children+
+        ' child'+(t.children===1?'':'ren')+' grouped into '+t.clustered_into+' intention'+(t.clustered_into===1?'':'s')+
+        ' ('+t.group_intentions+' would serve more than one child) · window '+fmtD(g.window.from)+' – '+fmtD(g.window.to)+
+        (g.window.reason==='last_120_days'?' (last 120 days — the half-term has not started)':'');
+      renderGathered();
+      return loadCarriedInto('ar-carried', forId(), area);
+    }).catch(function(e){ el('ar-glist').innerHTML='<div class="ar-empty">Could not gather: '+esc(e&&e.error||e)+'</div>'; });
+  }
+
+  function carryForward(){
+    var keys=Object.keys(PICKED).filter(function(k){ return PICKED[k]; });
+    if(!keys.length) return;
+    if(!forId()){ msg('ar-gmsg','Choose which half-term to carry into.','bad'); return; }
+    msg('ar-gmsg','Saving…');
+    Wren.api(API+'/intentions',{method:'POST',body:{
+      area:areaVal(), for_half_term_id:forId(), source_half_term_id:fromId(),
+      room_id:roomVal(), cluster_keys:keys
+    }}).then(function(d){
+      msg('ar-gmsg','Carried '+d.saved.length+' forward'+(d.skipped.length?' ('+d.skipped.length+' skipped)':''),'ok');
+      PICKED={};
+      return loadGathered();
+    }).catch(function(e){ msg('ar-gmsg',(e&&e.error)||'Could not save','bad'); });
+  }
+
+  /* ── stage 3 · owners ─────────────────────────────────────────────────── */
+  function loadOwners(){
+    var ht=CTX.gather_from||CTX.gather_for;
+    return Wren.api(API+'/owners'+(ht?'?half_term_id='+ht.id:'')).then(function(d){
+      OWNERS=d;
+      el('ar-owners').innerHTML=d.areas.map(function(a){
+        return '<div class="ar-owner">'+
+          '<h4>'+esc(a.area)+'</h4>'+
+          '<div class="ar-hint" style="margin:0">'+esc((a.sub_areas||[]).join(' · '))+'</div>'+
+          '<div class="ar-chips">'+
+            (a.owners.length ? a.owners.map(function(o){
+              return '<span class="ar-chip">'+(o.contribution_written?'<span class="tick">✓</span>':'')+
+                esc(o.name)+(o.room_name?' · '+esc(o.room_name):'')+
+                (CTX.can_assign?'<button data-unassign="'+o.staff_id+'" title="Remove this area">×</button>':'')+
+              '</span>';
+            }).join('') : '<span class="ar-chip" style="opacity:.7">Unclaimed</span>')+
+          '</div>'+
+          '<div class="ar-hint">'+a.intentions_adopted+' intention'+(a.intentions_adopted===1?'':'s')+
+            ' carried forward'+(a.intention_children?' · '+a.intention_children+' children served':'')+
+            ' · ✓ = contribution written this half-term</div>'+
+        '</div>';
+      }).join('');
+    }).catch(function(e){ el('ar-owners').innerHTML='<div class="ar-empty">Could not load: '+esc(e&&e.error||e)+'</div>'; });
+  }
+
+  function assign(){
+    var sid=parseInt(el('ar-astaff').value,10), area=el('ar-aarea').value;
+    if(!sid||!area){ msg('ar-amsg','Pick a staff member and an area.','bad'); return; }
+    msg('ar-amsg','Saving…');
+    Wren.api(API+'/assign',{method:'POST',body:{staff_id:sid, area:area}})
+      .then(function(){ msg('ar-amsg','Assigned','ok'); return loadOwners(); })
+      .catch(function(e){ msg('ar-amsg',(e&&e.error)||'Could not assign','bad'); });
+  }
+
+  /* ── boot ─────────────────────────────────────────────────────────────── */
+  function fillPeriodSelects(){
+    var hts=(CTX.half_terms||[]).map(function(t){
+      return '<option value="'+t.id+'">'+esc(t.name)+' · '+esc(t.academic_year)+'</option>'; }).join('');
+    el('ar-from').innerHTML=hts;
+    el('ar-for').innerHTML=hts;
+    if(CTX.gather_from) el('ar-from').value=CTX.gather_from.id;
+    if(CTX.gather_for)  el('ar-for').value=CTX.gather_for.id;
+    el('ar-area').innerHTML=(CTX.areas||[]).map(function(a){
+      return '<option value="'+esc(a)+'"'+(a===myArea()?' selected':'')+'>'+esc(a)+'</option>'; }).join('');
+    el('ar-aarea').innerHTML='<option value="">Area…</option>'+(CTX.areas||[]).map(function(a){
+      return '<option value="'+esc(a)+'">'+esc(a)+'</option>'; }).join('');
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     b238 (2026-08-27, §3) — AI-ASSISTED PLANNING
+     Draft-only by design. Nothing below writes: the practitioner reads the draft,
+     then copies what they want into step 2 (Contribution) and step 3 (Intentions),
+     which remain the only routes that save. That keeps a signed-off intention a
+     human action, which is the whole point of the audit trail.
+     ══════════════════════════════════════════════════════════════════════ */
+  var AICTX=null, AIBUSY=false;
+
+  function loadAiContext(){
+    var meta=el('ar-ai-meta');
+    /* Rooms for the "whole room" fallback — reuse the list already fetched for
+       the gather controls rather than a second request. */
+    var roomSel=el('ar-ai-room');
+    if(roomSel && !roomSel.options.length){
+      roomSel.innerHTML=(ROOMS||[]).map(function(r){
+        return '<option value="'+r.id+'">'+esc(r.name)+'</option>'; }).join('');
+    }
+    if(AICTX){ renderAiMeta(); return; }
+    meta.textContent='Checking what there is to work from…';
+    Wren.api(API+'/ai-plan/context').then(function(c){ AICTX=c; renderAiMeta(); })
+      .catch(function(){ meta.textContent='Could not check the model just now — you can still press Draft it.'; });
+  }
+
+  function renderAiMeta(){
+    var meta=el('ar-ai-meta');
+    if(!AICTX){ meta.textContent='—'; return; }
+    /* b238 §9 — POST /api/areas/ai-plan refuses anyone outside PLAN_ROLES (an
+       apprentice, say). Don't advertise a button that will 403: hide the whole
+       stage and say why. The API is still the real gate.
+       TODO: swap can_draft for a `planning.draft` capability once one exists in
+       ladn.capabilities, so it is a per-person grant rather than a role list. */
+    if(AICTX.can_draft === false){
+      var go=el('ar-ai-go'); if(go) go.style.display='none';
+      var sc=el('ar-ai-scope'); if(sc) sc.style.display='none';
+      var rm=el('ar-ai-room'); if(rm) rm.style.display='none';
+      meta.textContent='Drafting is available to practitioners and above. Ask your room leader or manager to draft the half-term.';
+      return;
+    }
+    var bits=[];
+    bits.push(AICTX.key_children
+      ? AICTX.key_children+' key '+(AICTX.key_children===1?'child':'children')
+      : 'no key children assigned to you yet — switch to a whole room');
+    if(AICTX.my_area) bits.push('your area is <b>'+esc(AICTX.my_area)+'</b>');
+    if(AICTX.gather_for) bits.push('drafting <b>'+esc(AICTX.gather_for.name)+'</b>');
+    bits.push(AICTX.model && AICTX.model.reachable
+      ? 'model <b>'+esc(AICTX.model.name)+'</b> is answering'
+      : '⚠️ the local model is <b>not answering</b> right now — Wren will hand you the gathered evidence instead');
+    meta.innerHTML=bits.join(' · ');
+    /* No key children → default to the room scope rather than a guaranteed-empty draft. */
+    if(AICTX.key_children===0){
+      var sc=el('ar-ai-scope'); if(sc && sc.value==='key_children'){ sc.value='room'; onAiScope(); }
+    }
+  }
+
+  function onAiScope(){
+    var sc=el('ar-ai-scope'), rm=el('ar-ai-room');
+    if(sc&&rm) rm.style.display = sc.value==='room' ? '' : 'none';
+  }
+
+  function draftWithWren(){
+    if(AIBUSY) return;
+    AIBUSY=true;
+    var btn=el('ar-ai-go'); btn.disabled=true; btn.textContent='Drafting…';
+    msg('ar-ai-msg','Reading the observations, next steps and termly updates. This takes up to a couple of minutes.');
+    el('ar-ai-out').innerHTML='';
+    var body={ scope: el('ar-ai-scope').value, area: areaVal() };
+    if(body.scope==='room'){ var r=parseInt(el('ar-ai-room').value,10); if(!isNaN(r)) body.room_id=r; }
+    var forHt=forId(); if(forHt) body.half_term_id=forHt;
+
+    Wren.api(API+'/ai-plan',{method:'POST',body:body})
+      .then(renderAiDraft)
+      .catch(function(e){ msg('ar-ai-msg',(e&&(e.error||e.message))||'Could not draft just now.','bad'); })
+      .then(function(){ AIBUSY=false; btn.disabled=false; btn.textContent='✨ Draft it'; });
+  }
+
+  function countsLine(c){
+    if(!c) return '';
+    return '<div class="ar-hint" style="margin:0 0 10px">Drafted from '+
+      (c.observations||0)+' observation'+((c.observations===1)?'':'s')+', '+
+      (c.next_steps||0)+' next step'+((c.next_steps===1)?'':'s')+' and '+
+      (c.termly_updates||0)+' termly update'+((c.termly_updates===1)?'':'s')+
+      ' across '+(c.children||0)+' child'+((c.children===1)?'':'ren')+'.</div>';
+  }
+
+  function renderAiDraft(d){
+    var out=el('ar-ai-out');
+    if(!d){ msg('ar-ai-msg','Nothing came back.','bad'); return; }
+
+    /* Degraded paths are shown honestly, with whatever WAS gathered — never a
+       silent empty draft. */
+    if(!d.drafted){
+      msg('ar-ai-msg', d.message || 'Nothing was drafted.', 'bad');
+      var ev=d.evidence;
+      if(!ev){ out.innerHTML=''; return; }
+      out.innerHTML='<div class="ar-card"><h3>📋 What Wren gathered</h3>'+countsLine(d.counts)+
+        evBlock('Observations', ev.observations)+
+        evBlock('Next steps', ev.next_steps)+
+        evBlock('Termly updates', ev.termly_updates)+'</div>';
+      return;
+    }
+
+    msg('ar-ai-msg','Draft ready — edit it, then save it through steps 2 and 3.','ok');
+    var dr=d.draft||{};
+    var h='';
+    h+='<div class="ar-card"><h3>🎯 '+esc(dr.theme||'Draft half-term')+'</h3>'+countsLine(d.counts)+
+       (dr.rationale?'<p style="margin:0 0 8px;font-size:.88rem;line-height:1.55">'+esc(dr.rationale)+'</p>':'')+
+       '<div class="ar-hint">'+esc(d.window&&d.window.target_half_term||'Next half-term')+
+       ' · '+esc(d.area||'')+' · drafted on '+esc((d.model&&d.model.name)||'the local model')+
+       ' in '+Math.round(((d.model&&d.model.ms)||0)/1000)+'s</div></div>';
+
+    if((dr.intentions||[]).length){
+      h+='<div class="ar-card"><h3>📌 Suggested learning intentions</h3>'+
+        '<div class="ar-hint" style="margin:0 0 9px">Copy the ones you want into step 3, or tick real ones '+
+        'from the children\'s next steps there instead.</div><ul class="ar-ailist">'+
+        dr.intentions.map(function(i){
+          return '<li><b>'+esc(i.text)+'</b>'+(i.why?'<div class="ar-hint" style="margin:3px 0 0">'+esc(i.why)+'</div>':'')+'</li>';
+        }).join('')+'</ul></div>';
+    }
+
+    if((dr.activities||[]).length || (dr.resources||[]).length){
+      h+='<div class="ar-card"><h3>🧰 Activities &amp; resources</h3>'+
+        '<div class="ar-hint" style="margin:0 0 9px">Only real items from the Activity Bank and Resource '+
+        'Cards — Wren cannot invent one.</div>';
+      if((dr.activities||[]).length){
+        h+='<ul class="ar-ailist">'+dr.activities.map(function(a){
+          return '<li>🎨 <a href="/ey/activities?id='+encodeURIComponent(a.id)+'" target="_blank" rel="noopener">'+
+                 esc(a.title)+'</a>'+(a.age_group?' <span class="ar-hint">('+esc(a.age_group)+')</span>':'')+'</li>';
+        }).join('')+'</ul>';
+      }
+      if((dr.resources||[]).length){
+        h+='<ul class="ar-ailist">'+dr.resources.map(function(r){
+          return '<li>🗂️ <a href="/ey/resource-cards?card='+encodeURIComponent(r.slug)+'" target="_blank" rel="noopener">'+
+                 esc(r.title||r.slug)+'</a>'+(r.strapline?' <span class="ar-hint">— '+esc(r.strapline)+'</span>':'')+'</li>';
+        }).join('')+'</ul>';
+      }
+      h+='</div>';
+    }
+
+    if((dr.weekly_focus||[]).length){
+      h+='<div class="ar-card"><h3>📅 Week by week</h3><ul class="ar-ailist">'+
+        dr.weekly_focus.map(function(w){
+          return '<li><b>Week '+(w.week||'?')+'</b> — '+esc(w.focus)+'</li>'; }).join('')+
+        '</ul></div>';
+    }
+
+    var c=dr.contribution||{};
+    if(c.noticed||c.change||c.ideas){
+      h+='<div class="ar-card"><h3>✍️ A first draft of your contribution</h3>'+
+        '<div class="ar-hint" style="margin:0 0 9px">Wren\'s words, not yours. Press the button to load them '+
+        'into step 2, then correct them before saving — nothing is saved until you press Save there.</div>'+
+        (c.noticed?'<div class="ar-lbl">What I have noticed</div><p style="margin:2px 0 9px;font-size:.88rem;line-height:1.5">'+esc(c.noticed)+'</p>':'')+
+        (c.change?'<div class="ar-lbl">What I would change</div><p style="margin:2px 0 9px;font-size:.88rem;line-height:1.5">'+esc(c.change)+'</p>':'')+
+        (c.ideas?'<div class="ar-lbl">Ideas for next half-term</div><p style="margin:2px 0 9px;font-size:.88rem;line-height:1.5">'+esc(c.ideas)+'</p>':'')+
+        '<button class="ar-btn primary" id="ar-ai-use">📝 Put this into my contribution</button></div>';
+    }
+
+    if((d.dropped||[]).length){
+      h+='<div class="ar-card"><h3>⚠️ Dropped by Wren</h3><div class="ar-hint">'+
+        d.dropped.map(esc).join('<br>')+'</div></div>';
+    }
+
+    h+='<div class="ar-hint" style="margin:2px 2px 14px">'+esc(d.note||'')+'</div>';
+    out.innerHTML=h;
+
+    var use=el('ar-ai-use');
+    if(use) use.addEventListener('click',function(){
+      /* Fill the step-2 boxes, do NOT save — the practitioner presses Save. */
+      if(c.noticed) el('ar-noticed').value=c.noticed;
+      if(c.change)  el('ar-change').value=c.change;
+      if(c.ideas)   el('ar-ideas').value=c.ideas;
+      go(1);
+      msg('ar-cmsg','Wren\'s draft loaded — edit it, then press Save contribution.');
+    });
+  }
+
+  function evBlock(label, lines){
+    if(!lines || !lines.length) return '';
+    return '<div class="ar-lbl" style="margin-top:10px">'+esc(label)+' ('+lines.length+')</div>'+
+      '<ul class="ar-ailist">'+lines.map(function(l){ return '<li>'+esc(l)+'</li>'; }).join('')+'</ul>';
+  }
+
+  function boot(){
+    document.querySelectorAll('.ar-stages button').forEach(function(b){
+      b.addEventListener('click',function(){ go(parseInt(b.getAttribute('data-stage'),10)); });
+    });
+    /* b238 §3 — AI-assisted draft controls */
+    var aiGo=el('ar-ai-go'); if(aiGo) aiGo.addEventListener('click',draftWithWren);
+    var aiScope=el('ar-ai-scope'); if(aiScope) aiScope.addEventListener('change',onAiScope);
+    el('ar-savec').addEventListener('click',saveContribution);
+    el('ar-carry').addEventListener('click',carryForward);
+    el('ar-assign').addEventListener('click',assign);
+    ['ar-area','ar-from','ar-for','ar-room'].forEach(function(id){
+      el(id).addEventListener('change',loadGathered);
+    });
+    el('ar-glist').addEventListener('click',function(e){
+      var t=e.target.closest('[data-open]');
+      if(t){ t.closest('.ar-int').classList.toggle('open'); return; }
+    });
+    el('ar-glist').addEventListener('change',function(e){
+      var cb=e.target.closest('[data-pick]'); if(!cb) return;
+      var k=cb.getAttribute('data-pick');
+      PICKED[k]=cb.checked;
+      cb.closest('.ar-int').classList.toggle('on', cb.checked);
+      updateCarryBtn();
+    });
+    el('ar-owners').addEventListener('click',function(e){
+      var u=e.target.closest('[data-unassign]'); if(!u) return;
+      var sid=parseInt(u.getAttribute('data-unassign'),10);
+      Wren.api(API+'/unassign',{method:'POST',body:{staff_id:sid}})
+        .then(loadOwners).catch(function(err){ msg('ar-amsg',(err&&err.error)||'Could not remove','bad'); });
+    });
+    wireTrace(el('ar-carried'));
+    wireTrace(el('ar-s0-carried'));
+
+    Wren.api(API+'/context').then(function(c){
+      CTX=c;
+      renderBanner();
+      fillPeriodSelects();
+      if(c.can_assign){
+        el('ar-ownersbtn').style.display='';
+        Wren.api('/api/staff').then(function(list){
+          STAFF=list||[];
+          el('ar-astaff').innerHTML='<option value="">Staff member…</option>'+STAFF.map(function(s){
+            return '<option value="'+s.id+'">'+esc((s.preferred_name||s.first_name)+' '+s.last_name)+'</option>';
+          }).join('');
+        }).catch(function(){});
+      }
+      return Wren.api('/api/admin/rooms').catch(function(){ return []; });
+    }).then(function(rooms){
+      ROOMS=Array.isArray(rooms)?rooms:(rooms&&rooms.rooms)||[];
+      el('ar-room').innerHTML='<option value="">Every playroom</option>'+ROOMS.map(function(r){
+        return '<option value="'+r.id+'">'+esc(r.name)+'</option>'; }).join('');
+      return Promise.all([
+        loadStage0(),
+        loadCarriedInto('ar-s0-carried', CTX.gather_for?CTX.gather_for.id:null, myArea()),
+      ]);
+    }).then(function(){
+      var qs=new URLSearchParams(location.search);
+      if(qs.get('tab')==='intentions') go(2);
+      else if(qs.get('tab')==='contribution') go(1);
+    }).catch(function(e){
+      el('ar-banner').textContent='Could not load: '+((e&&e.error)||e);
+    });
+  }
+  document.addEventListener('wren:ready', boot);
+})();
+</script>
+</body>
+</html>
